@@ -99,7 +99,7 @@ object ChannelRelayer {
 
   def props(nodeParams: NodeParams, relayer: ActorRef, register: ActorRef) = Props(new ChannelRelayer(nodeParams, relayer, register))
 
-  case class RelayHtlc(r: IncomingPacket.ChannelRelayPacket, previousFailures: Seq[RES_ADD_FAILED[Throwable]], channelUpdates: ChannelUpdates, node2channels: NodeChannels)
+  case class RelayHtlc(r: IncomingPacket.ChannelRelayPacket, previousFailures: Seq[RES_ADD_FAILED[ChannelException]], channelUpdates: ChannelUpdates, node2channels: NodeChannels)
 
   // @formatter:off
   sealed trait RelayResult
@@ -114,7 +114,7 @@ object ChannelRelayer {
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - a CMD_ADD_HTLC to propagate downstream
    */
-  def handleRelay(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, previousFailures: Seq[RES_ADD_FAILED[Throwable]], chainHash: ByteVector32)(implicit log: LoggingAdapter): RelayResult = {
+  def handleRelay(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, previousFailures: Seq[RES_ADD_FAILED[ChannelException]], chainHash: ByteVector32)(implicit log: LoggingAdapter): RelayResult = {
     import relayPacket._
     log.info(s"relaying htlc #${add.id} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.channelId, payload.outgoingChannelId, previousFailures.size)
     val alreadyTried = previousFailures.flatMap(_.channelUpdate).map(_.shortChannelId)
@@ -192,7 +192,7 @@ object ChannelRelayer {
    * channel, because some parameters don't match with our settings for that channel. In that case we directly fail the
    * htlc.
    */
-  def relayOrFail(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdate_opt: Option[ChannelUpdate], previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty): RelayResult = {
+  def relayOrFail(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdate_opt: Option[ChannelUpdate], previousFailures: Seq[RES_ADD_FAILED[ChannelException]] = Seq.empty): RelayResult = {
     import relayPacket._
     channelUpdate_opt match {
       case None =>

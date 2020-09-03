@@ -69,7 +69,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc0.availableBalanceForReceive == a - htlcOutputFee)
 
     val (_, cmdAdd) = makeCmdAdd(a - htlcOutputFee - 1000.msat, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Success((ac1, add)) = sendAdd(ac0, cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac1, add)) = sendAdd(ac0, cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
     val Success(bc1) = receiveAdd(bc0, add, bob.underlyingActor.nodeParams.onChainFeeConf)
     val Success((_, commit1)) = sendCommit(ac1, alice.underlyingActor.nodeParams.keyManager)
     val Success((bc2, _)) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.keyManager)
@@ -97,7 +97,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc0.availableBalanceForReceive == a)
 
     val (payment_preimage, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Success((ac1, add)) = sendAdd(ac0, cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac1, add)) = sendAdd(ac0, cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac1.availableBalanceForSend == a - p - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
@@ -182,7 +182,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc0.availableBalanceForReceive == a)
 
     val (_, cmdAdd) = makeCmdAdd(p, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Success((ac1, add)) = sendAdd(ac0, cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac1, add)) = sendAdd(ac0, cmdAdd, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac1.availableBalanceForSend == a - p - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
@@ -270,17 +270,17 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc0.availableBalanceForReceive == a)
 
     val (payment_preimage1, cmdAdd1) = makeCmdAdd(p1, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Success((ac1, add1)) = sendAdd(ac0, cmdAdd1, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac1, add1)) = sendAdd(ac0, cmdAdd1, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac1.availableBalanceForSend == a - p1 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
     val (_, cmdAdd2) = makeCmdAdd(p2, bob.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Success((ac2, add2)) = sendAdd(ac1, cmdAdd2, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((ac2, add2)) = sendAdd(ac1, cmdAdd2, currentBlockHeight, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac2.availableBalanceForSend == a - p1 - fee - p2 - fee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac2.availableBalanceForReceive == b)
 
     val (payment_preimage3, cmdAdd3) = makeCmdAdd(p3, alice.underlyingActor.nodeParams.nodeId, currentBlockHeight)
-    val Success((bc1, add3)) = sendAdd(bc0, cmdAdd3, currentBlockHeight, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right((bc1, add3)) = sendAdd(bc0, cmdAdd3, currentBlockHeight, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc1.availableBalanceForSend == b - p3) // bob doesn't pay the fee
     assert(bc1.availableBalanceForReceive == a)
 
@@ -401,7 +401,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val isFunder = true
     val c = CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isFunder)
     val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey.publicKey, f.currentBlockHeight)
-    val Success((c1, _)) = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
+    val Right((c1, _)) = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
     assert(c1.availableBalanceForSend === 0.msat)
 
     // We should be able to handle a fee increase.
@@ -409,8 +409,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
     val (_, cmdAdd1) = makeCmdAdd(100 msat, randomKey.publicKey, f.currentBlockHeight)
-    val Failure(e) = sendAdd(c2, cmdAdd1, f.currentBlockHeight, feeConfNoMismatch)
-    assert(e.isInstanceOf[InsufficientFunds])
+    val Left(_: InsufficientFunds) = sendAdd(c2, cmdAdd1, f.currentBlockHeight, feeConfNoMismatch)
   }
 
   test("can send availableForSend") { f =>
@@ -418,7 +417,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       val c = CommitmentsSpec.makeCommitments(702000000 msat, 52000000 msat, FeeratePerKw(2679 sat), 546 sat, isFunder)
       val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey.publicKey, f.currentBlockHeight)
       val result = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
-      assert(result.isSuccess, result)
+      assert(result.isRight, result)
     }
   }
 
@@ -448,13 +447,13 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
         val (_, cmdAdd) = makeCmdAdd(amount, randomKey.publicKey, f.currentBlockHeight)
         sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch) match {
-          case Success((cc, _)) => c = cc
-          case Failure(e) => fail(s"$t -> could not setup initial htlcs: $e")
+          case Right((cc, _)) => c = cc
+          case Left(e) => fail(s"$t -> could not setup initial htlcs: $e")
         }
       }
       val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey.publicKey, f.currentBlockHeight)
       val result = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
-      assert(result.isSuccess, s"$t -> $result")
+      assert(result.isRight, s"$t -> $result")
     }
   }
 

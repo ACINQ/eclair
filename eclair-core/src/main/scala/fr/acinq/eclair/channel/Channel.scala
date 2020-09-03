@@ -638,11 +638,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       Commitments.sendAdd(d.commitments, c, nodeParams.currentBlockHeight, nodeParams.onChainFeeConf) match {
-        case Success((commitments1, add)) =>
+        case Right((commitments1, add)) =>
           if (c.commit) self ! CMD_SIGN
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending add
-        case Failure(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
+        case Left(cause) => handleAddHtlcCommandError(c, cause, Some(d.channelUpdate))
       }
 
     case Event(add: UpdateAddHtlc, d: DATA_NORMAL) =>
@@ -1864,7 +1864,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     stay using newData
   }
 
-  def handleAddHtlcCommandError(c: CMD_ADD_HTLC, cause: Throwable, channelUpdate: Option[ChannelUpdate]) = {
+  def handleAddHtlcCommandError(c: CMD_ADD_HTLC, cause: ChannelException, channelUpdate: Option[ChannelUpdate]) = {
     log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
     val replyTo = c match {
       case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => hasReplyTo.replyTo

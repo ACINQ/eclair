@@ -159,7 +159,7 @@ object Relayer extends Logging {
   type NodeChannels = mutable.MultiDict[PublicKey, ShortChannelId]
 
   // @formatter:off
-  case class RelayForward(add: UpdateAddHtlc, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty)
+  case class RelayForward(add: UpdateAddHtlc, previousFailures: Seq[RES_ADD_FAILED[ChannelException]] = Seq.empty)
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 
   /**

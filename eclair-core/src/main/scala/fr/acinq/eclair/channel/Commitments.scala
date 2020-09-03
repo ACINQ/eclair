@@ -178,24 +178,24 @@ object Commitments {
    * @param cmd         add HTLC command
    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
    */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, blockHeight: Long, feeConf: OnChainFeeConf): Try[(Commitments, UpdateAddHtlc)] = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, blockHeight: Long, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
     // we don't want to use too high a refund timeout, because our funds will be locked during that time if the payment is never fulfilled
     val maxExpiry = Channel.MAX_CLTV_EXPIRY_DELTA.toCltvExpiry(blockHeight)
     if (cmd.cltvExpiry >= maxExpiry) {
-      return Failure(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
+      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.cltvExpiry, blockCount = blockHeight))
     }
 
     // even if remote advertises support for 0 msat htlc, we limit ourselves to values strictly positive, hence the max(1 msat)
     val htlcMinimum = commitments.remoteParams.htlcMinimum.max(1 msat)
     if (cmd.amount < htlcMinimum) {
-      return Failure(HtlcValueTooSmall(commitments.channelId, minimum = htlcMinimum, actual = cmd.amount))
+      return Left(HtlcValueTooSmall(commitments.channelId, minimum = htlcMinimum, actual = cmd.amount))
     }
 
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
     val localFeeratePerKw = feeConf.feeEstimator.getFeeratePerKw(target = feeConf.feeTargets.commitmentBlockTarget)
     if (Helpers.isFeeDiffTooHigh(localFeeratePerKw, commitments.localCommit.spec.feeratePerKw, feeConf.maxFeerateMismatch)) {
-      return Failure(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw))
+      return Left(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -216,12 +216,12 @@ object Commitments {
     val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees + funderFeeReserve else 0.msat)
     val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     if (missingForSender < 0.msat) {
-      return Failure(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
+      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
     } else if (missingForReceiver < 0.msat) {
       if (commitments.localParams.isFunder) {
         // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
       } else {
-        return Failure(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+        return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
       }
     }
 
@@ -229,14 +229,14 @@ object Commitments {
     val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
     if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
       // TODO: this should be a specific UPDATE error
-      return Failure(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+      return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
     if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
-      return Failure(TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs))
+      return Left(TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs))
     }
 
-    Success(commitments1, add)
+    Right(commitments1, add)
   }
 
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc, feeConf: OnChainFeeConf): Try[Commitments] = Try {

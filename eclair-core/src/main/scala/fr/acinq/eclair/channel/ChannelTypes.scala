@@ -153,7 +153,7 @@ sealed trait HasHtlcId { this: Command => def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command with HasHtlcId
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, origin: Origin.Hot, commit: Boolean = false, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty) extends Command with HasReplyTo
+final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, origin: Origin.Hot, commit: Boolean = false, previousFailures: Seq[RES_ADD_FAILED[ChannelException]] = Seq.empty) extends Command with HasReplyTo
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
 sealed trait CloseCommand extends Command
@@ -190,7 +190,7 @@ final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) exten
  * - either [[RES_ADD_FAILED]]
  * - or [[RES_SUCCESS[CMD_ADD_HTLC]]] followed by [[RES_ADD_COMPLETED]] (possibly a while later)
  */
-final case class RES_ADD_FAILED[+T <: Throwable](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
+final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
 sealed trait HtlcResult
 object HtlcResult {
   sealed trait Fulfill extends HtlcResult { def paymentPreimage: ByteVector32 }
