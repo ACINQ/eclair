@@ -428,14 +428,11 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val relayer = f.createRelayer()
     register.expectNoMsg(100 millis)
 
-    // we need a reference to the post-htlc-restart child actor
-    sender.send(relayer, Relayer.GetChildActors(sender.ref))
-    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
-
     sender.send(relayer, buildForwardFail(testCase.downstream, testCase.origin))
     register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
 
-    register.expectNoMsg(100 millis)
+    sender.send(relayer, buildForwardFail(testCase.downstream, testCase.origin))
+    register.expectNoMsg(100 millis) // the payment has already been failed upstream
     eventListener.expectNoMsg(100 millis)
   }
 
