@@ -57,7 +57,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
 
     script match {
       case offer(x, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+        resolve(x) ! CMD_ADD_HTLC(self, MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, Origin.LocalHot(self, UUID.randomUUID()))
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, ByteVector32.fromValidHex(r))
@@ -104,7 +104,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       import scala.io.Source
       val script = Source.fromFile(file).getLines().filterNot(_.startsWith("#")).toList
       exec(script, a, b)
-    case ChannelCommandResponse.Ok => {}
+    case _: RES_SUCCESS[_] => {}
     case msg if sender() == a =>
       log.info(s"a -> b $msg")
       b forward msg
@@ -115,7 +115,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
   }
 
   def wait(a: ActorRef, b: ActorRef, script: List[String]): Receive = {
-    case ChannelCommandResponse.Ok => {}
+    case _: RES_SUCCESS[_] => {}
     case msg if sender() == a && script.head.startsWith("B:recv") =>
       log.info(s"a -> b $msg")
       b forward msg
@@ -126,7 +126,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       a forward msg
       unstashAll()
       exec(script.drop(1), a, b)
-    case d: DATA_NORMAL if script.head.endsWith(":dump") =>
+    case RES_GETSTATEDATA(d: DATA_NORMAL) if script.head.endsWith(":dump") =>
       def rtrim(s: String) = s.replaceAll("\\s+$", "")
       import d.commitments._
       val l = List(

@@ -18,12 +18,10 @@ package fr.acinq.eclair.wire
 
 import java.util.UUID
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
@@ -174,28 +172,28 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64overflow) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation].decodeOnly
 
-  val localCodec: Codec[Origin.Local] = (
-    ("id" | uuid) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.Local]
+  val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 
-  val relayedCodec: Codec[Origin.Relayed] = (
+  val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
+
+  val relayedColdCodec: Codec[Origin.ChannelRelayedCold] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountIn" | millisatoshi) ::
-      ("amountOut" | millisatoshi)).as[Origin.Relayed]
+      ("amountOut" | millisatoshi)).as[Origin.ChannelRelayedCold]
+
+  val relayedCodec: Codec[Origin.ChannelRelayed] = relayedColdCodec.xmap[Origin.ChannelRelayed](o => o: Origin.ChannelRelayed, o => Origin.ChannelRelayedCold(o.originChannelId, o.originHtlcId, o.amountIn, o.amountOut))
+
+  val trampolineRelayedColdCodec: Codec[Origin.TrampolineRelayedCold] = listOfN(uint16, bytes32 ~ int64).as[Origin.TrampolineRelayedCold]
+
+  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = trampolineRelayedColdCodec.xmap[Origin.TrampolineRelayed](o => o: Origin.TrampolineRelayed, o => Origin.TrampolineRelayedCold(o.htlcs))
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
-  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
-    listOfN(uint16, bytes32 ~ int64) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.TrampolineRelayed]
-
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x03, localCodec) // backward compatible
-    .typecase(0x01, provide(Origin.Local(UNKNOWN_UUID, None)))
+    .typecase(0x01, provide(Origin.LocalCold(UNKNOWN_UUID)))
     .typecase(0x02, relayedCodec)
     .typecase(0x04, trampolineRelayedCodec)
 

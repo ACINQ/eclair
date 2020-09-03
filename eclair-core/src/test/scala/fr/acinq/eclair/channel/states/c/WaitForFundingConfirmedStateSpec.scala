@@ -146,8 +146,9 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv CMD_CLOSE") { f =>
     import f._
     val sender = TestProbe()
-    sender.send(alice, CMD_CLOSE(None))
-    sender.expectMsg(Failure(CommandUnavailableInThisState(channelId(alice), "close", WAIT_FOR_FUNDING_CONFIRMED)))
+    val c = CMD_CLOSE(None)
+    sender.send(alice, c)
+    sender.expectMsg(RES_FAILURE(c, CommandUnavailableInThisState(channelId(alice), "close", WAIT_FOR_FUNDING_CONFIRMED)))
   }
 
   test("recv CMD_FORCECLOSE") { f =>

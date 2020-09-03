@@ -16,12 +16,10 @@
 
 package fr.acinq.eclair.wire
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
@@ -156,21 +154,21 @@ object ChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64overflow) ::
       ("reSignAsap" | bool8)).as[WaitingForRevocation]
 
-  val localCodec: Codec[Origin.Local] = (
-    ("id" | uuid) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.Local]
+  val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 
-  val relayedCodec: Codec[Origin.Relayed] = (
+  val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
+
+  val relayedColdCodec: Codec[Origin.ChannelRelayedCold] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountIn" | millisatoshi) ::
-      ("amountOut" | millisatoshi)).as[Origin.Relayed]
+      ("amountOut" | millisatoshi)).as[Origin.ChannelRelayedCold]
 
-  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
-    listOfN(uint16, bytes32 ~ int64) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.TrampolineRelayed]
+  val relayedCodec: Codec[Origin.ChannelRelayed] = relayedColdCodec.xmap[Origin.ChannelRelayed](o => o: Origin.ChannelRelayed, o => Origin.ChannelRelayedCold(o.originChannelId, o.originHtlcId, o.amountIn, o.amountOut))
+
+  val trampolineRelayedColdCodec: Codec[Origin.TrampolineRelayedCold] = listOfN(uint16, bytes32 ~ int64).as[Origin.TrampolineRelayedCold]
+
+  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = trampolineRelayedColdCodec.xmap[Origin.TrampolineRelayed](o => o: Origin.TrampolineRelayed, o => Origin.TrampolineRelayedCold(o.htlcs))
 
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x02, relayedCodec)

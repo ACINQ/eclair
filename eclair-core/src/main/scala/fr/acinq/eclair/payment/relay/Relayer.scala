@@ -16,17 +16,13 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
 import akka.Done
-import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, Status}
+import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
@@ -35,23 +31,6 @@ import grizzled.slf4j.Logging
 
 import scala.collection.mutable
 import scala.concurrent.Promise
-
-// @formatter:off
-sealed trait Origin
-object Origin {
-  /** Our node is the origin of the payment. */
-  case class Local(id: UUID, sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
-  /** Our node forwarded a single incoming HTLC to an outgoing channel. */
-  case class Relayed(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends Origin
-  /**
-   * Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs).
-   *
-   * @param origins       origin channelIds and htlcIds.
-   * @param paymentSender actor sending the outgoing HTLC (if we haven't restarted and lost the reference).
-   */
-  case class TrampolineRelayed(origins: List[(ByteVector32, Long)], paymentSender: Option[ActorRef]) extends Origin
-}
-// @formatter:on
 
 /**
  * Created by PM on 01/02/2017.
@@ -122,7 +101,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
         }
       })
 
-    case ForwardAdd(add, previousFailures) =>
+    case RelayForward(add, previousFailures) =>
       log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
       IncomingPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {
         case Right(p: IncomingPacket.FinalPacket) =>
@@ -148,51 +127,21 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
       }
 
-    case Status.Failure(addFailed: AddHtlcFailed) => addFailed.origin match {
-      case Origin.Local(id, None) => log.error(s"received unexpected add failed with no sender (paymentId=$id)")
-      case Origin.Local(_, Some(sender)) => sender ! Status.Failure(addFailed)
-      case _: Origin.Relayed => channelRelayer forward Status.Failure(addFailed)
-      case Origin.TrampolineRelayed(htlcs, None) => log.error(s"received unexpected add failed with no sender (upstream=${htlcs.mkString(", ")}")
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! Status.Failure(addFailed)
+    case r: RES_ADD_SETTLED[_, _] => r.origin match {
+      case _: Origin.Cold => postRestartCleaner ! r
+      case o: Origin.Hot => o.replyTo ! r
     }
 
-    case ff: ForwardFulfill => ff.to match {
-      case Origin.Local(_, None) => postRestartCleaner forward ff
-      case Origin.Local(_, Some(sender)) => sender ! ff
-      case Origin.Relayed(originChannelId, originHtlcId, amountIn, amountOut) =>
-        val cmd = CMD_FULFILL_HTLC(originHtlcId, ff.paymentPreimage, commit = true)
-        PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
-        context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, ff.htlc.paymentHash, originChannelId, ff.htlc.channelId))
-      case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! ff
-    }
-
-    case ff: ForwardFail => ff.to match {
-      case Origin.Local(_, None) => postRestartCleaner forward ff
-      case Origin.Local(_, Some(sender)) => sender ! ff
-      case Origin.Relayed(originChannelId, originHtlcId, _, _) =>
-        Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-        val cmd = ff match {
-          case ForwardRemoteFail(fail, _, _) => CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
-          case ForwardRemoteFailMalformed(fail, _, _) => CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
-          case _: ForwardOnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
-        }
-        PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
-      case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! ff
-    }
-
-    case ChannelCommandResponse.Ok => () // ignoring responses from channels
+    case _: RES_SUCCESS[_] => () // ignoring responses from channels
 
     case GetChildActors(replyTo) => replyTo ! ChildActors(postRestartCleaner, channelRelayer, nodeRelayer)
   }
 
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
-      case ForwardAdd(add, _) => Some(add.paymentHash)
-      case Status.Failure(addFailed: AddHtlcFailed) => Some(addFailed.paymentHash)
-      case ff: ForwardFulfill => Some(ff.htlc.paymentHash)
-      case ff: ForwardFail => Some(ff.htlc.paymentHash)
+      case RelayForward(add, _) => Some(add.paymentHash)
+      case addFailed: RES_ADD_FAILED[_] => Some(addFailed.c.paymentHash)
+      case addCompleted: RES_ADD_SETTLED[_, _] => Some(addCompleted.htlc.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
@@ -202,23 +151,14 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
 object Relayer extends Logging {
 
-  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) =
+  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None): Props =
     Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
 
   type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
   type NodeChannels = mutable.MultiDict[PublicKey, ShortChannelId]
 
   // @formatter:off
-  sealed trait ForwardMessage
-  case class ForwardAdd(add: UpdateAddHtlc, previousFailures: Seq[AddHtlcFailed] = Seq.empty) extends ForwardMessage
-  sealed trait ForwardFulfill extends ForwardMessage { val paymentPreimage: ByteVector32; val to: Origin; val htlc: UpdateAddHtlc }
-  case class ForwardRemoteFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardFulfill { override val paymentPreimage = fulfill.paymentPreimage }
-  case class ForwardOnChainFulfill(paymentPreimage: ByteVector32, to: Origin, htlc: UpdateAddHtlc) extends ForwardFulfill
-  sealed trait ForwardFail extends ForwardMessage { val to: Origin; val htlc: UpdateAddHtlc }
-  case class ForwardRemoteFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardFail
-  case class ForwardRemoteFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc) extends ForwardFail
-  case class ForwardOnChainFail(cause: ChannelException, to: Origin, htlc: UpdateAddHtlc) extends ForwardFail
-
+  case class RelayForward(add: UpdateAddHtlc, previousFailures: Seq[RES_ADD_FAILED[ChannelException]] = Seq.empty)
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 
   /**

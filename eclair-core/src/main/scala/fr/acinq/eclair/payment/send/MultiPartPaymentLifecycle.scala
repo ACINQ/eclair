@@ -23,8 +23,8 @@ import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.Upstream
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
@@ -70,7 +70,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val routeParams = r.getRouteParams(nodeParams, randomize = false) // we don't randomize the first attempt, regardless of configuration choices
       val maxFee = routeParams.getMaxFee(r.totalAmount)
       log.debug("sending {} with maximum fee {}", r.totalAmount, maxFee)
-      val d = PaymentProgress(sender, r, r.maxAttempts, Map.empty, Ignore.empty, Nil)
+      val d = PaymentProgress(r, r.maxAttempts, Map.empty, Ignore.empty, Nil)
       router ! createRouteRequest(nodeParams, r.totalAmount, maxFee, routeParams, d, cfg)
       goto(WAIT_FOR_ROUTES) using d
   }
@@ -84,7 +84,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         val childPayments = routes.map(route => (UUID.randomUUID(), route)).toMap
         Kamon.runWithContextEntry(parentPaymentIdKey, cfg.parentId) {
           Kamon.runWithSpan(span, finishSpan = true) {
-            childPayments.foreach { case (childId, route) => spawnChildPaymentFsm(childId) ! createChildPayment(route, d.request) }
+            childPayments.foreach { case (childId, route) => spawnChildPaymentFsm(childId) ! createChildPayment(self, route, d.request) }
           }
         }
         goto(PAYMENT_IN_PROGRESS) using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), pending = d.pending ++ childPayments)
@@ -113,12 +113,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       } else {
         val failure = LocalFailure(Nil, t)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
-        gotoAbortedOrStop(PaymentAborted(d.sender, d.request, d.failures :+ failure, d.pending.keySet))
+        gotoAbortedOrStop(PaymentAborted(d.request, d.failures :+ failure, d.pending.keySet))
       }
 
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
       if (isFinalRecipientFailure(pf, d)) {
-        gotoAbortedOrStop(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
+        gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         stay using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures)
@@ -129,17 +129,17 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentProgress) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
-      gotoSucceededOrStop(PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id))
+      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id))
   }
 
   when(PAYMENT_IN_PROGRESS) {
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
       if (isFinalRecipientFailure(pf, d)) {
-        gotoAbortedOrStop(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
+        gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else if (d.remainingAttempts == 0) {
         val failure = LocalFailure(Nil, PaymentError.RetryExhausted)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
-        gotoAbortedOrStop(PaymentAborted(d.sender, d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
+        gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         val stillPending = d.pending - pf.id
@@ -155,7 +155,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       require(ps.parts.length == 1, "child payment must contain only one part")
       // As soon as we get the preimage we can consider that the whole payment succeeded (we have a proof of payment).
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = true).record(d.request.maxAttempts - d.remainingAttempts)
-      gotoSucceededOrStop(PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id))
+      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending.keySet - ps.parts.head.id))
   }
 
   when(PAYMENT_ABORTED) {
@@ -163,7 +163,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val failures = d.failures ++ pf.failures
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.sender, Left(PaymentFailed(id, paymentHash, failures)))
+        myStop(d.request.replyTo, Left(PaymentFailed(id, paymentHash, failures)))
       } else {
         stay using d.copy(failures = failures, pending = pending)
       }
@@ -173,7 +173,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(ps: PaymentSent, d: PaymentAborted) =>
       require(ps.parts.length == 1, "child payment must contain only one part")
       log.warning(s"payment recipient fulfilled incomplete multi-part payment (id=${ps.parts.head.id})")
-      gotoSucceededOrStop(PaymentSucceeded(d.sender, d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id))
+      gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id))
 
     case Event(_: RouteResponse, _) => stay
     case Event(_: Status.Failure, _) => stay
@@ -185,7 +185,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val parts = d.parts ++ ps.parts
       val pending = d.pending - ps.parts.head.id
       if (pending.isEmpty) {
-        myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, parts)))
+        myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, parts)))
       } else {
         stay using d.copy(parts = parts, pending = pending)
       }
@@ -196,7 +196,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment succeeded but partial payment failed (id=${pf.id})")
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, d.parts)))
+        myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, d.parts)))
       } else {
         stay using d.copy(pending = pending)
       }
@@ -216,15 +216,15 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   private def gotoAbortedOrStop(d: PaymentAborted): State = {
     if (d.pending.isEmpty) {
-      myStop(d.sender, Left(PaymentFailed(id, paymentHash, d.failures)))
+      myStop(d.request.replyTo, Left(PaymentFailed(id, paymentHash, d.failures)))
     } else
       goto(PAYMENT_ABORTED) using d
   }
 
   private def gotoSucceededOrStop(d: PaymentSucceeded): State = {
-    d.sender ! PreimageReceived(paymentHash, d.preimage)
+    d.request.replyTo ! PreimageReceived(paymentHash, d.preimage)
     if (d.pending.isEmpty) {
-      myStop(d.sender, Right(cfg.createPaymentSent(d.preimage, d.parts)))
+      myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, d.parts)))
     } else
       goto(PAYMENT_SUCCEEDED) using d
   }
@@ -289,7 +289,8 @@ object MultiPartPaymentLifecycle {
    * @param additionalTlvs when provided, additional tlvs that will be added to the onion sent to the target node.
    * @param userCustomTlvs when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
    */
-  case class SendMultiPartPayment(paymentSecret: ByteVector32,
+  case class SendMultiPartPayment(replyTo: ActorRef,
+                                  paymentSecret: ByteVector32,
                                   targetNodeId: PublicKey,
                                   totalAmount: MilliSatoshi,
                                   targetExpiry: CltvExpiry,
@@ -331,15 +332,13 @@ object MultiPartPaymentLifecycle {
    * While the payment is in progress, we listen to child payment failures. When we receive such failures, we retry the
    * failed amount with different routes.
    *
-   * @param sender            the sender of the payment request.
    * @param request           payment request containing the total amount to send.
    * @param remainingAttempts remaining attempts (after child payments fail).
    * @param pending           pending child payments (payment sent, we are waiting for a fulfill or a failure).
    * @param ignore            channels and nodes that should be ignored (previously returned a permanent error).
    * @param failures          previous child payment failures.
    */
-  case class PaymentProgress(sender: ActorRef,
-                             request: SendMultiPartPayment,
+  case class PaymentProgress(request: SendMultiPartPayment,
                              remainingAttempts: Int,
                              pending: Map[UUID, Route],
                              ignore: Ignore,
@@ -349,25 +348,23 @@ object MultiPartPaymentLifecycle {
    * When we exhaust our retry attempts without success, we abort the payment.
    * Once we're in that state, we wait for all the pending child payments to settle.
    *
-   * @param sender   the sender of the payment request.
    * @param request  payment request containing the total amount to send.
    * @param failures child payment failures.
    * @param pending  pending child payments (we are waiting for them to be failed downstream).
    */
-  case class PaymentAborted(sender: ActorRef, request: SendMultiPartPayment, failures: Seq[PaymentFailure], pending: Set[UUID]) extends Data
+  case class PaymentAborted(request: SendMultiPartPayment, failures: Seq[PaymentFailure], pending: Set[UUID]) extends Data
 
   /**
    * Once we receive a first fulfill for a child payment, we can consider that the whole payment succeeded (because we
    * received the payment preimage that we can use as a proof of payment).
    * Once we're in that state, we wait for all the pending child payments to fulfill.
    *
-   * @param sender   the sender of the payment request.
    * @param request  payment request containing the total amount to send.
    * @param preimage payment preimage.
    * @param parts    fulfilled child payments.
    * @param pending  pending child payments (we are waiting for them to be fulfilled downstream).
    */
-  case class PaymentSucceeded(sender: ActorRef, request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PartialPayment], pending: Set[UUID]) extends Data
+  case class PaymentSucceeded(request: SendMultiPartPayment, preimage: ByteVector32, parts: Seq[PartialPayment], pending: Set[UUID]) extends Data
 
   private def createRouteRequest(nodeParams: NodeParams, toSend: MilliSatoshi, maxFee: MilliSatoshi, routeParams: RouteParams, d: PaymentProgress, cfg: SendPaymentConfig): RouteRequest =
     RouteRequest(
@@ -382,9 +379,9 @@ object MultiPartPaymentLifecycle {
       d.pending.values.toSeq,
       Some(cfg.paymentContext))
 
-  private def createChildPayment(route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
+  private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
     val finalPayload = Onion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs, request.userCustomTlvs)
-    SendPaymentToRoute(Right(route), finalPayload)
+    SendPaymentToRoute(replyTo, Right(route), finalPayload)
   }
 
   /** When we receive an error from the final recipient, we should fail the whole payment, it's useless to retry. */

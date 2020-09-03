@@ -21,9 +21,10 @@ import java.util.UUID
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, PoisonPill, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Upstream}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
@@ -93,7 +94,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) 
 
     case MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts) => pendingIncoming.get(paymentHash) match {
       case Some(PendingRelay(htlcs, _, nextPayload, nextPacket, handler)) =>
-        val upstream = Upstream.TrampolineRelayed(htlcs)
+        val upstream = Upstream.Trampoline(htlcs)
         handler ! PoisonPill
         validateRelay(nodeParams, upstream, nextPayload) match {
           case Some(failure) =>
@@ -145,7 +146,7 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) 
     }
   }
 
-  private def relay(paymentHash: ByteVector32, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): UUID = {
+  private def relay(paymentHash: ByteVector32, upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): UUID = {
     val paymentId = UUID.randomUUID()
     val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
@@ -156,19 +157,19 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) 
         payloadOut.paymentSecret match {
           case Some(paymentSecret) if Features(features).hasFeature(Features.BasicMultiPartPayment) =>
             log.debug("relaying trampoline payment to non-trampoline recipient using MPP")
-            val payment = SendMultiPartPayment(paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+            val payment = SendMultiPartPayment(self, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
             spawnOutgoingPayFSM(paymentCfg, multiPart = true) ! payment
           case _ =>
             log.debug("relaying trampoline payment to non-trampoline recipient without MPP")
             val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
-            val payment = SendPayment(payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+            val payment = SendPayment(self, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
             spawnOutgoingPayFSM(paymentCfg, multiPart = false) ! payment
         }
       case None =>
         log.debug("relaying trampoline payment to next trampoline node")
         val payFSM = spawnOutgoingPayFSM(paymentCfg, multiPart = true)
         val paymentSecret = randomBytes32 // we generate a new secret to protect against probing attacks
-        val payment = SendMultiPartPayment(paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
+        val payment = SendMultiPartPayment(self, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
         payFSM ! payment
     }
     paymentId
@@ -179,12 +180,12 @@ class NodeRelayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef) 
     PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))
   }
 
-  private def rejectPayment(upstream: Upstream.TrampolineRelayed, failure: Option[FailureMessage]): Unit = {
+  private def rejectPayment(upstream: Upstream.Trampoline, failure: Option[FailureMessage]): Unit = {
     Metrics.recordPaymentRelayFailed(failure.map(_.getClass.getSimpleName).getOrElse("Unknown"), Tags.RelayType.Trampoline)
     upstream.adds.foreach(add => rejectHtlc(add.id, add.channelId, upstream.amountIn, failure))
   }
 
-  private def fulfillPayment(upstream: Upstream.TrampolineRelayed, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
+  private def fulfillPayment(upstream: Upstream.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
     val cmdFulfill = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
     PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFulfill)
   })
@@ -228,9 +229,9 @@ object NodeRelayer {
    * @param paymentId         id of the outgoing payment.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  case class PendingResult(upstream: Upstream.TrampolineRelayed, nextPayload: Onion.NodeRelayPayload, paymentId: UUID, fulfilledUpstream: Boolean)
+  case class PendingResult(upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, paymentId: UUID, fulfilledUpstream: Boolean)
 
-  private def validateRelay(nodeParams: NodeParams, upstream: Upstream.TrampolineRelayed, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
+  private def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
       Some(TrampolineFeeInsufficient)

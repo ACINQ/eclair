@@ -21,13 +21,12 @@ import java.util.concurrent.TimeUnit
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.ChannelCommandResponse
+import fr.acinq.eclair.channel.RES_SUCCESS
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams, wire}
 
 import scala.collection.immutable.Queue
-import scala.compat.Platform
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -89,7 +88,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
   }
 
   whenUnhandled {
-    case Event(ChannelCommandResponse.Ok, _) => stay
+    case Event(_: RES_SUCCESS[_], _) => stay
   }
 
   onTransition {
