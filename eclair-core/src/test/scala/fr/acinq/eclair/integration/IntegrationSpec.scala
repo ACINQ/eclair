@@ -1133,6 +1133,10 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    // we then kill the connection between C and F; otherwise F would send an error message to C when it detects the htlc
+    // timeout. When that happens C would broadcast his commit tx, and if it gets to the mempool before F's commit tx we
+    // won't be testing the right scenario.
+    disconnectCF(nodeF, htlc.channelId, sender)
     // we generate enough blocks to reach the htlc timeout
     generateBlocks(bitcoincli, (htlc.cltvExpiry.toLong - getBlockCount).toInt, Some(minerAddress))
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSING, max = 30 seconds)
@@ -1183,6 +1187,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
 
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
+    // we then kill the connection between C and F to ensure the close can only be detected on-chain
+    disconnectCF(nodeF, htlc.channelId, sender)
     // we ask F to unilaterally close the channel
     sender.send(nodes(nodeF).register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE))
     sender.expectMsg(ChannelCommandResponse.Ok)
