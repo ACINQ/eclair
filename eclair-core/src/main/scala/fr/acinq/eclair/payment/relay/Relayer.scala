@@ -141,8 +141,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
   override def mdc(currentMessage: Any): MDC = {
     val paymentHash_opt = currentMessage match {
       case RelayForward(add, _) => Some(add.paymentHash)
-      case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.c.paymentHash)
-      case addCompleted: RES_ADD_COMPLETED[_, _] @unchecked => Some(addCompleted.htlc.paymentHash)
+      case addFailed: RES_ADD_FAILED[_] => Some(addFailed.c.paymentHash)
+      case addCompleted: RES_ADD_COMPLETED[_, _] => Some(addCompleted.htlc.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
@@ -152,7 +152,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
 object Relayer extends Logging {
 
-  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) =
+  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None): Props =
     Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
 
   type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]

@@ -172,8 +172,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64overflow) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation].decodeOnly
 
-  val localColdCodec: Codec[Origin.LocalCold] = (
-    ("id" | uuid)).as[Origin.LocalCold]
+  val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 
   val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
 

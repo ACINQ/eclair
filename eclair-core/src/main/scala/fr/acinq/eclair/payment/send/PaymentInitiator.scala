@@ -129,7 +129,7 @@ class PaymentInitiator(nodeParams: NodeParams, router: ActorRef, register: Actor
           val trampolineSecret = r.trampolineSecret.getOrElse(randomBytes32)
           sender ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
           val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(SendTrampolinePaymentRequest(r.recipientAmount, r.paymentRequest, trampoline, Seq((r.trampolineFees, r.trampolineExpiryDelta)), r.fallbackFinalExpiryDelta), r.trampolineFees, r.trampolineExpiryDelta)
-          payFsm forward SendPaymentToRoute(sender, Left(r.route), Onion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, Seq(OnionTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
+          payFsm ! SendPaymentToRoute(sender, Left(r.route), Onion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, Seq(OnionTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
         case Nil =>
           sender ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
           r.paymentRequest.paymentSecret match {

@@ -143,10 +143,7 @@ object PaymentFailure {
    * @param failures a list of payment failures for a payment
    */
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
-    failures.map {
-      case LocalFailure(hops, t) => LocalFailure(hops, t) // we're interested in the error which caused the add-htlc to fail
-      case other => other
-    } match {
+    failures match {
       case previousFailures :+ LocalFailure(_, RouteNotFound) if previousFailures.nonEmpty => previousFailures
       case other => other
     }

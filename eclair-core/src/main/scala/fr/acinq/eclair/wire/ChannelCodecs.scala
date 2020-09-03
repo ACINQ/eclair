@@ -154,8 +154,7 @@ object ChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64overflow) ::
       ("reSignAsap" | bool8)).as[WaitingForRevocation]
 
-  val localColdCodec: Codec[Origin.LocalCold] = (
-    ("id" | uuid)).as[Origin.LocalCold]
+  val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 
   val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
 

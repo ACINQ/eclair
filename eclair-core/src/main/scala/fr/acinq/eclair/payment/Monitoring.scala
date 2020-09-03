@@ -87,8 +87,7 @@ object Monitoring {
     val Success = "success"
     val Failure = "failure"
 
-    object
-    FailureType {
+    object FailureType {
       val Remote = "Remote"
       val Malformed = "MalformedHtlc"
 

@@ -214,7 +214,7 @@ final case class RES_CLOSE(channelId: ByteVector32) extends CommandSuccess[CMD_C
  * Those are not response to [[Command]], but to [[fr.acinq.eclair.io.Peer.OpenChannel]]
  *
  * If actor A sends a [[fr.acinq.eclair.io.Peer.OpenChannel]] and actor B sends a [[CMD_CLOSE]], then A will receive a
- * [[ChannelOpenResponse.ChannelClosed]] whereas B will receive a [[]]
+ * [[ChannelOpenResponse.ChannelClosed]] whereas B will receive a [[RES_CLOSE]]
  */
 sealed trait ChannelOpenResponse
 object ChannelOpenResponse {

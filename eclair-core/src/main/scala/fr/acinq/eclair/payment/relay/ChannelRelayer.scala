@@ -88,7 +88,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
     val paymentHash_opt = currentMessage match {
       case relay: RelayHtlc => Some(relay.r.add.paymentHash)
       case Register.ForwardShortIdFailure(Register.ForwardShortId(_, _, c: CMD_ADD_HTLC)) => Some(c.paymentHash)
-      case addFailed: RES_ADD_FAILED[_] @unchecked => Some(addFailed.c.paymentHash)
+      case addFailed: RES_ADD_FAILED[_] => Some(addFailed.c.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)
