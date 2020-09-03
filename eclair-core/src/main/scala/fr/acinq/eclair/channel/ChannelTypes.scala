@@ -22,6 +22,7 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
@@ -145,6 +146,13 @@ object Origin {
     val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
   }
   case class TrampolineRelayedCold(override val htlcs: List[(ByteVector32, Long)]) extends TrampolineRelayed with Cold
+
+  object Hot {
+    def apply(replyTo: ActorRef, upstream: Upstream): Hot = upstream match {
+      case u: Upstream.Local => Origin.LocalHot(replyTo, u.id)
+      case u: Upstream.Trampoline => Origin.TrampolineRelayedHot(replyTo, u.adds)
+    }
+  }
 }
 
 sealed trait Command

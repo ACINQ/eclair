@@ -24,10 +24,11 @@ import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, Upstream}
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._

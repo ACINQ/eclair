@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.payment
 
+import java.util.UUID
+
 import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
@@ -23,7 +25,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Origin}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.send.PaymentInitiator.Upstream
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, UInt64, randomKey}
@@ -234,6 +235,17 @@ object OutgoingPacket {
     (firstAmount, firstExpiry, onion)
   }
 
+  // @formatter: off
+  sealed trait Upstream
+  object Upstream {
+    case class Local(id: UUID) extends Upstream
+    case class Trampoline(adds: Seq[UpdateAddHtlc]) extends Upstream {
+      val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
+      val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
+    }
+  }
+  // @formatter: on
+
   /**
    * Build the command to add an HTLC with the given final payload and using the provided hops.
    *
@@ -241,11 +253,7 @@ object OutgoingPacket {
    */
   def buildCommand(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: Onion.FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
     val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, hops, finalPayload)
-    val origin = upstream match {
-      case u: Upstream.Local => Origin.LocalHot(replyTo, u.id)
-      case u: Upstream.Trampoline => Origin.TrampolineRelayedHot(replyTo, u.adds)
-    }
-    CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, origin, commit = true) -> onion.sharedSecrets
+    CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, Origin.Hot(replyTo, upstream), commit = true) -> onion.sharedSecrets
   }
 
 }

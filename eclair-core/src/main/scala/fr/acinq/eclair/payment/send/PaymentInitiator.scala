@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
@@ -332,16 +333,5 @@ object PaymentInitiator {
 
     def paymentContext: PaymentContext = PaymentContext(id, parentId, paymentHash)
   }
-
-  // @formatter: off
-  sealed trait Upstream
-  object Upstream {
-    case class Local(id: UUID) extends Upstream
-    case class Trampoline(adds: Seq[UpdateAddHtlc]) extends Upstream {
-      val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
-      val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
-    }
-  }
-  // @formatter: on
 
 }
