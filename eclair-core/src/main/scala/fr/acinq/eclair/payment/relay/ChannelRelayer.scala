@@ -66,12 +66,12 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
       log.info(s"retrying htlc #${add.id} from channelId=${add.channelId}")
       relayer ! Relayer.RelayForward(add, previousFailures :+ addFailed)
 
-    case RES_ADD_COMPLETED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill) =>
+    case RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill) =>
       val cmd = CMD_FULFILL_HTLC(o.originHtlcId, fulfill.paymentPreimage, commit = true)
       PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, o.originChannelId, cmd)
       context.system.eventStream.publish(ChannelPaymentRelayed(o.amountIn, o.amountOut, htlc.paymentHash, o.originChannelId, htlc.channelId))
 
-    case RES_ADD_COMPLETED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail) =>
+    case RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail) =>
       Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
       val cmd = fail match {
         case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(o.originHtlcId, Left(f.fail.reason), commit = true)

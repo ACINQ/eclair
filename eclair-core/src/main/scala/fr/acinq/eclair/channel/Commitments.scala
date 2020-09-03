@@ -560,7 +560,7 @@ object Commitments {
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Either[RES_ADD_COMPLETED[Origin, HtlcResult], Relayer.RelayForward]])] = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Either[RES_ADD_SETTLED[Origin, HtlcResult], Relayer.RelayForward]])] = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
@@ -575,12 +575,12 @@ object Commitments {
           case fail: UpdateFailHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
-            Left(RES_ADD_COMPLETED(origin, add, HtlcResult.RemoteFail(fail)))
+            Left(RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFail(fail)))
           // same as above
           case fail: UpdateFailMalformedHtlc =>
             val origin = commitments.originChannels(fail.id)
             val add = commitments.remoteCommit.spec.findIncomingHtlcById(fail.id).map(_.add).get
-            Left(RES_ADD_COMPLETED(origin, add, HtlcResult.RemoteFailMalformed(fail)))
+            Left(RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFailMalformed(fail)))
         }
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment

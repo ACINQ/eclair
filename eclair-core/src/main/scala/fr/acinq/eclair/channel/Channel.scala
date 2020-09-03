@@ -667,7 +667,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Commitments.receiveFulfill(d.commitments, fulfill) match {
         case Success((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! RES_ADD_COMPLETED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
+          relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
       }
@@ -978,7 +978,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         log.info(s"updating channel_update announcement (reason=disabled)")
         val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = false)
         d.commitments.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! RES_ADD_COMPLETED(d.commitments.originChannels(add.id), add, HtlcResult.Disconnected(channelUpdate))
+          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.Disconnected(channelUpdate))
         }
         d.copy(channelUpdate = channelUpdate)
       } else {
@@ -1019,7 +1019,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Commitments.receiveFulfill(d.commitments, fulfill) match {
         case Success((commitments1, origin, htlc)) =>
           // we forward preimages as soon as possible to the upstream channel because it allows us to pull funds
-          relayer ! RES_ADD_COMPLETED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
+          relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.RemoteFulfill(fulfill))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
       }
@@ -1293,7 +1293,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(htlc.id) match {
           case Some(origin) =>
             log.info(s"fulfilling htlc #${htlc.id} paymentHash=${htlc.paymentHash} origin=$origin")
-            relayer ! RES_ADD_COMPLETED(origin, htlc, HtlcResult.OnChainFulfill(preimage))
+            relayer ! RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFulfill(preimage))
           case None =>
             // if we don't have the origin, it means that we already have forwarded the fulfill so that's not a big deal.
             // this can happen if they send a signature containing the fulfill, then fail the channel before we have time to sign it
@@ -1332,7 +1332,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
-            relayer ! RES_ADD_COMPLETED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add))))
+            relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add))))
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
@@ -1343,7 +1343,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         d.commitments.originChannels.get(add.id) match {
           case Some(origin) =>
             log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by local commit")
-            relayer ! RES_ADD_COMPLETED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
+            relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
           case None =>
             // same as for fulfilling the htlc (no big deal)
             log.info(s"cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")

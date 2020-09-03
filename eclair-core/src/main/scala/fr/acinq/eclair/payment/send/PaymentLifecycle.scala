@@ -119,13 +119,13 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(RES_ADD_FAILED(_, t: ChannelException, _), d: WaitingForComplete) =>
       handleLocalFail(d, t, isFatal = false)
 
-    case Event(RES_ADD_COMPLETED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
+    case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PartialPayment(id, d.c.finalPayload.amount, d.cmd.amount - d.c.finalPayload.amount, htlc.channelId, Some(cfg.fullRoute(d.route)))
       onSuccess(d.c.replyTo, cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil))
       myStop()
 
-    case Event(RES_ADD_COMPLETED(_, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
+    case Event(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
         case HtlcResult.RemoteFail(fail) => handleRemoteFail(d, fail)
         case HtlcResult.RemoteFailMalformed(fail) =>

@@ -411,7 +411,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     // Payment 2 should fulfill once we receive the preimage.
     val origin_2 = Origin.TrampolineRelayedCold(upstream_2.adds.map(u => (u.channelId, u.id)).toList)
-    sender.send(relayer, RES_ADD_COMPLETED(origin_2, htlc_2_2, HtlcResult.OnChainFulfill(preimage2)))
+    sender.send(relayer, RES_ADD_SETTLED(origin_2, htlc_2_2, HtlcResult.OnChainFulfill(preimage2)))
     register.expectMsgAllOf(
       Register.Forward(replyTo = postRestartHtlcCleaner, channelId_ab_1, CMD_FULFILL_HTLC(5, preimage2, commit = true)),
       Register.Forward(replyTo = postRestartHtlcCleaner, channelId_ab_2, CMD_FULFILL_HTLC(9, preimage2, commit = true))
@@ -580,15 +580,15 @@ object PostRestartHtlcCleanerSpec {
   }
 
   def buildForwardFail(add: UpdateAddHtlc, origin: Origin.Cold) =
-    RES_ADD_COMPLETED(origin, add, HtlcResult.RemoteFail(UpdateFailHtlc(add.channelId, add.id, ByteVector.empty)))
+    RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFail(UpdateFailHtlc(add.channelId, add.id, ByteVector.empty)))
 
   def buildForwardOnChainFail(add: UpdateAddHtlc, origin: Origin.Cold) =
-    RES_ADD_COMPLETED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(add.channelId, Set(add))))
+    RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(add.channelId, Set(add))))
 
   def buildForwardFulfill(add: UpdateAddHtlc, origin: Origin.Cold, preimage: ByteVector32) =
-    RES_ADD_COMPLETED(origin, add, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add.channelId, add.id, preimage)))
+    RES_ADD_SETTLED(origin, add, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add.channelId, add.id, preimage)))
 
-  case class LocalPaymentTest(parentId: UUID, childIds: Seq[UUID], fails: Seq[RES_ADD_COMPLETED[Origin.Cold, HtlcResult.Fail]], fulfills: Seq[RES_ADD_COMPLETED[Origin.Cold, HtlcResult.Fulfill]])
+  case class LocalPaymentTest(parentId: UUID, childIds: Seq[UUID], fails: Seq[RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fail]], fulfills: Seq[RES_ADD_SETTLED[Origin.Cold, HtlcResult.Fulfill]])
 
   /**
    * We setup two outgoing payments:

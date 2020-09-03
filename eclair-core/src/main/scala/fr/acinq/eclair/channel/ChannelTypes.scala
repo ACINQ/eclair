@@ -188,7 +188,7 @@ final case class RES_FAILURE[+C <: Command, +T <: Throwable](cmd: C, t: T) exten
  * special case for [[CMD_ADD_HTLC]]
  * note that for this command there is gonna be two response patterns:
  * - either [[RES_ADD_FAILED]]
- * - or [[RES_SUCCESS[CMD_ADD_HTLC]]] followed by [[RES_ADD_COMPLETED]] (possibly a while later)
+ * - or [[RES_SUCCESS[CMD_ADD_HTLC]]] followed by [[RES_ADD_SETTLED]] (possibly a while later)
  */
 final case class RES_ADD_FAILED[+T <: ChannelException](c: CMD_ADD_HTLC, t: T, channelUpdate: Option[ChannelUpdate]) extends CommandFailure[CMD_ADD_HTLC, T] { override def toString = s"cannot add htlc with origin=${c.origin} reason=${t.getMessage}" }
 sealed trait HtlcResult
@@ -202,7 +202,7 @@ object HtlcResult {
   case class OnChainFail(cause: ChannelException) extends Fail
   case class Disconnected(channelUpdate: ChannelUpdate) extends Fail { assert(!Announcements.isEnabled(channelUpdate.channelFlags), "channel update must have disabled flag set") }
 }
-final case class RES_ADD_COMPLETED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
+final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
 final case class RES_GETSTATE[+S <: State](state: S) extends CommandSuccess[CMD_GETSTATE.type]

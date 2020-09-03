@@ -211,7 +211,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // the downstream HTLC is successfully fulfilled
     val add_bc = UpdateAddHtlc(channelId_bc, 72, cmd1.amount + cmd2.amount, paymentHash, cmd1.cltvExpiry, onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId_bc, 72, paymentPreimage)
-    sender.send(relayer, RES_ADD_COMPLETED(fwd2.message.origin, add_bc, HtlcResult.RemoteFulfill(fulfill_ba)))
+    sender.send(relayer, RES_ADD_SETTLED(fwd2.message.origin, add_bc, HtlcResult.RemoteFulfill(fulfill_ba)))
 
     // it should trigger a fulfill on the upstream HTLCs
     register.expectMsg(Register.Forward(nodeRelayer, channelId_ab, CMD_FULFILL_HTLC(561, paymentPreimage, commit = true)))
@@ -478,13 +478,13 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     assert(ChannelRelayer.translateError(ChannelUnavailable(channelId_bc), Some(channelUpdate_bc_disabled)) === ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled))
 
     val downstreamAdd = UpdateAddHtlc(channelId_bc, 7, 1_000_000 msat, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
-    sender.send(relayer, RES_ADD_COMPLETED(origin, downstreamAdd, HtlcResult.RemoteFail(UpdateFailHtlc(channelId_bc, 7, ByteVector.fill(12)(3)))))
+    sender.send(relayer, RES_ADD_SETTLED(origin, downstreamAdd, HtlcResult.RemoteFail(UpdateFailHtlc(channelId_bc, 7, ByteVector.fill(12)(3)))))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Left(ByteVector.fill(12)(3)))
 
-    sender.send(relayer, RES_ADD_COMPLETED(origin, downstreamAdd, HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(channelId_bc, 7, ByteVector32.One, FailureMessageCodecs.BADONION))))
+    sender.send(relayer, RES_ADD_SETTLED(origin, downstreamAdd, HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(channelId_bc, 7, ByteVector32.One, FailureMessageCodecs.BADONION))))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message.onionHash === ByteVector32.One)
 
-    sender.send(relayer, RES_ADD_COMPLETED(origin, downstreamAdd, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, downstreamAdd))))
+    sender.send(relayer, RES_ADD_SETTLED(origin, downstreamAdd, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, downstreamAdd))))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
     register.expectNoMsg(50 millis)
@@ -501,7 +501,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = add_bc.id, paymentPreimage = ByteVector32.Zeroes)
     val origin = Origin.ChannelRelayedHot(channelRelayer, add_ab, 10_000_000 msat)
-    for (fulfill <- Seq(RES_ADD_COMPLETED(origin, add_bc, HtlcResult.RemoteFulfill(fulfill_ba)), RES_ADD_COMPLETED(origin, add_bc, HtlcResult.OnChainFulfill(ByteVector32.Zeroes)))) {
+    for (fulfill <- Seq(RES_ADD_SETTLED(origin, add_bc, HtlcResult.RemoteFulfill(fulfill_ba)), RES_ADD_SETTLED(origin, add_bc, HtlcResult.OnChainFulfill(ByteVector32.Zeroes)))) {
       sender.send(relayer, fulfill)
       val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId === origin.originChannelId)
@@ -543,10 +543,10 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // We simulate a fake htlc fulfill for the downstream channel.
     val add_bc = UpdateAddHtlc(channelId_bc, 72, 1000 msat, paymentHash, CltvExpiry(1), null)
-    val forwardFulfill: RES_ADD_COMPLETED[Origin, HtlcResult.Fulfill] = if (onChain) {
-      RES_ADD_COMPLETED(cmd1.origin, add_bc, HtlcResult.OnChainFulfill(preimage))
+    val forwardFulfill: RES_ADD_SETTLED[Origin, HtlcResult.Fulfill] = if (onChain) {
+      RES_ADD_SETTLED(cmd1.origin, add_bc, HtlcResult.OnChainFulfill(preimage))
     } else {
-      RES_ADD_COMPLETED(cmd1.origin, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, preimage)))
+      RES_ADD_SETTLED(cmd1.origin, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, preimage)))
     }
     sender.send(relayer, forwardFulfill)
 
@@ -574,7 +574,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = add_bc.id, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
     val origin = Origin.ChannelRelayedHot(channelRelayer, add_ab, 10_000_000 msat)
-    for (fail <- Seq(RES_ADD_COMPLETED(origin, add_bc, HtlcResult.RemoteFail(fail_ba)), RES_ADD_COMPLETED(origin, add_bc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add_bc))))) {
+    for (fail <- Seq(RES_ADD_SETTLED(origin, add_bc, HtlcResult.RemoteFail(fail_ba)), RES_ADD_SETTLED(origin, add_bc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add_bc))))) {
       sender.send(relayer, fail)
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === origin.originChannelId)
@@ -597,13 +597,13 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val origin = Origin.TrampolineRelayedHot(payFSM.ref, upstream_add_1 :: upstream_add_2 :: Nil)
 
     // a remote failure should be forwarded to the FSM responsible for the payment to trigger the retry mechanism.
-    val remoteFailure = RES_ADD_COMPLETED(origin, add_bc, HtlcResult.RemoteFail(fail_ba))
+    val remoteFailure = RES_ADD_SETTLED(origin, add_bc, HtlcResult.RemoteFail(fail_ba))
     sender.send(relayer, remoteFailure)
     payFSM.expectMsg(remoteFailure)
     payFSM.expectNoMsg(100 millis)
 
     // same for an on-chain downstream failure.
-    val onChainFailure = RES_ADD_COMPLETED(origin, add_bc, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc))))
+    val onChainFailure = RES_ADD_SETTLED(origin, add_bc, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc))))
     sender.send(relayer, onChainFailure)
     payFSM.expectMsg(onChainFailure)
     payFSM.expectNoMsg(100 millis)

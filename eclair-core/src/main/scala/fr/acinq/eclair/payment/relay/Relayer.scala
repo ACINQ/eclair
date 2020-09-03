@@ -128,7 +128,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
       }
 
-    case r: RES_ADD_COMPLETED[_, _] => r.origin match {
+    case r: RES_ADD_SETTLED[_, _] => r.origin match {
       case _: Origin.Cold => postRestartCleaner ! r
       case o: Origin.Hot => o.replyTo ! r
     }
@@ -142,7 +142,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
     val paymentHash_opt = currentMessage match {
       case RelayForward(add, _) => Some(add.paymentHash)
       case addFailed: RES_ADD_FAILED[_] => Some(addFailed.c.paymentHash)
-      case addCompleted: RES_ADD_COMPLETED[_, _] => Some(addCompleted.htlc.paymentHash)
+      case addCompleted: RES_ADD_SETTLED[_, _] => Some(addCompleted.htlc.paymentHash)
       case _ => None
     }
     Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT), paymentHash_opt = paymentHash_opt)

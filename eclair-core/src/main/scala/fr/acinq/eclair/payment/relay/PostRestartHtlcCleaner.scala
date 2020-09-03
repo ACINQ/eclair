@@ -106,11 +106,11 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
     case _: ChannelStateChanged => // ignore other channel state changes
 
-    case RES_ADD_COMPLETED(o: Origin.Cold, htlc, fulfill: HtlcResult.Fulfill) =>
+    case RES_ADD_SETTLED(o: Origin.Cold, htlc, fulfill: HtlcResult.Fulfill) =>
       log.info("htlc fulfilled downstream: ({},{})", htlc.channelId, htlc.id)
       handleDownstreamFulfill(brokenHtlcs, o, htlc, fulfill.paymentPreimage)
 
-    case RES_ADD_COMPLETED(o: Origin.Cold, htlc, fail: HtlcResult.Fail) =>
+    case RES_ADD_SETTLED(o: Origin.Cold, htlc, fail: HtlcResult.Fail) =>
       log.info("htlc failed downstream: ({},{},{})", htlc.channelId, htlc.id, fail.getClass.getSimpleName)
       handleDownstreamFailure(brokenHtlcs, o, htlc)
 
