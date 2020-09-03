@@ -52,7 +52,7 @@ import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PublicCha
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, EclairImpl, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestKitBaseClass, channel, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, ShortChannelId, TestKitBaseClass, channel, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, JValue}
 import org.json4s.{DefaultFormats, Formats}
@@ -308,9 +308,8 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     generateBlocks(bitcoincli, 6)
 
     // after 8 blocks the fundee is still waiting for more confirmations
-    //fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-    new EclairImpl(fundee).channelInfo(Left(channelId))(20 seconds).pipeTo(sender.ref)
-    assert(sender.expectMsgType[RES_GETINFO].state == WAIT_FOR_FUNDING_CONFIRMED)
+    fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+    assert(sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_CONFIRMED)
 
     // after 8 blocks the funder is still waiting for funding_locked from the fundee
     funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)

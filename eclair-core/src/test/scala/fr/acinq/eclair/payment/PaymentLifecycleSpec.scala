@@ -308,7 +308,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFail(HtlcsTimedoutDownstream(randomBytes32, Set.empty))))
 
     // this error is fatal
-    routerForwarder.expectNoMessage()
+    routerForwarder.expectNoMsg(100 millis)
     sender.expectMsgType[PaymentFailed]
   }
 

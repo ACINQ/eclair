@@ -466,9 +466,9 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     val paymentHash = randomBytes32
-    val upstreamAdd = UpdateAddHtlc(channelId_ab, 42, 1_100_000 msat, paymentHash, CltvExpiry(288), TestConstants.emptyOnionPacket)
-    val origin = Origin.ChannelRelayedHot(channelRelayer, upstreamAdd, 1_000_000.msat)
-    val cmdAdd = CMD_ADD_HTLC(channelRelayer, 1_000_000.msat, paymentHash, CltvExpiry(144), TestConstants.emptyOnionPacket, origin)
+    val upstreamAdd = UpdateAddHtlc(channelId_ab, 42,1100000 msat, paymentHash, CltvExpiry(288), TestConstants.emptyOnionPacket)
+    val origin = Origin.ChannelRelayedHot(channelRelayer, upstreamAdd,1000000.msat)
+    val cmdAdd = CMD_ADD_HTLC(channelRelayer,1000000.msat, paymentHash, CltvExpiry(144), TestConstants.emptyOnionPacket, origin)
 
     assert(ChannelRelayer.translateLocalError(ExpiryTooSmall(channelId_bc, CltvExpiry(100), CltvExpiry(0), 0), Some(channelUpdate_bc)) === ExpiryTooSoon(channelUpdate_bc))
     assert(ChannelRelayer.translateLocalError(ExpiryTooBig(channelId_bc, CltvExpiry(100), CltvExpiry(200), 0), Some(channelUpdate_bc)) === ExpiryTooFar)
@@ -477,7 +477,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = 2)
     assert(ChannelRelayer.translateLocalError(ChannelUnavailable(channelId_bc), Some(channelUpdate_bc_disabled)) === ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled))
 
-    val downstreamAdd = UpdateAddHtlc(channelId_bc, 7, 1_000_000 msat, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
+    val downstreamAdd = UpdateAddHtlc(channelId_bc, 7,1000000 msat, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
     sender.send(relayer, RES_ADD_SETTLED(origin, downstreamAdd, HtlcResult.RemoteFail(UpdateFailHtlc(channelId_bc, 7, ByteVector.fill(12)(3)))))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Left(ByteVector.fill(12)(3)))
 
@@ -497,10 +497,10 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     // we build a fake htlc for the downstream channel
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 12, amountMsat = 11_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 12, amountMsat = 11000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fulfill_ba = UpdateFulfillHtlc(channelId = channelId_bc, id = add_bc.id, paymentPreimage = ByteVector32.Zeroes)
-    val origin = Origin.ChannelRelayedHot(channelRelayer, add_ab, 10_000_000 msat)
+    val origin = Origin.ChannelRelayedHot(channelRelayer, add_ab, 10000000 msat)
     for (fulfill <- Seq(RES_ADD_SETTLED(origin, add_bc, HtlcResult.RemoteFulfill(fulfill_ba)), RES_ADD_SETTLED(origin, add_bc, HtlcResult.OnChainFulfill(ByteVector32.Zeroes)))) {
       sender.send(relayer, fulfill)
       val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
@@ -570,10 +570,10 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     // we build a fake htlc for the downstream channel
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 11_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 11000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = add_bc.id, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
-    val origin = Origin.ChannelRelayedHot(channelRelayer, add_ab, 10_000_000 msat)
+    val origin = Origin.ChannelRelayedHot(channelRelayer, add_ab, 10000000 msat)
     for (fail <- Seq(RES_ADD_SETTLED(origin, add_bc, HtlcResult.RemoteFail(fail_ba)), RES_ADD_SETTLED(origin, add_bc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId_bc, add_bc))))) {
       sender.send(relayer, fail)
       val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
@@ -588,11 +588,11 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val payFSM = TestProbe()
 
     // upstream htlcs
-    val upstream_add_1 = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 4_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val upstream_add_2 = UpdateAddHtlc(channelId = randomBytes32, id = 7, amountMsat = 5_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val upstream_add_1 = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat =4000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val upstream_add_2 = UpdateAddHtlc(channelId = randomBytes32, id = 7, amountMsat =5000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
 
     // we build a fake htlc for the downstream channel
-    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10_000_000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
+    val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 72, amountMsat = 10000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), onionRoutingPacket = TestConstants.emptyOnionPacket)
     val fail_ba = UpdateFailHtlc(channelId = channelId_bc, id = 72, reason = Sphinx.FailurePacket.create(ByteVector32(ByteVector.fill(32)(1)), TemporaryChannelFailure(channelUpdate_cd)))
     val origin = Origin.TrampolineRelayedHot(payFSM.ref, upstream_add_1 :: upstream_add_2 :: Nil)
 
