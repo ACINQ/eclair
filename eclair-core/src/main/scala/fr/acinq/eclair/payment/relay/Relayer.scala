@@ -17,7 +17,8 @@
 package fr.acinq.eclair.payment.relay
 
 import akka.Done
-import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
+import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
+import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, typed}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -59,7 +60,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
   private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, register, initialized), "post-restart-htlc-cleaner")
   private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register), "channel-relayer")
-  private val nodeRelayer = context.actorOf(NodeRelayer.props(nodeParams, router, register), "node-relayer")
+  private val nodeRelayer = context.spawn(NodeRelayer(nodeParams, router, register), name = "node-relayer")
 
   override def receive: Receive = main(Map.empty, mutable.MultiDict.empty[PublicKey, ShortChannelId])
 
@@ -114,7 +115,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
             PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
           } else {
-            nodeRelayer forward r
+            nodeRelayer ! NodeRelayer.WrappedNodeRelayPacket(r)
           }
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
@@ -179,7 +180,7 @@ object Relayer extends Logging {
 
   // internal classes, used for testing
   private[payment] case class GetChildActors(replyTo: ActorRef)
-  private[payment] case class ChildActors(postRestartCleaner: ActorRef, channelRelayer: ActorRef, nodeRelayer: ActorRef)
+  private[payment] case class ChildActors(postRestartCleaner: ActorRef, channelRelayer: ActorRef, nodeRelayer: typed.ActorRef[NodeRelayer.Command])
   // @formatter:on
 
 }

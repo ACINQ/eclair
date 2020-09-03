@@ -148,7 +148,7 @@ object MultiPartPaymentFSM {
   /** We aborted the payment because of an inconsistency in the payment set or because we didn't receive the total amount in reasonable time. */
   case class MultiPartPaymentFailed(paymentHash: ByteVector32, failure: FailureMessage, parts: Queue[PaymentPart])
   /** We received an extraneous payment after we reached a final state (succeeded or failed). */
-  case class ExtraPaymentReceived(paymentHash: ByteVector32, payment: PaymentPart, failure: Option[FailureMessage])
+  case class ExtraPaymentReceived[T <: PaymentPart](paymentHash: ByteVector32, payment: T, failure: Option[FailureMessage])
   // @formatter:on
 
   // @formatter:off
