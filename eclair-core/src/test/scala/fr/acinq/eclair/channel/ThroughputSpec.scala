@@ -27,7 +27,6 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
 import org.scalatest.funsuite.AnyFunSuite
@@ -52,7 +51,7 @@ class ThroughputSpec extends AnyFunSuite {
         case ('add, tgt: ActorRef) =>
           val r = randomBytes32
           val h = Crypto.sha256(r)
-          tgt ! CMD_ADD_HTLC(self, 1 msat, h, CltvExpiry(1), TestConstants.emptyOnionPacket, Origin.LocalHot(Upstream.Local(UUID.randomUUID()), self))
+          tgt ! CMD_ADD_HTLC(self, 1 msat, h, CltvExpiry(1), TestConstants.emptyOnionPacket, Origin.LocalHot(self, UUID.randomUUID()))
           context.become(run(h2r + (h -> r)))
 
         case ('sig, tgt: ActorRef) => tgt ! CMD_SIGN

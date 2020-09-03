@@ -22,14 +22,13 @@ import akka.actor.ActorRef
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair.Features._
-import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.relay.NodeRelayer
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, Upstream}
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire._
@@ -102,7 +101,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // Receive a complete upstream multi-part payment, which we relay out.
     incomingMultiPart.foreach(incoming => relayer.send(nodeRelayer, incoming))
     val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayedHot(incomingMultiPart.map(_.add)))
+    validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
 
@@ -296,7 +295,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     relayer.send(nodeRelayer, incomingMultiPart.last)
 
     val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayedHot(incomingMultiPart.map(_.add)))
+    validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
 
@@ -324,7 +323,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     relayer.send(nodeRelayer, incomingSinglePart)
 
     val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayedHot(incomingSinglePart.add :: Nil))
+    validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingSinglePart.add :: Nil))
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
 
@@ -352,7 +351,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     ))))
 
     val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayedHot(incomingMultiPart.map(_.add)))
+    validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendMultiPartPayment]
     assert(outgoingPayment.paymentSecret === pr.paymentSecret.get) // we should use the provided secret
     assert(outgoingPayment.totalAmount === outgoingAmount)
@@ -384,7 +383,7 @@ class NodeRelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     ))))
 
     val outgoingCfg = outgoingPayFSM.expectMsgType[SendPaymentConfig]
-    validateOutgoingCfg(outgoingCfg, Upstream.TrampolineRelayedHot(incomingMultiPart.map(_.add)))
+    validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = outgoingPayFSM.expectMsgType[SendPayment]
     assert(outgoingPayment.finalPayload.amount === outgoingAmount)
     assert(outgoingPayment.finalPayload.expiry === outgoingExpiry)

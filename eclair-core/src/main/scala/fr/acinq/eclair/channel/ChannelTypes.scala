@@ -22,7 +22,6 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
@@ -110,62 +109,42 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
 /**
  * Origin of a payment, answering both questions:
  * - what actor in the app sent that htlc? (Origin.replyTo)
- * - what are the parent(s) of this payment in the htlc chain? (Upstream)
+ * - what are the upstream parent(s) of this payment in the htlc chain?
  */
-sealed trait Origin[+U <: Origin.Upstream] { def upstream: U }
+sealed trait Origin
 object Origin {
-  /** We have full details and the origin actor is known. */
-  sealed trait Hot[+U <: Upstream] extends Origin[U]
-  /** We have restarted after the payment was sent, we have limited info and the origin actor doesn't exist anymore */
-  sealed trait Cold[+U <: Upstream] extends Origin[U]
+  /** We haven't restarted since we sent the payment downstream: the origin actor is known. */
+  sealed trait Hot extends Origin { def replyTo: ActorRef }
+  /** We have restarted after the payment was sent, we have limited info and the origin actor doesn't exist anymore. */
+  sealed trait Cold extends Origin
 
   /** Our node is the origin of the payment. */
-  sealed trait Local extends Origin[Upstream.Local]
-  case class LocalHot(upstream: Upstream.Local, replyTo: ActorRef) extends Local with Hot[Upstream.Local]
-  case class LocalCold(upstream: Upstream.Local) extends Local with Cold[Upstream.Local]
+  sealed trait Local extends Origin { def id: UUID }
+  case class LocalHot(replyTo: ActorRef, id: UUID) extends Local with Hot
+  case class LocalCold(id: UUID) extends Local with Cold
 
   /** Our node forwarded a single incoming HTLC to an outgoing channel. */
-  sealed trait ChannelRelayed extends Origin[Upstream.ChannelRelayed]
-  case class ChannelRelayedHot(upstream: Upstream.ChannelRelayedHot, replyTo: ActorRef) extends ChannelRelayed with Hot[Upstream.ChannelRelayed]
-  case class ChannelRelayedCold(upstream: Upstream.ChannelRelayedCold) extends ChannelRelayed with Cold[Upstream.ChannelRelayed]
+  sealed trait ChannelRelayed extends Origin {
+    def originChannelId: ByteVector32
+    def originHtlcId: Long
+    def amountIn: MilliSatoshi
+    def amountOut: MilliSatoshi
+  }
+  case class ChannelRelayedHot(replyTo: ActorRef, add: UpdateAddHtlc, override val amountOut: MilliSatoshi) extends ChannelRelayed with Hot {
+    override def originChannelId: ByteVector32 = add.channelId
+    override def originHtlcId: Long = add.id
+    override def amountIn: MilliSatoshi = add.amountMsat
+  }
+  case class ChannelRelayedCold(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends ChannelRelayed with Cold
 
   /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs).*/
-  sealed trait TrampolineRelayed extends Origin[Upstream.TrampolineRelayed]
-  case class TrampolineRelayedHot(upstream: Upstream.TrampolineRelayedHot, replyTo: ActorRef) extends TrampolineRelayed with Hot[Upstream.TrampolineRelayed]
-  case class TrampolineRelayedCold(upstream: Upstream.TrampolineRelayedCold) extends TrampolineRelayed with Cold[Upstream.TrampolineRelayed]
-
-  /** Parents of a payment in the htlc chain */
-  sealed trait Upstream
-  object Upstream {
-    /** there is a payment lifecycle involved for local and trampoline payments */
-    sealed trait SentByPaymentLifecycle extends Upstream
-
-    /** Our node is the origin of the payment. */
-    final case class Local(id: UUID) extends Upstream with SentByPaymentLifecycle // we don't persist reference to local actors
-
-    /** Our node forwarded a single incoming HTLC to an outgoing channel. */
-    sealed trait ChannelRelayed extends Upstream {
-      def originChannelId: ByteVector32
-      def originHtlcId: Long
-      def amountIn: MilliSatoshi
-      def amountOut: MilliSatoshi
-    }
-    final case class ChannelRelayedHot(add: UpdateAddHtlc, override val amountOut: MilliSatoshi) extends ChannelRelayed {
-      override def originChannelId: ByteVector32 = add.channelId
-      override def originHtlcId: Long = add.id
-      override def amountIn: MilliSatoshi = add.amountMsat
-    }
-    final case class ChannelRelayedCold(originChannelId: ByteVector32, originHtlcId: Long, amountIn: MilliSatoshi, amountOut: MilliSatoshi) extends ChannelRelayed
-
-    /** Our node forwarded an incoming HTLC set to a remote outgoing node (potentially producing multiple downstream HTLCs). */
-    sealed trait TrampolineRelayed extends Upstream { def htlcs: List[(ByteVector32, Long)] }
-    case class TrampolineRelayedHot(adds: Seq[UpdateAddHtlc]) extends TrampolineRelayed with SentByPaymentLifecycle {
-      override def htlcs: List[(ByteVector32, Long)] = adds.map(u => (u.channelId, u.id)).toList
-      val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
-      val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
-    }
-    case class TrampolineRelayedCold(override val htlcs: List[(ByteVector32, Long)]) extends TrampolineRelayed
+  sealed trait TrampolineRelayed extends Origin { def htlcs: List[(ByteVector32, Long)] }
+  case class TrampolineRelayedHot(replyTo: ActorRef, adds: Seq[UpdateAddHtlc]) extends TrampolineRelayed with Hot {
+    override def htlcs: List[(ByteVector32, Long)] = adds.map(u => (u.channelId, u.id)).toList
+    val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
+    val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
   }
+  case class TrampolineRelayedCold(override val htlcs: List[(ByteVector32, Long)]) extends TrampolineRelayed with Cold
 }
 
 sealed trait Command
@@ -174,7 +153,7 @@ sealed trait HasHtlcId { this: Command => def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false) extends Command with HasHtlcId
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false) extends Command with HasHtlcId
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, origin: Origin.Hot[Upstream], commit: Boolean = false, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty) extends Command with HasReplyTo
+final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, origin: Origin.Hot, commit: Boolean = false, previousFailures: Seq[RES_ADD_FAILED[Throwable]] = Seq.empty) extends Command with HasReplyTo
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
 sealed trait CloseCommand extends Command
@@ -223,7 +202,7 @@ object HtlcResult {
   case class OnChainFail(cause: ChannelException) extends Fail
   case class Disconnected(channelUpdate: ChannelUpdate) extends Fail { assert(!Announcements.isEnabled(channelUpdate.channelFlags), "channel update must have disabled flag set") }
 }
-final case class RES_ADD_COMPLETED[+O <: Origin[_ <: Upstream], +R <: HtlcResult](to: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
+final case class RES_ADD_COMPLETED[+O <: Origin, +R <: HtlcResult](to: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
 final case class RES_GETSTATE[+S <: State](state: S) extends CommandSuccess[CMD_GETSTATE.type]

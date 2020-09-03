@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
-import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.transactions.DirectedHtlc._
@@ -61,7 +60,7 @@ case class Commitments(channelVersion: ChannelVersion,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       originChannels: Map[Long, Origin[Upstream]], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
+                       originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
@@ -321,7 +320,7 @@ object Commitments {
       case None => Failure(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 
-  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Try[(Commitments, Origin[Upstream], UpdateAddHtlc)] =
+  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(commitments, fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Try((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
       case Some(_) => Failure(InvalidHtlcPreimage(commitments.channelId, fulfill.id))
@@ -367,13 +366,13 @@ object Commitments {
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[(Commitments, Origin[Upstream], UpdateAddHtlc)] =
+  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
     getOutgoingHtlcCrossSigned(commitments, fail.id) match {
       case Some(htlc) => Try((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
       case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
     }
 
-  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Try[(Commitments, Origin[Upstream], UpdateAddHtlc)] = {
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] = {
     // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
     if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
       Failure(InvalidFailureCode(commitments.channelId))
@@ -561,7 +560,7 @@ object Commitments {
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Either[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult], Relayer.RelayForward]])] = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Try[(Commitments, Seq[Either[RES_ADD_COMPLETED[Origin, HtlcResult], Relayer.RelayForward]])] = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {

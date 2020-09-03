@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.channel.Channel
-import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
@@ -322,7 +321,7 @@ object PaymentInitiator {
                                paymentHash: ByteVector32,
                                recipientAmount: MilliSatoshi,
                                recipientNodeId: PublicKey,
-                               upstream: Upstream.SentByPaymentLifecycle,
+                               upstream: Upstream,
                                paymentRequest: Option[PaymentRequest],
                                storeInDb: Boolean, // e.g. for trampoline we don't want to store in the DB when we're relaying payments
                                publishEvent: Boolean,
@@ -333,5 +332,16 @@ object PaymentInitiator {
 
     def paymentContext: PaymentContext = PaymentContext(id, parentId, paymentHash)
   }
+
+  // @formatter: off
+  sealed trait Upstream
+  object Upstream {
+    case class Local(id: UUID) extends Upstream
+    case class Trampoline(adds: Seq[UpdateAddHtlc]) extends Upstream {
+      val amountIn: MilliSatoshi = adds.map(_.amountMsat).sum
+      val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
+    }
+  }
+  // @formatter: on
 
 }

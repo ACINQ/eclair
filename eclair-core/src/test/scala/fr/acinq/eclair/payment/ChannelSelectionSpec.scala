@@ -19,7 +19,6 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
-import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, Origin}
 import fr.acinq.eclair.payment.PaymentPacketSpec.makeCommitments
 import fr.acinq.eclair.payment.relay.ChannelRelayer.{RelayFailure, RelaySuccess, relayOrFail, selectPreferredChannel}
@@ -49,7 +48,7 @@ class ChannelSelectionSpec extends AnyFunSuite {
       payload = onionPayload,
       nextPacket = TestConstants.emptyOnionPacket // just a placeholder
     )
-    val origin = Origin.ChannelRelayedHot(Upstream.ChannelRelayedHot(relayPayload.add, onionPayload.amountToForward), ActorRef.noSender)
+    val origin = Origin.ChannelRelayedHot(ActorRef.noSender, relayPayload.add, onionPayload.amountToForward)
 
     val channelUpdate = dummyUpdate(ShortChannelId(12345), CltvExpiryDelta(10), 100 msat, 1000 msat, 100, 10_000_000 msat, true)
 
@@ -71,7 +70,7 @@ class ChannelSelectionSpec extends AnyFunSuite {
     assert(relayOrFail(ActorRef.noSender, relayPayload_insufficientfee, Some(channelUpdate)) === RelayFailure(CMD_FAIL_HTLC(relayPayload.add.id, Right(FeeInsufficient(relayPayload_insufficientfee.add.amountMsat, channelUpdate)), commit = true)))
     // note that a generous fee is ok!
     val relayPayload_highfee = relayPayload.copy(payload = onionPayload.copy(amountToForward = 900_000 msat))
-    val originHighFee = origin.copy(upstream = origin.upstream.copy(amountOut = relayPayload_highfee.payload.amountToForward))
+    val originHighFee = origin.copy(amountOut = relayPayload_highfee.payload.amountToForward)
     assert(relayOrFail(ActorRef.noSender, relayPayload_highfee, Some(channelUpdate)) === RelaySuccess(ShortChannelId(12345), CMD_ADD_HTLC(ActorRef.noSender, relayPayload_highfee.payload.amountToForward, relayPayload_highfee.add.paymentHash, relayPayload_highfee.payload.outgoingCltv, relayPayload_highfee.nextPacket, originHighFee, commit = true)))
   }
 

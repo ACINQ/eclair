@@ -28,7 +28,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Channel._
-import fr.acinq.eclair.channel.Origin.Upstream
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, _}
 import fr.acinq.eclair.crypto.Sphinx
@@ -107,7 +106,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val h = randomBytes32
     val originHtlc = UpdateAddHtlc(channelId = randomBytes32, id = 5656, amountMsat = 50000000 msat, cltvExpiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), paymentHash = h, onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val origin = Origin.ChannelRelayedHot(Upstream.ChannelRelayedHot(originHtlc, originHtlc.amountMsat), sender.ref)
+    val origin = Origin.ChannelRelayedHot(sender.ref, originHtlc, originHtlc.amountMsat)
     val cmd = CMD_ADD_HTLC(sender.ref, originHtlc.amountMsat - 10000.msat, h, originHtlc.cltvExpiry - CltvExpiryDelta(7), TestConstants.emptyOnionPacket, origin)
     sender.send(alice, cmd)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
@@ -128,7 +127,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val h = randomBytes32
     val originHtlc1 = UpdateAddHtlc(randomBytes32, 47, 30000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket)
     val originHtlc2 = UpdateAddHtlc(randomBytes32, 32, 20000000 msat, h, CltvExpiryDelta(160).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket)
-    val origin = Origin.TrampolineRelayedHot(Upstream.TrampolineRelayedHot(originHtlc1 :: originHtlc2 :: Nil), sender.ref)
+    val origin = Origin.TrampolineRelayedHot(sender.ref, originHtlc1 :: originHtlc2 :: Nil)
     val cmd = CMD_ADD_HTLC(sender.ref, originHtlc1.amountMsat + originHtlc2.amountMsat - 10000.msat, h, originHtlc2.cltvExpiry - CltvExpiryDelta(7), TestConstants.emptyOnionPacket, origin)
     sender.send(alice, cmd)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
@@ -1134,7 +1133,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.RemoteFail]]
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[Origin, HtlcResult.RemoteFail]]
     assert(forward.result.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1163,7 +1162,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     // alice will forward the fail upstream
-    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.RemoteFailMalformed]]
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[Origin, HtlcResult.RemoteFailMalformed]]
     assert(forward.result.fail === fail)
     assert(forward.htlc === htlc)
   }
@@ -1311,7 +1310,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData == initialState.copy(
       commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))))
     // alice immediately propagates the fulfill upstream
-    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.RemoteFulfill]]
+    val forward = relayerA.expectMsgType[RES_ADD_COMPLETED[Origin, HtlcResult.RemoteFulfill]]
     assert(forward.result.fulfill === fulfill)
     assert(forward.htlc === htlc)
   }
@@ -2700,8 +2699,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     Thread.sleep(1100)
     sender.send(alice, INPUT_DISCONNECTED)
-    assert(relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.Disconnected]].htlc.paymentHash === htlc1.paymentHash)
-    assert(relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.Disconnected]].htlc.paymentHash === htlc2.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_COMPLETED[Origin, HtlcResult.Disconnected]].htlc.paymentHash === htlc1.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_COMPLETED[Origin, HtlcResult.Disconnected]].htlc.paymentHash === htlc2.paymentHash)
     assert(!Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags))
     awaitCond(alice.stateName == OFFLINE)
   }
@@ -2744,8 +2743,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     Thread.sleep(1100)
     sender.send(alice, INPUT_DISCONNECTED)
-    assert(relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.Disconnected]].htlc.paymentHash === htlc1.paymentHash)
-    assert(relayerA.expectMsgType[RES_ADD_COMPLETED[Origin[Upstream], HtlcResult.Disconnected]].htlc.paymentHash === htlc2.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_COMPLETED[Origin, HtlcResult.Disconnected]].htlc.paymentHash === htlc1.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_COMPLETED[Origin, HtlcResult.Disconnected]].htlc.paymentHash === htlc2.paymentHash)
     val update2a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1a.channelUpdate.timestamp < update2a.channelUpdate.timestamp)
     assert(!Announcements.isEnabled(update2a.channelUpdate.channelFlags))
