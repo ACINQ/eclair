@@ -128,13 +128,9 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
       }
 
-    case r: RES_ADD_COMPLETED[_, _] => r.to match {
-      case _: Origin.LocalCold => postRestartCleaner ! r
-      case o: Origin.LocalHot => o.replyTo ! r
-      case _: Origin.ChannelRelayedCold => postRestartCleaner ! r
-      case _: Origin.ChannelRelayedHot => channelRelayer ! r
-      case _: Origin.TrampolineRelayedCold => postRestartCleaner ! r
-      case o: Origin.TrampolineRelayedHot => o.replyTo ! r
+    case r: RES_ADD_COMPLETED[_, _] => r.origin match {
+      case _: Origin.Cold => postRestartCleaner ! r
+      case o: Origin.Hot => o.replyTo ! r
     }
 
     case _: RES_SUCCESS[_] => () // ignoring responses from channels
