@@ -116,7 +116,6 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           } else {
             nodeRelayer forward r
           }
-
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.{Actor, ActorContext, ActorRef, DiagnosticActorLogging, Props}
+import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
@@ -46,7 +46,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
 
   override def receive: Receive = {
     case RelayHtlc(r, previousFailures, channelUpdates, node2channels) =>
-      handleRelay(self, r, channelUpdates, node2channels, previousFailures, nodeParams.chainHash) match {
+      handleRelay(self, r, channelUpdates, node2channels, previousFailures) match {
         case RelayFailure(cmdFail) =>
           Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
           log.info(s"rejecting htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
@@ -114,7 +114,7 @@ object ChannelRelayer {
    *         - a CMD_FAIL_HTLC to be sent back upstream
    *         - a CMD_ADD_HTLC to propagate downstream
    */
-  def handleRelay(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, previousFailures: Seq[RES_ADD_FAILED[ChannelException]], chainHash: ByteVector32)(implicit log: LoggingAdapter): RelayResult = {
+  def handleRelay(replyTo: ActorRef, relayPacket: IncomingPacket.ChannelRelayPacket, channelUpdates: ChannelUpdates, node2channels: NodeChannels, previousFailures: Seq[RES_ADD_FAILED[ChannelException]])(implicit log: LoggingAdapter): RelayResult = {
     import relayPacket._
     log.info(s"relaying htlc #${add.id} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.channelId, payload.outgoingChannelId, previousFailures.size)
     val alreadyTried = previousFailures.flatMap(_.channelUpdate).map(_.shortChannelId)
