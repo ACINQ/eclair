@@ -382,7 +382,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     // we then forge a new channel_update for B-C...
     val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDelta + 1, nodes("C").nodeParams.htlcMinimum, nodes("B").nodeParams.feeBase, nodes("B").nodeParams.feeProportionalMillionth, 500000000 msat)
     // ...and notify B's relayer
-    sender.send(nodes("B").relayer, LocalChannelUpdate(system.deadLetters, commitmentBC.channelId, shortIdBC, commitmentBC.remoteParams.nodeId, None, channelUpdateBC, commitmentBC))
+    nodes("B").system.eventStream.publish(LocalChannelUpdate(system.deadLetters, commitmentBC.channelId, shortIdBC, commitmentBC.remoteParams.nodeId, None, channelUpdateBC, commitmentBC))
     // we retrieve a payment hash from D
     val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))

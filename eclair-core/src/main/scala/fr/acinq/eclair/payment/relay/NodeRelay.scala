@@ -27,12 +27,13 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.relay.NodeRelay.FsmFactory
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentConfig, Upstream}
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
 import fr.acinq.eclair.router.Router.RouteParams
