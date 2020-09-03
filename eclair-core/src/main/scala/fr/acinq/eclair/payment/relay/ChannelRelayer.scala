@@ -73,12 +73,7 @@ class ChannelRelayer(nodeParams: NodeParams, relayer: ActorRef, register: ActorR
 
     case RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail) =>
       Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-      val cmd = fail match {
-        case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(o.originHtlcId, Left(f.fail.reason), commit = true)
-        case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_MALFORMED_HTLC(o.originHtlcId, f.fail.onionHash, f.fail.failureCode, commit = true)
-        case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(o.originHtlcId, Right(PermanentChannelFailure), commit = true)
-        case f: HtlcResult.Disconnected => CMD_FAIL_HTLC(o.originHtlcId, Right(TemporaryChannelFailure(f.channelUpdate)), commit = true)
-      }
+      val cmd = translateRelayFailure(o.originHtlcId, fail)
       PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, o.originChannelId, cmd)
 
     case _: RES_SUCCESS[_] => // ignoring responses from channels
@@ -127,7 +122,7 @@ object ChannelRelayer {
           .find(_.channelUpdate.map(_.shortChannelId).contains(payload.outgoingChannelId))
           // otherwise we return the error for the first channel tried
           .getOrElse(previousFailures.head)
-        RelayFailure(CMD_FAIL_HTLC(add.id, Right(translateError(error.t, error.channelUpdate)), commit = true))
+        RelayFailure(CMD_FAIL_HTLC(add.id, Right(translateLocalError(error.t, error.channelUpdate)), commit = true))
       case channelUpdate_opt =>
         relayOrFail(replyTo, relayPacket, channelUpdate_opt, previousFailures)
     }
@@ -215,7 +210,7 @@ object ChannelRelayer {
    * This helper method translates relaying errors (returned by the downstream outgoing channel) to BOLT 4 standard
    * errors that we should return upstream.
    */
-  def translateError(error: Throwable, channelUpdate_opt: Option[ChannelUpdate]): FailureMessage = {
+  def translateLocalError(error: Throwable, channelUpdate_opt: Option[ChannelUpdate]): FailureMessage = {
     (error, channelUpdate_opt) match {
       case (_: ExpiryTooSmall, Some(channelUpdate)) => ExpiryTooSoon(channelUpdate)
       case (_: ExpiryTooBig, _) => ExpiryTooFar
@@ -225,6 +220,15 @@ object ChannelRelayer {
       case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.channelFlags) => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
       case (_: ChannelUnavailable, None) => PermanentChannelFailure
       case _ => TemporaryNodeFailure
+    }
+  }
+
+  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail): Command with HasHtlcId = {
+    fail match {
+      case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, Left(f.fail.reason), commit = true)
+      case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_MALFORMED_HTLC(originHtlcId, f.fail.onionHash, f.fail.failureCode, commit = true)
+      case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
+      case f: HtlcResult.Disconnected => CMD_FAIL_HTLC(originHtlcId, Right(TemporaryChannelFailure(f.channelUpdate)), commit = true)
     }
   }
 

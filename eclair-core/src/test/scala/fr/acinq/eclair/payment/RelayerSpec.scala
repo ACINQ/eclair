@@ -470,12 +470,12 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val origin = Origin.ChannelRelayedHot(channelRelayer, upstreamAdd, 1_000_000.msat)
     val cmdAdd = CMD_ADD_HTLC(channelRelayer, 1_000_000.msat, paymentHash, CltvExpiry(144), TestConstants.emptyOnionPacket, origin)
 
-    assert(ChannelRelayer.translateError(ExpiryTooSmall(channelId_bc, CltvExpiry(100), CltvExpiry(0), 0), Some(channelUpdate_bc)) === ExpiryTooSoon(channelUpdate_bc))
-    assert(ChannelRelayer.translateError(ExpiryTooBig(channelId_bc, CltvExpiry(100), CltvExpiry(200), 0), Some(channelUpdate_bc)) === ExpiryTooFar)
-    assert(ChannelRelayer.translateError(InsufficientFunds(channelId_bc, cmdAdd.amount, 100 sat, 0 sat, 0 sat), Some(channelUpdate_bc)) === TemporaryChannelFailure(channelUpdate_bc))
-    assert(ChannelRelayer.translateError(FeerateTooDifferent(channelId_bc, FeeratePerKw(1000 sat), FeeratePerKw(300 sat)), Some(channelUpdate_bc)) === TemporaryChannelFailure(channelUpdate_bc))
+    assert(ChannelRelayer.translateLocalError(ExpiryTooSmall(channelId_bc, CltvExpiry(100), CltvExpiry(0), 0), Some(channelUpdate_bc)) === ExpiryTooSoon(channelUpdate_bc))
+    assert(ChannelRelayer.translateLocalError(ExpiryTooBig(channelId_bc, CltvExpiry(100), CltvExpiry(200), 0), Some(channelUpdate_bc)) === ExpiryTooFar)
+    assert(ChannelRelayer.translateLocalError(InsufficientFunds(channelId_bc, cmdAdd.amount, 100 sat, 0 sat, 0 sat), Some(channelUpdate_bc)) === TemporaryChannelFailure(channelUpdate_bc))
+    assert(ChannelRelayer.translateLocalError(FeerateTooDifferent(channelId_bc, FeeratePerKw(1000 sat), FeeratePerKw(300 sat)), Some(channelUpdate_bc)) === TemporaryChannelFailure(channelUpdate_bc))
     val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = 2)
-    assert(ChannelRelayer.translateError(ChannelUnavailable(channelId_bc), Some(channelUpdate_bc_disabled)) === ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled))
+    assert(ChannelRelayer.translateLocalError(ChannelUnavailable(channelId_bc), Some(channelUpdate_bc_disabled)) === ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled))
 
     val downstreamAdd = UpdateAddHtlc(channelId_bc, 7, 1_000_000 msat, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
     sender.send(relayer, RES_ADD_SETTLED(origin, downstreamAdd, HtlcResult.RemoteFail(UpdateFailHtlc(channelId_bc, 7, ByteVector.fill(12)(3)))))

@@ -435,7 +435,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, buildForwardFail(testCase.downstream, testCase.origin))
     register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
 
-    register.expectNoMsg(100 millis) // the payment has already been fulfilled upstream
+    register.expectNoMsg(100 millis)
     eventListener.expectNoMsg(100 millis)
   }
 
@@ -450,14 +450,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, Relayer.GetChildActors(sender.ref))
     val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
 
-    // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFulfill(testCase.downstream, testCase.origin, preimage1))
     register.expectMsg(Register.Forward(postRestartHtlcCleaner, testCase.origin.originChannelId, CMD_FULFILL_HTLC(testCase.origin.originHtlcId, preimage1, commit = true)))
+    eventListener.expectMsgType[ChannelPaymentRelayed]
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream, testCase.origin, preimage1))
     register.expectNoMsg(100 millis) // the payment has already been fulfilled upstream
     eventListener.expectNoMsg(100 millis)
-
   }
 
   test("handle a trampoline relay htlc-fail") { f =>
@@ -631,8 +630,6 @@ object PostRestartHtlcCleanerSpec {
     )
 
     val origin_1 = Origin.ChannelRelayedCold(htlc_ab_1.head.add.channelId, htlc_ab_1.head.add.id, htlc_ab_1.head.add.amountMsat, htlc_ab_1.head.add.amountMsat - 100.msat)
-
-    //val notRelayed = Set((1L, channelId_bc_1), (0L, channelId_bc_2), (3L, channelId_bc_3), (5L, channelId_bc_3), (7L, channelId_bc_4))
 
     val htlc_bc_1 = Seq(
       buildHtlcOut(6, channelId_bc_1, paymentHash1)
