@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.payment.relay
 
+import java.util.UUID
+
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
@@ -47,10 +49,11 @@ object ChannelRelay {
   case class RelayPayToOpen(amount: MilliSatoshi, add: UpdateAddHtlc) extends RelayResult
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, register: ActorRef, channelUpdates: ChannelUpdates, node2channels: NodeChannels, r: IncomingPacket.ChannelRelayPacket): Behavior[Command] =
+  def apply(nodeParams: NodeParams, register: ActorRef, channelUpdates: ChannelUpdates, node2channels: NodeChannels, relayId: UUID, r: IncomingPacket.ChannelRelayPacket): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
+        parentPaymentId_opt = Some(relayId),
         paymentHash_opt = Some(r.add.paymentHash),
         channelId_opt = Some(r.add.channelId))) {
         val adapters = {

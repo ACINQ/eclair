@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.payment.relay
 
+import java.util.UUID
+
 import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
@@ -56,8 +58,10 @@ object NodeRelayer {
                 //@TODO: pm: we could also maintain a list of children
                 handler.unsafeUpcast[NodeRelay.Command] // we know that all children are of type NodeRelay
               case None =>
-                context.log.debug("spawning a new handler")
-                context.spawn(NodeRelay.apply(nodeParams, router, register, paymentHash), name = paymentHash.toString)
+                val relayId = UUID.randomUUID()
+                context.log.debug(s"spawning a new handler with relayId=$relayId")
+                // we index children by paymentHash, not relayId, because there is no concept of individual payment on LN
+                context.spawn(NodeRelay.apply(nodeParams, router, register, relayId, paymentHash), name = paymentHash.toString)
             }
             context.log.debug("forwarding incoming htlc to handler")
             handler ! relay.NodeRelay.WrappedNodeRelayPacket(nodeRelayPacket)

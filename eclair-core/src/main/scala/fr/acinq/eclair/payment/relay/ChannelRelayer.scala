@@ -73,9 +73,9 @@ object ChannelRelayer {
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
         Behaviors.receiveMessagePartial {
           case WrappedChannelRelayPacket(channelRelayPacket) =>
-            val id = UUID.randomUUID()
-            context.log.debug(s"spawning a new handler with id=$id")
-            context.spawn(ChannelRelay.apply(nodeParams, register, channelUpdates, node2channels, channelRelayPacket), name = id.toString)
+            val relayId = UUID.randomUUID()
+            context.log.debug(s"spawning a new handler with relayId=$relayId")
+            context.spawn(ChannelRelay.apply(nodeParams, register, channelUpdates, node2channels, relayId, channelRelayPacket), name = relayId.toString)
             Behaviors.same
 
           case WrappedGetOutgoingChannels(replyTo, GetOutgoingChannels(enabledOnly)) =>

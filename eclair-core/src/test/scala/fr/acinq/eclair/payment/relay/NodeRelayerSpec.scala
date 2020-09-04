@@ -80,7 +80,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
           }
         }
       }
-      val nodeRelay = testKit.spawn(NodeRelay(nodeParams, router.ref.toClassic, register.ref.toClassic, paymentHash, fsmFactory))
+      val nodeRelay = testKit.spawn(NodeRelay(nodeParams, router.ref.toClassic, register.ref.toClassic, relayId, paymentHash, fsmFactory))
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelay, router, register, mockPayFSM, eventListener)))
     }
   }
@@ -269,7 +269,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     mockPayFSM.expectMessageType[akka.actor.ActorRef]
 
     // The proposed fees are low, so we ask the sender to raise them.
-    nodeRelayer ! NodeRelay.WrappedPaymentFailed(PaymentFailed(ZERO_UUID, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil))
+    nodeRelayer ! NodeRelay.WrappedPaymentFailed(PaymentFailed(relayId, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil))
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
@@ -312,7 +312,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // If we're having a hard time finding routes, raising the fee/cltv will likely help.
     val failures = LocalFailure(Nil, RouteNotFound) :: RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(Nil, RouteNotFound) :: Nil
-    payFSM ! PaymentFailed(ZERO_UUID, incomingMultiPart.head.add.paymentHash, failures)
+    payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -332,7 +332,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
 
     val failures = RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(Nil) :: Nil
-    payFSM ! PaymentFailed(ZERO_UUID, incomingMultiPart.head.add.paymentHash, failures)
+    payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -385,7 +385,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
 
     // Once all the downstream payments have settled, we should emit the relayed event.
-    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent(ZERO_UUID))
+    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent())
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming.toSet === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)).toSet)
@@ -410,7 +410,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(fwd.channelId === incomingAdd.channelId)
     assert(fwd.message === CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, commit = true))
 
-    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent(ZERO_UUID))
+    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent())
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === Seq(PaymentRelayed.Part(incomingSinglePart.add.amountMsat, incomingSinglePart.add.channelId)))
@@ -447,7 +447,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message === CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
     }
 
-    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent(ZERO_UUID))
+    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent())
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)))
@@ -481,7 +481,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       assert(fwd.message === CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
     }
 
-    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent(ZERO_UUID))
+    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent())
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)))
@@ -519,7 +519,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
 object NodeRelayerSpec {
 
-  val ZERO_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
+  val relayId = UUID.randomUUID()
 
   val paymentPreimage = randomBytes32
   val paymentHash = Crypto.sha256(paymentPreimage)
@@ -542,8 +542,8 @@ object NodeRelayerSpec {
   val incomingSinglePart =
     createValidIncomingPacket(incomingAmount, incomingAmount, CltvExpiry(500000), outgoingAmount, outgoingExpiry)
 
-  def createSuccessEvent(id: UUID): PaymentSent =
-    PaymentSent(id, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(id, outgoingAmount, 10 msat, randomBytes32, None)))
+  def createSuccessEvent(): PaymentSent =
+    PaymentSent(relayId, paymentHash, paymentPreimage, outgoingAmount, outgoingNodeId, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), outgoingAmount, 10 msat, randomBytes32, None)))
 
   def createValidIncomingPacket(amountIn: MilliSatoshi, totalAmountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): IncomingPacket.NodeRelayPacket = {
     val outerPayload = if (amountIn == totalAmountIn) {

@@ -66,7 +66,7 @@ object NodeRelay {
     case _ => Map.empty
   }
 
-  def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHash: ByteVector32, fsmFactory: FsmFactory = new FsmFactory): Behavior[Command] =
+  def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef, relayId: UUID, paymentHash: ByteVector32, fsmFactory: FsmFactory = new FsmFactory): Behavior[Command] =
     Behaviors.setup { context =>
       val adapters: typed.ActorRef[Any] = {
         context.messageAdapter[PaymentSent](WrappedPaymentSent)
@@ -78,7 +78,7 @@ object NodeRelay {
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
         paymentHash_opt = Some(paymentHash)), mdc) {
-        new NodeRelay(nodeParams, router, register, paymentHash, context, adapters, fsmFactory)()
+        new NodeRelay(nodeParams, router, register, relayId, paymentHash, context, adapters, fsmFactory)()
       }
     }
 
@@ -151,6 +151,7 @@ class NodeRelay private(
                          nodeParams: NodeParams,
                          router: ActorRef,
                          register: ActorRef,
+                         relayId: UUID,
                          paymentHash: ByteVector32,
                          context: ActorContext[NodeRelay.Command],
                          adapters: typed.ActorRef[Any],
@@ -221,8 +222,8 @@ class NodeRelay private(
             Behaviors.stopped
           case None =>
             context.log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${upstream.adds.length})")
-            val (payFSM, paymentId) = relay(paymentHash, upstream, nextPayload, nextPacket)
-            sending(payFSM, upstream, nextPayload, paymentId, fulfilledUpstream = false)
+            val payFSM = relay(upstream, nextPayload, nextPacket)
+            sending(payFSM, upstream, nextPayload, fulfilledUpstream = false)
         }
       case _ => Behaviors.unhandled
     }
@@ -232,10 +233,9 @@ class NodeRelay private(
    *
    * @param upstream          complete HTLC set received.
    * @param nextPayload       relay instructions.
-   * @param paymentId         id of the outgoing payment.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  private def sending(payFSM: ActorRef, upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, paymentId: UUID, fulfilledUpstream: Boolean): Behavior[Command] =
+  private def sending(payFSM: ActorRef, upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, fulfilledUpstream: Boolean): Behavior[Command] =
     Behaviors.receiveMessage {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -244,7 +244,7 @@ class NodeRelay private(
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("trampoline payment successfully relayed")
             fulfillPayment(upstream, paymentPreimage)
-            sending(payFSM, upstream, nextPayload, paymentId, fulfilledUpstream = true)
+            sending(payFSM, upstream, nextPayload, fulfilledUpstream = true)
           } else {
             // we don't want to fulfill multiple times
             Behaviors.same
@@ -268,9 +268,8 @@ class NodeRelay private(
     }
 
 
-  private def relay(paymentHash: ByteVector32, upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): (ActorRef, UUID) = {
-    val paymentId = UUID.randomUUID()
-    val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
+  private def relay(upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): ActorRef = {
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     val payFSM = payloadOut.invoiceFeatures match {
@@ -299,7 +298,7 @@ class NodeRelay private(
         payFSM ! payment
         payFSM
     }
-    (payFSM, paymentId)
+    payFSM
   }
 
   private def rejectExtraHtlcPartialFunction: PartialFunction[Command, Behavior[Command]] = {
