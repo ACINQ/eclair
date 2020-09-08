@@ -41,6 +41,9 @@ import scala.collection.mutable
  */
 object ChannelRelayer {
 
+  type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
+  type NodeChannels = mutable.MultiDict[PublicKey, ShortChannelId]
+
   // @formatter:off
   sealed trait Command
   case class WrappedGetOutgoingChannels(replyTo: ActorRef, getOutgoingChannels: GetOutgoingChannels) extends Command
@@ -58,11 +61,10 @@ object ChannelRelayer {
     case _ => Map.empty
   }
 
-  def apply(
-             nodeParams: NodeParams,
-             register: ActorRef,
-             channelUpdates: ChannelUpdates = Map.empty,
-             node2channels: NodeChannels = mutable.MultiDict.empty[PublicKey, ShortChannelId]
+  def apply(nodeParams: NodeParams,
+            register: ActorRef,
+            channelUpdates: ChannelUpdates = Map.empty,
+            node2channels: NodeChannels = mutable.MultiDict.empty[PublicKey, ShortChannelId]
            ): Behavior[Command] =
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelUpdate](WrappedLocalChannelUpdate))

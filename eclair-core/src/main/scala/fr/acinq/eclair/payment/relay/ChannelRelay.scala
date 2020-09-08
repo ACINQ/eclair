@@ -27,7 +27,8 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.relay.Relayer.{ChannelUpdates, NodeChannels, OutgoingChannel}
+import fr.acinq.eclair.payment.relay.ChannelRelayer.{ChannelUpdates, NodeChannels}
+import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
@@ -148,12 +149,7 @@ class ChannelRelay private(
 
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail)) =>
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
-        val cmd = fail match {
-          case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(o.originHtlcId, Left(f.fail.reason), commit = true)
-          case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_MALFORMED_HTLC(o.originHtlcId, f.fail.onionHash, f.fail.failureCode, commit = true)
-          case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(o.originHtlcId, Right(PermanentChannelFailure), commit = true)
-          case f: HtlcResult.Disconnected => CMD_FAIL_HTLC(o.originHtlcId, Right(TemporaryChannelFailure(f.channelUpdate)), commit = true)
-        }
+        val cmd = translateRelayFailure(o.originHtlcId, fail)
         safeSend(o.originChannelId, cmd)
         Behaviors.stopped
     }

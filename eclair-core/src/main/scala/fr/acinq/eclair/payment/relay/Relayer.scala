@@ -112,9 +112,6 @@ object Relayer extends Logging {
   def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None): Props =
     Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
 
-  type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
-  type NodeChannels = mutable.MultiDict[PublicKey, ShortChannelId]
-
   // @formatter:off
   case class RelayForward(add: UpdateAddHtlc)
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)

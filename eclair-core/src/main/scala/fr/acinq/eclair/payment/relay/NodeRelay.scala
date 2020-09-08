@@ -147,15 +147,14 @@ object NodeRelay {
 /**
  * see https://doc.akka.io/docs/akka/current/typed/style-guide.html#passing-around-too-many-parameters
  */
-class NodeRelay private(
-                         nodeParams: NodeParams,
-                         router: ActorRef,
-                         register: ActorRef,
-                         relayId: UUID,
-                         paymentHash: ByteVector32,
-                         context: ActorContext[NodeRelay.Command],
-                         adapters: typed.ActorRef[Any],
-                         fsmFactory: FsmFactory) {
+class NodeRelay private(nodeParams: NodeParams,
+                        router: ActorRef,
+                        register: ActorRef,
+                        relayId: UUID,
+                        paymentHash: ByteVector32,
+                        context: ActorContext[NodeRelay.Command],
+                        adapters: typed.ActorRef[Any],
+                        fsmFactory: FsmFactory) {
 
   import NodeRelay._
 
@@ -176,7 +175,6 @@ class NodeRelay private(
           context.log.debug("forwarding incoming htlc to the payment FSM")
           mppFsm ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
           receiving(Queue(add), secret, inner, next, mppFsm)
-        case _ => Behaviors.unhandled
       }
     }
 
@@ -250,7 +248,6 @@ class NodeRelay private(
             Behaviors.same
           }
         case WrappedPaymentSent(paymentSent) =>
-          // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.
           context.log.debug("trampoline payment fully resolved downstream (id={})", paymentSent.id)
           success(upstream, fulfilledUpstream, paymentSent)
           Behaviors.stopped
@@ -336,6 +333,7 @@ class NodeRelay private(
   })
 
   private def success(upstream: Upstream.Trampoline, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {
+    // We may have already fulfilled upstream, but we can now emit an accurate relayed event and clean-up resources.
     if (!fulfilledUpstream) {
       fulfillPayment(upstream, paymentSent.paymentPreimage)
     }

@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
-import fr.acinq.eclair.payment.{relay, _}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{Logs, NodeParams}
 
 /**
