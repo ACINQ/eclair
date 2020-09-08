@@ -50,7 +50,7 @@ object NodeRelayer {
     Behaviors.setup { context =>
       context.messageAdapter[IncomingPacket.NodeRelayPacket](WrappedNodeRelayPacket)
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
-        Behaviors.receiveMessagePartial {
+        Behaviors.receiveMessage {
           case WrappedNodeRelayPacket(nodeRelayPacket) =>
             import nodeRelayPacket.add.paymentHash
             val handler = context.child(paymentHash.toString) match {

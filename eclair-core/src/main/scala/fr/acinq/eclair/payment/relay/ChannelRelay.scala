@@ -47,7 +47,6 @@ object ChannelRelay {
   sealed trait RelayResult
   case class RelayFailure(cmdFail: CMD_FAIL_HTLC) extends RelayResult
   case class RelaySuccess(shortChannelId: ShortChannelId, cmdAdd: CMD_ADD_HTLC) extends RelayResult
-  case class RelayPayToOpen(amount: MilliSatoshi, add: UpdateAddHtlc) extends RelayResult
   // @formatter:on
 
   def apply(nodeParams: NodeParams, register: ActorRef, channelUpdates: ChannelUpdates, node2channels: NodeChannels, relayId: UUID, r: IncomingPacket.ChannelRelayPacket): Behavior[Command] =
@@ -123,7 +122,7 @@ class ChannelRelay private(
   }
 
   def waitForAddResponse(previousFailures: Seq[RES_ADD_FAILED[ChannelException]]): Behavior[Command] =
-    Behaviors.receiveMessage {
+    Behaviors.receiveMessagePartial {
       case WrappedForwardShortIdFailure(Register.ForwardShortIdFailure(Register.ForwardShortId(_, shortChannelId, CMD_ADD_HTLC(_, _, _, _, _, Origin.ChannelRelayedHot(_, add, _), _)))) =>
         context.log.warn(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
         val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)

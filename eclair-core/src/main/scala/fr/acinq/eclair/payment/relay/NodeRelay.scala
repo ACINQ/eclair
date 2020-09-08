@@ -160,7 +160,7 @@ class NodeRelay private(nodeParams: NodeParams,
 
 
   def apply(): Behavior[Command] =
-    Behaviors.receiveMessagePartial {
+    Behaviors.receiveMessage {
       // We make sure we receive all payment parts before forwarding to the next trampoline node.
       case WrappedNodeRelayPacket(IncomingPacket.NodeRelayPacket(add, outer, inner, next)) => outer.paymentSecret match {
         case None =>

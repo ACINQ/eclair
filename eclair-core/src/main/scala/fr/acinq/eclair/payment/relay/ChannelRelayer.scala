@@ -73,7 +73,7 @@ object ChannelRelayer {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ShortChannelIdAssigned](WrappedShortChannelIdAssigned))
       context.messageAdapter[IncomingPacket.ChannelRelayPacket](WrappedChannelRelayPacket)
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
-        Behaviors.receiveMessagePartial {
+        Behaviors.receiveMessage {
           case WrappedChannelRelayPacket(channelRelayPacket) =>
             val relayId = UUID.randomUUID()
             context.log.debug(s"spawning a new handler with relayId=$relayId")
