@@ -41,7 +41,7 @@ You will find detailed guides and frequently asked questions there.
 
 ### Configuring Bitcoin Core
 
-:warning: Eclair requires Bitcoin Core 0.18.1 or 0.19.1. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
+:warning: Eclair requires Bitcoin Core 0.18.1, 0.19.1 or 0.20.1. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 Eclair will use any BTC it finds in the default Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet. You can have multiple Bitcoin Core wallets but make sure that the default one is always available.
