@@ -39,7 +39,6 @@ object ChannelRelay {
   // @formatter:off
   sealed trait Command
   case class WrappedForwardShortIdFailure(failure: Register.ForwardShortIdFailure[CMD_ADD_HTLC]) extends Command
-  case class WrappedForwardFailure(failure: Register.ForwardFailure[CMD_FAIL_HTLC]) extends Command
   case class WrappedAddResponse(res: CommandResponse[CMD_ADD_HTLC]) extends Command
   // @formatter:on
 
