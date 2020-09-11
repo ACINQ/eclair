@@ -55,7 +55,7 @@ object NodeRelayer {
             import nodeRelayPacket.add.paymentHash
             val handler = context.child(paymentHash.toString) match {
               case Some(handler) =>
-                //@TODO: pm: we could also maintain a list of children
+                // NB: we could also maintain a list of children
                 handler.unsafeUpcast[NodeRelay.Command] // we know that all children are of type NodeRelay
               case None =>
                 val relayId = UUID.randomUUID()
