@@ -23,21 +23,20 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, LocalChannelUpdate, Register}
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, HtlcResult, HtlcsTimedoutDownstream, LocalChannelUpdate, Origin, RES_ADD_SETTLED, Register}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import fr.acinq.eclair.payment.OutgoingPacket.{Upstream, buildCommand}
-import fr.acinq.eclair.payment.PaymentPacketSpec.{finalAmount, finalExpiry, hops, paymentHash}
+import fr.acinq.eclair.payment.PaymentPacketSpec.{c, channelUpdate_bc, finalAmount, finalExpiry, hops, makeCommitments, paymentHash}
 import fr.acinq.eclair.payment.relay.Relayer.{ChildActors, GetChildActors, RelayForward}
+import fr.acinq.eclair.payment.{OutgoingPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire.{Onion, RequiredNodeFeatureMissing, UpdateAddHtlc}
-import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32}
-import org.scalatest.{Outcome, Tag}
+import fr.acinq.eclair.wire.{FailureMessageCodecs, Onion, RequiredNodeFeatureMissing, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import fr.acinq.eclair._
-import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.PaymentPacket
-import fr.acinq.eclair.payment.{OutgoingPacket, PaymentPacketSpec}
+import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration.DurationInt
 
@@ -99,9 +98,8 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   }
 
   test("relay a trampoline htlc-add at the final node to the payment handler") { f =>
-    import f._
-
     import PaymentPacketSpec._
+    import f._
     val a = PaymentPacketSpec.a
 
     // We simulate a payment split between multiple trampoline routes.
@@ -127,10 +125,28 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     register.expectNoMessage(50 millis)
   }
 
-  test("fail to relay a trampoline htlc-add when trampoline is disabled", Tag("trampoline-disabled")) { f =>
+  test("fail to relay an htlc-add when the onion is malformed") { f =>
     import f._
 
+    // we use this to build a valid onion
+    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    // and then manually build an htlc with an invalid onion (hmac)
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion.copy(hmac = cmd.onion.hmac.reverse))
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc))
+
+    relayer ! RelayForward(add_ab)
+
+    val fail = register.expectMessageType[Register.Forward[CMD_FAIL_MALFORMED_HTLC]].message
+    assert(fail.id === add_ab.id)
+    assert(fail.onionHash == Sphinx.PaymentPacket.hash(add_ab.onionRoutingPacket))
+    assert(fail.failureCode === (FailureMessageCodecs.BADONION | FailureMessageCodecs.PERM | 5))
+
+    register.expectNoMessage(50 millis)
+  }
+
+  test("fail to relay a trampoline htlc-add when trampoline is disabled", Tag("trampoline-disabled")) { f =>
     import PaymentPacketSpec._
+    import f._
     val a = PaymentPacketSpec.a
 
     // we use this to build a valid trampoline onion inside a normal onion
@@ -149,6 +165,32 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     assert(fail.reason == Right(RequiredNodeFeatureMissing))
 
     register.expectNoMessage(50 millis)
+  }
+
+  test("relay htlc settled") { f =>
+    import f._
+
+    val replyTo = TestProbe[Any]()
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 42, amountMsat = 11000000 msat, paymentHash = ByteVector32.Zeroes, CltvExpiry(4200), TestConstants.emptyOnionPacket)
+    val add_bc = UpdateAddHtlc(channelId_bc, 72, 1000 msat, paymentHash, CltvExpiry(1), TestConstants.emptyOnionPacket)
+    val channelOrigin = Origin.ChannelRelayedHot(replyTo.ref.toClassic, add_ab, 1000 msat)
+    val trampolineOrigin = Origin.TrampolineRelayedHot(replyTo.ref.toClassic, Seq(add_ab))
+
+    val addSettled = Seq(
+      RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.OnChainFulfill(randomBytes32)),
+      RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32))),
+      RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)))),
+      RES_ADD_SETTLED(channelOrigin, add_bc, HtlcResult.RemoteFail(UpdateFailHtlc(add_bc.channelId, add_bc.id, randomBytes32))),
+      RES_ADD_SETTLED(trampolineOrigin, add_bc, HtlcResult.OnChainFulfill(randomBytes32)),
+      RES_ADD_SETTLED(trampolineOrigin, add_bc, HtlcResult.RemoteFulfill(UpdateFulfillHtlc(add_bc.channelId, add_bc.id, randomBytes32))),
+      RES_ADD_SETTLED(trampolineOrigin, add_bc, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(channelId_bc, Set(add_bc)))),
+      RES_ADD_SETTLED(trampolineOrigin, add_bc, HtlcResult.RemoteFail(UpdateFailHtlc(add_bc.channelId, add_bc.id, randomBytes32)))
+    )
+
+    for (res <- addSettled) {
+      relayer ! res
+      replyTo.expectMessage(res)
+    }
   }
 
 }

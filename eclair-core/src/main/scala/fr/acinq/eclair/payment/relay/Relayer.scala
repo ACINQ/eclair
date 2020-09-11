@@ -29,7 +29,6 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
 
-import scala.collection.mutable
 import scala.concurrent.Promise
 
 /**
