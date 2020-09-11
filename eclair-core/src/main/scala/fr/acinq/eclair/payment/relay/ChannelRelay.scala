@@ -27,6 +27,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.payment.relay.ChannelRelay.{WrappedAddResponse, WrappedForwardShortIdFailure}
 import fr.acinq.eclair.payment.relay.ChannelRelayer.{ChannelUpdates, NodeChannels}
 import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
@@ -55,11 +56,7 @@ object ChannelRelay {
         parentPaymentId_opt = Some(relayId), // for a channel relay, parent payment id = relay id
         paymentHash_opt = Some(r.add.paymentHash),
         channelId_opt = Some(r.add.channelId))) {
-        val adapters = {
-          context.messageAdapter[Register.ForwardShortIdFailure[CMD_ADD_HTLC]](WrappedForwardShortIdFailure)
-          context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
-        }.unsafeUpcast[Any]
-        new ChannelRelay(nodeParams, register, channelUpdates, node2channels, r, context, adapters)(Seq.empty)
+        new ChannelRelay(nodeParams, register, channelUpdates, node2channels, r, context)(Seq.empty)
       }
     }
 
@@ -100,8 +97,10 @@ class ChannelRelay private(
                             channelUpdates: ChannelUpdates,
                             node2channels: NodeChannels,
                             r: IncomingPacket.ChannelRelayPacket,
-                            context: ActorContext[ChannelRelay.Command],
-                            adapters: typed.ActorRef[Any]) {
+                            context: ActorContext[ChannelRelay.Command]) {
+
+  private val forwardShortIdAdapter = context.messageAdapter[Register.ForwardShortIdFailure[CMD_ADD_HTLC]](WrappedForwardShortIdFailure)
+  private val addResponseAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
 
   import ChannelRelay._
 
@@ -111,11 +110,10 @@ class ChannelRelay private(
       case RelayFailure(cmdFail) =>
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
         context.log.info(s"rejecting htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
-        safeSend(r.add.channelId, cmdFail)
-        Behaviors.stopped
+        safeSendAndStop(r.add.channelId, cmdFail)
       case RelaySuccess(selectedShortChannelId, cmdAdd) =>
         context.log.info(s"forwarding htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=$selectedShortChannelId")
-        register ! Register.ForwardShortId(adapters.toClassic, selectedShortChannelId, cmdAdd)
+        register ! Register.ForwardShortId(forwardShortIdAdapter.toClassic, selectedShortChannelId, cmdAdd)
         waitForAddResponse(previousFailures)
     }
   }
@@ -126,8 +124,7 @@ class ChannelRelay private(
         context.log.warn(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
         val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-        safeSend(add.channelId, cmdFail)
-        Behaviors.stopped
+        safeSendAndStop(add.channelId, cmdFail)
 
       case WrappedAddResponse(addFailed@RES_ADD_FAILED(CMD_ADD_HTLC(_, _, _, _, _, Origin.ChannelRelayedHot(_, add, _), _), _, _)) =>
         context.log.info(s"retrying htlc #${add.id} from channelId=${add.channelId}")
@@ -141,19 +138,19 @@ class ChannelRelay private(
     Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill)) =>
         val cmd = CMD_FULFILL_HTLC(o.originHtlcId, fulfill.paymentPreimage, commit = true)
-        safeSend(o.originChannelId, cmd)
         context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(o.amountIn, o.amountOut, htlc.paymentHash, o.originChannelId, htlc.channelId))
-        Behaviors.stopped
+        safeSendAndStop(o.originChannelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail)) =>
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(o.originHtlcId, fail)
-        safeSend(o.originChannelId, cmd)
-        Behaviors.stopped
+        safeSendAndStop(o.originChannelId, cmd)
     }
 
-  def safeSend(channelId: ByteVector32, cmd: channel.Command with channel.HasHtlcId): Unit = {
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, adapters.toClassic, channelId, cmd)
+  def safeSendAndStop(channelId: ByteVector32, cmd: channel.Command with channel.HasHtlcId): Behavior[Command] = {
+    // NB: we are not using an adapter here because we are stopping anyway so we won't be there to get the result
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, context.self.toClassic, channelId, cmd)
+    Behaviors.stopped
   }
 
   /**
@@ -253,8 +250,8 @@ class ChannelRelay private(
       case Some(channelUpdate) if r.relayFeeMsat < nodeFee(channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths, payload.amountToForward) =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(FeeInsufficient(add.amountMsat, channelUpdate)), commit = true))
       case Some(channelUpdate) =>
-        val origin = Origin.ChannelRelayedHot(adapters.toClassic, add, payload.amountToForward)
-        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(adapters.toClassic, payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, origin, commit = true))
+        val origin = Origin.ChannelRelayedHot(addResponseAdapter.toClassic, add, payload.amountToForward)
+        RelaySuccess(channelUpdate.shortChannelId, CMD_ADD_HTLC(addResponseAdapter.toClassic, payload.amountToForward, add.paymentHash, payload.outgoingCltv, nextPacket, origin, commit = true))
     }
   }
 
