@@ -56,8 +56,7 @@ object ChannelRelayer {
 
   def mdc: Command => Map[String, String] = {
     case c: WrappedChannelRelayPacket => Logs.mdc(
-      paymentHash_opt = Some(c.channelRelayPacket.add.paymentHash),
-      channelId_opt = Some(c.channelRelayPacket.add.channelId))
+      paymentHash_opt = Some(c.channelRelayPacket.add.paymentHash))
     case _ => Map.empty
   }
 

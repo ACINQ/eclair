@@ -42,8 +42,7 @@ object NodeRelayer {
 
   def mdc: Command => Map[String, String] = {
     case c: WrappedNodeRelayPacket => Logs.mdc(
-      paymentHash_opt = Some(c.nodeRelayPacket.add.paymentHash),
-      channelId_opt = Some(c.nodeRelayPacket.add.channelId))
+      paymentHash_opt = Some(c.nodeRelayPacket.add.paymentHash))
   }
 
   def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef): Behavior[Command] =

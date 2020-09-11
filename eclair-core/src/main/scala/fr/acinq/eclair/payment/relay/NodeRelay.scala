@@ -60,12 +60,6 @@ object NodeRelay {
   case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   // @formatter:on
 
-  def mdc: Command => Map[String, String] = {
-    case c: WrappedNodeRelayPacket => Logs.mdc(
-      channelId_opt = Some(c.nodeRelayPacket.add.channelId))
-    case _ => Map.empty
-  }
-
   def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef, relayId: UUID, paymentHash: ByteVector32, fsmFactory: FsmFactory = new FsmFactory): Behavior[Command] =
     Behaviors.setup { context =>
       val adapters: typed.ActorRef[Any] = {
@@ -78,7 +72,7 @@ object NodeRelay {
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
         parentPaymentId_opt = Some(relayId), // for a node relay, we use the same identifier for the whole relay itself, and the outgoing payment
-        paymentHash_opt = Some(paymentHash)), mdc) {
+        paymentHash_opt = Some(paymentHash))) {
         new NodeRelay(nodeParams, router, register, relayId, paymentHash, context, adapters, fsmFactory)()
       }
     }
