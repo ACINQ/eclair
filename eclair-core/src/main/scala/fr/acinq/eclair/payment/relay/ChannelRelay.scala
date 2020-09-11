@@ -54,8 +54,7 @@ object ChannelRelay {
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
         parentPaymentId_opt = Some(relayId), // for a channel relay, parent payment id = relay id
-        paymentHash_opt = Some(r.add.paymentHash),
-        channelId_opt = Some(r.add.channelId))) {
+        paymentHash_opt = Some(r.add.paymentHash))) {
         new ChannelRelay(nodeParams, register, channelUpdates, node2channels, r, context)(Seq.empty)
       }
     }
