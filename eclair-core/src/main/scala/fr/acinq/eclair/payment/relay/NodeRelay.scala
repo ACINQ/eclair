@@ -254,12 +254,8 @@ class NodeRelay private(nodeParams: NodeParams,
           context.log.debug(s"trampoline payment failed downstream (id={})", id)
           if (!fulfilledUpstream) {
             rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
-            Behaviors.stopped
-          } else {
-            // Hmm, this is weird
-            // TODO @t-bast : is this ok?
-            Behaviors.unhandled
           }
+          Behaviors.stopped
       }
     }
 
