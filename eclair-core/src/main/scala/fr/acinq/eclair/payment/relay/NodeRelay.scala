@@ -77,6 +77,7 @@ object NodeRelay {
       }.unsafeUpcast[Any]
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
+        parentPaymentId_opt = Some(relayId), // for a node relay, we use the same identifier for the whole relay itself, and the outgoing payment
         paymentHash_opt = Some(paymentHash)), mdc) {
         new NodeRelay(nodeParams, router, register, relayId, paymentHash, context, adapters, fsmFactory)()
       }

@@ -33,6 +33,12 @@ import fr.acinq.eclair.wire._
 
 object Logs {
 
+  /**
+   * @param parentPaymentId_opt depending on the context, this may be:
+   *                            - for a send : the parent payment id
+   *                            - for a channel-relay : the relay id
+   *                            - for a trampoline-relay : the relay id and the parent payment id of the outgoing payment
+   */
   def mdc(category_opt: Option[LogCategory] = None, remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[ByteVector32] = None, parentPaymentId_opt: Option[UUID] = None, paymentId_opt: Option[UUID] = None, paymentHash_opt: Option[ByteVector32] = None): Map[String, String] =
     Seq(
       category_opt.map(l => "category" -> s" ${l.category}"),

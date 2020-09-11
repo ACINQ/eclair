@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, ShortChannelId, channel, nodeFee}
+import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, channel, nodeFee}
 
 object ChannelRelay {
 
@@ -53,7 +53,7 @@ object ChannelRelay {
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
-        parentPaymentId_opt = Some(relayId),
+        parentPaymentId_opt = Some(relayId), // for a channel relay, parent payment id = relay id
         paymentHash_opt = Some(r.add.paymentHash),
         channelId_opt = Some(r.add.channelId))) {
         val adapters = {
