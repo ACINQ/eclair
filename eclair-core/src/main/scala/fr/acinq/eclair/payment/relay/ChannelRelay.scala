@@ -139,7 +139,7 @@ class ChannelRelay private(
     }
 
   def waitForAddSettled(): Behavior[Command] =
-    Behaviors.receiveMessage {
+    Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill)) =>
         val cmd = CMD_FULFILL_HTLC(o.originHtlcId, fulfill.paymentPreimage, commit = true)
         safeSend(o.originChannelId, cmd)

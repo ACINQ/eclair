@@ -160,7 +160,7 @@ class NodeRelay private(nodeParams: NodeParams,
 
 
   def apply(): Behavior[Command] =
-    Behaviors.receiveMessage {
+    Behaviors.receiveMessagePartial {
       // We make sure we receive all payment parts before forwarding to the next trampoline node.
       case WrappedNodeRelayPacket(IncomingPacket.NodeRelayPacket(add, outer, inner, next)) => outer.paymentSecret match {
         case None =>
@@ -189,7 +189,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param handler     actor handling the aggregation of the incoming HTLC set.
    */
   private def receiving(htlcs: Queue[UpdateAddHtlc], secret: ByteVector32, nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
-    Behaviors.receiveMessage {
+    Behaviors.receiveMessagePartial {
       case WrappedNodeRelayPacket(IncomingPacket.NodeRelayPacket(add, outer, _, _)) => outer.paymentSecret match {
         case None =>
           context.log.warn("rejecting htlcId={}: missing payment secret", add.id)
@@ -234,7 +234,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
   private def sending(payFSM: ActorRef, upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, fulfilledUpstream: Boolean): Behavior[Command] =
-    Behaviors.receiveMessage {
+    Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
         case WrappedPreimageReceived(PreimageReceived(_, paymentPreimage)) =>
