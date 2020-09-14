@@ -18,11 +18,11 @@ package fr.acinq.eclair.payment.relay
 
 import java.util.UUID
 
+import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingRelayDb
@@ -62,18 +62,11 @@ object NodeRelay {
 
   def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef, relayId: UUID, paymentHash: ByteVector32, fsmFactory: FsmFactory = new FsmFactory): Behavior[Command] =
     Behaviors.setup { context =>
-      val adapters: typed.ActorRef[Any] = {
-        context.messageAdapter[PaymentSent](WrappedPaymentSent)
-        context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
-        context.messageAdapter[MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]](WrappedMultiPartExtraPaymentReceived)
-        context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentFailed](WrappedMultiPartPaymentFailed)
-        context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentSucceeded](WrappedMultiPartPaymentSucceeded)
-      }.unsafeUpcast[Any]
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
         parentPaymentId_opt = Some(relayId), // for a node relay, we use the same identifier for the whole relay itself, and the outgoing payment
         paymentHash_opt = Some(paymentHash))) {
-        new NodeRelay(nodeParams, router, register, relayId, paymentHash, context, adapters, fsmFactory)()
+        new NodeRelay(nodeParams, router, register, relayId, paymentHash, context, fsmFactory)()
       }
     }
 
@@ -148,11 +141,20 @@ class NodeRelay private(nodeParams: NodeParams,
                         relayId: UUID,
                         paymentHash: ByteVector32,
                         context: ActorContext[NodeRelay.Command],
-                        adapters: typed.ActorRef[Any],
                         fsmFactory: FsmFactory) {
 
   import NodeRelay._
 
+  private val mppFsmAdapters = {
+    context.messageAdapter[MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]](WrappedMultiPartExtraPaymentReceived)
+    context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentFailed](WrappedMultiPartPaymentFailed)
+    context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentSucceeded](WrappedMultiPartPaymentSucceeded)
+  }.toClassic
+  private val payFsmAdapters = {
+    context.messageAdapter[PreimageReceived](WrappedPreimageReceived)
+    context.messageAdapter[PaymentSent](WrappedPaymentSent)
+    context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
+  }.toClassic
 
   def apply(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
@@ -166,7 +168,7 @@ class NodeRelay private(nodeParams: NodeParams,
         case Some(secret) =>
           import akka.actor.typed.scaladsl.adapter._
           context.log.debug("creating a payment FSM")
-          val mppFsm = context.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, outer.totalAmount, adapters.toClassic))
+          val mppFsm = context.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, outer.totalAmount, mppFsmAdapters))
           context.log.debug("forwarding incoming htlc to the payment FSM")
           mppFsm ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
           receiving(Queue(add), secret, inner, next, mppFsm)
@@ -213,8 +215,8 @@ class NodeRelay private(nodeParams: NodeParams,
             Behaviors.stopped
           case None =>
             context.log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${upstream.adds.length})")
-            val payFSM = relay(upstream, nextPayload, nextPacket)
-            sending(payFSM, upstream, nextPayload, fulfilledUpstream = false)
+            relay(upstream, nextPayload, nextPacket)
+            sending(upstream, nextPayload, fulfilledUpstream = false)
         }
       case _ => Behaviors.unhandled
     }
@@ -226,7 +228,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPayload       relay instructions.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  private def sending(payFSM: ActorRef, upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, fulfilledUpstream: Boolean): Behavior[Command] =
+  private def sending(upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, fulfilledUpstream: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -235,7 +237,7 @@ class NodeRelay private(nodeParams: NodeParams,
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
             context.log.debug("trampoline payment successfully relayed")
             fulfillPayment(upstream, paymentPreimage)
-            sending(payFSM, upstream, nextPayload, fulfilledUpstream = true)
+            sending(upstream, nextPayload, fulfilledUpstream = true)
           } else {
             // we don't want to fulfill multiple times
             Behaviors.same
@@ -264,14 +266,14 @@ class NodeRelay private(nodeParams: NodeParams,
         payloadOut.paymentSecret match {
           case Some(paymentSecret) if Features(features).hasFeature(Features.BasicMultiPartPayment) =>
             context.log.debug("relaying trampoline payment to non-trampoline recipient using MPP")
-            val payment = SendMultiPartPayment(adapters.toClassic, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+            val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
             val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = true)
             payFSM ! payment
             payFSM
           case _ =>
             context.log.debug("relaying trampoline payment to non-trampoline recipient without MPP")
             val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
-            val payment = SendPayment(adapters.toClassic, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+            val payment = SendPayment(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
             val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = false)
             payFSM ! payment
             payFSM
@@ -280,7 +282,7 @@ class NodeRelay private(nodeParams: NodeParams,
         context.log.debug("relaying trampoline payment to next trampoline node")
         val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = true)
         val paymentSecret = randomBytes32 // we generate a new secret to protect against probing attacks
-        val payment = SendMultiPartPayment(adapters.toClassic, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
+        val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
         payFSM ! payment
         payFSM
     }
