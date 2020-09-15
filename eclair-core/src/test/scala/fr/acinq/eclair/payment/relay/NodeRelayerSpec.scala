@@ -31,10 +31,10 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire._
@@ -57,32 +57,30 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   case class FixtureParam(nodeParams: NodeParams, nodeRelayer: ActorRef[NodeRelay.Command], router: TestProbe[Any], register: TestProbe[Any], mockPayFSM: TestProbe[Any], eventListener: TestProbe[PaymentEvent])
 
   override def withFixture(test: OneArgTest): Outcome = {
-    eventually {
-      val nodeParams = TestConstants.Bob.nodeParams.copy(multiPartPaymentExpiry = 5 seconds)
-      val router = TestProbe[Any]("router")
-      val register = TestProbe[Any]("register")
-      val eventListener = TestProbe[PaymentEvent]("event-listener")
-      system.eventStream ! EventStream.Subscribe(eventListener.ref)
-      val mockPayFSM = TestProbe[Any]("pay-fsm")
-      val fsmFactory = if (test.tags.contains("mock-fsm")) {
-        new NodeRelay.FsmFactory {
-          override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
-            mockPayFSM.ref ! cfg
-            mockPayFSM.ref.toClassic
-          }
-        }
-      } else {
-        new NodeRelay.FsmFactory {
-          override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
-            val fsm = super.spawnOutgoingPayFSM(context, nodeParams, router, register, cfg, multiPart)
-            mockPayFSM.ref ! fsm
-            fsm
-          }
+    val nodeParams = TestConstants.Bob.nodeParams.copy(multiPartPaymentExpiry = 5 seconds)
+    val router = TestProbe[Any]("router")
+    val register = TestProbe[Any]("register")
+    val eventListener = TestProbe[PaymentEvent]("event-listener")
+    system.eventStream ! EventStream.Subscribe(eventListener.ref)
+    val mockPayFSM = TestProbe[Any]("pay-fsm")
+    val fsmFactory = if (test.tags.contains("mock-fsm")) {
+      new NodeRelay.FsmFactory {
+        override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
+          mockPayFSM.ref ! cfg
+          mockPayFSM.ref.toClassic
         }
       }
-      val nodeRelay = testKit.spawn(NodeRelay(nodeParams, router.ref.toClassic, register.ref.toClassic, relayId, paymentHash, fsmFactory))
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelay, router, register, mockPayFSM, eventListener)))
+    } else {
+      new NodeRelay.FsmFactory {
+        override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
+          val fsm = super.spawnOutgoingPayFSM(context, nodeParams, router, register, cfg, multiPart)
+          mockPayFSM.ref ! fsm
+          fsm
+        }
+      }
     }
+    val nodeRelay = testKit.spawn(NodeRelay(nodeParams, router.ref.toClassic, register.ref.toClassic, relayId, paymentHash, fsmFactory))
+    withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelay, router, register, mockPayFSM, eventListener)))
   }
 
   test("fail to relay when incoming multi-part payment times out") { f =>

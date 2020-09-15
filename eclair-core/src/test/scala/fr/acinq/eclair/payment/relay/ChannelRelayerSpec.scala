@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Onion.{ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, NodeParams, TestConstants, randomBytes32, _}
-import org.scalatest.{BeforeAndAfterEach, Outcome}
+import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
 
@@ -43,15 +43,13 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   case class FixtureParam(nodeParams: NodeParams, channelRelayer: typed.ActorRef[ChannelRelayer.Command], register: TestProbe[Any])
 
   override def withFixture(test: OneArgTest): Outcome = {
-    eventually {
-      // we are node B in the route A -> B -> C -> ....
-      val nodeParams = TestConstants.Bob.nodeParams
-      val register = TestProbe[Any]("register")
-      val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic))
-      try withFixture(test.toNoArgTest(FixtureParam(nodeParams, channelRelayer, register)))
-      finally {
-        testKit.stop(channelRelayer)
-      }
+    // we are node B in the route A -> B -> C -> ....
+    val nodeParams = TestConstants.Bob.nodeParams
+    val register = TestProbe[Any]("register")
+    val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic))
+    try withFixture(test.toNoArgTest(FixtureParam(nodeParams, channelRelayer, register)))
+    finally {
+      testKit.stop(channelRelayer)
     }
   }
 
