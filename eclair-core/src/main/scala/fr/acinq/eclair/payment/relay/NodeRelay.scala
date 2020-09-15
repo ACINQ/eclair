@@ -51,13 +51,13 @@ object NodeRelay {
 
   // @formatter:off
   sealed trait Command
-  case class WrappedNodeRelayPacket(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
-  case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
-  case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
-  case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
-  case class WrappedPreimageReceived(preimageReceived: PreimageReceived) extends Command
-  case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
-  case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
+  case class Relay(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
+  private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
+  private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
+  private case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
+  private case class WrappedPreimageReceived(preimageReceived: PreimageReceived) extends Command
+  private case class WrappedPaymentSent(paymentSent: PaymentSent) extends Command
+  private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef, relayId: UUID, paymentHash: ByteVector32, fsmFactory: FsmFactory = new FsmFactory): Behavior[Command] =
@@ -159,7 +159,7 @@ class NodeRelay private(nodeParams: NodeParams,
   def apply(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       // We make sure we receive all payment parts before forwarding to the next trampoline node.
-      case WrappedNodeRelayPacket(IncomingPacket.NodeRelayPacket(add, outer, inner, next)) => outer.paymentSecret match {
+      case Relay(IncomingPacket.NodeRelayPacket(add, outer, inner, next)) => outer.paymentSecret match {
         case None =>
           // TODO: @pm: maybe those checks should be done later in the flow (by the mpp FSM?)
           context.log.warn("rejecting htlcId={}: missing payment secret", add.id)
@@ -187,7 +187,7 @@ class NodeRelay private(nodeParams: NodeParams,
    */
   private def receiving(htlcs: Queue[UpdateAddHtlc], secret: ByteVector32, nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case WrappedNodeRelayPacket(IncomingPacket.NodeRelayPacket(add, outer, _, _)) => outer.paymentSecret match {
+      case Relay(IncomingPacket.NodeRelayPacket(add, outer, _, _)) => outer.paymentSecret match {
         case None =>
           context.log.warn("rejecting htlcId={}: missing payment secret", add.id)
           rejectHtlc(add.id, add.channelId, add.amountMsat)
@@ -218,7 +218,6 @@ class NodeRelay private(nodeParams: NodeParams,
             relay(upstream, nextPayload, nextPacket)
             sending(upstream, nextPayload, fulfilledUpstream = false)
         }
-      case _ => Behaviors.unhandled
     }
 
   /**
@@ -290,7 +289,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }
 
   private def rejectExtraHtlcPartialFunction: PartialFunction[Command, Behavior[Command]] = {
-    case WrappedNodeRelayPacket(nodeRelayPacket) =>
+    case Relay(nodeRelayPacket) =>
       rejectExtraHtlc(nodeRelayPacket.add)
       Behaviors.same
     // NB: this messages would be sent from the payment FSM which we stopped before going to this state, but all
@@ -310,7 +309,8 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true))(context.toClassic)
+    val cmd = CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true)
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, context.system.deadLetters.toClassic, channelId, cmd)
   }
 
   private def rejectPayment(upstream: Upstream.Trampoline, failure: Option[FailureMessage]): Unit = {
@@ -319,8 +319,8 @@ class NodeRelay private(nodeParams: NodeParams,
   }
 
   private def fulfillPayment(upstream: Upstream.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
-    val cmdFulfill = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFulfill)(context.toClassic)
+    val cmd = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, context.system.deadLetters.toClassic, add.channelId, cmd)
   })
 
   private def success(upstream: Upstream.Trampoline, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {

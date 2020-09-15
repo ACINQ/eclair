@@ -37,20 +37,19 @@ object NodeRelayer {
 
   // @formatter:off
   sealed trait Command
-  case class WrappedNodeRelayPacket(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
+  case class Relay(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
   // @formatter:on
 
   def mdc: Command => Map[String, String] = {
-    case c: WrappedNodeRelayPacket => Logs.mdc(
+    case c: Relay => Logs.mdc(
       paymentHash_opt = Some(c.nodeRelayPacket.add.paymentHash))
   }
 
   def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef): Behavior[Command] =
     Behaviors.setup { context =>
-      context.messageAdapter[IncomingPacket.NodeRelayPacket](WrappedNodeRelayPacket)
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
         Behaviors.receiveMessage {
-          case WrappedNodeRelayPacket(nodeRelayPacket) =>
+          case Relay(nodeRelayPacket) =>
             import nodeRelayPacket.add.paymentHash
             val handler = context.child(paymentHash.toString) match {
               case Some(handler) =>
@@ -63,7 +62,7 @@ object NodeRelayer {
                 context.spawn(NodeRelay.apply(nodeParams, router, register, relayId, paymentHash), name = paymentHash.toString)
             }
             context.log.debug("forwarding incoming htlc to handler")
-            handler ! relay.NodeRelay.WrappedNodeRelayPacket(nodeRelayPacket)
+            handler ! NodeRelay.Relay(nodeRelayPacket)
             Behaviors.same
         }
       }

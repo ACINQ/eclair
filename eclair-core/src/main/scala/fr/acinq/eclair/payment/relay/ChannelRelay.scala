@@ -40,8 +40,8 @@ object ChannelRelay {
   // @formatter:off
   sealed trait Command
   private case object DoRelay extends Command
-  case class WrappedForwardShortIdFailure(failure: Register.ForwardShortIdFailure[CMD_ADD_HTLC]) extends Command
-  case class WrappedAddResponse(res: CommandResponse[CMD_ADD_HTLC]) extends Command
+  private case class WrappedForwardShortIdFailure(failure: Register.ForwardShortIdFailure[CMD_ADD_HTLC]) extends Command
+  private case class WrappedAddResponse(res: CommandResponse[CMD_ADD_HTLC]) extends Command
   // @formatter:on
 
   // @formatter:off
@@ -157,7 +157,7 @@ class ChannelRelay private(
 
   def safeSendAndStop(channelId: ByteVector32, cmd: channel.Command with channel.HasHtlcId): Behavior[Command] = {
     // NB: we are not using an adapter here because we are stopping anyway so we won't be there to get the result
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, context.self.toClassic, channelId, cmd)
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, context.system.deadLetters.toClassic, channelId, cmd)
     Behaviors.stopped
   }
 

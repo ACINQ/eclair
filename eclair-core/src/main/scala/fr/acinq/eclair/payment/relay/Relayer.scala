@@ -63,13 +63,13 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           log.debug(s"forwarding htlc #${add.id} to payment-handler")
           paymentHandler forward p
         case Right(r: IncomingPacket.ChannelRelayPacket) =>
-          channelRelayer ! ChannelRelayer.WrappedChannelRelayPacket(r)
+          channelRelayer ! ChannelRelayer.Relay(r)
         case Right(r: IncomingPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
             PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
           } else {
-            nodeRelayer ! NodeRelayer.WrappedNodeRelayPacket(r)
+            nodeRelayer ! NodeRelayer.Relay(r)
           }
         case Left(badOnion: BadOnion) =>
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
@@ -89,7 +89,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
     case _: RES_SUCCESS[_] => () // ignoring responses from channels
 
-    case g: GetOutgoingChannels => channelRelayer ! ChannelRelayer.WrappedGetOutgoingChannels(sender, g)
+    case g: GetOutgoingChannels => channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender, g)
 
     case GetChildActors(replyTo) => replyTo ! ChildActors(postRestartCleaner, channelRelayer, nodeRelayer)
   }

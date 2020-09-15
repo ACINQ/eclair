@@ -89,7 +89,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive a partial upstream multi-part payment.
-    incomingMultiPart.dropRight(1).foreach(incoming => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(incoming))
+    incomingMultiPart.dropRight(1).foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
     // after a while the payment times out
     incomingMultiPart.dropRight(1).foreach(p => register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]](30 seconds))
     //    incomingMultiPart.dropRight(1).foreach(p => register.expectMessage(30 seconds, Register.Forward(nodeRelayer.toClassic, p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(PaymentTimeout), commit = true))))
@@ -100,14 +100,14 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // We send all the parts of a mpp
-    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(incoming))
+    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
     // and then one extra
     val extra = IncomingPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32, Random.nextInt(100), 1000 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket),
       Onion.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret),
       Onion.createNodeRelayPayload(outgoingAmount, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(extra)
+    nodeRelayer ! NodeRelay.Relay(extra)
 
     // the extra payment will be rejected
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -122,7 +122,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive a complete upstream multi-part payment, which we relay out.
-    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(incoming))
+    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
@@ -135,7 +135,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       Onion.createMultiPartPayload(1000 msat, incomingAmount, CltvExpiry(499990), incomingSecret),
       Onion.createNodeRelayPayload(outgoingAmount, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(i1)
+    nodeRelayer ! NodeRelay.Relay(i1)
 
     val fwd1 = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd1.channelId === i1.add.channelId)
@@ -148,7 +148,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       Onion.createSinglePartPayload(1500 msat, CltvExpiry(499990), Some(randomBytes32)),
       Onion.createNodeRelayPayload(1250 msat, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(i2)
+    nodeRelayer ! NodeRelay.Relay(i2)
 
     val fwd2 = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd1.channelId === i1.add.channelId)
@@ -164,7 +164,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, CltvExpiry(500000), outgoingAmount, outgoingExpiry).copy(
       outerPayload = Onion.createSinglePartPayload(2000000 msat, CltvExpiry(500000)) // missing outer payment secret
     )
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p)
+    nodeRelayer ! NodeRelay.Relay(p)
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId === p.add.channelId)
@@ -181,8 +181,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val p2 = createValidIncomingPacket(1000000 msat, 3000000 msat, CltvExpiry(500000), 2500000 msat, outgoingExpiry).copy(
       outerPayload = Onion.createMultiPartPayload(1000000 msat, 3000000 msat, CltvExpiry(500000), randomBytes32)
     )
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p1)
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p2)
+    nodeRelayer ! NodeRelay.Relay(p1)
+    nodeRelayer ! NodeRelay.Relay(p2)
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId === p2.add.channelId)
@@ -198,7 +198,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val expiryIn = CltvExpiry(500000) // not ok (delta = 100)
     val expiryOut = CltvExpiry(499900)
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, expiryIn, 1000000 msat, expiryOut)
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p)
+    nodeRelayer ! NodeRelay.Relay(p)
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId === p.add.channelId)
@@ -217,7 +217,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       createValidIncomingPacket(2000000 msat, 3000000 msat, expiryIn1, 2100000 msat, expiryOut),
       createValidIncomingPacket(1000000 msat, 3000000 msat, expiryIn2, 2100000 msat, expiryOut)
     )
-    p.foreach(p => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p))
+    p.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     p.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -232,7 +232,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, CltvExpiry(500000), 1999000 msat, CltvExpiry(490000))
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p)
+    nodeRelayer ! NodeRelay.Relay(p)
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId === p.add.channelId)
@@ -248,7 +248,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       createValidIncomingPacket(2000000 msat, 3000000 msat, CltvExpiry(500000), 2999000 msat, CltvExpiry(400000)),
       createValidIncomingPacket(1000000 msat, 3000000 msat, CltvExpiry(500000), 2999000 msat, CltvExpiry(400000))
     )
-    p.foreach(p => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p))
+    p.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     p.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -259,17 +259,18 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("fail to relay because outgoing balance isn't sufficient (low fees)") { f =>
+  test("fail to relay because outgoing balance isn't sufficient (low fees)", Tag("mock-fsm")) { f =>
     import f._
 
     // Receive an upstream multi-part payment.
-    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p))
+    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
-    // that's how we know the payment fsm has been instantiated
-    mockPayFSM.expectMessageType[akka.actor.ActorRef]
+    mockPayFSM.expectMessageType[SendPaymentConfig]
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = mockPayFSM.expectMessageType[SendMultiPartPayment].replyTo
 
     // The proposed fees are low, so we ask the sender to raise them.
-    nodeRelayer ! NodeRelay.WrappedPaymentFailed(PaymentFailed(relayId, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil))
+    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
@@ -288,7 +289,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       createValidIncomingPacket(outgoingAmount, outgoingAmount * 2, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
       createValidIncomingPacket(outgoingAmount, outgoingAmount * 2, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
     )
-    incoming.foreach(p => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p))
+    incoming.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
     payFSM ! Status.Failure(BalanceTooLow)
@@ -306,7 +307,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
-    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p))
+    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
 
@@ -327,7 +328,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
-    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p))
+    incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
 
@@ -347,7 +348,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(incomingSinglePart)
+    nodeRelayer ! NodeRelay.Relay(incomingSinglePart)
 
     val routeRequest = router.expectMessageType[RouteRequest]
 
@@ -362,18 +363,20 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
-    incomingMultiPart.dropRight(1).foreach(p => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(p))
+    incomingMultiPart.dropRight(1).foreach(p => nodeRelayer ! NodeRelay.Relay(p))
     router.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a complete upstream payment
 
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(incomingMultiPart.last)
+    nodeRelayer ! NodeRelay.Relay(incomingMultiPart.last)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = outgoingPayment.replyTo
 
     // A first downstream HTLC is fulfilled: we should immediately forward the fulfill upstream.
-    nodeRelayer ! NodeRelay.WrappedPreimageReceived(PreimageReceived(paymentHash, paymentPreimage))
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
@@ -381,11 +384,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     }
 
     // If the payment FSM sends us duplicate preimage events, we should not fulfill a second time upstream.
-    nodeRelayer ! NodeRelay.WrappedPreimageReceived(PreimageReceived(paymentHash, paymentPreimage))
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
     register.expectNoMessage(100 millis)
 
     // Once all the downstream payments have settled, we should emit the relayed event.
-    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent())
+    nodeRelayerAdapters ! createSuccessEvent()
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming.toSet === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)).toSet)
@@ -397,20 +400,22 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream single-part payment.
-    nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(incomingSinglePart)
+    nodeRelayer ! NodeRelay.Relay(incomingSinglePart)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingSinglePart.add :: Nil))
     val outgoingPayment = mockPayFSM.expectMessageType[SendMultiPartPayment]
     validateOutgoingPayment(outgoingPayment)
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayer ! NodeRelay.WrappedPreimageReceived(PreimageReceived(paymentHash, paymentPreimage))
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
     val incomingAdd = incomingSinglePart.add
     val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
     assert(fwd.channelId === incomingAdd.channelId)
     assert(fwd.message === CMD_FULFILL_HTLC(incomingAdd.id, paymentPreimage, commit = true))
 
-    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent())
+    nodeRelayerAdapters ! createSuccessEvent()
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === Seq(PaymentRelayed.Part(incomingSinglePart.add.amountMsat, incomingSinglePart.add.channelId)))
@@ -425,7 +430,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.mandatory, BasicMultiPartPayment.optional)
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), extraHops = hints, features = Some(features))
-    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
+    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, outgoingAmount * 3, outgoingExpiry, outgoingNodeId, pr
     ))))
 
@@ -439,15 +444,17 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.additionalTlvs === Nil)
     assert(outgoingPayment.routeParams.isDefined)
     assert(outgoingPayment.assistedRoutes === hints)
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayer ! NodeRelay.WrappedPreimageReceived(PreimageReceived(paymentHash, paymentPreimage))
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
       assert(fwd.message === CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
     }
 
-    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent())
+    nodeRelayerAdapters ! createSuccessEvent()
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)))
@@ -461,7 +468,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive an upstream multi-part payment.
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), extraHops = hints, features = Some(PaymentRequestFeatures()))
-    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.WrappedNodeRelayPacket(incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
+    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, pr
     ))))
 
@@ -473,15 +480,17 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
     assert(outgoingPayment.routeParams.isDefined)
     assert(outgoingPayment.assistedRoutes === hints)
+    // those are adapters for pay-fsm messages
+    val nodeRelayerAdapters = outgoingPayment.replyTo
 
-    nodeRelayer ! NodeRelay.WrappedPreimageReceived(PreimageReceived(paymentHash, paymentPreimage))
+    nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
       assert(fwd.message === CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
     }
 
-    nodeRelayer ! NodeRelay.WrappedPaymentSent(createSuccessEvent())
+    nodeRelayerAdapters ! createSuccessEvent()
     val relayEvent = eventListener.expectMessageType[TrampolinePaymentRelayed]
     validateRelayEvent(relayEvent)
     assert(relayEvent.incoming === incomingMultiPart.map(i => PaymentRelayed.Part(i.add.amountMsat, i.add.channelId)))

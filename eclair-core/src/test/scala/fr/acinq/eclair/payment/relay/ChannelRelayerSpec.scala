@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment.relay
 
-import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
+import akka.actor.testkit.typed.scaladsl.{LogCapturing, LoggingTestKit, ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
@@ -26,18 +26,17 @@ import fr.acinq.eclair.TestConstants.emptyOnionPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPacket.ChannelRelayPacket
-import fr.acinq.eclair.payment.relay.ChannelRelayer.{Command => _, _}
-import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
+import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.Onion.{ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, NodeParams, TestConstants, randomBytes32, _}
-import org.scalatest.Outcome
+import org.scalatest.{BeforeAndAfterEach, Outcome}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
 
-class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
+class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike with LogCapturing {
 
   import ChannelRelayerSpec._
 
@@ -49,12 +48,15 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val nodeParams = TestConstants.Bob.nodeParams
       val register = TestProbe[Any]("register")
       val channelRelayer = testKit.spawn(ChannelRelayer.apply(nodeParams, register.ref.toClassic))
-      withFixture(test.toNoArgTest(FixtureParam(nodeParams, channelRelayer, register)))
+      try withFixture(test.toNoArgTest(FixtureParam(nodeParams, channelRelayer, register)))
+      finally {
+        testKit.stop(channelRelayer)
+      }
     }
   }
 
-  def expectFwdFail(register: TestProbe[Any], channelId: ByteVector32, cmd: Command) = {
-    val fwd = register.expectMessageType[Register.Forward[Command]]
+  def expectFwdFail(register: TestProbe[Any], channelId: ByteVector32, cmd: channel.Command) = {
+    val fwd = register.expectMessageType[Register.Forward[channel.Command]]
     assert(fwd.channelId === channelId)
     assert(fwd.message === cmd)
     fwd
@@ -71,6 +73,34 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     fwd
   }
 
+  /** we parse logs to make sure the listener has received the event and prevent race conditions */
+  def publishUpdate(e: LocalChannelUpdate) = {
+    LoggingTestKit.debug(s"updating local channel info for channelId=${e.channelId} shortChannelId=${e.shortChannelId}").expect {
+      system.eventStream ! EventStream.Publish(e)
+    }(testKit.system)
+  }
+
+  /** we parse logs to make sure the listener has received the event and prevent race conditions */
+  def publishDown(e: LocalChannelDown) = {
+    LoggingTestKit.debug(s"removed local channel info for channelId=${e.channelId} shortChannelId=${e.shortChannelId}").expect {
+      system.eventStream ! EventStream.Publish(e)
+    }(testKit.system)
+  }
+
+  /** we parse logs to make sure the listener has received the event and prevent race conditions */
+  def publishBalanceChanged(e: AvailableBalanceChanged) = {
+    LoggingTestKit.debug(s"available balance changed for channelId=${e.channelId} shortChannelId=${e.shortChannelId}").expect {
+      system.eventStream ! EventStream.Publish(e)
+    }(testKit.system)
+  }
+
+  /** we parse logs to make sure the listener has received the event and prevent race conditions */
+  def publishShortChannelIdAssigned(e: ShortChannelIdAssigned) = {
+    LoggingTestKit.debug(s"shortChannelId changed for channelId=${e.channelId}").expect {
+      system.eventStream ! EventStream.Publish(e)
+    }(testKit.system)
+  }
+
   test("relay htlc-add") { f =>
     import f._
 
@@ -78,8 +108,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createChannelUpdate(shortId1)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    channelRelayer ! Relay(r)
 
     expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
   }
@@ -92,8 +122,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createChannelUpdate(shortId1)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    channelRelayer ! Relay(r)
 
     expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
   }
@@ -106,13 +136,13 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     // we tell the relayer about the first channel
     val u1 = createChannelUpdate(shortId1)
-    channelRelayer ! WrappedLocalChannelUpdate(u1)
+    publishUpdate(u1)
 
     // this is another channel, with less balance (it will be preferred)
     val u2 = createChannelUpdate(shortId2, 8000000 msat)
-    channelRelayer ! WrappedLocalChannelUpdate(u2)
+    publishUpdate(u2)
 
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    channelRelayer ! Relay(r)
 
     // first try
     val fwd1 = expectFwdAdd(register, shortId2, outgoingAmount, outgoingExpiry)
@@ -134,7 +164,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
 
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    channelRelayer ! Relay(r)
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
   }
@@ -146,8 +176,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createChannelUpdate(shortId1)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    channelRelayer ! Relay(r)
 
     val fwd = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
     fwd.replyTo ! Register.ForwardShortIdFailure(fwd)
@@ -163,9 +193,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val u = createChannelUpdate(shortId1)
     val d = LocalChannelDown(null, channelId = channelIds(shortId1), shortId1, outgoingNodeId)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedLocalChannelDown(d)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    publishDown(d)
+    channelRelayer ! Relay(r)
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(UnknownNextPeer), commit = true))
   }
@@ -177,8 +207,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createChannelUpdate(shortId1, enabled = false)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    channelRelayer ! Relay(r)
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(ChannelDisabled(u.channelUpdate.messageFlags, u.channelUpdate.channelFlags, u.channelUpdate)), commit = true))
   }
@@ -190,8 +220,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createChannelUpdate(shortId1, htlcMinimum = outgoingAmount + 1.msat)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    channelRelayer ! Relay(r)
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(AmountBelowMinimum(outgoingAmount, u.channelUpdate)), commit = true))
   }
@@ -203,8 +233,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createChannelUpdate(shortId1)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    channelRelayer ! Relay(r)
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, u.channelUpdate)), commit = true))
   }
@@ -216,8 +246,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createChannelUpdate(shortId1)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    channelRelayer ! Relay(r)
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, u.channelUpdate)), commit = true))
   }
@@ -229,8 +259,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(outgoingAmount + 1.msat, CltvExpiry(400100), payload)
     val u = createChannelUpdate(shortId1)
 
-    channelRelayer ! WrappedLocalChannelUpdate(u)
-    channelRelayer ! WrappedChannelRelayPacket(r)
+    publishUpdate(u)
+    channelRelayer ! Relay(r)
 
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(FeeInsufficient(r.add.amountMsat, u.channelUpdate)), commit = true))
   }
@@ -255,8 +285,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     )
 
     testCases.foreach { testCase =>
-      channelRelayer ! WrappedLocalChannelUpdate(u)
-      channelRelayer ! WrappedChannelRelayPacket(r)
+      publishUpdate(u)
+      channelRelayer ! Relay(r)
       val fwd = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
       fwd.message.replyTo ! RES_ADD_FAILED(fwd.message, testCase.exc, Some(testCase.update))
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(testCase.failure), commit = true))
@@ -273,7 +303,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val u_disabled = createChannelUpdate(shortId1, enabled = false)
     val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket)
 
-    case class TestCase(result: HtlcResult, cmd: Command with HasHtlcId)
+    case class TestCase(result: HtlcResult, cmd: channel.Command with HasHtlcId)
 
     val testCases = Seq(
       TestCase(HtlcResult.RemoteFail(UpdateFailHtlc(channelId1, downstream_htlc.id, hex"deadbeef")), CMD_FAIL_HTLC(r.add.id, Left(hex"deadbeef"), commit = true)),
@@ -283,8 +313,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     )
 
     testCases.foreach { testCase =>
-      channelRelayer ! WrappedLocalChannelUpdate(u)
-      channelRelayer ! WrappedChannelRelayPacket(r)
+      publishUpdate(u)
+      channelRelayer ! Relay(r)
       val fwd = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
       fwd.message.replyTo ! RES_SUCCESS(fwd.message, channelId1)
       fwd.message.origin.replyTo ! RES_ADD_SETTLED(fwd.message.origin, downstream_htlc, testCase.result)
@@ -310,8 +340,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     )
 
     testCases.foreach { testCase =>
-      channelRelayer ! WrappedLocalChannelUpdate(u)
-      channelRelayer ! WrappedChannelRelayPacket(r)
+      publishUpdate(u)
+      channelRelayer ! Relay(r)
 
       val fwd1 = expectFwdAdd(register, shortId1, outgoingAmount, outgoingExpiry)
       fwd1.message.replyTo ! RES_SUCCESS(fwd1.message, channelId1)
@@ -334,59 +364,51 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val channelId_bc = randomBytes32
     val a = PaymentPacketSpec.a
 
-    val sender = TestProbe[OutgoingChannels]()
+    val sender = TestProbe[Relayer.OutgoingChannels]()
 
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, -2000 msat, 300000 msat)))
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 400000 msat, -5000 msat)))
+    def getOutgoingChannels(enabledOnly: Boolean): Seq[Relayer.OutgoingChannel] = {
+      channelRelayer ! GetOutgoingChannels(sender.ref.toClassic, Relayer.GetOutgoingChannels(enabledOnly))
+      val Relayer.OutgoingChannels(channels) = sender.expectMessageType[Relayer.OutgoingChannels]
+      channels
+    }
 
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-    val OutgoingChannels(channels1) = sender.expectMessageType[OutgoingChannels]
+    publishUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, -2000 msat, 300000 msat)))
+    publishUpdate(LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc, 400000 msat, -5000 msat)))
+
+    val channels1 = getOutgoingChannels(true)
     assert(channels1.size === 2)
     assert(channels1.head.channelUpdate === channelUpdate_ab)
-    assert(channels1.head.toUsableBalance === UsableBalance(a, channelUpdate_ab.shortChannelId, 0 msat, 300000 msat, isPublic = false))
+    assert(channels1.head.toUsableBalance === Relayer.UsableBalance(a, channelUpdate_ab.shortChannelId, 0 msat, 300000 msat, isPublic = false))
     assert(channels1.last.channelUpdate === channelUpdate_bc)
-    assert(channels1.last.toUsableBalance === UsableBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false))
+    assert(channels1.last.toUsableBalance === Relayer.UsableBalance(c, channelUpdate_bc.shortChannelId, 400000 msat, 0 msat, isPublic = false))
 
-    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-    val OutgoingChannels(channels2) = sender.expectMessageType[OutgoingChannels]
+    publishBalanceChanged(AvailableBalanceChanged(null, channelId_bc, channelUpdate_bc.shortChannelId, makeCommitments(channelId_bc, 200000 msat, 500000 msat)))
+    val channels2 = getOutgoingChannels(true)
     assert(channels2.last.commitments.availableBalanceForReceive === 500000.msat && channels2.last.commitments.availableBalanceForSend === 200000.msat)
 
-    channelRelayer ! WrappedAvailableBalanceChanged(AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
-    channelRelayer ! WrappedLocalChannelDown(LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c))
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-    val OutgoingChannels(channels3) = sender.expectMessageType[OutgoingChannels]
+    publishBalanceChanged(AvailableBalanceChanged(null, channelId_ab, channelUpdate_ab.shortChannelId, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    publishDown(LocalChannelDown(null, channelId_bc, channelUpdate_bc.shortChannelId, c))
+    val channels3 = getOutgoingChannels(true)
     assert(channels3.size === 1 && channels3.head.commitments.availableBalanceForSend === 100000.msat)
 
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = 2), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-    val OutgoingChannels(channels4) = sender.expectMessageType[OutgoingChannels]
+    publishUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = 2), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    val channels4 = getOutgoingChannels(true)
     assert(channels4.isEmpty)
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels(enabledOnly = false))
-    val OutgoingChannels(channels5) = sender.expectMessageType[OutgoingChannels]
+    val channels5 = getOutgoingChannels(false)
     assert(channels5.size === 1)
 
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-    val OutgoingChannels(channels6) = sender.expectMessageType[OutgoingChannels]
+    publishUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab, makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    val channels6 = getOutgoingChannels(true)
     assert(channels6.size === 1)
 
-    // We should ignore faulty events that don't really change the shortChannelId:
-    channelRelayer ! WrappedShortChannelIdAssigned(ShortChannelIdAssigned(null, channelId_ab, channelUpdate_ab.shortChannelId, Some(channelUpdate_ab.shortChannelId)))
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-    val OutgoingChannels(channels7) = sender.expectMessageType[OutgoingChannels]
-    assert(channels7.size === 1)
-    assert(channels7.head.channelUpdate.shortChannelId === channelUpdate_ab.shortChannelId)
-
     // Simulate a chain re-org that changes the shortChannelId:
-    channelRelayer ! WrappedShortChannelIdAssigned(ShortChannelIdAssigned(null, channelId_ab, ShortChannelId(42), Some(channelUpdate_ab.shortChannelId)))
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-    sender.expectMessage(OutgoingChannels(Nil))
+    publishShortChannelIdAssigned(ShortChannelIdAssigned(null, channelId_ab, ShortChannelId(42), Some(channelUpdate_ab.shortChannelId)))
+    val channels7 = getOutgoingChannels(true)
+    assert(channels7.isEmpty)
 
     // We should receive the updated channel update containing the new shortChannelId:
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, ShortChannelId(42), a, None, channelUpdate_ab.copy(shortChannelId = ShortChannelId(42)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
-    channelRelayer ! WrappedGetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-    val OutgoingChannels(channels8) = sender.expectMessageType[OutgoingChannels]
+    publishUpdate(LocalChannelUpdate(null, channelId_ab, ShortChannelId(42), a, None, channelUpdate_ab.copy(shortChannelId = ShortChannelId(42)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    val channels8 = getOutgoingChannels(true)
     assert(channels8.size === 1)
     assert(channels8.head.channelUpdate.shortChannelId === ShortChannelId(42))
   }
@@ -416,7 +438,7 @@ object ChannelRelayerSpec {
 
   def createChannelUpdate(shortChannelId: ShortChannelId, balance: MilliSatoshi = 10000000 msat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat): LocalChannelUpdate = {
     val channelId = channelIds(shortChannelId)
-    val update = ChannelUpdate(ByteVector64.Zeroes, Block.RegtestGenesisBlock.hash, shortChannelId, 0, 1, Announcements.makeChannelFlags(isNode1 = true, enabled), CltvExpiryDelta(100), htlcMinimum, 1000 msat, 100, Some(500000000 msat))
+    val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, shortChannelId, 0, 1, Announcements.makeChannelFlags(isNode1 = true, enabled), CltvExpiryDelta(100), htlcMinimum, 1000 msat, 100, Some(500000000 msat))
     val commitments = PaymentPacketSpec.makeCommitments(channelId, testAvailableBalanceForSend = balance)
     LocalChannelUpdate(null, channelId, shortChannelId, outgoingNodeId, None, update, commitments)
   }
