@@ -91,8 +91,13 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive a partial upstream multi-part payment.
     incomingMultiPart.dropRight(1).foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
     // after a while the payment times out
-    incomingMultiPart.dropRight(1).foreach(p => register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]](30 seconds))
-    //    incomingMultiPart.dropRight(1).foreach(p => register.expectMessage(30 seconds, Register.Forward(nodeRelayer.toClassic, p.add.channelId, CMD_FAIL_HTLC(p.add.id, Right(PaymentTimeout), commit = true))))
+    incomingMultiPart.dropRight(1).foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]](30 seconds)
+      assert(fwd.channelId === p.add.channelId)
+      val failure = Right(PaymentTimeout)
+      assert(fwd.message === CMD_FAIL_HTLC(p.add.id, failure, commit = true))
+    }
+
     register.expectNoMessage(100 millis)
   }
 

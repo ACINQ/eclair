@@ -336,7 +336,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     case class TestCase(result: HtlcResult)
 
     val testCases = Seq(
-      TestCase(HtlcResult.RemoteFulfill(UpdateFulfillHtlc(channelId1, downstream_htlc.id, paymentPreimage)))
+      TestCase(HtlcResult.RemoteFulfill(UpdateFulfillHtlc(channelId1, downstream_htlc.id, paymentPreimage))),
+      TestCase(HtlcResult.OnChainFulfill(paymentPreimage))
     )
 
     testCases.foreach { testCase =>
