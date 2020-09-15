@@ -357,7 +357,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     }
 
     {
-      // invalid cltv expiry, no suitable channel, we keep the requested one
+      // invalid cltv expiry, no suitable channel found
       val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(40))
       val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
