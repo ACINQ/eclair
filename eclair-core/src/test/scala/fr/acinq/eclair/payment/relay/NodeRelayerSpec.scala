@@ -381,7 +381,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // A first downstream HTLC is fulfilled: we should immediately forward the fulfill upstream.
     nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
     incomingMultiPart.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
       assert(fwd.message === CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
     }
@@ -452,7 +452,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
     incomingMultiPart.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
       assert(fwd.message === CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
     }
@@ -488,7 +488,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     nodeRelayerAdapters ! PreimageReceived(paymentHash, paymentPreimage)
     incomingMultiPart.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      val fwd = register.expectMessageType[Register.Forward[CMD_FULFILL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
       assert(fwd.message === CMD_FULFILL_HTLC(p.add.id, paymentPreimage, commit = true))
     }
