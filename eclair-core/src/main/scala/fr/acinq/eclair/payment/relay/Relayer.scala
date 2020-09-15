@@ -17,6 +17,8 @@
 package fr.acinq.eclair.payment.relay
 
 import akka.Done
+import akka.actor.typed.SupervisorStrategy
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, typed}
 import akka.event.Logging.MDC
@@ -52,8 +54,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
   implicit def implicitLog: LoggingAdapter = log
 
   private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, register, initialized), "post-restart-htlc-cleaner")
-  private val channelRelayer = context.spawn(ChannelRelayer(nodeParams, register), "channel-relayer")
-  private val nodeRelayer = context.spawn(NodeRelayer(nodeParams, router, register), name = "node-relayer")
+  private val channelRelayer = context.spawn(Behaviors.supervise(ChannelRelayer(nodeParams, register)).onFailure(SupervisorStrategy.resume), "channel-relayer")
+  private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, router, register)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
 
   def receive: Receive = {
     case RelayForward(add) =>

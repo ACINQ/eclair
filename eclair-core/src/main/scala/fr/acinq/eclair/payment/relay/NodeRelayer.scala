@@ -48,23 +48,23 @@ object NodeRelayer {
   def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
-        Behaviors.receiveMessage {
-          case Relay(nodeRelayPacket) =>
-            import nodeRelayPacket.add.paymentHash
-            val handler = context.child(paymentHash.toString) match {
-              case Some(handler) =>
-                // NB: we could also maintain a list of children
-                handler.unsafeUpcast[NodeRelay.Command] // we know that all children are of type NodeRelay
-              case None =>
-                val relayId = UUID.randomUUID()
-                context.log.debug(s"spawning a new handler with relayId=$relayId")
-                // we index children by paymentHash, not relayId, because there is no concept of individual payment on LN
-                context.spawn(NodeRelay.apply(nodeParams, router, register, relayId, paymentHash), name = paymentHash.toString)
-            }
-            context.log.debug("forwarding incoming htlc to handler")
-            handler ! NodeRelay.Relay(nodeRelayPacket)
-            Behaviors.same
-        }
+          Behaviors.receiveMessage {
+            case Relay(nodeRelayPacket) =>
+              import nodeRelayPacket.add.paymentHash
+              val handler = context.child(paymentHash.toString) match {
+                case Some(handler) =>
+                  // NB: we could also maintain a list of children
+                  handler.unsafeUpcast[NodeRelay.Command] // we know that all children are of type NodeRelay
+                case None =>
+                  val relayId = UUID.randomUUID()
+                  context.log.debug(s"spawning a new handler with relayId=$relayId")
+                  // we index children by paymentHash, not relayId, because there is no concept of individual payment on LN
+                  context.spawn(NodeRelay.apply(nodeParams, router, register, relayId, paymentHash), name = paymentHash.toString)
+              }
+              context.log.debug("forwarding incoming htlc to handler")
+              handler ! NodeRelay.Relay(nodeRelayPacket)
+              Behaviors.same
+          }
       }
     }
 }

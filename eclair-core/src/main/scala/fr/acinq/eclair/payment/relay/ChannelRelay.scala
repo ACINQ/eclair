@@ -123,11 +123,11 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   def waitForAddResponse(selectedShortChannelId: ShortChannelId, previousFailures: Seq[PreviouslyTried]): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case WrappedForwardShortIdFailure(Register.ForwardShortIdFailure(Register.ForwardShortId(_, shortChannelId, CMD_ADD_HTLC(_, _, _, _, _, Origin.ChannelRelayedHot(_, add, _), _)))) =>
-        context.log.warn(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
-        val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
+      case WrappedForwardShortIdFailure(Register.ForwardShortIdFailure(Register.ForwardShortId(_, shortChannelId, CMD_ADD_HTLC(_, _, _, _, _, o: Origin.ChannelRelayedHot, _)))) =>
+        context.log.warn(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${o.add.id}")
+        val cmdFail = CMD_FAIL_HTLC(o.add.id, Right(UnknownNextPeer), commit = true)
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-        safeSendAndStop(add.channelId, cmdFail)
+        safeSendAndStop(o.add.channelId, cmdFail)
 
       case WrappedAddResponse(addFailed@RES_ADD_FAILED(CMD_ADD_HTLC(_, _, _, _, _, Origin.ChannelRelayedHot(_, add, _), _), _, _)) =>
         context.log.info(s"retrying htlc #${add.id} from channelId=${add.channelId}")
