@@ -40,9 +40,6 @@ import scala.collection.mutable
  */
 object ChannelRelayer {
 
-  type ChannelUpdates = Map[ShortChannelId, Relayer.OutgoingChannel]
-  type NodeChannels = mutable.MultiDict[PublicKey, ShortChannelId]
-
   // @formatter:off
   sealed trait Command
   case class GetOutgoingChannels(replyTo: ActorRef, getOutgoingChannels: Relayer.GetOutgoingChannels) extends Command
@@ -59,6 +56,9 @@ object ChannelRelayer {
     case _ => Map.empty
   }
 
+  private type ChannelUpdates = Map[ShortChannelId, Relayer.OutgoingChannel]
+  private type NodeChannels = mutable.MultiDict[PublicKey, ShortChannelId]
+
   def apply(nodeParams: NodeParams,
             register: ActorRef,
             channelUpdates: ChannelUpdates = Map.empty,
@@ -74,8 +74,12 @@ object ChannelRelayer {
         Behaviors.receiveMessage {
           case Relay(channelRelayPacket) =>
             val relayId = UUID.randomUUID()
-            context.log.debug(s"spawning a new handler with relayId=$relayId")
-            context.spawn(ChannelRelay.apply(nodeParams, register, channelUpdates, node2channels, relayId, channelRelayPacket), name = relayId.toString)
+            val channels: Map[ShortChannelId, Relayer.OutgoingChannel] = channelUpdates.get(channelRelayPacket.payload.outgoingChannelId) match {
+              case Some(channel) => node2channels.get(channel.nextNodeId).map(channelUpdates).map(c => c.channelUpdate.shortChannelId -> c).toMap
+              case None => Map.empty
+            }
+            context.log.debug(s"spawning a new handler with relayId=$relayId channels={}", channels.keys.mkString(","))
+            context.spawn(ChannelRelay.apply(nodeParams, register, channels, relayId, channelRelayPacket), name = relayId.toString)
             Behaviors.same
 
           case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>

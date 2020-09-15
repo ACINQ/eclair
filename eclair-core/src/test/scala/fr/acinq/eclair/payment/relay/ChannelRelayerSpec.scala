@@ -21,6 +21,7 @@ import akka.actor.typed
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.TestConstants.emptyOnionPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -104,7 +105,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
+    val u = createLocalUpdate(shortId1)
 
     publishUpdate(u)
     channelRelayer ! Relay(r)
@@ -118,7 +119,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = ChannelRelayTlvPayload(TlvStream[OnionTlv](AmountToForward(outgoingAmount), OutgoingCltv(outgoingExpiry), OutgoingChannelId(shortId1)))
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
+    val u = createLocalUpdate(shortId1)
 
     publishUpdate(u)
     channelRelayer ! Relay(r)
@@ -133,11 +134,11 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
 
     // we tell the relayer about the first channel
-    val u1 = createChannelUpdate(shortId1)
+    val u1 = createLocalUpdate(shortId1)
     publishUpdate(u1)
 
     // this is another channel, with less balance (it will be preferred)
-    val u2 = createChannelUpdate(shortId2, 8000000 msat)
+    val u2 = createLocalUpdate(shortId2, 8000000 msat)
     publishUpdate(u2)
 
     channelRelayer ! Relay(r)
@@ -172,7 +173,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
+    val u = createLocalUpdate(shortId1)
 
     publishUpdate(u)
     channelRelayer ! Relay(r)
@@ -188,7 +189,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
+    val u = createLocalUpdate(shortId1)
     val d = LocalChannelDown(null, channelId = channelIds(shortId1), shortId1, outgoingNodeId)
 
     publishUpdate(u)
@@ -203,7 +204,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1, enabled = false)
+    val u = createLocalUpdate(shortId1, enabled = false)
 
     publishUpdate(u)
     channelRelayer ! Relay(r)
@@ -216,7 +217,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1, htlcMinimum = outgoingAmount + 1.msat)
+    val u = createLocalUpdate(shortId1, htlcMinimum = outgoingAmount + 1.msat)
 
     publishUpdate(u)
     channelRelayer ! Relay(r)
@@ -229,7 +230,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry - CltvExpiryDelta(1))
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
+    val u = createLocalUpdate(shortId1)
 
     publishUpdate(u)
     channelRelayer ! Relay(r)
@@ -242,7 +243,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry + CltvExpiryDelta(1))
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
+    val u = createLocalUpdate(shortId1)
 
     publishUpdate(u)
     channelRelayer ! Relay(r)
@@ -255,7 +256,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(outgoingAmount + 1.msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
+    val u = createLocalUpdate(shortId1)
 
     publishUpdate(u)
     channelRelayer ! Relay(r)
@@ -269,8 +270,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val channelId1 = channelIds(shortId1)
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
-    val u_disabled = createChannelUpdate(shortId1, enabled = false)
+    val u = createLocalUpdate(shortId1)
+    val u_disabled = createLocalUpdate(shortId1, enabled = false)
 
     case class TestCase(exc: ChannelException, update: ChannelUpdate, failure: FailureMessage)
 
@@ -291,14 +292,87 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     }
   }
 
+  test("select preferred channels") { f =>
+    import f._
+
+    /** This is just a simplified helper function with random values for fields we are not using here */
+    def dummyLocalUpdate(shortChannelId: ShortChannelId, remoteNodeId: PublicKey, availableBalanceForSend: MilliSatoshi) = {
+      val channelId = randomBytes32
+      val update = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, remoteNodeId, shortChannelId, CltvExpiryDelta(10), 100 msat, 1000 msat, 100, 10000000 msat, enable = true)
+      val commitments = PaymentPacketSpec.makeCommitments(ByteVector32.Zeroes, availableBalanceForSend)
+      LocalChannelUpdate(null, channelId, shortChannelId, remoteNodeId, None, update, commitments)
+    }
+
+    val (a, b) = (randomKey.publicKey, randomKey.publicKey)
+
+    val channelUpdates = Map(
+      ShortChannelId(11111) -> dummyLocalUpdate(ShortChannelId(11111), a, 100000000 msat),
+      ShortChannelId(12345) -> dummyLocalUpdate(ShortChannelId(12345), a, 20000000 msat),
+      ShortChannelId(22222) -> dummyLocalUpdate(ShortChannelId(22222), a, 10000000 msat),
+      ShortChannelId(33333) -> dummyLocalUpdate(ShortChannelId(33333), a, 100000 msat),
+      ShortChannelId(44444) -> dummyLocalUpdate(ShortChannelId(44444), b, 1000000 msat),
+    )
+
+    channelUpdates.values.foreach(publishUpdate)
+
+    {
+      val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(60))
+      val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
+      channelRelayer ! Relay(r)
+      // select the channel to the same node, with the lowest balance but still high enough to handle the payment
+      val cmd1 = expectFwdAdd(register, ShortChannelId(22222), payload.amountToForward, payload.outgoingCltv).message
+      cmd1.replyTo ! RES_ADD_FAILED(cmd1, ChannelUnavailable(randomBytes32), None)
+      // select 2nd-to-best channel
+      val cmd2 = expectFwdAdd(register, ShortChannelId(12345), payload.amountToForward, payload.outgoingCltv).message
+      cmd2.replyTo ! RES_ADD_FAILED(cmd2, TooManyAcceptedHtlcs(randomBytes32, 42), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))
+      // select 3rd-to-best channel
+      val cmd3 = expectFwdAdd(register, ShortChannelId(11111), payload.amountToForward, payload.outgoingCltv).message
+      cmd3.replyTo ! RES_ADD_FAILED(cmd3, HtlcValueTooHighInFlight(randomBytes32, UInt64(100000000), 100000000 msat), Some(channelUpdates(ShortChannelId(11111)).channelUpdate))
+      // all the suitable channels have been tried
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(channelUpdates(ShortChannelId(12345)).channelUpdate)), commit = true))
+    }
+
+    {
+      // higher amount payment (have to increased incoming htlc amount for fees to be sufficient)
+      val payload = RelayLegacyPayload(ShortChannelId(12345), 50000000 msat, CltvExpiry(60))
+      val r = createValidIncomingPacket(60000000 msat, CltvExpiry(70), payload)
+      channelRelayer ! Relay(r)
+      expectFwdAdd(register, ShortChannelId(11111), payload.amountToForward, payload.outgoingCltv).message
+    }
+
+    {
+      // lower amount payment
+      val payload = RelayLegacyPayload(ShortChannelId(12345), 1000 msat, CltvExpiry(60))
+      val r = createValidIncomingPacket(60000000 msat, CltvExpiry(70), payload)
+      channelRelayer ! Relay(r)
+      expectFwdAdd(register, ShortChannelId(33333), payload.amountToForward, payload.outgoingCltv).message
+    }
+
+    {
+      // payment too high, no suitable channel found, we keep the requested one
+      val payload = RelayLegacyPayload(ShortChannelId(12345), 1000000000 msat, CltvExpiry(60))
+      val r = createValidIncomingPacket(1010000000 msat, CltvExpiry(70), payload)
+      channelRelayer ! Relay(r)
+      expectFwdAdd(register, ShortChannelId(12345), payload.amountToForward, payload.outgoingCltv).message
+    }
+
+    {
+      // invalid cltv expiry, no suitable channel, we keep the requested one
+      val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(40))
+      val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
+      channelRelayer ! Relay(r)
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(CltvExpiry(40), channelUpdates(ShortChannelId(12345)).channelUpdate)), commit = true))
+    }
+  }
+
   test("settlement failure") { f =>
     import f._
 
     val channelId1 = channelIds(shortId1)
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
-    val u_disabled = createChannelUpdate(shortId1, enabled = false)
+    val u = createLocalUpdate(shortId1)
+    val u_disabled = createLocalUpdate(shortId1, enabled = false)
     val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket)
 
     case class TestCase(result: HtlcResult, cmd: channel.Command with HasHtlcId)
@@ -328,7 +402,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val channelId1 = channelIds(shortId1)
     val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
-    val u = createChannelUpdate(shortId1)
+    val u = createLocalUpdate(shortId1)
     val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket)
 
     case class TestCase(result: HtlcResult)
@@ -435,7 +509,7 @@ object ChannelRelayerSpec {
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
   }
 
-  def createChannelUpdate(shortChannelId: ShortChannelId, balance: MilliSatoshi = 10000000 msat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat): LocalChannelUpdate = {
+  def createLocalUpdate(shortChannelId: ShortChannelId, balance: MilliSatoshi = 10000000 msat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat): LocalChannelUpdate = {
     val channelId = channelIds(shortChannelId)
     val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, shortChannelId, 0, 1, Announcements.makeChannelFlags(isNode1 = true, enabled), CltvExpiryDelta(100), htlcMinimum, 1000 msat, 100, Some(500000000 msat))
     val commitments = PaymentPacketSpec.makeCommitments(channelId, testAvailableBalanceForSend = balance)
