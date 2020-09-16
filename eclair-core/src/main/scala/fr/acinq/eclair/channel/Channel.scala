@@ -1854,12 +1854,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   def handleCommandSuccess(c: Command, newData: Data) = {
-    val replyTo = c match {
-      case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => hasReplyTo.replyTo
-      case _ => sender
+    val replyTo_opt = c match {
+      case _: NoReplyTo => None
+      case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => Some(hasReplyTo.replyTo)
+      case _ => Some(sender)
     }
-    val channelId = Helpers.getChannelId(newData)
-    replyTo ! RES_SUCCESS(c, channelId)
+    replyTo_opt.foreach { replyTo =>
+      val channelId = Helpers.getChannelId(newData)
+      replyTo ! RES_SUCCESS(c, channelId)
+    }
     stay using newData
   }
 

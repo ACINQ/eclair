@@ -375,7 +375,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val u_disabled = createLocalUpdate(shortId1, enabled = false)
     val downstream_htlc = UpdateAddHtlc(channelId1, 7, outgoingAmount, paymentHash, outgoingExpiry, emptyOnionPacket)
 
-    case class TestCase(result: HtlcResult, cmd: channel.Command with HasHtlcId)
+    case class TestCase(result: HtlcResult, cmd: channel.HtlcSettlementCommand)
 
     val testCases = Seq(
       TestCase(HtlcResult.RemoteFail(UpdateFailHtlc(channelId1, downstream_htlc.id, hex"deadbeef")), CMD_FAIL_HTLC(r.add.id, Left(hex"deadbeef"), commit = true)),

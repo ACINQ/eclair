@@ -27,7 +27,7 @@ import org.scalatest.funsuite.AnyFunSuite
 class CommandCodecsSpec extends AnyFunSuite {
 
   test("encode/decode all channel messages") {
-    val msgs: List[Command with HasHtlcId] =
+    val msgs: List[HtlcSettlementCommand] =
       CMD_FULFILL_HTLC(1573L, randomBytes32) ::
         CMD_FAIL_HTLC(42456L, Left(randomBytes(145))) ::
         CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure)) ::

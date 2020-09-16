@@ -121,7 +121,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_FULFILL_HTLC(0, r1))
-    sender.expectMsgType[RES_SUCCESS[CMD_FULFILL_HTLC]]
     val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
@@ -206,7 +205,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_FAIL_HTLC(1, Right(PermanentChannelFailure)))
-    sender.expectMsgType[RES_SUCCESS[CMD_FAIL_HTLC]]
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
@@ -238,7 +236,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.empty), FailureMessageCodecs.BADONION))
-    sender.expectMsgType[RES_SUCCESS[CMD_FAIL_MALFORMED_HTLC]]
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
@@ -357,7 +354,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     sender.send(bob, CMD_FULFILL_HTLC(0, r1))
-    sender.expectMsgType[RES_SUCCESS[CMD_FULFILL_HTLC]]
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     sender.send(bob, CMD_SIGN)
     sender.expectMsgType[RES_SUCCESS[CMD_SIGN.type]]
@@ -376,7 +372,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     sender.send(bob, CMD_FULFILL_HTLC(0, r1))
-    sender.expectMsgType[RES_SUCCESS[CMD_FULFILL_HTLC]]
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)
@@ -453,7 +448,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     sender.send(bob, CMD_FULFILL_HTLC(0, r1))
-    sender.expectMsgType[RES_SUCCESS[CMD_FULFILL_HTLC]]
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)
@@ -493,7 +487,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     sender.send(bob, CMD_FAIL_HTLC(1, Right(PermanentChannelFailure)))
-    sender.expectMsgType[RES_SUCCESS[CMD_FAIL_HTLC]]
     val fail = bob2alice.expectMsgType[UpdateFailHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)
@@ -519,7 +512,6 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.view("should be htlc.onionRoutingPacket".getBytes())), FailureMessageCodecs.BADONION))
-    sender.expectMsgType[RES_SUCCESS[CMD_FAIL_MALFORMED_HTLC]]
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     bob2alice.forward(alice)
     sender.send(bob, CMD_SIGN)

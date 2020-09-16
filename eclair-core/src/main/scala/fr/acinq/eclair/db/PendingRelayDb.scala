@@ -38,11 +38,11 @@ import fr.acinq.eclair.wire.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulf
  */
 trait PendingRelayDb extends Closeable {
 
-  def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit
+  def addPendingRelay(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit
 
   def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit
 
-  def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId]
+  def listPendingRelay(channelId: ByteVector32): Seq[HtlcSettlementCommand]
 
   def listPendingRelay(): Set[(ByteVector32, Long)]
 
@@ -54,16 +54,14 @@ object PendingRelayDb {
    * in a database because we don't want to lose preimages, or to forget to fail
    * incoming htlcs, which would lead to unwanted channel closings.
    */
-  def safeSend(register: ActorRef, db: PendingRelayDb, replyTo: ActorRef, channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = {
-    register ! Register.Forward(replyTo, channelId, cmd)
+  def safeSend(register: ActorRef, db: PendingRelayDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
+    // htlc settlement commands don't have replyTo
+    register ! Register.Forward(ActorRef.noSender, channelId, cmd)
     // we store the command in a db (note that this happens *after* forwarding the command to the channel, so we don't add latency)
     db.addPendingRelay(channelId, cmd)
   }
 
-  def safeSend(register: ActorRef, db: PendingRelayDb, channelId: ByteVector32, cmd: Command with HasHtlcId)(implicit ctx: ActorContext): Unit =
-    safeSend(register, db, ctx.self, channelId, cmd)
-
-  def ackCommand(db: PendingRelayDb, channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = {
+  def ackCommand(db: PendingRelayDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
     db.removePendingRelay(channelId, cmd.id)
   }
 
@@ -79,7 +77,7 @@ object PendingRelayDb {
       db.removePendingRelay(u.channelId, u.id)
   }
 
-  def getPendingFailsAndFulfills(db: PendingRelayDb, channelId: ByteVector32)(implicit  log: LoggingAdapter): Seq[Command with HasHtlcId] = {
+  def getPendingFailsAndFulfills(db: PendingRelayDb, channelId: ByteVector32)(implicit  log: LoggingAdapter): Seq[HtlcSettlementCommand] = {
     db.listPendingRelay(channelId)
   }
 }
