@@ -77,7 +77,7 @@ object ChannelRelay {
     }
   }
 
-  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail): channel.Command with channel.HasHtlcId = {
+  def translateRelayFailure(originHtlcId: Long, fail: HtlcResult.Fail): channel.Command with channel.HtlcSettlementCommand = {
     fail match {
       case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, Left(f.fail.reason), commit = true)
       case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_MALFORMED_HTLC(originHtlcId, f.fail.onionHash, f.fail.failureCode, commit = true)
@@ -154,9 +154,9 @@ class ChannelRelay private(nodeParams: NodeParams,
         safeSendAndStop(o.originChannelId, cmd)
     }
 
-  def safeSendAndStop(channelId: ByteVector32, cmd: channel.Command with channel.HasHtlcId): Behavior[Command] = {
+  def safeSendAndStop(channelId: ByteVector32, cmd: channel.Command with channel.HtlcSettlementCommand): Behavior[Command] = {
     // NB: we are not using an adapter here because we are stopping anyway so we won't be there to get the result
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, context.system.deadLetters.toClassic, channelId, cmd)
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, cmd)
     Behaviors.stopped
   }
 

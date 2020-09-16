@@ -18,7 +18,7 @@ package fr.acinq.eclair.db.pg
 
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.{Command, HasHtlcId}
+import fr.acinq.eclair.channel.{Command, HtlcSettlementCommand}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.db.pg.PgUtils._
@@ -44,7 +44,7 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends Pend
     }
   }
 
-  override def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = withMetrics("pending-relay/add") {
+  override def addPendingRelay(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add") {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO pending_relay VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, channelId.toHex)
@@ -65,7 +65,7 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends Pend
     }
   }
 
-  override def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId] = withMetrics("pending-relay/list-channel") {
+  override def listPendingRelay(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel") {
     withLock { pg =>
       using(pg.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)

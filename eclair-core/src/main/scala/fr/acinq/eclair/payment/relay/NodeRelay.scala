@@ -310,7 +310,7 @@ class NodeRelay private(nodeParams: NodeParams,
   private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
     val cmd = CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true)
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, context.system.deadLetters.toClassic, channelId, cmd)
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, cmd)
   }
 
   private def rejectPayment(upstream: Upstream.Trampoline, failure: Option[FailureMessage]): Unit = {
@@ -320,7 +320,7 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def fulfillPayment(upstream: Upstream.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
     val cmd = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, context.system.deadLetters.toClassic, add.channelId, cmd)
+    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmd)
   })
 
   private def success(upstream: Upstream.Trampoline, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {

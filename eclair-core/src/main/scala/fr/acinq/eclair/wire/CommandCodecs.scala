@@ -40,7 +40,7 @@ object CommandCodecs {
       ("failureCode" | uint16) ::
       ("commit" | provide(false))).as[CMD_FAIL_MALFORMED_HTLC]
 
-  val cmdCodec: Codec[Command with HasHtlcId] = discriminated[Command with HasHtlcId].by(uint16)
+  val cmdCodec: Codec[HtlcSettlementCommand] = discriminated[HtlcSettlementCommand].by(uint16)
     .typecase(0, cmdFulfillCodec)
     .typecase(1, cmdFailCodec)
     .typecase(2, cmdFailMalformedCodec)

@@ -115,8 +115,6 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
       handleDownstreamFailure(brokenHtlcs, o, htlc, fail)
 
     case GetBrokenHtlcs => sender ! brokenHtlcs
-
-    case _: RES_SUCCESS[_] => // ignoring responses from channels
   }
 
   private def handleDownstreamFulfill(brokenHtlcs: BrokenHtlcs, origin: Origin.Cold, fulfilledHtlc: UpdateAddHtlc, paymentPreimage: ByteVector32): Unit =

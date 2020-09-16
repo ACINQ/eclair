@@ -87,10 +87,6 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
       stay
   }
 
-  whenUnhandled {
-    case Event(_: RES_SUCCESS[_], _) => stay
-  }
-
   onTransition {
     case WAITING_FOR_HTLC -> WAITING_FOR_HTLC => () // don't do anything if we stay in that state
     case WAITING_FOR_HTLC -> _ => cancelTimer(PaymentTimeout.toString)
