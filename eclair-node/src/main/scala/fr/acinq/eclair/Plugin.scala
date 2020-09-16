@@ -26,7 +26,7 @@ import scala.util.{Failure, Success, Try}
 
 trait Plugin {
 
-  def info: PluginInfo
+  def info: Option[PluginInfo]
 
   def onSetup(setup: Setup): Unit
 

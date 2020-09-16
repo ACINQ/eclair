@@ -40,7 +40,7 @@ object Boot extends App with Logging {
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node", config)
     implicit val ec: ExecutionContext = system.dispatcher
-    val setup = new Setup(datadir, plugins.map(_.info).toList)
+    val setup = new Setup(datadir, plugins.flatMap(_.info).toList)
 
     if (config.getBoolean("eclair.enable-kamon")) {
       Kamon.init(config)
