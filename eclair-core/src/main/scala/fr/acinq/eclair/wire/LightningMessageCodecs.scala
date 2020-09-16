@@ -365,10 +365,10 @@ object LightningMessageCodecs {
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
   //
-    .typecase(1487, provide(QuerySupportedPlugins))
-    .typecase(1489, replySupportedPluginsCodec)
-    .typecase(1491, pluginMessageCodec)
-    .typecase(1493, pluginNotSupportedCodec)
+    .typecase(42261, provide(QuerySupportedPlugins))
+    .typecase(42263, replySupportedPluginsCodec)
+    .typecase(42265, pluginMessageCodec)
+    .typecase(42267, pluginNotSupportedCodec)
   // NB: blank lines to minimize merge conflicts
 
   //
