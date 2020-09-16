@@ -51,7 +51,7 @@ import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.wire.{NodeAddress, PluginInfo}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
@@ -70,6 +70,7 @@ import scala.util.{Failure, Success}
  * @param db       optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
+            pluginInfos: List[PluginInfo],
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
@@ -300,7 +301,7 @@ class Setup(datadir: File,
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
       _ <- postRestartCleanUpInitialized.future
-      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
+      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, relayer, wallet, pluginInfos), "switchboard", SupervisorStrategy.Resume))
       clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, router, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))

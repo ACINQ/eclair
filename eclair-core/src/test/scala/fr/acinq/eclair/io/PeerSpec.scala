@@ -26,14 +26,14 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.{Btc, Script}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{Wumbo, StaticRemoteKey}
+import fr.acinq.eclair.Features.{StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, ChannelVersion, DATA_WAIT_FOR_ACCEPT_CHANNEL, HasCommitments, RES_GETINFO, WAIT_FOR_ACCEPT_CHANNEL}
 import fr.acinq.eclair.io.Peer._
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement, QuerySupportedPlugins}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.{ByteVector, _}
@@ -66,7 +66,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, watcher.ref, relayer.ref, wallet))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, watcher.ref, relayer.ref, wallet, pluginInfos = List.empty))
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, watcher, relayer, peer, peerConnection)))
   }
 

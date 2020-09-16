@@ -45,9 +45,11 @@ import scodec.bits.ByteVector
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet, pluginInfos: List[PluginInfo]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
+
+  val supportedPlugins: Set[Int] = pluginInfos.map(_.id).toSet
 
   startWith(INSTANTIATING, Nothing)
 
@@ -201,6 +203,18 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
 
+      case Event(QuerySupportedPlugins, d: ConnectedData) =>
+        d.peerConnection ! ReplySupportedPlugins(pluginInfos)
+        stay
+
+      case Event(pluginMessage: PluginMessage, d: ConnectedData) =>
+        if (supportedPlugins.contains(pluginMessage.pluginId)) {
+          context.system.eventStream.publish(PluginMessageReceived(self, remoteNodeId, pluginMessage))
+        } else {
+          d.peerConnection ! PluginNotSupported(pluginMessage.pluginId, ReplySupportedPlugins(pluginInfos))
+        }
+        stay
+
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
         stay
@@ -344,7 +358,7 @@ object Peer {
   val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
   // @formatter:on
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, watcher, relayer: ActorRef, wallet))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet, pluginInfos: List[PluginInfo]): Props = Props(new Peer(nodeParams, remoteNodeId, watcher, relayer: ActorRef, wallet, pluginInfos))
 
   // @formatter:off
 
