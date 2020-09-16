@@ -195,10 +195,16 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L, randomKey, randomKey.publicKey)
 
+    val plugin_info = PluginInfo(id = 1, name = "Plugin", description = "What it does")
+    val reply_supported_plugins = ReplySupportedPlugins(List(plugin_info, plugin_info))
+    val plugin_message = PluginMessage(pluginId = 1, ByteVector32.One.bytes)
+    val plugin_not_supported = PluginNotSupported(pluginId = 2, supported = reply_supported_plugins)
+
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish :: Nil
+        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures ::
+        ping :: pong :: channel_reestablish :: QuerySupportedPlugins :: reply_supported_plugins :: plugin_message :: plugin_not_supported :: Nil
 
     msgs.foreach {
       msg => {

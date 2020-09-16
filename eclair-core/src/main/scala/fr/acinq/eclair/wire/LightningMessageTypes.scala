@@ -307,3 +307,13 @@ case class GossipTimestampFilter(chainHash: ByteVector32,
 //
 
 //
+
+case class PluginInfo(id: Int, name: String, description: String)
+
+case object QuerySupportedPlugins extends LightningMessage
+
+case class ReplySupportedPlugins(info: List[PluginInfo]) extends LightningMessage
+
+case class PluginMessage(pluginId: Int, data: ByteVector) extends LightningMessage
+
+case class PluginNotSupported(pluginId: Int, supported: ReplySupportedPlugins) extends LightningMessage
