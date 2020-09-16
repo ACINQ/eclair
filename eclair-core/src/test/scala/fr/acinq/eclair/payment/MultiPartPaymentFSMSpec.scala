@@ -88,7 +88,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val extraPart = createMultiPartHtlc(1000 msat, 300 msat, 3)
     f.parent.send(f.handler, extraPart)
-    val fail = f.parent.expectMsgType[ExtraPaymentReceived]
+    val fail = f.parent.expectMsgType[ExtraPaymentReceived[PaymentPart]]
     assert(fail.paymentHash === paymentHash)
     assert(fail.failure === Some(wire.PaymentTimeout))
     assert(fail.payment === extraPart)
@@ -181,7 +181,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val extra = createMultiPartHtlc(1000 msat, 300 msat, 3)
     f.parent.send(f.handler, extra)
-    val extraneousPayment = f.parent.expectMsgType[ExtraPaymentReceived]
+    val extraneousPayment = f.parent.expectMsgType[ExtraPaymentReceived[PaymentPart]]
     assert(extraneousPayment.paymentHash === paymentHash)
     assert(extraneousPayment.payment === extra)
 

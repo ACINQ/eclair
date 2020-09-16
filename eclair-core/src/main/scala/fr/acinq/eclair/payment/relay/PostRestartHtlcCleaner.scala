@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
-import fr.acinq.eclair.wire.{PermanentChannelFailure, TemporaryChannelFailure, TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{Features, LongToBtcAmount, NodeParams}
 
 import scala.concurrent.Promise
@@ -211,7 +211,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               case Origin.ChannelRelayedCold(originChannelId, originHtlcId, _, _) =>
                 log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing 1 HTLC upstream")
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
-                val cmd = ChannelRelayer.translateRelayFailure(originHtlcId, fail)
+                val cmd = ChannelRelay.translateRelayFailure(originHtlcId, fail)
                 PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, originChannelId, cmd)
               case Origin.TrampolineRelayedCold(origins) =>
                 log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}: failing ${origins.length} HTLCs upstream")

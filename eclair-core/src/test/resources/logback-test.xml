@@ -20,27 +20,25 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %logger{0}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
+            <pattern>%date{HH:mm:ss.SSS} %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>
 
-    <!--appender name="CONSOLEWARN" class="ch.qos.logback.core.ConsoleAppender">
-        <target>System.out</target>
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
-            <level>WARN</level>
-        </filter>
-        <encoder>
-            <pattern>%-5level %X{akkaSource} - %msg%ex{12}%n</pattern>
-        </encoder>
-    </appender-->
+    <!--
+    Logging from tests are silenced by this appender. When there is a test failure
+    the captured logging events are flushed to the appenders defined for the
+    akka.actor.testkit.typed.internal.CapturingAppenderDelegate logger.
+    -->
+    <appender name="CapturingAppender" class="akka.actor.testkit.typed.internal.CapturingAppender" />
 
-    <!--appender name="FILE" class="ch.qos.logback.core.FileAppender">
-        <file>eclair.log</file>
-        <append>false</append>
-        <encoder>
-            <pattern>%-5level %X{akkaSource} - %msg%ex{12}%n</pattern>
-        </encoder>
-    </appender-->
+    <!--
+    The appenders defined for this CapturingAppenderDelegate logger are used
+    when there is a test failure and all logging events from the test are
+    flushed to these appenders.
+    -->
+    <logger name="akka.actor.testkit.typed.internal.CapturingAppenderDelegate" >
+        <appender-ref ref="CONSOLE"/>
+    </logger>
 
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
     <logger name="fr.acinq.eclair.router" level="WARN"/>
@@ -48,10 +46,10 @@
     <logger name="fr.acinq.eclair.Diagnostics" level="OFF"/>
     <logger name="fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher" level="OFF"/>
     <logger name="fr.acinq.eclair.db.FileBackupHandler" level="OFF"/>
+    <logger name="fr.acinq.eclair.payment.relay" level="DEBUG" />
 
     <root level="INFO">
-        <!--<appender-ref ref="FILE"/>-->
-        <!--<appender-ref ref="CONSOLEWARN"/>-->
+        <appender-ref ref="CapturingAppender"/>
         <!--<appender-ref ref="CONSOLE"/>-->
     </root>
 
