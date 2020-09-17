@@ -201,7 +201,7 @@ object NodeParams {
 
     require(featuresErr.isEmpty, featuresErr.map(_.message))
     require(pluginFeatures.forall(_.support == FeatureSupport.Optional), "Mandatory plugin features are not allowed")
-    require(features.activated.map(_.feature.mandatory).intersect(pluginFeatures.map(_.feature.mandatory).toSet).isEmpty, "Plugin feature bit overlaps with core feature bit")
+    require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatures.map(_.feature.mandatory).toSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
 
     val coreAndPluginFeatures = features.copy(activated = features.activated ++ pluginFeatures)
 
