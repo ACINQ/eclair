@@ -33,7 +33,7 @@ object FeatureSupport {
   case object Optional extends FeatureSupport { override def toString: String = "optional" }
 }
 
-sealed trait Feature {
+trait Feature {
 
   def rfcName: String
   def mandatory: Int

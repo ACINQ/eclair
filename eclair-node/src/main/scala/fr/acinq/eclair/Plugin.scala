@@ -18,15 +18,12 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.{JarURLConnection, URL, URLClassLoader}
-
-import fr.acinq.eclair.wire.PluginInfo
 import grizzled.slf4j.Logging
-
 import scala.util.{Failure, Success, Try}
 
 trait Plugin {
 
-  def info: Option[PluginInfo]
+  def feature: Option[Feature] // Set to None if this plugin should not be exposed to messaging
 
   def onSetup(setup: Setup): Unit
 

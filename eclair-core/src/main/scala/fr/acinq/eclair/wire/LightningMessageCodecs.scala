@@ -297,25 +297,13 @@ object LightningMessageCodecs {
 
   //
 
-  val pluginInfoCodec: Codec[PluginInfo] = (
-    ("id" | uint16) ::
-      ("name" | zeropaddedstring(16)) ::
-      ("description" | zeropaddedstring(64))
-  ).as[PluginInfo]
-
-  val replySupportedPluginsCodec: Codec[ReplySupportedPlugins] = (
-    "info" | listOfN(uint16, pluginInfoCodec)
-  ).as[ReplySupportedPlugins]
-
   val pluginMessageCodec: Codec[PluginMessage] = (
-    ("pluginId" | uint16) ::
+    ("featureBit" | uint16) ::
       ("data" | varsizebinarydata)
   ).as[PluginMessage]
 
-  val pluginNotSupportedCodec: Codec[PluginNotSupported] = (
-    ("pluginId" | uint16) ::
-      ("supported" | replySupportedPluginsCodec)
-    ).as[PluginNotSupported]
+  val pluginNotSupportedCodec: Codec[PluginNotSupported] =
+    ("featureBit" | uint16).as[PluginNotSupported]
 
   // NB: blank lines to minimize merge conflicts
 
@@ -365,8 +353,6 @@ object LightningMessageCodecs {
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
   //
-    .typecase(42261, provide(QuerySupportedPlugins))
-    .typecase(42263, replySupportedPluginsCodec)
     .typecase(42265, pluginMessageCodec)
     .typecase(42267, pluginNotSupportedCodec)
   // NB: blank lines to minimize merge conflicts

@@ -31,12 +31,11 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, ChannelVersion, DATA_WAIT_FOR_ACCEPT_CHANNEL, HasCommitments, RES_GETINFO, WAIT_FOR_ACCEPT_CHANNEL}
+import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, DATA_WAIT_FOR_ACCEPT_CHANNEL, HasCommitments, RES_GETINFO, WAIT_FOR_ACCEPT_CHANNEL}
 import fr.acinq.eclair.io.Peer._
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement, QuerySupportedPlugins}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.{ByteVector, _}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -66,7 +65,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, watcher.ref, relayer.ref, wallet, pluginInfos = List.empty))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, watcher.ref, relayer.ref, wallet, pluginFeatures = Seq.empty))
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, watcher, relayer, peer, peerConnection)))
   }
 

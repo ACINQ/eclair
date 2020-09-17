@@ -136,7 +136,8 @@ object NodeParams {
 
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
-  def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases,
+                     blockCount: AtomicLong, feeEstimator: FeeEstimator, pluginFeatures: Seq[ActivatedFeature] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
       // v0.3.2
@@ -197,7 +198,12 @@ object NodeParams {
 
     val features = Features.fromConfiguration(config)
     val featuresErr = Features.validateFeatureGraph(features)
+
     require(featuresErr.isEmpty, featuresErr.map(_.message))
+    require(pluginFeatures.forall(_.support == FeatureSupport.Optional), "Mandatory plugin features are not allowed")
+    require(features.activated.map(_.feature.mandatory).intersect(pluginFeatures.map(_.feature.mandatory).toSet).isEmpty, "Plugin feature bit overlaps with core feature bit")
+
+    val coreAndPluginFeatures = features.copy(activated = features.activated ++ pluginFeatures)
 
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
@@ -249,7 +255,7 @@ object NodeParams {
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
-      features = features,
+      features = coreAndPluginFeatures,
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,

@@ -18,17 +18,16 @@ package fr.acinq.eclair.io
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.{ActivatedFeature, NodeParams}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.PluginInfo
 
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet, pluginInfos: List[PluginInfo]) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet, pluginFeatures: Seq[ActivatedFeature]) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -89,9 +88,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
    */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
-  def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(
-    Peer.props(nodeParams, remoteNodeId, watcher, relayer, wallet, pluginInfos),
-    name = peerActorName(remoteNodeId))
+  def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(Peer.props(nodeParams, remoteNodeId, watcher, relayer, wallet, pluginFeatures), name = peerActorName(remoteNodeId))
 
   def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[HasCommitments]): ActorRef = {
     getPeer(remoteNodeId) match {
@@ -112,7 +109,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet, pluginInfos: List[PluginInfo]) = Props(new Switchboard(nodeParams, watcher, relayer, wallet, pluginInfos))
+  def props(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet, pluginFeatures: Seq[ActivatedFeature]) = Props(new Switchboard(nodeParams, watcher, relayer, wallet, pluginFeatures))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
