@@ -27,7 +27,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.relay.ChannelRelay.{WrappedAddResponse, WrappedForwardShortIdFailure}
 import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
 import fr.acinq.eclair.router.Announcements
@@ -56,7 +55,7 @@ object ChannelRelay {
         parentPaymentId_opt = Some(relayId), // for a channel relay, parent payment id = relay id
         paymentHash_opt = Some(r.add.paymentHash))) {
         context.self ! DoRelay
-        new ChannelRelay(nodeParams, register, channels, r, context)(Seq.empty)
+        new ChannelRelay(nodeParams, register, channels, r, context).relay(Seq.empty)
       }
     }
 
@@ -97,24 +96,27 @@ class ChannelRelay private(nodeParams: NodeParams,
                            r: IncomingPacket.ChannelRelayPacket,
                            context: ActorContext[ChannelRelay.Command]) {
 
+  import ChannelRelay._
+
   private val forwardShortIdAdapter = context.messageAdapter[Register.ForwardShortIdFailure[CMD_ADD_HTLC]](WrappedForwardShortIdFailure)
   private val addResponseAdapter = context.messageAdapter[CommandResponse[CMD_ADD_HTLC]](WrappedAddResponse)
 
-  import ChannelRelay._
-
   private case class PreviouslyTried(shortChannelId: ShortChannelId, failure: RES_ADD_FAILED[ChannelException])
 
-  def apply(previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
+  def relay(previousFailures: Seq[PreviouslyTried]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case DoRelay =>
-        context.log.info(s"relaying htlc #${r.add.id} from channelId={} to requestedShortChannelId={} previousAttempts={}", r.add.channelId, r.payload.outgoingChannelId, previousFailures.size)
+        if (previousFailures.isEmpty) {
+          context.log.info(s"relaying htlc #${r.add.id} from channelId={} to requestedShortChannelId={} nextNode={}", r.add.channelId, r.payload.outgoingChannelId, nextNodeId_opt.getOrElse(""))
+        }
+        context.log.info("attempting relay previousAttempts={}", previousFailures.size)
         handleRelay(previousFailures) match {
           case RelayFailure(cmdFail) =>
             Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
-            context.log.info(s"rejecting htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=${r.payload.outgoingChannelId} reason=${cmdFail.reason}")
+            context.log.info(s"rejecting htlc reason=${cmdFail.reason}")
             safeSendAndStop(r.add.channelId, cmdFail)
           case RelaySuccess(selectedShortChannelId, cmdAdd) =>
-            context.log.info(s"forwarding htlc #${r.add.id} from channelId=${r.add.channelId} to shortChannelId=$selectedShortChannelId")
+            context.log.info(s"forwarding htlc to shortChannelId=$selectedShortChannelId")
             register ! Register.ForwardShortId(forwardShortIdAdapter.toClassic, selectedShortChannelId, cmdAdd)
             waitForAddResponse(selectedShortChannelId, previousFailures)
         }
@@ -130,9 +132,9 @@ class ChannelRelay private(nodeParams: NodeParams,
         safeSendAndStop(o.add.channelId, cmdFail)
 
       case WrappedAddResponse(addFailed@RES_ADD_FAILED(CMD_ADD_HTLC(_, _, _, _, _, Origin.ChannelRelayedHot(_, add, _), _), _, _)) =>
-        context.log.info(s"retrying htlc #${add.id} from channelId=${add.channelId}")
+        context.log.info("attempt failed with reason={}", addFailed.t.getClass.getSimpleName)
         context.self ! DoRelay
-        apply(previousFailures :+ PreviouslyTried(selectedShortChannelId, addFailed))
+        relay(previousFailures :+ PreviouslyTried(selectedShortChannelId, addFailed))
 
       case WrappedAddResponse(_: RES_SUCCESS[_]) =>
         context.log.debug("sent htlc to the downstream channel")
@@ -142,13 +144,13 @@ class ChannelRelay private(nodeParams: NodeParams,
   def waitForAddSettled(): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, htlc, fulfill: HtlcResult.Fulfill)) =>
-        context.log.info("relaying fulfill upstream")
+        context.log.info("relaying fulfill to upstream")
         val cmd = CMD_FULFILL_HTLC(o.originHtlcId, fulfill.paymentPreimage, commit = true)
         context.system.eventStream ! EventStream.Publish(ChannelPaymentRelayed(o.amountIn, o.amountOut, htlc.paymentHash, o.originChannelId, htlc.channelId))
         safeSendAndStop(o.originChannelId, cmd)
 
       case WrappedAddResponse(RES_ADD_SETTLED(o: Origin.ChannelRelayedHot, _, fail: HtlcResult.Fail)) =>
-        context.log.info("relaying fail upstream")
+        context.log.info("relaying fail to upstream")
         Metrics.recordPaymentRelayFailed(Tags.FailureType.Remote, Tags.RelayType.Channel)
         val cmd = translateRelayFailure(o.originHtlcId, fail)
         safeSendAndStop(o.originChannelId, cmd)
@@ -185,6 +187,9 @@ class ChannelRelay private(nodeParams: NodeParams,
     }
   }
 
+  /** all the channels point to the same next node, we take the first one */
+  private val nextNodeId_opt = channels.headOption.map(_._2.nextNodeId)
+
   /**
    * Select a channel to the same node to relay the payment to, that has the lowest balance and is compatible in
    * terms of fees, expiry_delta, etc.
@@ -192,24 +197,17 @@ class ChannelRelay private(nodeParams: NodeParams,
    * If no suitable channel is found we default to the originally requested channel.
    */
   def selectPreferredChannel(alreadyTried: Seq[ShortChannelId]): Option[ShortChannelId] = {
-    import r.add
     val requestedShortChannelId = r.payload.outgoingChannelId
-    context.log.debug(s"selecting next channel for htlc #${add.id} from channelId={} to requestedShortChannelId={} previousAttempts={}", add.channelId, requestedShortChannelId, alreadyTried.size)
-    // first we find out what is the next node
-    val nextNodeId_opt = channels.get(requestedShortChannelId) match {
-      case Some(c) => Some(c.nextNodeId)
-      case None => None
-    }
+    context.log.debug("selecting next channel")
     nextNodeId_opt match {
       case Some(nextNodeId) =>
-        context.log.debug(s"next hop for htlc #{} is nodeId={}", add.id, nextNodeId)
         // we then filter out channels that we have already tried
         val candidateChannels: Map[ShortChannelId, OutgoingChannel] = channels -- alreadyTried
         // and we filter again to keep the ones that are compatible with this payment (mainly fees, expiry delta)
         candidateChannels
           .map { case (shortChannelId, channelInfo) =>
             val relayResult = relayOrFail(Some(channelInfo.channelUpdate))
-            context.log.debug(s"candidate channel for htlc #${add.id}: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo.commitments.availableBalanceForSend, channelInfo.channelUpdate, relayResult)
+            context.log.debug(s"candidate channel: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo.commitments.availableBalanceForSend, channelInfo.channelUpdate, relayResult)
             (shortChannelId, channelInfo, relayResult)
           }
           .collect { case (shortChannelId, channelInfo, _: RelaySuccess) => (shortChannelId, channelInfo.commitments.availableBalanceForSend) }

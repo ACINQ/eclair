@@ -167,7 +167,7 @@ class NodeRelay private(nodeParams: NodeParams,
           Behaviors.stopped
         case Some(secret) =>
           import akka.actor.typed.scaladsl.adapter._
-          context.log.debug("creating a payment FSM")
+          context.log.info("relaying payment relayId={}", relayId)
           val mppFsm = context.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, outer.totalAmount, mppFsmAdapters))
           context.log.debug("forwarding incoming htlc to the payment FSM")
           mppFsm ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
@@ -202,23 +202,28 @@ class NodeRelay private(nodeParams: NodeParams,
           receiving(htlcs :+ add, secret, nextPayload, nextPacket, handler)
       }
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
-        context.log.warn("could not relay payment (paidAmount={} failure={})", parts.map(_.amount).sum, failure)
+        context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
         parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
         Behaviors.stopped
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
+        context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
         val upstream = Upstream.Trampoline(htlcs)
         validateRelay(nodeParams, upstream, nextPayload) match {
           case Some(failure) =>
-            context.log.warn(s"rejecting trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${parts.length} reason=$failure)")
+            context.log.warn(s"rejecting trampoline payment reason=$failure")
             rejectPayment(upstream, Some(failure))
             Behaviors.stopped
           case None =>
-            context.log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv} htlcCount=${upstream.adds.length})")
-            relay(upstream, nextPayload, nextPacket)
-            sending(upstream, nextPayload, fulfilledUpstream = false)
+            doSend(upstream, nextPayload, nextPacket)
         }
     }
+
+  private def doSend(upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket): Behavior[Command] = {
+    context.log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
+    relay(upstream, nextPayload, nextPacket)
+    sending(upstream, nextPayload, fulfilledUpstream = false)
+  }
 
   /**
    * Once the payment is forwarded, we're waiting for fail/fulfill responses from downstream nodes.
@@ -234,7 +239,7 @@ class NodeRelay private(nodeParams: NodeParams,
         case WrappedPreimageReceived(PreimageReceived(_, paymentPreimage)) =>
           if (!fulfilledUpstream) {
             // We want to fulfill upstream as soon as we receive the preimage (even if not all HTLCs have fulfilled downstream).
-            context.log.debug("trampoline payment successfully relayed")
+            context.log.debug("got preimage from downstream")
             fulfillPayment(upstream, paymentPreimage)
             sending(upstream, nextPayload, fulfilledUpstream = true)
           } else {
@@ -242,11 +247,11 @@ class NodeRelay private(nodeParams: NodeParams,
             Behaviors.same
           }
         case WrappedPaymentSent(paymentSent) =>
-          context.log.debug("trampoline payment fully resolved downstream (id={})", paymentSent.id)
+          context.log.debug("trampoline payment fully resolved downstream")
           success(upstream, fulfilledUpstream, paymentSent)
           Behaviors.stopped
         case WrappedPaymentFailed(PaymentFailed(id, _, failures, _)) =>
-          context.log.debug(s"trampoline payment failed downstream (id={})", id)
+          context.log.debug(s"trampoline payment failed downstream")
           if (!fulfilledUpstream) {
             rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
           }
@@ -264,13 +269,13 @@ class NodeRelay private(nodeParams: NodeParams,
         val routingHints = payloadOut.invoiceRoutingInfo.map(_.map(_.toSeq).toSeq).getOrElse(Nil)
         payloadOut.paymentSecret match {
           case Some(paymentSecret) if Features(features).hasFeature(Features.BasicMultiPartPayment) =>
-            context.log.debug("relaying trampoline payment to non-trampoline recipient using MPP")
+            context.log.debug("sending the payment to non-trampoline recipient using MPP")
             val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
             val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = true)
             payFSM ! payment
             payFSM
           case _ =>
-            context.log.debug("relaying trampoline payment to non-trampoline recipient without MPP")
+            context.log.debug("sending the payment to non-trampoline recipient without MPP")
             val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
             val payment = SendPayment(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
             val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = false)
@@ -278,7 +283,7 @@ class NodeRelay private(nodeParams: NodeParams,
             payFSM
         }
       case None =>
-        context.log.debug("relaying trampoline payment to next trampoline node")
+        context.log.debug("sending the payment to the next trampoline node")
         val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = true)
         val paymentSecret = randomBytes32 // we generate a new secret to protect against probing attacks
         val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
