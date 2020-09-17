@@ -201,7 +201,9 @@ object NodeParams {
 
     require(featuresErr.isEmpty, featuresErr.map(_.message))
     require(pluginFeatures.forall(_.support == FeatureSupport.Optional), "Mandatory plugin features are not allowed")
-    require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatures.map(_.feature.mandatory).toSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
+    val pluginFeatureSet = pluginFeatures.map(_.feature.mandatory).toSet
+    require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
+    require(pluginFeatureSet.size == pluginFeatures.size, "Duplicate plugin feature bits found")
 
     val coreAndPluginFeatures = features.copy(activated = features.activated ++ pluginFeatures)
 
