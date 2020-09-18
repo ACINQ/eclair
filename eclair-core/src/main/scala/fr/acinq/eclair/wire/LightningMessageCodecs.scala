@@ -296,7 +296,7 @@ object LightningMessageCodecs {
 
   //
 
-  val unknownUnknownMessageCodec: Codec[UnknownMessage] = (
+  val unknownMessageCodec: Codec[UnknownMessage] = (
     ("tag" | uint16) ::
       ("message" | varsizebinarydata)
     ).as[UnknownMessage]
@@ -351,7 +351,7 @@ object LightningMessageCodecs {
   // NB: blank lines to minimize merge conflicts
 
   val lightningMessageCodecWithFallback: Codec[LightningMessage] =
-    discriminatorWithDefault(lightningMessageCodec, unknownUnknownMessageCodec.upcast)
+    discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
 
   //
 
