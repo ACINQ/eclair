@@ -202,7 +202,7 @@ object NodeParams {
 
     require(featuresErr.isEmpty, featuresErr.map(_.message))
     require(pluginTagsAndFeatures.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
-    require(pluginTagsAndFeatures.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature is bit odd, must be even")
+    require(pluginTagsAndFeatures.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
     val pluginFeatureSet = pluginTagsAndFeatures.map(_.feature.mandatory).toSet
     require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
     require(pluginFeatureSet.size == pluginTagsAndFeatures.size, "Duplicate plugin feature bits found")
