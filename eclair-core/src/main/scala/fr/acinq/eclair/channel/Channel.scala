@@ -1679,14 +1679,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // we only care about this event in NORMAL state
     case Event(_: BroadcastChannelUpdate, _) => stay
 
-    // we receive this when we send command to ourselves
-    case Event(_: RES_SUCCESS[_], _) => stay
-
     // we receive this when we tell the peer to disconnect
     case Event("disconnecting", _) => stay
 
     // when we realize we need to update our network fees, we send a CMD_UPDATE_FEE to ourselves which may result in this error being sent back to ourselves, this can be ignored
     case Event(RES_FAILURE(_: CMD_UPDATE_FEE, _: CannotAffordFees), _) => stay
+
+    // we receive this when we send command to ourselves
+    case Event(_: RES_SUCCESS[_], _) => stay
 
     // funding tx was confirmed in time, let's just ignore this
     case Event(BITCOIN_FUNDING_TIMEOUT, _: HasCommitments) => stay
@@ -1883,11 +1883,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _: ChannelException => ()
       case _ => log.error(cause, s"msg=$c stateData=$stateData ")
     }
-    val replyTo = c match {
-      case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => hasReplyTo.replyTo
-      case _ => sender
+    val replyTo_opt = c match {
+      case _: NoReplyTo => None
+      case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => Some(hasReplyTo.replyTo)
+      case _ => Some(sender)
     }
-    replyTo ! RES_FAILURE(c, cause)
+    replyTo_opt.foreach { replyTo =>
+      replyTo ! RES_FAILURE(c, cause)
+    }
     context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = false))
     stay
   }
