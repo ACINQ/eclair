@@ -110,9 +110,14 @@
             <version>${akka.http.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-stream_${scala.version.short}</artifactId>
+            <version>${akka.version}</version>
+        </dependency>
+        <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.32.0</version>
+            <version>1.34.0</version>
         </dependency>
         <!-- metrics -->
         <dependency>
