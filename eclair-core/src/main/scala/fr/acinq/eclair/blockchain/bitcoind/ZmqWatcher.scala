@@ -46,7 +46,9 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
 
   import ZmqWatcher._
 
-  context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
+  context.system.eventStream.subscribe(self, classOf[NewBlock])
+  context.system.eventStream.subscribe(self, classOf[NewTransaction])
+  context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
 
   // this is to initialize block count
   self ! TickNewBlock
