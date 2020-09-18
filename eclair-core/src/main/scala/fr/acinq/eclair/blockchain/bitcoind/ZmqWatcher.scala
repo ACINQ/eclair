@@ -161,7 +161,7 @@ class ZmqWatcher(blockCount: AtomicLong, client: ExtendedBitcoinClient)(implicit
           Keep
 
         case w: WatchConfirmed =>
-          checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
+          checkConfirmed(w) // maybe the tx is already confirmed, in that case the watch will be triggered and removed immediately
           Keep
 
         case _: WatchLost => Ignore // TODO: not implemented, we ignore it silently
