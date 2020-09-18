@@ -27,9 +27,6 @@ import scodec.{Attempt, Codec}
  * Created by PM on 15/11/2016.
  */
 object LightningMessageCodecs {
-
-  final val STANDARD_UNKNOWN_MESSAGE_TAG = 42263
-
   val featuresCodec: Codec[Features] = varsizebinarydata.xmap[Features](
     { bytes => Features(bytes) },
     { features => features.toByteVector }
@@ -299,13 +296,10 @@ object LightningMessageCodecs {
 
   //
 
-  val knownUnknownMessageCodec: Codec[KnownUnknownMessage] =
-    ("data" | varsizebinarydata).as[KnownUnknownMessage]
-
-  val unknownUnknownMessageCodec: Codec[UnknownUnknownMessage] = (
+  val unknownUnknownMessageCodec: Codec[UnknownMessage] = (
     ("tag" | uint16) ::
-      ("message" | knownUnknownMessageCodec)
-    ).as[UnknownUnknownMessage]
+      ("message" | varsizebinarydata)
+    ).as[UnknownMessage]
 
   // NB: blank lines to minimize merge conflicts
 
@@ -354,8 +348,6 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
-  //
-    .typecase(STANDARD_UNKNOWN_MESSAGE_TAG, knownUnknownMessageCodec)
   // NB: blank lines to minimize merge conflicts
 
   val lightningMessageCodecWithFallback: Codec[LightningMessage] =

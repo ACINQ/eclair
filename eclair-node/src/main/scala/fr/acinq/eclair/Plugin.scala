@@ -24,7 +24,7 @@ import scala.util.{Failure, Success, Try}
 trait Plugin {
   // Set of LightningMessage tags this plugin is interested in and a Feature bit it advertizes through Init message
   // make this field None if this plugin should not be exposed to messaging
-  def tagsAndFeature: Option[PluginTagsAndFeature]
+  def tagsAndFeature: Option[PluginParams]
 
   def onSetup(setup: Setup): Unit
 

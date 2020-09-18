@@ -195,7 +195,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L, randomKey, randomKey.publicKey)
 
-    val known_unknown = KnownUnknownMessage(data = ByteVector32.One.bytes)
+    val known_unknown = UnknownMessage(tag = 60000, data = ByteVector32.One.bytes)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
@@ -205,24 +205,16 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
     msgs.foreach {
       msg => {
-        val encoded = lightningMessageCodec.encode(msg).require
-        val decoded = lightningMessageCodec.decode(encoded).require
+        val encoded = lightningMessageCodecWithFallback.encode(msg).require
+        val decoded = lightningMessageCodecWithFallback.decode(encoded).require
         assert(msg === decoded.value)
       }
     }
   }
 
-  test("Unknown messages (cringe)") {
-    // Standard tag number so this message can be handled by both codecs in the same way
-    val knownUnknown = KnownUnknownMessage(data = ByteVector32.Zeroes.bytes)
-    val encoded0 = lightningMessageCodec.encode(knownUnknown).require
-    val decoded01 = lightningMessageCodec.decode(encoded0).require.value
-    val decoded02 = lightningMessageCodecWithFallback.decode(encoded0).require.value
-    assert(decoded01 === knownUnknown)
-    assert(decoded02 === knownUnknown)
-
+  test("Unknown messages") {
     // Non-standard tag number so this message can only be handled by a codec with a fallback
-    val unknownUnknown = UnknownUnknownMessage(tag = 47283, KnownUnknownMessage(data = ByteVector32.Zeroes.bytes))
+    val unknownUnknown = UnknownMessage(tag = 47282, data = ByteVector32.Zeroes.bytes)
     assertThrows[java.lang.IllegalArgumentException](lightningMessageCodec.encode(unknownUnknown).require)
     val encoded1 = lightningMessageCodecWithFallback.encode(unknownUnknown).require
     val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value

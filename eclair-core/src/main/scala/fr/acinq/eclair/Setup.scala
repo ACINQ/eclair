@@ -70,7 +70,7 @@ import scala.util.{Failure, Success}
  * @param db       optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
-            pluginTagsAndFeatures: Seq[PluginTagsAndFeature],
+            pluginParams: Seq[PluginParams],
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
@@ -124,7 +124,7 @@ class Setup(datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), databases, blockCount, feeEstimator, pluginTagsAndFeatures)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
 
 
   val serverBindingAddress = new InetSocketAddress(
@@ -408,6 +408,6 @@ case object IncompatibleDBException extends RuntimeException("database is not co
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
 
-case class PluginTagsAndFeature(tags: Set[Int], feature: Feature) {
+case class PluginParams(tags: Set[Int], feature: Feature) {
   def activatedFeature: ActivatedFeature = ActivatedFeature(feature, FeatureSupport.Optional)
 }

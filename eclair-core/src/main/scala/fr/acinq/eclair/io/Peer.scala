@@ -49,7 +49,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
 
   import Peer._
 
-  val pluginMessageTags: Seq[Int] = nodeParams.pluginTagsAndFeatures.flatMap(_.tags)
+  val pluginMessageTags: Seq[Int] = nodeParams.pluginParams.flatMap(_.tags)
 
   startWith(INSTANTIATING, Nothing)
 
@@ -203,9 +203,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
 
-      case Event(unknownUnknownMsg: UnknownUnknownMessage, _: ConnectedData) =>
-        if (pluginMessageTags.contains(unknownUnknownMsg.tag)) {
-          context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownUnknownMsg))
+      case Event(unknownMsg: UnknownMessage, _: ConnectedData) =>
+        if (pluginMessageTags.contains(unknownMsg.tag)) {
+          context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg))
         }
         stay
 

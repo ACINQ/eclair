@@ -308,8 +308,4 @@ case class GossipTimestampFilter(chainHash: ByteVector32,
 
 //
 
-case class KnownUnknownMessage(data: ByteVector) extends LightningMessage
-
-case class UnknownUnknownMessage(tag: Int, message: KnownUnknownMessage) extends LightningMessage {
-  require(tag != LightningMessageCodecs.STANDARD_UNKNOWN_MESSAGE_TAG)
-}
+case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage

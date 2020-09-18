@@ -49,7 +49,7 @@ case class NodeParams(keyManager: KeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       features: Features,
-                      pluginTagsAndFeatures: Seq[PluginTagsAndFeature],
+                      pluginParams: Seq[PluginParams],
                       overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
@@ -138,7 +138,7 @@ object NodeParams {
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
   def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases,
-                     blockCount: AtomicLong, feeEstimator: FeeEstimator, pluginTagsAndFeatures: Seq[PluginTagsAndFeature] = Nil): NodeParams = {
+                     blockCount: AtomicLong, feeEstimator: FeeEstimator, pluginTagsAndFeatures: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
       // v0.3.2
@@ -260,7 +260,7 @@ object NodeParams {
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
       features = coreAndPluginFeatures,
-      pluginTagsAndFeatures = pluginTagsAndFeatures,
+      pluginParams = pluginTagsAndFeatures,
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
