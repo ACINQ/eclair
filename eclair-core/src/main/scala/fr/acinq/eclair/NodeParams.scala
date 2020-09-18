@@ -49,6 +49,7 @@ case class NodeParams(keyManager: KeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       features: Features,
+                      pluginTagsAndFeatures: Seq[PluginTagsAndFeature],
                       overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
@@ -137,7 +138,7 @@ object NodeParams {
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
   def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases,
-                     blockCount: AtomicLong, feeEstimator: FeeEstimator, pluginFeatures: Seq[ActivatedFeature] = Nil): NodeParams = {
+                     blockCount: AtomicLong, feeEstimator: FeeEstimator, pluginTagsAndFeatures: Seq[PluginTagsAndFeature] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
       // v0.3.2
@@ -200,12 +201,13 @@ object NodeParams {
     val featuresErr = Features.validateFeatureGraph(features)
 
     require(featuresErr.isEmpty, featuresErr.map(_.message))
-    require(pluginFeatures.forall(_.support == FeatureSupport.Optional), "Mandatory plugin features are not allowed")
-    val pluginFeatureSet = pluginFeatures.map(_.feature.mandatory).toSet
+    require(pluginTagsAndFeatures.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
+    require(pluginTagsAndFeatures.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature is bit odd, must be even")
+    val pluginFeatureSet = pluginTagsAndFeatures.map(_.feature.mandatory).toSet
     require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
-    require(pluginFeatureSet.size == pluginFeatures.size, "Duplicate plugin feature bits found")
+    require(pluginFeatureSet.size == pluginTagsAndFeatures.size, "Duplicate plugin feature bits found")
 
-    val coreAndPluginFeatures = features.copy(activated = features.activated ++ pluginFeatures)
+    val coreAndPluginFeatures = features.copy(activated = features.activated ++ pluginTagsAndFeatures.map(_.activatedFeature))
 
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
@@ -258,6 +260,7 @@ object NodeParams {
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
       features = coreAndPluginFeatures,
+      pluginTagsAndFeatures = pluginTagsAndFeatures,
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,

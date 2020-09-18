@@ -13,7 +13,7 @@ import scodec.bits._
 
 class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
-  class TestSwitchboard(nodeParams: NodeParams, remoteNodeId: PublicKey, remotePeer: TestProbe) extends Switchboard(nodeParams, TestProbe().ref, TestProbe().ref, new TestWallet(), pluginFeatures = Seq.empty) {
+  class TestSwitchboard(nodeParams: NodeParams, remoteNodeId: PublicKey, remotePeer: TestProbe) extends Switchboard(nodeParams, TestProbe().ref, TestProbe().ref, new TestWallet()) {
     override def createPeer(remoteNodeId2: PublicKey): ActorRef = {
       assert(remoteNodeId === remoteNodeId2)
       remotePeer.ref

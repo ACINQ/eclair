@@ -45,11 +45,11 @@ import scodec.bits.ByteVector
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet, pluginFeatures: Seq[ActivatedFeature]) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
-  val supportedPluginFeatures: Set[Int] = pluginFeatures.map(_.feature.optional).toSet
+  val pluginMessageTags: Seq[Int] = nodeParams.pluginTagsAndFeatures.flatMap(_.tags)
 
   startWith(INSTANTIATING, Nothing)
 
@@ -203,11 +203,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
 
-      case Event(pluginMessage: PluginMessage, d: ConnectedData) =>
-        if (supportedPluginFeatures.contains(pluginMessage.featureBit)) {
-          context.system.eventStream.publish(PluginMessageReceived(self, remoteNodeId, pluginMessage))
-        } else {
-          d.peerConnection ! PluginNotSupported(pluginMessage.featureBit)
+      case Event(unknownUnknownMsg: UnknownUnknownMessage, _: ConnectedData) =>
+        if (pluginMessageTags.contains(unknownUnknownMsg.tag)) {
+          context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownUnknownMsg))
         }
         stay
 
@@ -354,7 +352,7 @@ object Peer {
   val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
   // @formatter:on
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet, pluginFeatures: Seq[ActivatedFeature]): Props = Props(new Peer(nodeParams, remoteNodeId, watcher, relayer: ActorRef, wallet, pluginFeatures))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, watcher, relayer: ActorRef, wallet))
 
   // @formatter:off
 

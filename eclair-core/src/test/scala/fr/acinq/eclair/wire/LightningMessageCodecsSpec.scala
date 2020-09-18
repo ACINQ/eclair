@@ -195,14 +195,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L, randomKey, randomKey.publicKey)
 
-    val plugin_message = PluginMessage(featureBit = 130, ByteVector32.One.bytes)
-    val plugin_not_supported = PluginNotSupported(featureBit = 130)
+    val known_unknown = KnownUnknownMessage(tag = STANDARD_UNKNOWN_MESSAGE_TAG, data = ByteVector32.One.bytes)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
         channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures ::
-        ping :: pong :: channel_reestablish :: plugin_message :: plugin_not_supported :: Nil
+        ping :: pong :: channel_reestablish :: known_unknown :: Nil
 
     msgs.foreach {
       msg => {
@@ -211,6 +210,24 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         assert(msg === decoded.value)
       }
     }
+  }
+
+  test("Unknown messages (cringe)") {
+    // Standard tag number so this message can be handled by both codecs in the same way
+    val knownUnknown = KnownUnknownMessage(tag = STANDARD_UNKNOWN_MESSAGE_TAG, data = ByteVector32.Zeroes.bytes)
+    val encoded0 = lightningMessageCodec.encode(knownUnknown).require
+    val decoded01 = lightningMessageCodec.decode(encoded0).require.value
+    val decoded02 = lightningMessageCodecWithFallback.decode(encoded0).require.value
+    assert(decoded01 === knownUnknown)
+    assert(decoded02 === knownUnknown)
+
+    // Non-standard tag number so this message can only be handled by a codec with a fallback
+    val unknownUnknown = UnknownUnknownMessage.fromKnown(KnownUnknownMessage(tag = 47283, data = ByteVector32.Zeroes.bytes))
+    assertThrows[java.lang.IllegalArgumentException](lightningMessageCodec.encode(unknownUnknown).require)
+    val encoded1 = lightningMessageCodecWithFallback.encode(unknownUnknown).require
+    val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value
+    assertThrows[java.lang.IllegalArgumentException](lightningMessageCodec.decode(encoded1).require.value)
+    assert(decoded1 === unknownUnknown)
   }
 
   test("non-reg encoding type") {

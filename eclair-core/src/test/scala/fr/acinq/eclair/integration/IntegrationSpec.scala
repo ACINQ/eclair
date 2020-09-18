@@ -161,7 +161,7 @@ class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
     implicit val system: ActorSystem = ActorSystem(s"system-$name", config)
-    val setup = new Setup(datadir, pluginFeatures = Seq.empty)
+    val setup = new Setup(datadir, pluginTagsAndFeatures = Seq.empty)
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)
   }

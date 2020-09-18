@@ -41,8 +41,7 @@ object Boot extends App with Logging {
     implicit val system: ActorSystem = ActorSystem("eclair-node", config)
     implicit val ec: ExecutionContext = system.dispatcher
 
-    val pluginFeatures = plugins.flatMap(_.feature).map(ActivatedFeature(_, FeatureSupport.Optional))
-    require(pluginFeatures.forall(_.feature.mandatory > 128), s"Plugin feature bit is too low, must be > 128")
+    val pluginFeatures = plugins.flatMap(_.tagsAndFeature)
     val setup = new Setup(datadir, pluginFeatures)
 
     if (config.getBoolean("eclair.enable-kamon")) {
