@@ -125,7 +125,7 @@ class Setup(datadir: File,
   }
 
   val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
-
+  pluginParams.foreach(param => logger.info(param.toString))
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
