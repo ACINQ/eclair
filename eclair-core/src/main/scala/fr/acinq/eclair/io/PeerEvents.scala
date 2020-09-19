@@ -26,4 +26,4 @@ case class PeerConnected(peer: ActorRef, nodeId: PublicKey, data: Peer.Data) ext
 
 case class PeerDisconnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
 
-case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage) extends PeerEvent
+case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage, data: Peer.Data) extends PeerEvent

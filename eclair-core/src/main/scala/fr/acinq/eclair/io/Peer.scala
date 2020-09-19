@@ -203,8 +203,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
 
-      case Event(unknownMsg: UnknownMessage, _: ConnectedData) if pluginMessageTags.contains(unknownMsg.tag) =>
-        context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg))
+      case Event(unknownMsg: UnknownMessage, d: ConnectedData) if pluginMessageTags.contains(unknownMsg.tag) =>
+        context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d))
         stay
 
       case Event(unhandledMsg: LightningMessage, _) =>
