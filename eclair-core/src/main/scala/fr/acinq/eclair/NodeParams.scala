@@ -337,5 +337,5 @@ object NodeParams {
 case class PluginParams(tags: Set[Int], feature: Feature) {
   def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
 
-  override def toString: String = s"Messaging enabled plugin=${feature.rfcName} with LN message tags=${tags.mkString(",")}"
+  override def toString: String = s"Messaging enabled plugin=${feature.rfcName} with feature bit=${feature.optional} and LN message tags=${tags.mkString(",")}"
 }
