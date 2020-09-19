@@ -22,7 +22,7 @@ import fr.acinq.eclair.wire.UnknownMessage
 
 sealed trait PeerEvent
 
-case class PeerConnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
+case class PeerConnected(peer: ActorRef, nodeId: PublicKey, data: Peer.Data) extends PeerEvent
 
 case class PeerDisconnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
 

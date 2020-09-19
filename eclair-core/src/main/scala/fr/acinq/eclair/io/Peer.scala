@@ -237,9 +237,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   onTransition {
     case DISCONNECTED -> CONNECTED =>
       Metrics.PeersConnected.withoutTags().increment()
-      context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData))
     case CONNECTED -> CONNECTED => // connection switch
-      context.system.eventStream.publish(PeerConnected(self, remoteNodeId))
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData))
     case CONNECTED -> DISCONNECTED =>
       Metrics.PeersConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
