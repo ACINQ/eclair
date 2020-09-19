@@ -208,7 +208,7 @@ object NodeParams {
     require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
     require(pluginFeatureSet.size == pluginParams.size, "Duplicate plugin feature bits found")
 
-    val coreAndPluginFeatures = features.copy(activated = features.activated ++ pluginParams.map(_.activatedFeature))
+    val coreAndPluginFeatures = features.copy(unknown = features.unknown ++ pluginParams.map(_.pluginFeature))
 
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
@@ -328,4 +328,12 @@ object NodeParams {
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
     )
   }
+}
+
+/**
+ * @param tags: a set of LightningMessage tags that plugin is interested in
+ * @param feature: a Feature bit that plugin advertizes through Init message
+ */
+case class PluginParams(tags: Set[Int], feature: Feature) {
+  def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
 }

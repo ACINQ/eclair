@@ -407,7 +407,3 @@ case object EmptyAPIPasswordException extends RuntimeException("must set a passw
 case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
-
-case class PluginParams(tags: Set[Int], feature: Feature) {
-  def activatedFeature: ActivatedFeature = ActivatedFeature(feature, FeatureSupport.Optional)
-}
