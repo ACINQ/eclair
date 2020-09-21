@@ -46,6 +46,7 @@ object OpenChannelTlv {
   val openTlvCodec: Codec[TlvStream[OpenChannelTlv]] = tlvStream(discriminated[OpenChannelTlv].by(varint)
     .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript])
     .typecase(UInt64(0x47000000), bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion].as[ChannelVersionTlv])
+    .typecase(UInt64(0x47000001), variableSizeBytesLong(varintoverflow, bits(ChannelVersion.LENGTH_BITS)).as[ChannelVersion].as[ChannelVersionTlv])
   )
 
 }

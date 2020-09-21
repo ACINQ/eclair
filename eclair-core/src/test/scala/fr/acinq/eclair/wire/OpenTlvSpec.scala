@@ -19,19 +19,24 @@ package fr.acinq.eclair.wire
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.wire.OpenChannelTlv.ChannelVersionTlv
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.{Attempt, DecodeResult}
 import scodec.bits._
+import scodec.{Attempt, DecodeResult}
 
 class OpenTlvSpec extends AnyFunSuite {
 
   test("channel version tlv") {
-
-    val refs = Map(
-      ChannelVersion.STANDARD -> hex"fe47000000 00000001".bits,
-      (ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE) -> hex"fe47000000 00000009".bits
+    case class TestCase(expected: ChannelVersion, encoded: BitVector, reEncoded: BitVector)
+    val testCases = Seq(
+      TestCase(ChannelVersion.STANDARD, hex"fe47000000 00000001".bits, hex"fe47000000 00000001".bits),
+      TestCase(ChannelVersion.STANDARD, hex"fe47000001 04 00000001".bits, hex"fe47000000 00000001".bits),
+      TestCase(ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE, hex"fe47000000 00000009".bits, hex"fe47000000 00000009".bits),
+      TestCase(ChannelVersion.STANDARD | ChannelVersion.ZERO_RESERVE, hex"fe47000001 04 00000009".bits, hex"fe47000000 00000009".bits)
     )
 
-    refs.foreach { case (cv, bits) => assert(OpenChannelTlv.openTlvCodec.encode(TlvStream(ChannelVersionTlv(cv))) === Attempt.Successful(bits)) }
-    refs.foreach { case (cv, bits) => assert(OpenChannelTlv.openTlvCodec.decode(bits) === Attempt.successful(DecodeResult(TlvStream(ChannelVersionTlv(cv)), BitVector.empty))) }
+    for (testCase <- testCases) {
+      assert(OpenChannelTlv.openTlvCodec.decode(testCase.encoded) === Attempt.successful(DecodeResult(TlvStream(ChannelVersionTlv(testCase.expected)), BitVector.empty)))
+      assert(OpenChannelTlv.openTlvCodec.encode(TlvStream(ChannelVersionTlv(testCase.expected))) === Attempt.Successful(testCase.reEncoded))
+    }
   }
+
 }
