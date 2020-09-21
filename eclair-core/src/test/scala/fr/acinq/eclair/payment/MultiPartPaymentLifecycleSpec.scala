@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.db.{FailureSummary, FailureType, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
@@ -275,6 +276,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.id === cfg.id)
     assert(result.paymentHash === paymentHash)
     assert(result.failures === Seq(LocalFailure(Nil, RouteNotFound)))
+
+    val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(cfg.id)
+    assert(outgoing.status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    assert(outgoing.status.asInstanceOf[OutgoingPaymentStatus.Failed].failures === Seq(FailureSummary(FailureType.LOCAL, RouteNotFound.getMessage, Nil)))
 
     sender.expectTerminated(payFsm)
     sender.expectNoMsg(100 millis)
