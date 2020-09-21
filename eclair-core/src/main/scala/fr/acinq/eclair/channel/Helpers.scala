@@ -58,7 +58,6 @@ object Helpers {
     case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.channelId
     case d: HasCommitments => d.channelId
-    case d: DATA_PHOENIX_WAIT_REMOTE_CHANNEL_REESTABLISH => d.data.channelId
   }
 
   /**
@@ -76,6 +75,7 @@ object Helpers {
       case d: DATA_NEGOTIATING => d.copy(commitments = commitments1)
       case d: DATA_CLOSING => d.copy(commitments = commitments1)
       case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = commitments1)
+      case d: DATA_PHOENIX_WAIT_REMOTE_CHANNEL_REESTABLISH => d // TODO ignored
     }
   }
 
