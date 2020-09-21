@@ -60,6 +60,8 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
     case None => hasFeature(feature, Some(Optional)) || hasFeature(feature, Some(Mandatory))
   }
 
+  def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
+
   def toByteVector: ByteVector = {
     val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case ActivatedFeature(f, s) => f.supportBit(s) })
     val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))
