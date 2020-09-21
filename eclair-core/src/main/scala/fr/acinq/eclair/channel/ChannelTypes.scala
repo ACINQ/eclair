@@ -351,7 +351,7 @@ case class ChannelVersion(bits: BitVector) {
   def hasPubkeyKeyPath: Boolean = isSet(USE_PUBKEY_KEYPATH_BIT)
   def hasStaticRemotekey: Boolean = isSet(USE_STATIC_REMOTEKEY_BIT)
   def hasAnchorOutputs: Boolean = isSet(USE_ANCHOR_OUTPUTS_BIT)
-  /** True if our main output in the remote commitment is directly sent to one of our wallet addresses. */
+  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
   def paysDirectlyToWallet: Boolean = hasStaticRemotekey && !hasAnchorOutputs
 }
 
