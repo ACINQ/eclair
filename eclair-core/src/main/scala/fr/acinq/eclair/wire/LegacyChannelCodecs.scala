@@ -69,7 +69,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
-      ("localPaymentBasepoint" | optional(provide(channelVersion.hasStaticRemotekey), publicKey)) ::
+      ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
       ("features" | combinedFeaturesCodec)).as[LocalParams].decodeOnly
 
   val remoteParamsCodec: Codec[RemoteParams] = (
@@ -120,7 +120,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
     .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcSuccessTx])
     .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcTimeoutTx])
     .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
-    .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimDelayedOutputTx])
+    .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
     .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])
     .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx])
     .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClosingTx])

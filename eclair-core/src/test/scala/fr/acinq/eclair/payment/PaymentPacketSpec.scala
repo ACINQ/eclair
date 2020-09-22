@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
-import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPacket._
@@ -396,11 +396,13 @@ object PaymentPacketSpec {
     packetType.create(sessionKey, nodes, payloadsBin, associatedData).packet
   }
 
-  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat): Commitments =
-    new Commitments(ChannelVersion.STANDARD, null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
+  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat): Commitments = {
+    val params = LocalParams(null, null, null, null, null, null, null, 0, isFunder = true, null, None, null)
+    new Commitments(ChannelVersion.STANDARD, params, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }
+  }
 
   def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes32)
 

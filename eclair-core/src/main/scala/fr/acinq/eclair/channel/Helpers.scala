@@ -533,7 +533,7 @@ object Helpers {
 
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = generateTx("main-delayed-output") {
-        Transactions.makeClaimDelayedOutputTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).right.map(claimDelayed => {
+        Transactions.makeClaimLocalDelayedOutputTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).right.map(claimDelayed => {
           val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
           Transactions.addSigs(claimDelayed, sig)
         })
@@ -563,7 +563,7 @@ object Helpers {
       val htlcDelayedTxes = htlcTxes.flatMap {
         txinfo: TransactionWithInputInfo =>
           generateTx("claim-htlc-delayed") {
-            Transactions.makeClaimDelayedOutputTx(txinfo.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).right.map(claimDelayed => {
+            Transactions.makeClaimLocalDelayedOutputTx(txinfo.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).right.map(claimDelayed => {
               val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
               Transactions.addSigs(claimDelayed, sig)
             })
@@ -632,7 +632,7 @@ object Helpers {
       }.toSeq.flatten
 
       channelVersion match {
-        case v if v.hasStaticRemotekey =>
+        case v if v.paysDirectlyToWallet =>
           RemoteCommitPublished(
             commitTx = tx,
             claimMainOutputTx = None,
@@ -661,13 +661,22 @@ object Helpers {
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: PublicKey, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
       val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+      val localPaymentPoint = keyManager.paymentPoint(channelKeyPath).publicKey
       val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
-      val mainTx = generateTx("claim-p2wpkh-output") {
-        Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit, localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
-          val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
-          Transactions.addSigs(claimMain, localPubkey, sig)
-        })
+      val mainTx = commitments.commitmentFormat match {
+        case DefaultCommitmentFormat => generateTx("claim-p2wpkh-output") {
+          Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit, localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
+            Transactions.addSigs(claimMain, localPubkey, sig)
+          })
+        }
+        case AnchorOutputsCommitmentFormat => generateTx("claim-remote-delayed-output") {
+          Transactions.makeClaimRemoteDelayedOutputTx(tx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitments.commitmentFormat)
+            Transactions.addSigs(claimMain, sig)
+          })
+        }
       }
 
       RemoteCommitPublished(
@@ -693,7 +702,7 @@ object Helpers {
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
-      val localPaymentPoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+      val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
       // this tx has been published by remote, so we need to invert local/remote params
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
@@ -715,9 +724,15 @@ object Helpers {
 
           // first we will claim our main output right away
           val mainTx = channelVersion match {
-            case v if v.hasStaticRemotekey =>
-              log.info(s"channel uses option_static_remotekey, not claiming our p2wpkh output")
+            case v if v.paysDirectlyToWallet =>
+              log.info(s"channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
               None
+            case v if v.hasAnchorOutputs => generateTx("claim-remote-delayed-output") {
+              Transactions.makeClaimRemoteDelayedOutputTx(tx, localParams.dustLimit, localPaymentPoint, localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+                val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
+                Transactions.addSigs(claimMain, sig)
+              })
+            }
             case _ => generateTx("claim-p2wpkh-output") {
               Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitmentFormat)
@@ -799,7 +814,7 @@ object Helpers {
             val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 1)
 
             generateTx("claim-htlc-delayed-penalty") {
-              Transactions.makeClaimDelayedOutputPenaltyTx(htlcTx, localParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).right.map(htlcDelayedPenalty => {
+              Transactions.makeClaimHtlcDelayedOutputPenaltyTx(htlcTx, localParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).right.map(htlcDelayedPenalty => {
                 val sig = keyManager.sign(htlcDelayedPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
                 val signedTx = Transactions.addSigs(htlcDelayedPenalty, sig)
                 // we need to make sure that the tx is indeed valid
@@ -1071,6 +1086,7 @@ object Helpers {
       // is the commitment tx buried? (we need to check this because we may not have any outputs)
       val isCommitTxConfirmed = localCommitPublished.irrevocablySpent.values.toSet.contains(localCommitPublished.commitTx.txid)
       // are there remaining spendable outputs from the commitment tx? we just subtract all known spent outputs from the ones we control
+      // NB: we ignore anchors here, claiming them can be batched later
       val commitOutputsSpendableByUs = (localCommitPublished.claimMainDelayedOutputTx.toSeq ++ localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs)
         .flatMap(_.txIn.map(_.outPoint)).toSet -- localCommitPublished.irrevocablySpent.keys
       // which htlc delayed txes can we expect to be confirmed?

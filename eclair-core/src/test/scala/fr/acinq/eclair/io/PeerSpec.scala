@@ -298,8 +298,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
       assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
       val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
       assert(inputInit.channelVersion.hasStaticRemotekey)
-      assert(inputInit.localParams.staticPaymentBasepoint.isDefined)
-      assert(inputInit.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(inputInit.localParams.staticPaymentBasepoint.get)))
+      assert(inputInit.localParams.walletStaticPaymentBasepoint.isDefined)
+      assert(inputInit.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(inputInit.localParams.walletStaticPaymentBasepoint.get)))
     }
   }
 }
