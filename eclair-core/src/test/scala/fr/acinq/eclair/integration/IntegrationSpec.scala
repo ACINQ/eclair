@@ -81,7 +81,7 @@ trait IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
     "eclair.max-htlc-value-in-flight-msat" -> 100000000000L,
     "eclair.router.broadcast-interval" -> "2 second",
     "eclair.auto-reconnect" -> false,
-    "eclair.to-remote-delay-blocks" -> 144,
+    "eclair.to-remote-delay-blocks" -> 24,
     "eclair.multi-part-payment-expiry" -> "20 seconds").asJava).withFallback(ConfigFactory.load())
 
   val commonFeatures = ConfigFactory.parseMap(Map(

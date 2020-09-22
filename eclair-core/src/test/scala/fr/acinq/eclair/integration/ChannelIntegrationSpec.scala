@@ -21,6 +21,7 @@ import java.util.UUID
 import akka.actor.ActorRef
 import akka.pattern.pipe
 import akka.testkit.TestProbe
+import com.google.common.net.HostAndPort
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script, ScriptFlags, Transaction}
@@ -28,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
@@ -50,10 +51,10 @@ import scala.jdk.CollectionConverters._
 class ChannelIntegrationSpec extends IntegrationSpec {
 
   test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 130, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090).asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 132, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091).asJava).withFallback(withAnchorOutputs).withFallback(withWumbo).withFallback(commonConfig))
-    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29742, "eclair.api.port" -> 28092).asJava).withFallback(withWumbo).withFallback(commonConfig))
-    instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29743, "eclair.api.port" -> 28093).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29740, "eclair.api.port" -> 28090).asJava).withFallback(commonFeatures).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29741, "eclair.api.port" -> 28091).asJava).withFallback(withAnchorOutputs).withFallback(withWumbo).withFallback(commonConfig))
+    instantiateEclairNode("F1", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F1", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29742, "eclair.api.port" -> 28092).asJava).withFallback(withWumbo).withFallback(commonConfig))
+    instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29743, "eclair.api.port" -> 28093).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
   }
 
   test("connect nodes") {
@@ -86,18 +87,78 @@ class ChannelIntegrationSpec extends IntegrationSpec {
     }, max = 60 seconds, interval = 1 second)
   }
 
-  test("open channel C <-> F1 with push_msat and close") {
-    connect(nodes("C"), nodes("F1"), 5000000 sat, 500000000 msat)
-    generateBlocks(bitcoincli, 6)
-    awaitAnnouncements(2)
+  test("open a wumbo channel C <-> F1, wait for longer than the default min_depth, then close") {
+    // we open a 5BTC channel and check that we scale `min_depth` up to 13 confirmations
+    val funder = nodes("C")
+    val fundee = nodes("F1")
+    val tempChannelId = connect(funder, fundee, 5 btc, 100000000000L msat).channelId
 
     val sender = TestProbe()
-    sender.send(nodes("F1").register, Symbol("channelsTo"))
-    val channels = sender.expectMsgType[Map[ByteVector32, PublicKey]]
-    assert(channels.size === 1)
-    assert(channels.head._2 === nodes("C").nodeParams.nodeId)
-    val channelId = channels.head._1
+    // mine the funding tx
+    generateBlocks(bitcoincli, 2)
+    // get the channelId
+    sender.send(fundee.register, Symbol("channels"))
+    val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
 
+    sender.send(fundeeChannel, CMD_GETSTATEDATA)
+    val channelId = sender.expectMsgType[RES_GETSTATEDATA[HasCommitments]].data.channelId
+    awaitCond({
+      funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+      sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_LOCKED
+    })
+
+    generateBlocks(bitcoincli, 6)
+
+    // after 8 blocks the fundee is still waiting for more confirmations
+    fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+    assert(sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_CONFIRMED)
+
+    // after 8 blocks the funder is still waiting for funding_locked from the fundee
+    funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+    assert(sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_LOCKED)
+
+    // simulate a disconnection
+    sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
+    assert(sender.expectMsgType[String] == "disconnecting")
+
+    awaitCond({
+      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+      val fundeeState = sender.expectMsgType[RES_GETSTATE[_]].state
+      funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+      val funderState = sender.expectMsgType[RES_GETSTATE[_]].state
+      fundeeState == OFFLINE && funderState == OFFLINE
+    })
+
+    // reconnect and check the fundee is waiting for more conf, funder is waiting for fundee to send funding_locked
+    awaitCond({
+      // reconnection
+      sender.send(fundee.switchboard, Peer.Connect(
+        nodeId = funder.nodeParams.nodeId,
+        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort))
+      ))
+      sender.expectMsgAnyOf(10 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
+
+      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+      val fundeeState = sender.expectMsgType[RES_GETSTATE[State]](max = 30 seconds).state
+      funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+      val funderState = sender.expectMsgType[RES_GETSTATE[State]](max = 30 seconds).state
+      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
+    }, max = 30 seconds, interval = 10 seconds)
+
+    // 5 extra blocks make it 13, just the amount of confirmations needed
+    generateBlocks(bitcoincli, 5)
+
+    awaitCond({
+      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+      val fundeeState = sender.expectMsgType[RES_GETSTATE[State]].state
+      funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
+      val funderState = sender.expectMsgType[RES_GETSTATE[State]].state
+      fundeeState == NORMAL && funderState == NORMAL
+    })
+
+    awaitAnnouncements(2)
+
+    // close that wumbo channel
     sender.send(nodes("C").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA))
     val commitmentsC = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data.commitments
     val finalPubKeyScriptC = commitmentsC.localParams.defaultFinalScriptPubKey
@@ -313,7 +374,7 @@ class ChannelIntegrationSpec extends IntegrationSpec {
     // the mempool and fulfill the payment upstream.
     paymentSender.expectMsgType[PaymentSent](30 seconds)
     // we then generate enough blocks so that nodes get their main delayed output
-    generateBlocks(bitcoincli, 145, Some(minerAddress))
+    generateBlocks(bitcoincli, 25, Some(minerAddress))
     // F should have 2 recv transactions: the redeemed htlc and its main output
     // C should have 1 recv transaction: its main output
     awaitCond({
@@ -360,7 +421,7 @@ class ChannelIntegrationSpec extends IntegrationSpec {
     // the mempool and fulfill the payment upstream.
     paymentSender.expectMsgType[PaymentSent](30 seconds)
     // we then generate enough blocks so that F gets its htlc-success delayed output
-    generateBlocks(bitcoincli, 145, Some(minerAddress))
+    generateBlocks(bitcoincli, 25, Some(minerAddress))
     // F should have 2 recv transactions: the redeemed htlc and its main output
     // C should have 1 recv transaction: its main output
     awaitCond({
@@ -418,7 +479,7 @@ class ChannelIntegrationSpec extends IntegrationSpec {
     assert(failed.failures.nonEmpty)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
-    generateBlocks(bitcoincli, 145, Some(minerAddress))
+    generateBlocks(bitcoincli, 25, Some(minerAddress))
     // C should have 2 recv transactions: its main output and the htlc timeout
     // F should have 1 recv transaction: its main output
     awaitCond({
@@ -480,7 +541,7 @@ class ChannelIntegrationSpec extends IntegrationSpec {
     assert(failed.failures.nonEmpty)
     assert(failed.failures.head.asInstanceOf[RemoteFailure].e === DecryptedFailurePacket(nodes("C").nodeParams.nodeId, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
-    generateBlocks(bitcoincli, 145, Some(minerAddress))
+    generateBlocks(bitcoincli, 25, Some(minerAddress))
     // C should have 2 recv transactions: its main output and the htlc timeout
     // F should have 1 recv transaction: its main output
     awaitCond({

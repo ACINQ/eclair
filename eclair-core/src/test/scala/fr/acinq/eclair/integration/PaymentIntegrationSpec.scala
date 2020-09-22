@@ -72,8 +72,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     //       ,--G--,
     //      /       \
     // A---B ------- C ==== D
-    //      \       /
-    //       '--E--'
+    //      \       / \
+    //       '--E--'   '--F
 
     val sender = TestProbe()
     val eventListener = TestProbe()
@@ -83,12 +83,13 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     connect(nodes("B"), nodes("C"), 2000000 sat, 0 msat)
     connect(nodes("C"), nodes("D"), 5000000 sat, 0 msat)
     connect(nodes("C"), nodes("D"), 5000000 sat, 0 msat)
+    connect(nodes("C"), nodes("F"), 16000000 sat, 0 msat)
     connect(nodes("B"), nodes("E"), 10000000 sat, 0 msat)
     connect(nodes("E"), nodes("C"), 10000000 sat, 0 msat)
     connect(nodes("B"), nodes("G"), 16000000 sat, 0 msat)
     connect(nodes("G"), nodes("C"), 16000000 sat, 0 msat)
 
-    val numberOfChannels = 8
+    val numberOfChannels = 9
     val channelEndpointsCount = 2 * numberOfChannels
 
     // we make sure all channels have set up their WatchConfirmed for the funding tx
@@ -137,8 +138,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
-    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)).toMap, 5, 7, 16)
-    awaitAnnouncements(nodes.filterKeys(key => List("C", "D", "E", "G").contains(key)).toMap, 5, 7, 14)
+    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)).toMap, 6, 8, 18)
+    awaitAnnouncements(nodes.filterKeys(key => List("C", "D", "E", "G").contains(key)).toMap, 6, 8, 16)
   }
 
   test("wait for channels balance") {
@@ -150,78 +151,6 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val publicChannels = routingState.channels.filter(pc => Set(pc.ann.nodeId1, pc.ann.nodeId2).contains(nodeId))
     assert(publicChannels.nonEmpty)
     publicChannels.foreach(pc => assert(pc.meta_opt.map(m => m.balance1 > 0.msat || m.balance2 > 0.msat) === Some(true), pc))
-  }
-
-  test("open a wumbo channel C <-> F and wait for longer than the default min_depth") {
-    // we open a 5BTC channel and check that we scale `min_depth` up to 13 confirmations
-    val funder = nodes("C")
-    val fundee = nodes("F")
-    val tempChannelId = connect(funder, fundee, 5 btc, 100000000000L msat).channelId
-
-    val sender = TestProbe()
-    // mine the funding tx
-    generateBlocks(bitcoincli, 2)
-    // get the channelId
-    sender.send(fundee.register, Symbol("channels"))
-    val Some((_, fundeeChannel)) = sender.expectMsgType[Map[ByteVector32, ActorRef]].find(_._1 == tempChannelId)
-
-    sender.send(fundeeChannel, CMD_GETSTATEDATA)
-    val channelId = sender.expectMsgType[RES_GETSTATEDATA[HasCommitments]].data.channelId
-    awaitCond({
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_LOCKED
-    })
-
-    generateBlocks(bitcoincli, 6)
-
-    // after 8 blocks the fundee is still waiting for more confirmations
-    fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-    assert(sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_CONFIRMED)
-
-    // after 8 blocks the funder is still waiting for funding_locked from the fundee
-    funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-    assert(sender.expectMsgType[RES_GETSTATE[_]].state == WAIT_FOR_FUNDING_LOCKED)
-
-    // simulate a disconnection
-    sender.send(funder.switchboard, Peer.Disconnect(fundee.nodeParams.nodeId))
-    assert(sender.expectMsgType[String] == "disconnecting")
-
-    awaitCond({
-      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val fundeeState = sender.expectMsgType[RES_GETSTATE[_]].state
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val funderState = sender.expectMsgType[RES_GETSTATE[_]].state
-      fundeeState == OFFLINE && funderState == OFFLINE
-    })
-
-    // reconnect and check the fundee is waiting for more conf, funder is waiting for fundee to send funding_locked
-    awaitCond({
-      // reconnection
-      sender.send(fundee.switchboard, Peer.Connect(
-        nodeId = funder.nodeParams.nodeId,
-        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort))
-      ))
-      sender.expectMsgAnyOf(10 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
-
-      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val fundeeState = sender.expectMsgType[RES_GETSTATE[State]](max = 30 seconds).state
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val funderState = sender.expectMsgType[RES_GETSTATE[State]](max = 30 seconds).state
-      fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
-    }, max = 30 seconds, interval = 10 seconds)
-
-    // 5 extra blocks make it 13, just the amount of confirmations needed
-    generateBlocks(bitcoincli, 5)
-
-    awaitCond({
-      fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val fundeeState = sender.expectMsgType[RES_GETSTATE[State]].state
-      funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)
-      val funderState = sender.expectMsgType[RES_GETSTATE[State]].state
-      fundeeState == NORMAL && funderState == NORMAL
-    })
-
-    awaitAnnouncements(nodes.filterKeys(_ == "A").toMap, 6, 8, 18)
   }
 
   test("send an HTLC A->D") {
