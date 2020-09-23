@@ -30,7 +30,6 @@ import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router.Router._
@@ -178,7 +177,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   private def handleLocalFail(d: WaitingForComplete, t: Throwable, isFatal: Boolean) = {
     t match {
       case UpdateMalformedException => Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType.Malformed).increment()
-      case _ => Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(cfg.fullRoute(d.route),t))).increment()
+      case _ => Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(cfg.fullRoute(d.route), t))).increment()
     }
     // we only retry if the error isn't fatal, and we haven't exhausted the max number of retried
     val doRetry = !isFatal && (d.failures.size + 1 < d.c.maxAttempts)
@@ -340,17 +339,21 @@ object PaymentLifecycle {
   def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(new PaymentLifecycle(nodeParams, cfg, router, register))
 
   /**
-   * Send a payment to a pre-defined route without running the path-finding algorithm.
+   * Send a payment to a given route.
    *
    * @param route        payment route to use.
    * @param finalPayload onion payload for the target node.
    */
-  case class SendPaymentToRoute(replyTo: ActorRef, route: Either[Seq[PublicKey], Route], finalPayload: FinalPayload, assistedRoutes: Seq[Seq[ExtraHop]] = Nil) {
-    require(route.fold(_.nonEmpty, _.hops.nonEmpty), "payment route must not be empty")
+  case class SendPaymentToRoute(replyTo: ActorRef, route: Either[PredefinedRoute, Route], finalPayload: FinalPayload, assistedRoutes: Seq[Seq[ExtraHop]] = Nil) {
+    require(route.fold(!_.isEmpty, _.hops.nonEmpty), "payment route must not be empty")
 
-    val targetNodeId = route.fold(_.last, _.hops.last.nextNodeId)
+    val targetNodeId = route.fold(_.targetNodeId, _.hops.last.nextNodeId)
 
-    def printRoute(): String = route.fold(nodes => nodes, _.hops.map(_.nextNodeId)).mkString("->")
+    def printRoute(): String = route match {
+      case Left(PredefinedChannelRoute(_, channels)) => channels.mkString("->")
+      case Left(PredefinedNodeRoute(nodes)) => nodes.mkString("->")
+      case Right(route) => route.hops.map(_.nextNodeId).mkString("->")
+    }
   }
 
   /**
@@ -386,9 +389,10 @@ object PaymentLifecycle {
   case object WAITING_FOR_REQUEST extends State
   case object WAITING_FOR_ROUTE extends State
   case object WAITING_FOR_PAYMENT_COMPLETE extends State
-  // @formatter:on
 
   /** custom exceptions to handle corner cases */
   case object UpdateMalformedException extends RuntimeException("first hop returned an UpdateFailMalformedHtlc message")
   case object DisconnectedException extends RuntimeException("a disconnection occurred with the first hop")
+  // @formatter:on
+
 }

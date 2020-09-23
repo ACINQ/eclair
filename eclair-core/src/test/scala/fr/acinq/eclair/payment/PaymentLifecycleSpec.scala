@@ -121,10 +121,11 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import cfg._
 
     // pre-computed route going from A to D
-    val request = SendPaymentToRoute(sender.ref, Left(Seq(a, b, c, d)), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
+    val route = PredefinedNodeRoute(Seq(a, b, c, d))
+    val request = SendPaymentToRoute(sender.ref, Left(route), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
 
     sender.send(paymentFSM, request)
-    routerForwarder.expectMsg(FinalizeRoute(defaultAmountMsat, Seq(a, b, c, d), paymentContext = Some(cfg.paymentContext)))
+    routerForwarder.expectMsg(FinalizeRoute(defaultAmountMsat, route, paymentContext = Some(cfg.paymentContext)))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     routerForwarder.forward(routerFixture.router)
@@ -139,11 +140,11 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
   }
 
-  test("send to route (edges not found in the graph)") { routerFixture =>
+  test("send to route (nodes not found in the graph)") { routerFixture =>
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    val brokenRoute = SendPaymentToRoute(sender.ref, Left(Seq(randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
+    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedNodeRoute(Seq(randomKey.publicKey, randomKey.publicKey, randomKey.publicKey))), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
     sender.send(paymentFSM, brokenRoute)
     routerForwarder.expectMsgType[FinalizeRoute]
     routerForwarder.forward(routerFixture.router)
@@ -152,17 +153,31 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(failureMessage == "Not all the nodes in the supplied route are connected with public channels")
   }
 
+  test("send to route (channels not found in the graph)") { routerFixture =>
+    val payFixture = createPaymentLifecycle()
+    import payFixture._
+
+    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedChannelRoute(randomKey.publicKey, Seq(ShortChannelId(1), ShortChannelId(2)))), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
+    sender.send(paymentFSM, brokenRoute)
+    routerForwarder.expectMsgType[FinalizeRoute]
+    routerForwarder.forward(routerFixture.router)
+
+    val failureMessage = eventListener.expectMsgType[PaymentFailed].failures.head.asInstanceOf[LocalFailure].t.getMessage
+    assert(failureMessage == "The sequence of channels provided cannot be used to build a route to the target node")
+  }
+
   test("send to route (routing hints)") { routerFixture =>
     val payFixture = createPaymentLifecycle()
     import payFixture._
     import cfg._
 
     val recipient = randomKey.publicKey
+    val route = PredefinedNodeRoute(Seq(a, b, c, recipient))
     val routingHint = Seq(Seq(ExtraHop(c, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144))))
-    val request = SendPaymentToRoute(sender.ref, Left(Seq(a, b, c, recipient)), FinalLegacyPayload(defaultAmountMsat, defaultExpiry), routingHint)
+    val request = SendPaymentToRoute(sender.ref, Left(route), FinalLegacyPayload(defaultAmountMsat, defaultExpiry), routingHint)
 
     sender.send(paymentFSM, request)
-    routerForwarder.expectMsg(FinalizeRoute(defaultAmountMsat, Seq(a, b, c, recipient), routingHint, paymentContext = Some(cfg.paymentContext)))
+    routerForwarder.expectMsg(FinalizeRoute(defaultAmountMsat, route, routingHint, paymentContext = Some(cfg.paymentContext)))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     routerForwarder.forward(routerFixture.router)
