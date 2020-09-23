@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, PermanentChannelFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, PermanentChannelFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
@@ -84,6 +84,10 @@ class ChannelIntegrationSpec extends IntegrationSpec {
     awaitCond({
       sender.send(nodes("A").router, Symbol("channels"))
       sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
+    }, max = 60 seconds, interval = 1 second)
+    awaitCond({
+      sender.send(nodes("A").router, Symbol("updates"))
+      sender.expectMsgType[Iterable[ChannelUpdate]].size == 2 * channels
     }, max = 60 seconds, interval = 1 second)
   }
 
