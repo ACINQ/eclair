@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, TxOut}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel._
@@ -29,8 +29,8 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.{ChannelRelayPacket, FinalPacket, NodeRelayPacket, decrypt}
 import fr.acinq.eclair.payment.OutgoingPacket._
 import fr.acinq.eclair.payment.PaymentRequest.PaymentRequestFeatures
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
+import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire._
@@ -396,9 +396,10 @@ object PaymentPacketSpec {
     packetType.create(sessionKey, nodes, payloadsBin, associatedData).packet
   }
 
-  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat): Commitments = {
+  def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat): Commitments = {
     val params = LocalParams(null, null, null, null, null, null, null, 0, isFunder = true, null, None, null)
-    new Commitments(ChannelVersion.STANDARD, params, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId) {
+    val commitInput = InputInfo(OutPoint(randomBytes32, 1), TxOut(testCapacity, Nil), Nil)
+    new Commitments(ChannelVersion.STANDARD, params, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, commitInput, null, channelId) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }

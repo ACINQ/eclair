@@ -131,7 +131,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         Metrics.recordPaymentRelayFailed(Tags.FailureType(cmdFail), Tags.RelayType.Channel)
         safeSendAndStop(o.add.channelId, cmdFail)
 
-      case WrappedAddResponse(addFailed@RES_ADD_FAILED(CMD_ADD_HTLC(_, _, _, _, _, Origin.ChannelRelayedHot(_, add, _), _), _, _)) =>
+      case WrappedAddResponse(addFailed@RES_ADD_FAILED(CMD_ADD_HTLC(_, _, _, _, _, _: Origin.ChannelRelayedHot, _), _, _)) =>
         context.log.info("attempt failed with reason={}", addFailed.t.getClass.getSimpleName)
         context.self ! DoRelay
         relay(previousFailures :+ PreviouslyTried(selectedShortChannelId, addFailed))
@@ -191,8 +191,8 @@ class ChannelRelay private(nodeParams: NodeParams,
   private val nextNodeId_opt = channels.headOption.map(_._2.nextNodeId)
 
   /**
-   * Select a channel to the same node to relay the payment to, that has the lowest balance and is compatible in
-   * terms of fees, expiry_delta, etc.
+   * Select a channel to the same node to relay the payment to, that has the lowest capacity and balance and is
+   * compatible in terms of fees, expiry_delta, etc.
    *
    * If no suitable channel is found we default to the originally requested channel.
    */
@@ -200,23 +200,28 @@ class ChannelRelay private(nodeParams: NodeParams,
     val requestedShortChannelId = r.payload.outgoingChannelId
     context.log.debug("selecting next channel")
     nextNodeId_opt match {
-      case Some(nextNodeId) =>
+      case Some(_) =>
         // we then filter out channels that we have already tried
         val candidateChannels: Map[ShortChannelId, OutgoingChannel] = channels -- alreadyTried
         // and we filter again to keep the ones that are compatible with this payment (mainly fees, expiry delta)
         candidateChannels
           .map { case (shortChannelId, channelInfo) =>
             val relayResult = relayOrFail(Some(channelInfo.channelUpdate))
-            context.log.debug(s"candidate channel: shortChannelId={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo.commitments.availableBalanceForSend, channelInfo.channelUpdate, relayResult)
+            context.log.debug(s"candidate channel: shortChannelId={} capacitySat={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo.commitments.commitInput.txOut.amount, channelInfo.commitments.availableBalanceForSend, channelInfo.channelUpdate, relayResult)
             (shortChannelId, channelInfo, relayResult)
           }
-          .collect { case (shortChannelId, channelInfo, _: RelaySuccess) => (shortChannelId, channelInfo.commitments.availableBalanceForSend) }
-          .filter(_._2 > r.payload.amountToForward) // we only keep channels that have enough balance to handle this payment
+          .collect {
+            // we only keep channels that have enough balance to handle this payment
+            case (shortChannelId, channelInfo, _: RelaySuccess) if channelInfo.commitments.availableBalanceForSend > r.payload.amountToForward => (shortChannelId, channelInfo.commitments)
+          }
           .toList // needed for ordering
-          .sortBy(_._2) // we want to use the channel with the lowest available balance that can process the payment
+          // we want to use the channel with:
+          //  - the lowest available capacity to ensure we keep high-capacity channels for big payments
+          //  - the lowest available balance to increase our incoming liquidity
+          .sortBy { case (_, commitments) => (commitments.commitInput.txOut.amount, commitments.availableBalanceForSend) }
           .headOption match {
-          case Some((preferredShortChannelId, availableBalanceMsat)) if preferredShortChannelId != requestedShortChannelId =>
-            context.log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, preferredShortChannelId, availableBalanceMsat)
+          case Some((preferredShortChannelId, commitments)) if preferredShortChannelId != requestedShortChannelId =>
+            context.log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, preferredShortChannelId, commitments.availableBalanceForSend)
             Some(preferredShortChannelId)
           case Some(_) =>
             // the requested short_channel_id is already our preferred channel
