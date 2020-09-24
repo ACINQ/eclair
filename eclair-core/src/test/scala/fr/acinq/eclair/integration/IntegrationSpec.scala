@@ -47,7 +47,7 @@ import scala.jdk.CollectionConverters._
  * Created by PM on 15/03/2017.
  */
 
-trait IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
+abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
   var nodes: Map[String, Kit] = Map()
 
@@ -130,6 +130,7 @@ trait IntegrationSpec extends TestKitBaseClass with BitcoindService with AnyFunS
         logger.info(s"stopping node $name")
         TestKit.shutdownActorSystem(setup.system)
     }
+    super.afterAll()
   }
 
   def instantiateEclairNode(name: String, config: Config): Unit = {
