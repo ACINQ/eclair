@@ -204,7 +204,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         gotoConnected(connectionReady, d.channels)
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if pluginMessageTags.contains(unknownMsg.tag) =>
-        context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d))
+        context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
         stay
 
       case Event(unhandledMsg: LightningMessage, _) =>
@@ -237,9 +237,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   onTransition {
     case DISCONNECTED -> CONNECTED =>
       Metrics.PeersConnected.withoutTags().increment()
-      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData))
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData.connectionInfo))
     case CONNECTED -> CONNECTED => // connection switch
-      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData))
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData.connectionInfo))
     case CONNECTED -> DISCONNECTED =>
       Metrics.PeersConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
@@ -363,10 +363,13 @@ object Peer {
 
   sealed trait Data {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
+    def connectionInfo: Option[ConnectionInfo] = None
   }
   case object Nothing extends Data { override def channels = Map.empty }
   case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
-  case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data
+  case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data {
+    override def connectionInfo: Option[ConnectionInfo] = Some(ConnectionInfo(peerConnection, remoteInit))
+  }
 
   sealed trait State
   case object INSTANTIATING extends State

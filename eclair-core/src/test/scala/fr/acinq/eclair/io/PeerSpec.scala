@@ -33,9 +33,10 @@ import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, DATA_WAIT_FOR_ACCEPT_CHANNEL, HasCommitments, RES_GETINFO, WAIT_FOR_ACCEPT_CHANNEL}
 import fr.acinq.eclair.io.Peer._
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement, UnknownMessage}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -159,6 +160,19 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
 
     probe.send(peer, Peer.Connect(remoteNodeId, None))
     probe.expectMsg(PeerConnection.ConnectionResult.AlreadyConnected)
+  }
+
+  test("x") { f =>
+    import f._
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[UnknownMessageReceived])
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+
+    peerConnection.send(peer, UnknownMessage(tag = 50001, data = ByteVector.empty))
+    listener.expectMsgType[UnknownMessageReceived]
+    peerConnection.send(peer, UnknownMessage(tag = 60001, data = ByteVector.empty))
+    listener.expectNoMessage()
   }
 
   test("handle disconnect in state CONNECTED") { f =>

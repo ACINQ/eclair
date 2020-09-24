@@ -19,11 +19,14 @@ package fr.acinq.eclair.io
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.UnknownMessage
+import fr.acinq.eclair.wire
 
 sealed trait PeerEvent
 
-case class PeerConnected(peer: ActorRef, nodeId: PublicKey, data: Peer.Data) extends PeerEvent
+case class ConnectionInfo(peerConnection: ActorRef, remoteInit: wire.Init)
+
+case class PeerConnected(peer: ActorRef, nodeId: PublicKey, connectionInfo: Option[ConnectionInfo]) extends PeerEvent
 
 case class PeerDisconnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
 
-case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage, data: Peer.Data) extends PeerEvent
+case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage, connectionInfo: Option[ConnectionInfo]) extends PeerEvent

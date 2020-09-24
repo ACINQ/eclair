@@ -215,10 +215,10 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   test("Unknown messages") {
     // Non-standard tag number so this message can only be handled by a codec with a fallback
     val unknown = UnknownMessage(tag = 47282, data = ByteVector32.Zeroes.bytes)
-    assertThrows[java.lang.IllegalArgumentException](lightningMessageCodec.encode(unknown).require)
+    assert(lightningMessageCodec.encode(unknown).isFailure)
     val encoded1 = lightningMessageCodecWithFallback.encode(unknown).require
     val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value
-    assertThrows[java.lang.IllegalArgumentException](lightningMessageCodec.decode(encoded1).require.value)
+    assert(lightningMessageCodec.decode(encoded1).isFailure)
     assert(decoded1 === unknown)
   }
 

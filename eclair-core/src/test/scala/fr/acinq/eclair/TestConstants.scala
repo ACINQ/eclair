@@ -130,6 +130,11 @@ object TestConstants {
     val seed = ByteVector32(ByteVector.fill(32)(1))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
+    case object TestFeature extends Feature {
+      val rfcName = "test_feature"
+      val mandatory = 50000
+    }
+
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
       keyManager = keyManager,
@@ -142,8 +147,9 @@ object TestConstants {
         ActivatedFeature(OptionDataLossProtect, Optional),
         ActivatedFeature(ChannelRangeQueries, Optional),
         ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-        ActivatedFeature(VariableLengthOnion, Optional))),
-      pluginParams = Nil,
+        ActivatedFeature(VariableLengthOnion, Optional)),
+        Set(UnknownFeature(TestFeature.optional))),
+      pluginParams = List(PluginParams(Set(TestFeature.optional), TestFeature)),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
