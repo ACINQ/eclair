@@ -368,7 +368,7 @@ object Peer {
   case object Nothing extends Data { override def channels = Map.empty }
   case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
   case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data {
-    override def connectionInfo: Option[ConnectionInfo] = Some(ConnectionInfo(peerConnection, remoteInit))
+    override val connectionInfo: Option[ConnectionInfo] = Some(ConnectionInfo(peerConnection, remoteInit))
   }
 
   sealed trait State
