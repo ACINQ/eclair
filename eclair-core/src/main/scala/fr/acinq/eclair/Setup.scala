@@ -70,6 +70,7 @@ import scala.util.{Failure, Success}
  * @param db       optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
+            pluginParams: Seq[PluginParams],
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
@@ -123,7 +124,8 @@ class Setup(datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), databases, blockCount, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
+  pluginParams.foreach(param => logger.info(param.toString))
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),

@@ -49,6 +49,7 @@ case class NodeParams(keyManager: KeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       features: Features,
+                      pluginParams: Seq[PluginParams],
                       overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
                       dustLimit: Satoshi,
@@ -136,7 +137,8 @@ object NodeParams {
 
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
-  def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases,
+                     blockCount: AtomicLong, feeEstimator: FeeEstimator, pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
       // v0.3.2
@@ -197,7 +199,16 @@ object NodeParams {
 
     val features = Features.fromConfiguration(config)
     val featuresErr = Features.validateFeatureGraph(features)
+
     require(featuresErr.isEmpty, featuresErr.map(_.message))
+    require(pluginParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
+    require(pluginParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
+    require(pluginParams.flatMap(_.tags).forall(_ > 32768), "Plugin messages tags must be > 32768")
+    val pluginFeatureSet = pluginParams.map(_.feature.mandatory).toSet
+    require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
+    require(pluginFeatureSet.size == pluginParams.size, "Duplicate plugin feature bits found")
+
+    val coreAndPluginFeatures = features.copy(unknown = features.unknown ++ pluginParams.map(_.pluginFeature))
 
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
@@ -249,7 +260,8 @@ object NodeParams {
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
-      features = features,
+      features = coreAndPluginFeatures,
+      pluginParams = pluginParams,
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
@@ -316,4 +328,14 @@ object NodeParams {
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
     )
   }
+}
+
+/**
+ * @param tags: a set of LightningMessage tags that plugin is interested in
+ * @param feature: a Feature bit that plugin advertizes through Init message
+ */
+case class PluginParams(tags: Set[Int], feature: Feature) {
+  def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
+
+  override def toString: String = s"Messaging enabled plugin=${feature.rfcName} with feature bit=${feature.optional} and LN message tags=${tags.mkString(",")}"
 }

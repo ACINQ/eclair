@@ -84,7 +84,7 @@ class FxApp extends Application with Logging {
           val datadir = new File(getParameters.getUnnamed.get(0))
           val config = NodeParams.loadConfiguration(datadir)
           implicit val system = ActorSystem("eclair-node-gui", config)
-          val setup = new Setup(datadir)
+          val setup = new Setup(datadir, pluginParams = Seq.empty)
 
           val unitConf = setup.config.getString("gui.unit")
           FxApp.unit = Try(CoinUtils.getUnitFromString(unitConf)) match {

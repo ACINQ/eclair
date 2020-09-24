@@ -88,9 +88,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
    */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
-  def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(
-    Peer.props(nodeParams, remoteNodeId, watcher, relayer, wallet),
-    name = peerActorName(remoteNodeId))
+  def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(Peer.props(nodeParams, remoteNodeId, watcher, relayer, wallet), name = peerActorName(remoteNodeId))
 
   def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[HasCommitments]): ActorRef = {
     getPeer(remoteNodeId) match {

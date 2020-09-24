@@ -195,18 +195,31 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L, randomKey, randomKey.publicKey)
 
+    val unknown_message = UnknownMessage(tag = 60000, data = ByteVector32.One.bytes)
+
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish :: Nil
+        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures ::
+        ping :: pong :: channel_reestablish :: unknown_message :: Nil
 
     msgs.foreach {
       msg => {
-        val encoded = lightningMessageCodec.encode(msg).require
-        val decoded = lightningMessageCodec.decode(encoded).require
+        val encoded = lightningMessageCodecWithFallback.encode(msg).require
+        val decoded = lightningMessageCodecWithFallback.decode(encoded).require
         assert(msg === decoded.value)
       }
     }
+  }
+
+  test("Unknown messages") {
+    // Non-standard tag number so this message can only be handled by a codec with a fallback
+    val unknown = UnknownMessage(tag = 47282, data = ByteVector32.Zeroes.bytes)
+    assert(lightningMessageCodec.encode(unknown).isFailure)
+    val encoded1 = lightningMessageCodecWithFallback.encode(unknown).require
+    val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value
+    assert(lightningMessageCodec.decode(encoded1).isFailure)
+    assert(decoded1 === unknown)
   }
 
   test("non-reg encoding type") {

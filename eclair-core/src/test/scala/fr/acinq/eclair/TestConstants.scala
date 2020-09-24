@@ -126,6 +126,13 @@ object TestConstants {
 
   def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
 
+  case object TestFeature extends Feature {
+    val rfcName = "test_feature"
+    val mandatory = 50000
+  }
+
+  val pluginParams: PluginParams = PluginParams(tags = Set(60003), TestFeature)
+
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
     val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
@@ -142,7 +149,9 @@ object TestConstants {
         ActivatedFeature(OptionDataLossProtect, Optional),
         ActivatedFeature(ChannelRangeQueries, Optional),
         ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-        ActivatedFeature(VariableLengthOnion, Optional))),
+        ActivatedFeature(VariableLengthOnion, Optional)),
+        Set(UnknownFeature(TestFeature.optional))),
+      pluginParams = List(pluginParams),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
@@ -232,6 +241,7 @@ object TestConstants {
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
       features = Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+      pluginParams = Nil,
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1000 sat,

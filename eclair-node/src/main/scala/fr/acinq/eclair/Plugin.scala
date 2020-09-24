@@ -18,12 +18,12 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.{JarURLConnection, URL, URLClassLoader}
-
 import grizzled.slf4j.Logging
-
 import scala.util.{Failure, Success, Try}
 
 trait Plugin {
+
+  def params: Option[PluginParams]
 
   def onSetup(setup: Setup): Unit
 
