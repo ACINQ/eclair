@@ -52,7 +52,7 @@ class FxApp extends Application with Logging {
   def onError(t: Throwable): Unit = t match {
     case e@TCPBindException(port) =>
       notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", e))
-    case e@BitcoinRPCConnectionException =>
+    case e: BitcoinRPCConnectionException =>
       notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
     case e@BitcoinZMQConnectionTimeoutException =>
