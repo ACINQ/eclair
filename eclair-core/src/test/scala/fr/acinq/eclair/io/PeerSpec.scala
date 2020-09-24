@@ -162,7 +162,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     probe.expectMsg(PeerConnection.ConnectionResult.AlreadyConnected)
   }
 
-  test("x") { f =>
+  test("handle unknown messages") { f =>
     import f._
 
     val listener = TestProbe()
