@@ -237,9 +237,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   onTransition {
     case DISCONNECTED -> CONNECTED =>
       Metrics.PeersConnected.withoutTags().increment()
-      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData.connectionInfo))
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData.asInstanceOf[Peer.ConnectedData].connectionInfo))
     case CONNECTED -> CONNECTED => // connection switch
-      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData.connectionInfo))
+      context.system.eventStream.publish(PeerConnected(self, remoteNodeId, nextStateData.asInstanceOf[Peer.ConnectedData].connectionInfo))
     case CONNECTED -> DISCONNECTED =>
       Metrics.PeersConnected.withoutTags().decrement()
       context.system.eventStream.publish(PeerDisconnected(self, remoteNodeId))
@@ -363,12 +363,11 @@ object Peer {
 
   sealed trait Data {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
-    def connectionInfo: Option[ConnectionInfo] = None
   }
   case object Nothing extends Data { override def channels = Map.empty }
   case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
   case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data {
-    override val connectionInfo: Option[ConnectionInfo] = Some(ConnectionInfo(peerConnection, remoteInit))
+    val connectionInfo: ConnectionInfo = ConnectionInfo(peerConnection, remoteInit)
   }
 
   sealed trait State

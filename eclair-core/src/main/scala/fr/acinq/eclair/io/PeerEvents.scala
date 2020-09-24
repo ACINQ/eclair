@@ -25,8 +25,8 @@ sealed trait PeerEvent
 
 case class ConnectionInfo(peerConnection: ActorRef, remoteInit: wire.Init)
 
-case class PeerConnected(peer: ActorRef, nodeId: PublicKey, connectionInfo: Option[ConnectionInfo]) extends PeerEvent
+case class PeerConnected(peer: ActorRef, nodeId: PublicKey, connectionInfo: ConnectionInfo) extends PeerEvent
 
 case class PeerDisconnected(peer: ActorRef, nodeId: PublicKey) extends PeerEvent
 
-case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage, connectionInfo: Option[ConnectionInfo]) extends PeerEvent
+case class UnknownMessageReceived(peer: ActorRef, nodeId: PublicKey, message: UnknownMessage, connectionInfo: ConnectionInfo) extends PeerEvent
