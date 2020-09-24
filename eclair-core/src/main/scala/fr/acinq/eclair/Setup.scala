@@ -139,11 +139,16 @@ class Setup(datadir: File,
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
+      val wallet = {
+        val name = config.getString("bitcoind.wallet")
+        if (!name.isBlank) Some(name) else None
+      }
       val bitcoinClient = new BasicBitcoinJsonRPCClient(
         user = config.getString("bitcoind.rpcuser"),
         password = config.getString("bitcoind.rpcpassword"),
         host = config.getString("bitcoind.host"),
-        port = config.getInt("bitcoind.rpcport"))
+        port = config.getInt("bitcoind.rpcport"),
+        wallet = wallet)
       val future = for {
         json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
         // Make sure wallet support is enabled in bitcoind.

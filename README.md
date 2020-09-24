@@ -41,13 +41,19 @@ You will find detailed guides and frequently asked questions there.
 
 ### Configuring Bitcoin Core
 
-:warning: Eclair requires Bitcoin Core 0.18.1, 0.19.1 or 0.20.1. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
+:warning: Eclair requires Bitcoin Core 0.18.1, 0.19.1 or 0.20.1. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
-Eclair will use any BTC it finds in the default Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet. You can have multiple Bitcoin Core wallets but make sure that the default one is always available.
-Any BTC found in the wallet can be used to fund the channels you choose to open and the BTC from closed channels will return to this wallet. 
+
+Eclair will use the default loaded Bitcoin Core wallet to fund any channels you choose to open.
+If you want to use a different wallet from the default one, you must set `eclair.bitcoind.wallet` accordingly in your `eclair.conf`.
+
+:warning: once a wallet is configured, you must be very careful if you want to change it: changing the wallet when you have channels open may result in a loss of funds (or a complex recovery procedure).
+
+Eclair will return BTC from closed channels to the wallet configured.
+Any BTC found in the wallet can be used to fund the channels you choose to open.
 You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes.
-If your Bitcoin Core wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `p2sh-segwit` or `bech32` address.
+If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `p2sh-segwit` or `bech32` address.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
