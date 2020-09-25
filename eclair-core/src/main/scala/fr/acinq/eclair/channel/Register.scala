@@ -40,9 +40,9 @@ class Register extends Actor with ActorLogging {
       context.watch(channel)
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
 
-    case ChannelRestored(channel, _, remoteNodeId, _, channelId, _) =>
+    case ChannelRestored(channel, _, remoteNodeId, _, currentData) =>
       context.watch(channel)
-      context become main(channels + (channelId -> channel), shortIds, channelsTo + (channelId -> remoteNodeId))
+      context become main(channels + (currentData.channelId -> channel), shortIds, channelsTo + (currentData.channelId -> remoteNodeId))
 
     case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
       context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId)

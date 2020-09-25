@@ -38,7 +38,7 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, ad
 
   IO(Tcp) ! Bind(self, address, options = KeepAlive(true) :: Nil, pullMode = true)
 
-  def receive() = {
+  def receive: Receive = {
     case Bound(localAddress) =>
       bound.map(_.success(Done))
       log.info(s"bound on $localAddress")

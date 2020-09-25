@@ -472,12 +472,12 @@ object Validation {
   }
 
   def handleAvailableBalanceChanged(d: Data, e: AvailableBalanceChanged)(implicit log: LoggingAdapter): Data = {
-    val desc = ChannelDesc(e.shortChannelId, e.commitments.localParams.nodeId, e.commitments.remoteParams.nodeId)
+    val desc = ChannelDesc(e.shortChannelId, e.commitments.localNodeId, e.commitments.remoteNodeId)
     val (publicChannels1, graph1) = d.channels.get(e.shortChannelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("public channel balance updated: {}", pc1)
-        val update_opt = if (e.commitments.localParams.nodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
+        val update_opt = if (e.commitments.localNodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
         val graph1 = update_opt.map(u => d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(d.graph)
         (d.channels + (e.shortChannelId -> pc1), graph1)
       case None =>
@@ -487,7 +487,7 @@ object Validation {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
         log.debug("private channel balance updated: {}", pc1)
-        val update_opt = if (e.commitments.localParams.nodeId == pc1.nodeId1) pc1.update_1_opt else pc1.update_2_opt
+        val update_opt = if (e.commitments.localNodeId == pc1.nodeId1) pc1.update_1_opt else pc1.update_2_opt
         val graph2 = update_opt.map(u => graph1.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(graph1)
         (d.privateChannels + (e.shortChannelId -> pc1), graph2)
       case None =>

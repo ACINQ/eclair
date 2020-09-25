@@ -25,6 +25,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPacket
+import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId}
 
@@ -87,16 +88,16 @@ object ChannelRelayer {
               Behaviors.same
 
             case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>
-              val channels = if (enabledOnly) {
-                channelUpdates.values.filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
-              } else {
-                channelUpdates.values
-              }
+              val channels = for {
+                out @ OutgoingChannel(_, channelUpdate, _: Commitments) <- channelUpdates.values // We are only interested in normal channel Commitments here
+                if !enabledOnly || (enabledOnly && Announcements.isEnabled(channelUpdate.channelFlags))
+              } yield out
+
               replyTo ! Relayer.OutgoingChannels(channels.toSeq)
               Behaviors.same
 
-            case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
-              context.log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+            case WrappedLocalChannelUpdate(LocalChannelUpdate(_, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
+              context.log.debug(s"updating local channel info for channelId=${commitments.channelId} shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
               val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> Relayer.OutgoingChannel(remoteNodeId, channelUpdate, commitments))
               val node2channels1 = node2channels.addOne(remoteNodeId, channelUpdate.shortChannelId)
               apply(nodeParams, register, channelUpdates1, node2channels1)
@@ -106,10 +107,10 @@ object ChannelRelayer {
               val node2channels1 = node2channels.subtractOne(remoteNodeId, shortChannelId)
               apply(nodeParams, register, channelUpdates - shortChannelId, node2channels1)
 
-            case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, shortChannelId, commitments)) =>
+            case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, shortChannelId, commitments)) =>
               val channelUpdates1 = channelUpdates.get(shortChannelId) match {
                 case Some(c: Relayer.OutgoingChannel) =>
-                  context.log.debug(s"available balance changed for channelId=$channelId shortChannelId=$shortChannelId availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
+                  context.log.debug(s"available balance changed for channelId=${commitments.channelId} shortChannelId=$shortChannelId availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
                   channelUpdates + (shortChannelId -> c.copy(commitments = commitments))
                 case None => channelUpdates // we only consider the balance if we have the channel_update
               }

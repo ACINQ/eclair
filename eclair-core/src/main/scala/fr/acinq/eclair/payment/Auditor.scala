@@ -98,7 +98,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
         case _: RecoveryClose => "recovery"
         case _: RevokedClose => "revoked"
       }
-      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
+      db.add(ChannelLifecycleEvent(e.commitments.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
 
   }
 

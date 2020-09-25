@@ -121,7 +121,7 @@ object Relayer extends Logging {
    * @param enabledOnly if true, filter out disabled channels.
    */
   case class GetOutgoingChannels(enabledOnly: Boolean = true)
-  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, commitments: Commitments) {
+  case class OutgoingChannel(nextNodeId: PublicKey, channelUpdate: ChannelUpdate, commitments: ChannelCommitments) {
     def toUsableBalance: UsableBalance = UsableBalance(
       remoteNodeId = nextNodeId,
       shortChannelId = channelUpdate.shortChannelId,
