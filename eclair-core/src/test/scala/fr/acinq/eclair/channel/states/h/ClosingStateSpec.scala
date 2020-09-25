@@ -280,7 +280,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     val sender = TestProbe()
-    val c = CMD_FULFILL_HTLC(42, randomBytes32)
+    val c = CMD_FULFILL_HTLC(42, randomBytes32, replyTo_opt = Some(sender.ref))
     sender.send(alice, c)
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(alice), 42)))
 

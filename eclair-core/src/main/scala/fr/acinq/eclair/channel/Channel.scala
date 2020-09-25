@@ -1855,7 +1855,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   def handleCommandSuccess(c: Command, newData: Data) = {
     val replyTo_opt = c match {
-      case _: NoReplyTo => None
+      case hasOptionalReplyTo: HasOptionalReplyTo => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => Some(hasReplyTo.replyTo)
       case _ => Some(sender)
     }
@@ -1883,11 +1883,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _: ChannelException => ()
       case _ => log.error(cause, s"msg=$c stateData=$stateData ")
     }
-    val replyTo = c match {
-      case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => hasReplyTo.replyTo
-      case _ => sender
+    val replyTo_opt = c match {
+      case hasOptionalReplyTo: HasOptionalReplyTo => hasOptionalReplyTo.replyTo_opt
+      case hasReplyTo: HasReplyTo if hasReplyTo.replyTo != ActorRef.noSender => Some(hasReplyTo.replyTo)
+      case _ => Some(sender)
     }
-    replyTo ! RES_FAILURE(c, cause)
+    replyTo_opt.foreach { replyTo =>
+      replyTo ! RES_FAILURE(c, cause)
+    }
     context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = false))
     stay
   }
@@ -1998,7 +2001,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       } else {
         // There might be pending fulfill commands that we haven't relayed yet.
         // Since this involves a DB call, we only want to check it if all the previous checks failed (this is the slow path).
-        val pendingRelayFulfills = nodeParams.db.pendingRelay.listPendingRelay(d.channelId).collect { case CMD_FULFILL_HTLC(id, r, _) => id }
+        val pendingRelayFulfills = nodeParams.db.pendingRelay.listPendingRelay(d.channelId).collect { case c: CMD_FULFILL_HTLC => c.id }
         val offendingPendingRelayFulfills = almostTimedOutIncoming.filter(htlc => pendingRelayFulfills.contains(htlc.id))
         if (offendingPendingRelayFulfills.nonEmpty) {
           handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingPendingRelayFulfills), d, Some(c))
