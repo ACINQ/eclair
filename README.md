@@ -110,7 +110,7 @@ Quotes are not required unless the value contains special characters. Full synta
 Eclair will use the default loaded Bitcoin Core wallet to fund any channels you choose to open.
 If you want to use a different wallet from the default one, you must set `eclair.bitcoind.wallet` accordingly in your `eclair.conf`.
 
-:warning: once a wallet is configured, you must be very careful if you want to change it: changing the wallet when you have channels open may result in a loss of funds (or a complex recovery procedure).
+:warning: Once a wallet is configured, you must be very careful if you want to change it: changing the wallet when you have channels open may result in a loss of funds (or a complex recovery procedure).
 
 Eclair will return BTC from closed channels to the wallet configured.
 Any BTC found in the wallet can be used to fund the channels you choose to open.
