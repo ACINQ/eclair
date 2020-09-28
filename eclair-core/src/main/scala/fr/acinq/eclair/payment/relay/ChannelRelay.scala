@@ -207,7 +207,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         candidateChannels
           .map { case (shortChannelId, channelInfo) =>
             val relayResult = relayOrFail(Some(channelInfo.channelUpdate))
-            context.log.debug(s"candidate channel: shortChannelId={} capacitySat={} balanceMsat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo.commitments.commitInput.txOut.amount, channelInfo.commitments.availableBalanceForSend, channelInfo.channelUpdate, relayResult)
+            context.log.debug(s"candidate channel: shortChannelId={} balanceMsat={} capacitySat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo.commitments.availableBalanceForSend, channelInfo.commitments.commitInput.txOut.amount, channelInfo.channelUpdate, relayResult)
             (shortChannelId, channelInfo, relayResult)
           }
           .collect {
