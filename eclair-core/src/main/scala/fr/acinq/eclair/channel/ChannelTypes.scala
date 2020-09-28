@@ -155,23 +155,25 @@ object Origin {
   }
 }
 
+/** should not be used directly */
 sealed trait Command
-sealed trait HasReplyTo { this: Command => def replyTo: ActorRef }
-sealed trait HasOptionalReplyTo { this: Command => def replyTo_opt: Option[ActorRef] }
-final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, origin: Origin.Hot, commit: Boolean = false) extends Command with HasReplyTo
-sealed trait HtlcSettlementCommand extends Command with HasOptionalReplyTo { def id: Long }
+sealed trait HasReplyToCommand extends Command { def replyTo: ActorRef }
+sealed trait HasOptionalReplyToCommand extends Command { def replyTo_opt: Option[ActorRef] }
+
+final case class CMD_ADD_HTLC(replyTo: ActorRef, amount: MilliSatoshi, paymentHash: ByteVector32, cltvExpiry: CltvExpiry, onion: OnionRoutingPacket, origin: Origin.Hot, commit: Boolean = false) extends HasReplyToCommand
+sealed trait HtlcSettlementCommand extends HasOptionalReplyToCommand { def id: Long }
 final case class CMD_FULFILL_HTLC(id: Long, r: ByteVector32, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessage], commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
-final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false) extends Command
-case object CMD_SIGN extends Command
-sealed trait CloseCommand extends Command
-final case class CMD_CLOSE(scriptPubKey: Option[ByteVector]) extends CloseCommand
-case object CMD_FORCECLOSE extends CloseCommand
-final case class CMD_UPDATE_RELAY_FEE(feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends Command
-case object CMD_GETSTATE extends Command
-case object CMD_GETSTATEDATA extends Command
-case object CMD_GETINFO extends Command
+final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand
+final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand
+sealed trait CloseCommand extends HasReplyToCommand
+final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector]) extends CloseCommand
+final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
+final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends HasReplyToCommand
+final case class CMD_GETSTATE(replyTo: ActorRef) extends HasReplyToCommand
+final case class CMD_GETSTATEDATA(replyTo: ActorRef) extends HasReplyToCommand
+final case class CMD_GETINFO(replyTo: ActorRef)extends HasReplyToCommand
 
 /*
        88888888b.  8888888888  .d8888b.  88888888b.    ,ad8888ba,   888b      88  .d8888b.  8888888888  .d8888b.
@@ -214,9 +216,9 @@ object HtlcResult {
 final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
 /** other specific responses */
-final case class RES_GETSTATE[+S <: State](state: S) extends CommandSuccess[CMD_GETSTATE.type]
-final case class RES_GETSTATEDATA[+D <: Data](data: D) extends CommandSuccess[CMD_GETSTATEDATA.type]
-final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data) extends CommandSuccess[CMD_GETINFO.type]
+final case class RES_GETSTATE[+S <: State](state: S) extends CommandSuccess[CMD_GETSTATE]
+final case class RES_GETSTATEDATA[+D <: Data](data: D) extends CommandSuccess[CMD_GETSTATEDATA]
+final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: State, data: Data) extends CommandSuccess[CMD_GETINFO]
 final case class RES_CLOSE(channelId: ByteVector32) extends CommandSuccess[CMD_CLOSE]
 
 /**

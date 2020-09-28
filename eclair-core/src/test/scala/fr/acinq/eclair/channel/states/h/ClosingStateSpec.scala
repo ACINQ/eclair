@@ -113,7 +113,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     val sender = TestProbe()
     // alice initiates a closing
-    sender.send(alice, CMD_CLOSE(None))
+    alice ! CMD_CLOSE(sender.ref, None)
     alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[Shutdown]
@@ -128,7 +128,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv BITCOIN_FUNDING_PUBLISH_FAILED", Tag("funding_unconfirmed")) { f =>
     import f._
-    alice ! CMD_FORCECLOSE
+    val sender = TestProbe()
+    alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[PublishAsap] // claim-main-delayed
@@ -141,7 +142,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv BITCOIN_FUNDING_TIMEOUT", Tag("funding_unconfirmed")) { f =>
     import f._
-    alice ! CMD_FORCECLOSE
+    val sender = TestProbe()
+    alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[PublishAsap] // claim-main-delayed
@@ -154,8 +156,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv GetTxResponse (funder, tx found)", Tag("funding_unconfirmed")) { f =>
     import f._
+    val sender = TestProbe()
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! CMD_FORCECLOSE
+    alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectMsgType[PublishAsap]
@@ -172,8 +175,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv GetTxResponse (funder, tx not found)", Tag("funding_unconfirmed")) { f =>
     import f._
+    val sender = TestProbe()
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! CMD_FORCECLOSE
+    alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
     alice2bob.expectMsgType[Error]
     alice2blockchain.expectMsgType[PublishAsap]
@@ -190,8 +194,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv GetTxResponse (fundee, tx found)", Tag("funding_unconfirmed")) { f =>
     import f._
+    val sender = TestProbe()
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    bob ! CMD_FORCECLOSE
+    bob ! CMD_FORCECLOSE(sender.ref)
     awaitCond(bob.stateName == CLOSING)
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap]
@@ -208,8 +213,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv GetTxResponse (fundee, tx not found)", Tag("funding_unconfirmed")) { f =>
     import f._
+    val sender = TestProbe()
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    bob ! CMD_FORCECLOSE
+    bob ! CMD_FORCECLOSE(sender.ref)
     awaitCond(bob.stateName == CLOSING)
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap]
@@ -226,8 +232,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv GetTxResponse (fundee, tx not found, timeout)", Tag("funding_unconfirmed")) { f =>
     import f._
+    val sender = TestProbe()
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    bob ! CMD_FORCECLOSE
+    bob ! CMD_FORCECLOSE(sender.ref)
     awaitCond(bob.stateName == CLOSING)
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap]
@@ -245,8 +252,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv GetTxResponse (fundee, tx not found, timeout, blockchain lags)", Tag("funding_unconfirmed")) { f =>
     import f._
+    val sender = TestProbe()
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    bob ! CMD_FORCECLOSE
+    bob ! CMD_FORCECLOSE(sender.ref)
     awaitCond(bob.stateName == CLOSING)
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap]
@@ -268,7 +276,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // actual test starts here
     val sender = TestProbe()
     val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, ByteVector32(ByteVector.fill(32)(1)), cltvExpiry = CltvExpiry(300000), onion = TestConstants.emptyOnionPacket, localOrigin(sender.ref))
-    sender.send(alice, add)
+    alice ! add
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(RES_ADD_FAILED(add, error, None))
     alice2bob.expectNoMsg(200 millis)
@@ -281,7 +289,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // actual test starts here
     val sender = TestProbe()
     val c = CMD_FULFILL_HTLC(42, randomBytes32, replyTo_opt = Some(sender.ref))
-    sender.send(alice, c)
+    alice ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(alice), 42)))
 
     // NB: nominal case is tested in IntegrationSpec
@@ -292,7 +300,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val sender = TestProbe()
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
     // alice initiates a closing
-    sender.send(alice, CMD_CLOSE(None))
+    alice ! CMD_CLOSE(sender.ref, None)
     alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[Shutdown]
@@ -487,8 +495,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice sends an htlc
     val (_, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
     // and signs it (but bob doesn't sign it)
-    sender.send(alice, CMD_SIGN)
-    sender.expectMsgType[RES_SUCCESS[CMD_SIGN.type]]
+    alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
     // note that bob doesn't receive the new sig!
     // then we make alice unilaterally close the channel
@@ -516,8 +523,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice sends an htlc
     val (_, htlc) = addHtlc(4200000 msat, alice, bob, alice2bob, bob2alice)
     // and signs it (but bob doesn't sign it)
-    sender.send(alice, CMD_SIGN)
-    sender.expectMsgType[RES_SUCCESS[CMD_SIGN.type]]
+    alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
 
@@ -659,7 +665,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
     val (_, htlc2) = addHtlc(95000000 msat, alice, bob, alice2bob, bob2alice)
-    alice ! CMD_SIGN
+    alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig] // We stop here: Alice sent her CommitSig, but doesn't hear back from Bob.
 
     // Now Bob publishes the first commit tx (force-close).
@@ -714,7 +720,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // The last one is only signed by Alice: Bob has two spendable commit tx.
     val (_, cmd3) = makeCmdAdd(20000000 msat, bob.underlyingActor.nodeParams.nodeId, alice.underlyingActor.nodeParams.currentBlockHeight, ra1)
     val htlca3 = addHtlc(cmd3, alice, bob, alice2bob, bob2alice)
-    alice ! CMD_SIGN
+    alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[RevokeAndAck] // not forwarded to Alice (malicious Bob)
@@ -798,7 +804,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // An HTLC Alice -> Bob is only signed by Alice: Bob has two spendable commit tx.
     val (_, htlc2) = addHtlc(95000000 msat, alice, bob, alice2bob, bob2alice)
-    alice ! CMD_SIGN
+    alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[RevokeAndAck] // not forwarded to Alice (malicious Bob)
@@ -854,8 +860,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
     // we simulate a disconnection
-    sender.send(alice, INPUT_DISCONNECTED)
-    sender.send(bob, INPUT_DISCONNECTED)
+    alice ! INPUT_DISCONNECTED
+    bob ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
     // then we manually replace alice's state with an older one
@@ -863,8 +869,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // then we reconnect them
     val aliceInit = Init(TestConstants.Alice.nodeParams.features)
     val bobInit = Init(TestConstants.Bob.nodeParams.features)
-    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit))
-    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit))
+    alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
@@ -1172,7 +1178,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       bobCommitments.localCommit.index)
 
     val sender = TestProbe()
-    sender.send(alice, ChannelReestablish(channelId(bob), 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+    alice ! ChannelReestablish(channelId(bob), 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint)
 
     val error = alice2bob.expectMsgType[Error]
     assert(new String(error.data.toArray) === FundingTxSpent(channelId(alice), initialState.spendingTxes.head).getMessage)
@@ -1182,8 +1188,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val sender = TestProbe()
-    val c = CMD_CLOSE(None)
-    sender.send(alice, c)
+    val c = CMD_CLOSE(sender.ref, None)
+    alice ! c
     sender.expectMsg(RES_FAILURE(c, ClosingAlreadyInProgress(channelId(alice))))
   }
 

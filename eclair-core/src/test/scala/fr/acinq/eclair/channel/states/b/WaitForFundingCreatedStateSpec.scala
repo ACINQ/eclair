@@ -90,7 +90,10 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
 
   test("recv CMD_CLOSE") { f =>
     import f._
-    bob ! CMD_CLOSE(None)
+    val sender = TestProbe()
+    val c = CMD_CLOSE(sender.ref, None)
+    bob ! c
+    sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
     awaitCond(bob.stateName == CLOSED)
   }
 

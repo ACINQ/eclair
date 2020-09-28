@@ -18,7 +18,7 @@ package fr.acinq.eclair.api
 
 import java.util.UUID
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
@@ -204,9 +204,9 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
     val channelIdSerialized = channelId.toHex
     val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
-      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(None), channelId)),
+      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None), channelId)),
       Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
-      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
+      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
     )
 
     val eclair = mock[Eclair]
