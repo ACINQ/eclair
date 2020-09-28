@@ -45,15 +45,8 @@ You will find detailed guides and frequently asked questions there.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 
-Eclair will use the default loaded Bitcoin Core wallet to fund any channels you choose to open.
-If you want to use a different wallet from the default one, you must set `eclair.bitcoind.wallet` accordingly in your `eclair.conf`.
-
-:warning: once a wallet is configured, you must be very careful if you want to change it: changing the wallet when you have channels open may result in a loss of funds (or a complex recovery procedure).
-
-Eclair will return BTC from closed channels to the wallet configured.
-Any BTC found in the wallet can be used to fund the channels you choose to open.
-You can configure your Bitcoin Node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes.
-If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `p2sh-segwit` or `bech32` address.
+You can configure your Bitcoin node to use either `p2sh-segwit` addresses or `bech32` addresses, Eclair is compatible with both modes.
+If your wallet has "non-segwit UTXOs" (outputs that are neither `p2sh-segwit` or `bech32`), you must send them to a `p2sh-segwit` or `bech32` address before running eclair.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 
@@ -106,10 +99,21 @@ name                         | description                                      
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                                             | bar
  eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                                                        | "tcp://127.0.0.1:29000"
  eclair.bitcoind.zmqtx       | Bitcoin Core ZMQ tx address                                                           | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.wallet      | Bitcoin Core wallet name                                                              | ""
 
 Quotes are not required unless the value contains special characters. Full syntax guide [here](https://github.com/lightbend/config/blob/master/HOCON.md).
 
 &rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference. There are many more options!
+
+#### Configure Bitcoin Core wallet
+
+Eclair will use the default loaded Bitcoin Core wallet to fund any channels you choose to open.
+If you want to use a different wallet from the default one, you must set `eclair.bitcoind.wallet` accordingly in your `eclair.conf`.
+
+:warning: once a wallet is configured, you must be very careful if you want to change it: changing the wallet when you have channels open may result in a loss of funds (or a complex recovery procedure).
+
+Eclair will return BTC from closed channels to the wallet configured.
+Any BTC found in the wallet can be used to fund the channels you choose to open.
 
 #### Java Environment Variables
 
