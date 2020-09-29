@@ -1848,7 +1848,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   def handleFastClose(c: CloseCommand, channelId: ByteVector32) = {
-    c.replyTo ! RES_SUCCESS(c, channelId)
+    val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+    replyTo ! RES_SUCCESS(c, channelId)
     goto(CLOSED)
   }
 

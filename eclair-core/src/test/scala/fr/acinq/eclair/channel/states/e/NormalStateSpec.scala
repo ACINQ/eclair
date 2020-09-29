@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.e
 
+import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
@@ -1758,6 +1759,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_CLOSE (no pending htlcs) (anchor outputs)", Tag("anchor_outputs")) {
     testCmdClose _
+  }
+
+  test("recv CMD_CLOSE (with noSender)") { f =>
+    import f._
+    val sender = TestProbe()
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
+    // this makes sure that our backward-compatibility hack for the ask pattern (which uses context.sender as reply-to)
+    // works before we fully transition to akka typed
+    val c = CMD_CLOSE(ActorRef.noSender, None)
+    sender.send(alice, c)
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    alice2bob.expectMsgType[Shutdown]
+    awaitCond(alice.stateName == NORMAL)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
   }
 
   test("recv CMD_CLOSE (with unacked sent htlcs)") { f =>
