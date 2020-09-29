@@ -16,16 +16,11 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.channel.ChannelVersion
-import fr.acinq.eclair.wire.ChannelTlv.UpfrontShutdownScript
-import fr.acinq.eclair.wire.CommonCodecs.{varint, varintoverflow}
 import fr.acinq.eclair.wire.OpenChannelTlv.ChannelVersionTlv
-import fr.acinq.eclair.wire.TlvCodecs.tlvStream
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
-import scodec.codecs.{bits, bytes, discriminated, variableSizeBytesLong}
-import scodec.{Attempt, Codec, DecodeResult}
+import scodec.{Attempt, DecodeResult}
 
 class OpenTlvSpec extends AnyFunSuite {
 
@@ -42,17 +37,6 @@ class OpenTlvSpec extends AnyFunSuite {
       assert(OpenChannelTlv.openTlvCodec.decode(testCase.encoded) === Attempt.successful(DecodeResult(TlvStream(ChannelVersionTlv(testCase.expected)), BitVector.empty)))
       assert(OpenChannelTlv.openTlvCodec.encode(TlvStream(ChannelVersionTlv(testCase.expected))) === Attempt.Successful(testCase.reEncoded))
     }
-  }
-
-  test("channel version tlv backwards-compatibility") {
-    // This is the codec that was used previously.
-    val previousCodec: Codec[TlvStream[OpenChannelTlv]] = tlvStream(discriminated[OpenChannelTlv].by(varint)
-      .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript])
-      .typecase(UInt64(0x47000000), bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion].as[ChannelVersionTlv])
-    )
-
-    assert(previousCodec.decode(hex"fe47000001 04 00000001".bits).require.value === TlvStream(Nil, Seq(GenericTlv(UInt64(0x47000001), hex"00000001"))))
-    assert(previousCodec.decode(hex"fe47000001 04 00000009".bits).require.value === TlvStream(Nil, Seq(GenericTlv(UInt64(0x47000001), hex"00000009"))))
   }
 
 }
