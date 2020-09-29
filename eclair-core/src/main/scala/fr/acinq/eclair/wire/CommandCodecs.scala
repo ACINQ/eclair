@@ -29,20 +29,20 @@ object CommandCodecs {
     (("id" | int64) ::
       ("r" | bytes32) ::
       ("commit" | provide(false)) ::
-      ("replytTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FULFILL_HTLC]
 
   val cmdFailCodec: Codec[CMD_FAIL_HTLC] =
     (("id" | int64) ::
       ("reason" | either(bool, varsizebinarydata, failureMessageCodec)) ::
       ("commit" | provide(false)) ::
-      ("replytTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_HTLC]
 
   val cmdFailMalformedCodec: Codec[CMD_FAIL_MALFORMED_HTLC] =
     (("id" | int64) ::
       ("onionHash" | bytes32) ::
       ("failureCode" | uint16) ::
       ("commit" | provide(false)) ::
-      ("replytTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_MALFORMED_HTLC]
+      ("replyTo_opt" | provide(Option.empty[ActorRef]))).as[CMD_FAIL_MALFORMED_HTLC]
 
   val cmdCodec: Codec[HtlcSettlementCommand] = discriminated[HtlcSettlementCommand].by(uint16)
     .typecase(0, cmdFulfillCodec)
