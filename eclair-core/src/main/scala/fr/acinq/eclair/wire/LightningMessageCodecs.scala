@@ -350,24 +350,24 @@ object LightningMessageCodecs {
     .typecase(265, gossipTimestampFilterCodec)
   // NB: blank lines to minimize merge conflicts
 
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
+  //
+
   val lightningMessageCodecWithFallback: Codec[LightningMessage] =
     discriminatorWithDefault(lightningMessageCodec, unknownMessageCodec.upcast)
-
-  //
-
-  //
-
-  //
-
-  //
-
-  //
-
-  //
-
-  //
-
-  //
 
   val meteredLightningMessageCodec = Codec[LightningMessage](
     (msg: LightningMessage) => KamonExt.time(Metrics.EncodeDuration.withTag(Tags.MessageType, msg.getClass.getSimpleName))(lightningMessageCodecWithFallback.encode(msg)),
