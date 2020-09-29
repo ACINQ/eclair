@@ -21,13 +21,14 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
-import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain}
+import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{MilliSatoshi, _}
+import fr.acinq.eclair._
 
 import scala.util.{Failure, Success, Try}
 
@@ -57,27 +58,19 @@ trait ChannelCommitments {
 
   def remoteNodeId: PublicKey
 
-  val availableBalanceForReceive: MilliSatoshi
+  def capacity: MilliSatoshi
 
-  val availableBalanceForSend: MilliSatoshi
+  def fundingTxId: ByteVector32
 
-  val originChannels: Map[Long, Origin]
+  def availableBalanceForReceive: MilliSatoshi
 
-  val channelId: ByteVector32
+  def availableBalanceForSend: MilliSatoshi
 
-  val announceChannel: Boolean
+  def originChannels: Map[Long, Origin]
 
-  def failHtlc(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Try[UpdateFailHtlc] = {
-    Sphinx.PaymentPacket.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
-      case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
-        val reason = cmd.reason match {
-          case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
-          case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
-        }
-        Success(UpdateFailHtlc(channelId, cmd.id, reason))
-      case Left(_) => Failure(CannotExtractSharedSecret(channelId, add))
-    }
-  }
+  def channelId: ByteVector32
+
+  def announceChannel: Boolean
 }
 
 /**
@@ -100,12 +93,6 @@ case class Commitments(channelVersion: ChannelVersion,
                        remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) extends ChannelCommitments {
 
   require(channelVersion.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (version=$channelVersion)")
-
-  val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
-
-  def localNodeId: PublicKey = localParams.nodeId
-
-  def remoteNodeId: PublicKey = remoteParams.nodeId
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
@@ -153,7 +140,17 @@ case class Commitments(channelVersion: ChannelVersion,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
-  val announceChannel: Boolean = (channelFlags & 0x01) != 0
+  lazy val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
+
+  lazy val localNodeId: PublicKey = localParams.nodeId
+
+  lazy val remoteNodeId: PublicKey = remoteParams.nodeId
+
+  lazy val capacity: MilliSatoshi = localCommit.spec.totalFunds
+
+  lazy val fundingTxId: ByteVector32 = commitInput.outPoint.txid
+
+  lazy val announceChannel: Boolean = (channelFlags & 0x01) != 0
 
   lazy val availableBalanceForSend: MilliSatoshi = {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
@@ -372,7 +369,7 @@ object Commitments {
         Failure(UnknownHtlcId(commitments.channelId, cmd.id))
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        val failTry: Try[UpdateFailHtlc] = commitments.failHtlc(nodeSecret, cmd, htlc)
+        val failTry: Try[UpdateFailHtlc] = OutgoingPacket.buildHtlcFailure(nodeSecret, cmd, htlc)
         failTry.map(updateFail => (addLocalProposal(commitments, updateFail), updateFail))
       case None => Failure(UnknownHtlcId(commitments.channelId, cmd.id))
     }

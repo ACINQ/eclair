@@ -76,7 +76,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = randomBytes32, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
 
-    system.eventStream ! EventStream.Publish(LocalChannelUpdate(null, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc)))
+    system.eventStream ! EventStream.Publish(LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc)))
     def getOutgoingChannels: Seq[OutgoingChannel] = {
       val sender = TestProbe[Relayer.OutgoingChannels]()
       childActors.channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())

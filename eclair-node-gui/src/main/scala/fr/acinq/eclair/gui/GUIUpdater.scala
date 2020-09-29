@@ -79,16 +79,16 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       runInGuiThread(() => mainController.channelBox.getChildren.addAll(root))
       context.become(main(m + (channel -> channelPaneController)))
 
-    case ChannelRestored(channel, peer, remoteNodeId, isFunder, currentData: Commitments) => // We are only interested in normal channel Commitments here
+    case ChannelRestored(channel, channelId, peer, remoteNodeId, isFunder, currentData) =>
       context.watch(channel)
-      val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, currentData.channelId)
+      val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, channelId)
       channelPaneController.updateBalance(currentData)
       val m1 = m + (channel -> channelPaneController)
       val totalBalance = m1.values.map(_.getBalance).sum
       runInGuiThread(() => {
         channelPaneController.refreshBalance()
         mainController.refreshTotalBalance(totalBalance)
-        channelPaneController.txId.setText(currentData.commitInput.outPoint.txid.toHex)
+        channelPaneController.txId.setText(currentData.fundingTxId.toHex)
         mainController.channelBox.getChildren.addAll(root)
       })
       context.become(main(m1))
@@ -105,7 +105,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val channelPaneController = m(channel)
       runInGuiThread { () =>
         (currentState, currentData) match {
-          case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) => channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toHex)
+          case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) => channelPaneController.txId.setText(d.commitments.fundingTxId.toHex)
           case _ =>
         }
         channelPaneController.close.setVisible(STATE_MUTUAL_CLOSE.contains(currentState))
