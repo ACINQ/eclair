@@ -136,13 +136,13 @@ case class Commitments(channelVersion: ChannelVersion,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
-  lazy val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
+  val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
 
-  lazy val localNodeId: PublicKey = localParams.nodeId
+  val localNodeId: PublicKey = localParams.nodeId
 
-  lazy val remoteNodeId: PublicKey = remoteParams.nodeId
+  val remoteNodeId: PublicKey = remoteParams.nodeId
 
-  lazy val announceChannel: Boolean = (channelFlags & 0x01) != 0
+  val announceChannel: Boolean = (channelFlags & 0x01) != 0
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the funder keeps an extra buffer on top
   // of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see
