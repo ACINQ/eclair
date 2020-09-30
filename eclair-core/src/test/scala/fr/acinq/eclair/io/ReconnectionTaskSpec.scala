@@ -77,7 +77,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     monitor.expectNoMsg()
   }
 
-  test("stay idle at startup if there are no channels", Tag("auto_reconnect"), Tag("with_node_announcements")) { f =>
+  ignore("stay idle at startup if there are no channels", Tag("auto_reconnect"), Tag("with_node_announcements")) { f =>
     import f._
 
     val peer = TestProbe()
@@ -158,7 +158,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(waitingData3.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 8))
   }
 
-  test("reconnect using the address from node_announcement") { f =>
+  ignore("reconnect using the address from node_announcement") { f =>
     import f._
 
     // we create a dummy tcp server and update bob's announcement to point to it

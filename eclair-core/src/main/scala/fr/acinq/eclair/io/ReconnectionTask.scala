@@ -80,7 +80,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
   when(IDLE) {
     case Event(Peer.Transition(previousPeerData, nextPeerData: Peer.DisconnectedData), d: IdleData) =>
-      if (nodeParams.autoReconnect && nextPeerData.channels.nonEmpty) { // we only reconnect if there are existing channels
+      if (nodeParams.autoReconnect /*&& nextPeerData.channels.nonEmpty*/) { // On Phoenix we always reconnect
         val (initialDelay, firstNextReconnectionDelay) = (previousPeerData, d.previousData) match {
           case (Peer.Nothing, _) =>
             // When restarting, we add some randomization before the first reconnection attempt to avoid herd effect
@@ -126,15 +126,16 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
     case Event(TickReconnect, _) => stay
 
     case Event(Peer.Connect(_, hostAndPort_opt), _) =>
-      // manual connection requests happen completely independently of the automated reconnection process;
-      // we initiate a connection but don't modify our state.
-      // if we are already connecting/connected, the peer will kill any duplicate connections
-      hostAndPort_opt
-        .map(hostAndPort2InetSocketAddress)
-        .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
-        case Some(address) => connect(address, origin = sender)
-        case None => sender ! PeerConnection.ConnectionResult.NoAddressFound
-      }
+      // On Phoenix we ignore manual reconnection attempts, everything is always handled by the auto-reconnection loop
+//      // manual connection requests happen completely independently of the automated reconnection process;
+//      // we initiate a connection but don't modify our state.
+//      // if we are already connecting/connected, the peer will kill any duplicate connections
+//      hostAndPort_opt
+//        .map(hostAndPort2InetSocketAddress)
+//        .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
+//        case Some(address) => connect(address, origin = sender)
+//        case None => sender ! PeerConnection.ConnectionResult.NoAddressFound
+//      }
       stay
   }
 

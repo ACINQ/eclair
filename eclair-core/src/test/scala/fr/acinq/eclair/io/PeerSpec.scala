@@ -90,7 +90,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
   }
 
-  test("fail to connect if no address provided or found") { f =>
+  ignore("fail to connect if no address provided or found") { f =>
     import f._
 
     val probe = TestProbe()
@@ -99,7 +99,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
-  test("successfully connect to peer at user request") { f =>
+  ignore("successfully connect to peer at user request") { f =>
     import f._
 
     // this actor listens to connection requests and creates connections
