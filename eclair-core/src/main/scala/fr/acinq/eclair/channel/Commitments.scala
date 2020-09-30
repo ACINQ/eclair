@@ -47,7 +47,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, r
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
-trait ChannelCommitments {
+trait AbstractCommitments {
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
 
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
