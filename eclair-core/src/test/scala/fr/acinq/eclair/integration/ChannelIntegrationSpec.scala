@@ -155,8 +155,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then kill the connection between C and F
     disconnectCF(htlc.channelId, sender)
     // we then have C unilaterally close the channel (which will make F redeem the htlc onchain)
-    sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE.type]]
+    sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE(sender.ref)))
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     // we then wait for F to detect the unilateral close and go to CLOSING state
     awaitCond({
       sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATE))
@@ -198,8 +198,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then kill the connection between C and F
     disconnectCF(htlc.channelId, sender)
     // then we have F unilaterally close the channel
-    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE.type]]
+    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE(sender.ref)))
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     awaitCond(stateListener.expectMsgType[ChannelStateChanged].currentState == CLOSING, max = 60 seconds)
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(bitcoincli, 3, Some(minerAddress))
@@ -287,8 +287,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we then kill the connection between C and F to ensure the close can only be detected on-chain
     disconnectCF(htlc.channelId, sender)
     // we ask F to unilaterally close the channel
-    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE))
-    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE.type]]
+    sender.send(nodes("F").register, Register.Forward(sender.ref, htlc.channelId, CMD_FORCECLOSE(sender.ref)))
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     // we wait for C to detect the unilateral close
     awaitCond({
       sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA))
@@ -537,7 +537,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA))
     val finalPubKeyScriptF = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey
 
-    sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_CLOSE(Some(finalPubKeyScriptF))))
+    nodes("F").register ! Register.Forward(sender.ref, channelId, CMD_CLOSE(sender.ref, Some(finalPubKeyScriptF)))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // we then wait for C and F to negotiate the closing fee
     awaitCond({
@@ -678,8 +678,8 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     assert(toRemoteOutCNew.amount < toRemoteOutC.amount)
 
     // now let's force close the channel and check the toRemote is what we had at the beginning
-    sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_FORCECLOSE))
-    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE.type]]
+    sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_FORCECLOSE(sender.ref)))
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
     // we then wait for C to detect the unilateral close and go to CLOSING state
     awaitCond({
       nodes("C").register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE)

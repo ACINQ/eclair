@@ -63,7 +63,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, ByteVector32.fromValidHex(r))
         exec(rest, a, b)
       case commit(x) :: rest =>
-        resolve(x) ! CMD_SIGN
+        resolve(x) ! CMD_SIGN()
         exec(rest, a, b)
       /*case feechange(x) :: rest =>
         resolve(x) ! CmdFeeChange()

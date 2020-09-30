@@ -146,15 +146,16 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv CMD_CLOSE") { f =>
     import f._
     val sender = TestProbe()
-    val c = CMD_CLOSE(None)
-    sender.send(alice, c)
+    val c = CMD_CLOSE(sender.ref, None)
+    alice ! c
     sender.expectMsg(RES_FAILURE(c, CommandUnavailableInThisState(channelId(alice), "close", WAIT_FOR_FUNDING_CONFIRMED)))
   }
 
   test("recv CMD_FORCECLOSE") { f =>
     import f._
+    val sender = TestProbe()
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! CMD_FORCECLOSE
+    alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
     alice2blockchain.expectMsg(PublishAsap(tx))
     alice2blockchain.expectMsgType[PublishAsap] // claim-main-delayed

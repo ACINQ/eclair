@@ -72,7 +72,7 @@ object TestUtils {
     peer.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
         case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
-          pipe tell (msg, sender)
+          pipe.tell(msg, sender)
           TestActor.KeepRunning
         case _ => TestActor.KeepRunning
       }
