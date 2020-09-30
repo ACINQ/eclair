@@ -18,7 +18,7 @@ package fr.acinq.eclair.api
 
 import java.util.UUID
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
@@ -33,7 +33,9 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_CLOSE, ChannelOpenResponse, CommandResponse, RES_SUCCESS}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
@@ -202,9 +204,9 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
     val channelIdSerialized = channelId.toHex
     val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
-      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(None), channelId)),
+      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None), channelId)),
       Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
-      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
+      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
     )
 
     val eclair = mock[Eclair]
@@ -530,6 +532,24 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(serialization.write(pset) === expectedSerializedPset)
         system.eventStream.publish(pset)
         wsClient.expectMessage(expectedSerializedPset)
+
+        val chcr = ChannelCreated(system.deadLetters, system.deadLetters, bobNodeId, isFunder = true, ByteVector32.One, FeeratePerKw(25 sat), Some(FeeratePerKw(20 sat)))
+        val expectedSerializedChcr = """{"type":"channel-opened","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","isFunder":true,"temporaryChannelId":"0100000000000000000000000000000000000000000000000000000000000000","initialFeeratePerKw":25,"fundingTxFeeratePerKw":20}"""
+        assert(serialization.write(chcr) === expectedSerializedChcr)
+        system.eventStream.publish(chcr)
+        wsClient.expectMessage(expectedSerializedChcr)
+
+        val chsc = ChannelStateChanged(system.deadLetters, system.deadLetters, bobNodeId, OFFLINE, NORMAL, null)
+        val expectedSerializedChsc = """{"type":"channel-state-changed","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","previousState":"OFFLINE","currentState":"NORMAL"}"""
+        assert(serialization.write(chsc) === expectedSerializedChsc)
+        system.eventStream.publish(chsc)
+        wsClient.expectMessage(expectedSerializedChsc)
+
+        val chcl = ChannelClosed(system.deadLetters, ByteVector32.One, Closing.NextRemoteClose(null, null), null)
+        val expectedSerializedChcl = """{"type":"channel-closed","channelId":"0100000000000000000000000000000000000000000000000000000000000000","closingType":"NextRemoteClose"}"""
+        assert(serialization.write(chcl) === expectedSerializedChcl)
+        system.eventStream.publish(chcl)
+        wsClient.expectMessage(expectedSerializedChcl)
       }
   }
 

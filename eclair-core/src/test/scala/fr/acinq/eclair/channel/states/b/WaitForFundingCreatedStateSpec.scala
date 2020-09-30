@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.b
 
+import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -90,7 +91,21 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
 
   test("recv CMD_CLOSE") { f =>
     import f._
-    bob ! CMD_CLOSE(None)
+    val sender = TestProbe()
+    val c = CMD_CLOSE(sender.ref, None)
+    bob ! c
+    sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv CMD_CLOSE (with noSender)") { f =>
+    import f._
+    val sender = TestProbe()
+    // this makes sure that our backward-compatibility hack for the ask pattern (which uses context.sender as reply-to)
+    // works before we fully transition to akka typed
+    val c = CMD_CLOSE(ActorRef.noSender, None)
+    sender.send(bob, c)
+    sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
     awaitCond(bob.stateName == CLOSED)
   }
 

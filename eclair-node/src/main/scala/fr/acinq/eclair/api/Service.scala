@@ -35,6 +35,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.channel.{ChannelClosed, ChannelCreated, ChannelEvent, ChannelStateChanged, WAIT_FOR_INIT_INTERNAL}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
@@ -91,10 +92,19 @@ trait Service extends ExtraDirectives with Logging {
 
       override def preStart: Unit = {
         context.system.eventStream.subscribe(self, classOf[PaymentEvent])
+        context.system.eventStream.subscribe(self, classOf[ChannelCreated])
+        context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+        context.system.eventStream.subscribe(self, classOf[ChannelClosed])
       }
 
       def receive: Receive = {
         case message: PaymentEvent => flowInput.offer(serialization.write(message))
+        case message: ChannelCreated => flowInput.offer(serialization.write(message))
+        case message: ChannelStateChanged =>
+          if (message.previousState != WAIT_FOR_INIT_INTERNAL) {
+            flowInput.offer(serialization.write(message))
+          }
+        case message: ChannelClosed => flowInput.offer(serialization.write(message))
       }
 
     }))

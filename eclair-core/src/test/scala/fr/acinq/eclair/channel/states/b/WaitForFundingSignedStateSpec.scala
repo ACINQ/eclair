@@ -76,13 +76,17 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
 
   test("recv CMD_CLOSE") { f =>
     import f._
-    alice ! CMD_CLOSE(None)
+    val sender = TestProbe()
+    val c = CMD_CLOSE(sender.ref, None)
+    alice ! c
+    sender.expectMsg(RES_SUCCESS(c, alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].channelId))
     awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv CMD_FORCECLOSE") { f =>
     import f._
-    alice ! CMD_FORCECLOSE
+    val sender = TestProbe()
+    alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSED)
   }
 

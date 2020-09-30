@@ -25,8 +25,9 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelOpenResponse, ChannelVersion, CloseCommand, Command, CommandResponse, RES_SUCCESS, State}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteResponse
@@ -42,6 +43,7 @@ import scodec.bits.ByteVector
  * JSON Serializers.
  * Note: in general, deserialization does not need to be implemented.
  */
+
 class ByteVectorSerializer extends CustomSerializer[ByteVector](_ => ( {
   null
 }, {
@@ -224,6 +226,12 @@ class FailureMessageSerializer extends CustomSerializer[FailureMessage](_ => ( {
   case m: FailureMessage => JString(m.message)
 }))
 
+class FailureTypeSerializer extends CustomSerializer[FailureType](_ => ( {
+  null
+}, {
+  case ft: FailureType => JString(ft.toString)
+}))
+
 class NodeAddressSerializer extends CustomSerializer[NodeAddress](_ => ( {
   null
 }, {
@@ -278,6 +286,30 @@ class JavaUUIDSerializer extends CustomSerializer[UUID](_ => ( {
   case id: UUID => JString(id.toString)
 }))
 
+class ChannelEventSerializer extends CustomSerializer[ChannelEvent](_ => ( {
+  null
+}, {
+  case e: ChannelCreated => JObject(
+    JField("type", JString("channel-opened")),
+    JField("remoteNodeId", JString(e.remoteNodeId.toString())),
+    JField("isFunder", JBool(e.isFunder)),
+    JField("temporaryChannelId", JString(e.temporaryChannelId.toHex)),
+    JField("initialFeeratePerKw", JLong(e.initialFeeratePerKw.toLong)),
+    JField("fundingTxFeeratePerKw", e.fundingTxFeeratePerKw.map(f => JLong(f.toLong)).getOrElse(JNothing))
+  )
+  case e: ChannelStateChanged => JObject(
+    JField("type", JString("channel-state-changed")),
+    JField("remoteNodeId", JString(e.remoteNodeId.toString())),
+    JField("previousState", JString(e.previousState.toString)),
+    JField("currentState", JString(e.currentState.toString))
+  )
+  case e: ChannelClosed => JObject(
+    JField("type", JString("channel-closed")),
+    JField("channelId", JString(e.channelId.toHex)),
+    JField("closingType", JString(e.closingType.getClass.getSimpleName))
+  )
+}))
+
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
@@ -321,6 +353,7 @@ object JsonSupport extends Json4sSupport {
     new ByteVectorSerializer +
     new ByteVector32Serializer +
     new ByteVector64Serializer +
+    new ChannelEventSerializer +
     new UInt64Serializer +
     new SatoshiSerializer +
     new MilliSatoshiSerializer +
@@ -346,6 +379,7 @@ object JsonSupport extends Json4sSupport {
     new RouteResponseSerializer +
     new ThrowableSerializer +
     new FailureMessageSerializer +
+    new FailureTypeSerializer +
     new NodeAddressSerializer +
     new DirectedHtlcSerializer +
     new PaymentRequestSerializer +
@@ -360,10 +394,12 @@ object JsonSupport extends Json4sSupport {
       JObject(
         JField("name", JString(a.feature.rfcName)),
         JField("support", JString(a.support.toString))
-      )}.toList)),
+      )
+    }.toList)),
     JField("unknown", JArray(features.unknown.map { i =>
       JObject(
         JField("featureBit", JInt(i.bitIndex))
-      )}.toList))
+      )
+    }.toList))
   )
 }
