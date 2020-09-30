@@ -86,7 +86,7 @@ case class Commitments(channelVersion: ChannelVersion,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) extends ChannelCommitments {
+                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) extends AbstractCommitments {
 
   require(channelVersion.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (version=$channelVersion)")
 

@@ -295,7 +295,7 @@ object Router {
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) meta_opt.map(_.balance1) else meta_opt.map(_.balance2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PublicChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
-    def updateBalances(commitments: ChannelCommitments): PublicChannel = if (commitments.localNodeId == ann.nodeId1) {
+    def updateBalances(commitments: AbstractCommitments): PublicChannel = if (commitments.localNodeId == ann.nodeId1) {
       copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive)))
     } else {
       copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
@@ -313,7 +313,7 @@ object Router {
     def getChannelUpdateSameSideAs(u: ChannelUpdate): Option[ChannelUpdate] = if (Announcements.isNode1(u.channelFlags)) update_1_opt else update_2_opt
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi] = if (Announcements.isNode1(u.channelFlags)) Some(meta.balance1) else Some(meta.balance2)
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): PrivateChannel = if (Announcements.isNode1(u.channelFlags)) copy(update_1_opt = Some(u)) else copy(update_2_opt = Some(u))
-    def updateBalances(commitments: ChannelCommitments): PrivateChannel = if (commitments.localNodeId == nodeId1) {
+    def updateBalances(commitments: AbstractCommitments): PrivateChannel = if (commitments.localNodeId == nodeId1) {
       copy(meta = ChannelMeta(commitments.availableBalanceForSend, commitments.availableBalanceForReceive))
     } else {
       copy(meta = ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend))

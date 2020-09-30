@@ -20,7 +20,7 @@ import akka.actor.ActorRef
 import com.google.common.base.Strings
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.CoinUtils
-import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, ChannelCommitments, Commitments}
+import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, AbstractCommitments, Commitments}
 import fr.acinq.eclair.gui.FxApp
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import grizzled.slf4j.Logging
