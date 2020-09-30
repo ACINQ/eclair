@@ -128,9 +128,9 @@ class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) ex
     nodeAlias.setVisible(!Strings.isNullOrEmpty(alias))
   }
 
-  def updateBalance(commitments: ChannelCommitments) {
-    balance = commitments.availableBalanceForSend
-    capacity = commitments.capacity
+  def updateBalance(commitments: Commitments) {
+    balance = commitments.localCommit.spec.toLocal
+    capacity = commitments.localCommit.spec.totalFunds
   }
 
   def refreshBalance(): Unit = {

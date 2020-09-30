@@ -58,10 +58,6 @@ trait ChannelCommitments {
 
   def remoteNodeId: PublicKey
 
-  def capacity: MilliSatoshi
-
-  def fundingTxId: ByteVector32
-
   def availableBalanceForReceive: MilliSatoshi
 
   def availableBalanceForSend: MilliSatoshi
@@ -145,10 +141,6 @@ case class Commitments(channelVersion: ChannelVersion,
   lazy val localNodeId: PublicKey = localParams.nodeId
 
   lazy val remoteNodeId: PublicKey = remoteParams.nodeId
-
-  lazy val capacity: MilliSatoshi = localCommit.spec.totalFunds
-
-  lazy val fundingTxId: ByteVector32 = commitInput.outPoint.txid
 
   lazy val announceChannel: Boolean = (channelFlags & 0x01) != 0
 
