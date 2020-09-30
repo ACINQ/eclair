@@ -193,7 +193,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(INPUT_RESTORED(data), _) =>
       log.info(s"restoring channel channelId=${data.channelId}")
-      context.system.eventStream.publish(ChannelRestored(self, data.commitments.channelId, peer, remoteNodeId, data.commitments.localParams.isFunder, data.commitments))
+      context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data.commitments.localParams.isFunder, data.commitments))
       data match {
         //NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
@@ -769,7 +769,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           }
           if (d.commitments.availableBalanceForSend != commitments1.availableBalanceForSend) {
             // we send this event only when our balance changes
-            context.system.eventStream.publish(AvailableBalanceChanged(self, commitments1.channelId, d.shortChannelId, commitments1))
+            context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
           }
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1) storing() sending revocation
@@ -1362,7 +1362,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       closingType_opt match {
         case Some(closingType) =>
           log.info(s"channel closed (type=$closingType)")
-          context.system.eventStream.publish(ChannelClosed(self, d.commitments.channelId, closingType, d.commitments))
+          context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
           goto(CLOSED) using d1 storing()
         case None =>
           stay using d1 storing()

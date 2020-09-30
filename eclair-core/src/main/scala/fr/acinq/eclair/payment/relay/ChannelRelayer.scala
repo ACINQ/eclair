@@ -25,7 +25,6 @@ import akka.actor.typed.scaladsl.Behaviors
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.IncomingPacket
-import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId}
 

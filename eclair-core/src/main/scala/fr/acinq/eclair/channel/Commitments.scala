@@ -395,8 +395,7 @@ object Commitments {
         Failure(UnknownHtlcId(commitments.channelId, cmd.id))
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        val failTry: Try[UpdateFailHtlc] = OutgoingPacket.buildHtlcFailure(nodeSecret, cmd, htlc)
-        failTry.map(updateFail => (addLocalProposal(commitments, updateFail), updateFail))
+        OutgoingPacket.buildHtlcFailure(nodeSecret, cmd, htlc).map(fail => (addLocalProposal(commitments, fail), fail))
       case None => Failure(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 

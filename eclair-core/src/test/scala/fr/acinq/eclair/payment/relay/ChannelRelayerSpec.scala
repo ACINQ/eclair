@@ -74,7 +74,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   /** we parse logs to make sure the listener has received the event and prevent race conditions */
   def publishUpdate(e: LocalChannelUpdate) = {
-    LoggingTestKit.debug(s"updating local channel info for channelId=${e.commitments.channelId} shortChannelId=${e.shortChannelId}").expect {
+    LoggingTestKit.debug(s"updating local channel info for channelId=${e.channelId} shortChannelId=${e.shortChannelId}").expect {
       system.eventStream ! EventStream.Publish(e)
     }(testKit.system)
   }
@@ -88,7 +88,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   /** we parse logs to make sure the listener has received the event and prevent race conditions */
   def publishBalanceChanged(e: AvailableBalanceChanged) = {
-    LoggingTestKit.debug(s"available balance changed for channelId=${e.commitments.channelId} shortChannelId=${e.shortChannelId}").expect {
+    LoggingTestKit.debug(s"available balance changed for channelId=${e.channelId} shortChannelId=${e.shortChannelId}").expect {
       system.eventStream ! EventStream.Publish(e)
     }(testKit.system)
   }
@@ -300,7 +300,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       val channelId = randomBytes32
       val update = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, remoteNodeId, shortChannelId, CltvExpiryDelta(10), 100 msat, 1000 msat, 100, 10000000 msat, enable = true)
       val commitments = PaymentPacketSpec.makeCommitments(ByteVector32.Zeroes, availableBalanceForSend)
-      LocalChannelUpdate(null, commitments.channelId, shortChannelId, remoteNodeId, None, update, commitments)
+      LocalChannelUpdate(null, channelId, shortChannelId, remoteNodeId, None, update, commitments)
     }
 
     val (a, b) = (randomKey.publicKey, randomKey.publicKey)
@@ -513,6 +513,6 @@ object ChannelRelayerSpec {
     val channelId = channelIds(shortChannelId)
     val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, shortChannelId, 0, 1, Announcements.makeChannelFlags(isNode1 = true, enabled), CltvExpiryDelta(100), htlcMinimum, 1000 msat, 100, Some(500000000 msat))
     val commitments = PaymentPacketSpec.makeCommitments(channelId, testAvailableBalanceForSend = balance)
-    LocalChannelUpdate(null, commitments.channelId, shortChannelId, outgoingNodeId, None, update, commitments)
+    LocalChannelUpdate(null, channelId, shortChannelId, outgoingNodeId, None, update, commitments)
   }
 }
