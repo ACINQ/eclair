@@ -56,7 +56,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    system.actorOf(ClientSpawner.props(aliceParams, TestProbe().ref, TestProbe().ref))
+    system.actorOf(ClientSpawner.props(aliceParams.keyPair, aliceParams.socksProxy_opt, aliceParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
 
     val monitor = TestProbe()
     val reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask] =
