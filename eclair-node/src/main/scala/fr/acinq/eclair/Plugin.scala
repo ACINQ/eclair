@@ -18,12 +18,17 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.{JarURLConnection, URL, URLClassLoader}
+
+import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.PluginHtlcs
 import grizzled.slf4j.Logging
+
 import scala.util.{Failure, Success, Try}
 
 trait Plugin {
 
   def params: Option[PluginParams]
+
+  def htlcs: PluginHtlcs
 
   def onSetup(setup: Setup): Unit
 

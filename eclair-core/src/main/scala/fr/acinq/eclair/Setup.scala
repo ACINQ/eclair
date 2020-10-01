@@ -46,9 +46,11 @@ import fr.acinq.eclair.db.{Databases, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Server, Switchboard}
 import fr.acinq.eclair.payment.Auditor
 import fr.acinq.eclair.payment.receive.PaymentHandler
+import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.PluginHtlcs
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.emptyPluginHtlcs
 import fr.acinq.eclair.tor.TorProtocolHandler.OnionServiceVersion
 import fr.acinq.eclair.tor.{Controller, TorProtocolHandler}
 import fr.acinq.eclair.wire.NodeAddress
@@ -71,6 +73,7 @@ import scala.util.{Failure, Success}
  */
 class Setup(datadir: File,
             pluginParams: Seq[PluginParams],
+            pluginHtlcs: PluginHtlcs = emptyPluginHtlcs,
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
@@ -300,15 +303,16 @@ class Setup(datadir: File,
         logger.warn("database backup is disabled")
         system.deadLetters
       }
-      audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
+      _ = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register), "payment-handler", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
+      _ = relayer ! pluginHtlcs
       _ <- postRestartCleanUpInitialized.future
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
-      clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
+      _ = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, router, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))

@@ -25,7 +25,6 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
 import fr.acinq.eclair.payment.PaymentPacketSpec._
@@ -53,7 +52,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
   case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
     def createRelayer(): ActorRef = {
-      system.actorOf(Relayer.props(nodeParams, TestProbe().ref, register.ref, TestProbe().ref))
+      val relayer = system.actorOf(Relayer.props(nodeParams, TestProbe().ref, register.ref, TestProbe().ref))
+      relayer ! PostRestartHtlcCleaner.emptyPluginHtlcs
+      relayer
     }
   }
 
@@ -287,6 +288,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val testCase = setupTrampolinePayments(nodeParams)
     val initialized = Promise[Done]()
     val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, register.ref, Some(initialized)))
+    postRestart ! PostRestartHtlcCleaner.emptyPluginHtlcs
     awaitCond(initialized.isCompleted)
     register.expectNoMsg(100 millis)
 

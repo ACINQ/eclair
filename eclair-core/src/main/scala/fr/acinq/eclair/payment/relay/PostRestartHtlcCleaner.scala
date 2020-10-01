@@ -58,21 +58,22 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
-  val brokenHtlcs = {
-    val channels = listLocalChannels(nodeParams.db.channels)
-    cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features)
-  }
-
-  Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
-  Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.keySet.size)
-
-  override def receive: Receive = main(brokenHtlcs)
-
-  // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
-  Try(initialized.map(_.success(Done)))
+  override def receive: Receive = main(BrokenHtlcs(Seq.empty, Map.empty, Set.empty))
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
+    case pluginHtlcs: PluginHtlcs =>
+      val brokenHtlcs = {
+        val channels = listLocalChannels(nodeParams.db.channels)
+        cleanupRelayDb(channels, nodeParams.db.pendingRelay)
+        checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features)
+      }
+
+      Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
+      Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.keySet.size)
+      // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
+      Try(initialized.map(_.success(Done)))
+      context become main(brokenHtlcs)
+
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
     case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
       log.debug("channel {}: {} -> {}", data.channelId, e.previousState, e.currentState)
@@ -239,6 +240,12 @@ object PostRestartHtlcCleaner {
   def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
 
   case object GetBrokenHtlcs
+
+  case class PluginHtlcs(crossSignedIncoming: Set[OutgoingHtlc], relayedOut: Set[(Origin, ByteVector32, Long)]) {
+    def merge(that: PluginHtlcs): PluginHtlcs = PluginHtlcs(crossSignedIncoming ++ that.crossSignedIncoming, relayedOut ++ that.relayedOut)
+  }
+
+  val emptyPluginHtlcs: PluginHtlcs = PluginHtlcs(Set.empty, Set.empty)
 
   object Metrics {
 

@@ -27,6 +27,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.PluginHtlcs
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
@@ -92,6 +93,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
     case g: GetOutgoingChannels => channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender, g)
 
     case GetChildActors(replyTo) => replyTo ! ChildActors(postRestartCleaner, channelRelayer, nodeRelayer)
+
+    case pluginHtlcs: PluginHtlcs => postRestartCleaner ! pluginHtlcs
   }
 
   override def mdc(currentMessage: Any): MDC = {
