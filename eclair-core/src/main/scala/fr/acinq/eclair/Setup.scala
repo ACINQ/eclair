@@ -288,7 +288,7 @@ class Setup(datadir: File,
       _ = wallet.getReceiveAddress.map(address => logger.info(s"initial wallet address=$address"))
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
-      backupHandler = if (config.getBoolean("enable-db-backup")) {
+      _ = if (config.getBoolean("enable-db-backup")) {
         nodeParams.db match {
           case fileBackup: FileBackup => system.actorOf(SimpleSupervisor.props(
             FileBackupHandler.props(
