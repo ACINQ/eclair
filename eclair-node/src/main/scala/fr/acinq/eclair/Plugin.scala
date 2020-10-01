@@ -25,15 +25,17 @@ import grizzled.slf4j.Logging
 import scala.util.{Failure, Success, Try}
 
 trait Plugin {
-
-  def params: Option[PluginParams]
-
-  def htlcs: PluginHtlcs
-
   def onSetup(setup: Setup): Unit
 
   def onKit(kit: Kit): Unit
+}
 
+trait PluginWithParams extends Plugin {
+  def params: PluginParams
+}
+
+trait PluginWithHTLC extends Plugin {
+  def htlcs: PluginHtlcs
 }
 
 object Plugin extends Logging {
