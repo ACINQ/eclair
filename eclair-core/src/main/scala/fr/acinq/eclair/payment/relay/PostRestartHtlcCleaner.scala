@@ -76,10 +76,10 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
     case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
-      resolveRemainingBrokenHtlcs(brokenHtlcs, e.previousState, e.currentState, channel, data.commitments)
+      resolveNotRelayedBrokenHtlcs(brokenHtlcs, e.previousState, e.currentState, channel, data.commitments)
 
     case e@PluginChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, commitments) =>
-      resolveRemainingBrokenHtlcs(brokenHtlcs, e.previousState, e.currentState, channel, commitments)
+      resolveNotRelayedBrokenHtlcs(brokenHtlcs, e.previousState, e.currentState, channel, commitments)
 
     case _: ChannelStateChanged => // ignore other channel state changes
 
@@ -94,7 +94,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
     case GetBrokenHtlcs => sender ! brokenHtlcs
   }
 
-  private def resolveRemainingBrokenHtlcs(brokenHtlcs: BrokenHtlcs, previousState: State, currentState: State, channel: ActorRef, commitments: AbstractCommitments): Unit = {
+  private def resolveNotRelayedBrokenHtlcs(brokenHtlcs: BrokenHtlcs, previousState: State, currentState: State, channel: ActorRef, commitments: AbstractCommitments): Unit = {
     log.debug("channel {}: {} -> {}", commitments.channelId, previousState, currentState)
     val acked = brokenHtlcs.notRelayed
       .filter(_.add.channelId == commitments.channelId) // only consider htlcs coming from this channel
