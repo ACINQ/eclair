@@ -44,15 +44,14 @@ object ChannelRelayer {
   sealed trait Command
   case class GetOutgoingChannels(replyTo: ActorRef, getOutgoingChannels: Relayer.GetOutgoingChannels) extends Command
   case class Relay(channelRelayPacket: IncomingPacket.ChannelRelayPacket) extends Command
-  private case class WrappedLocalChannelUpdate(localChannelUpdate: LocalChannelUpdate) extends Command
-  private case class WrappedLocalChannelDown(localChannelDown: LocalChannelDown) extends Command
-  private case class WrappedAvailableBalanceChanged(availableBalanceChanged: AvailableBalanceChanged) extends Command
-  private case class WrappedShortChannelIdAssigned(shortChannelIdAssigned: ShortChannelIdAssigned) extends Command
+  private[payment] case class WrappedLocalChannelUpdate(localChannelUpdate: LocalChannelUpdate) extends Command
+  private[payment] case class WrappedLocalChannelDown(localChannelDown: LocalChannelDown) extends Command
+  private[payment] case class WrappedAvailableBalanceChanged(availableBalanceChanged: AvailableBalanceChanged) extends Command
+  private[payment] case class WrappedShortChannelIdAssigned(shortChannelIdAssigned: ShortChannelIdAssigned) extends Command
   // @formatter:on
 
   def mdc: Command => Map[String, String] = {
-    case c: Relay => Logs.mdc(
-      paymentHash_opt = Some(c.channelRelayPacket.add.paymentHash))
+    case c: Relay => Logs.mdc(paymentHash_opt = Some(c.channelRelayPacket.add.paymentHash))
     case _ => Map.empty
   }
 
@@ -62,8 +61,7 @@ object ChannelRelayer {
   def apply(nodeParams: NodeParams,
             register: ActorRef,
             channelUpdates: ChannelUpdates = Map.empty,
-            node2channels: NodeChannels = mutable.MultiDict.empty[PublicKey, ShortChannelId]
-           ): Behavior[Command] =
+            node2channels: NodeChannels = mutable.MultiDict.empty[PublicKey, ShortChannelId]): Behavior[Command] =
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelUpdate](WrappedLocalChannelUpdate))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelDown](WrappedLocalChannelDown))
@@ -71,64 +69,64 @@ object ChannelRelayer {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ShortChannelIdAssigned](WrappedShortChannelIdAssigned))
       context.messageAdapter[IncomingPacket.ChannelRelayPacket](Relay)
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
-          Behaviors.receiveMessage {
-            case Relay(channelRelayPacket) =>
-              val relayId = UUID.randomUUID()
-              val nextNodeId_opt: Option[PublicKey] = channelUpdates.get(channelRelayPacket.payload.outgoingChannelId) match {
-                case Some(channel) => Some(channel.nextNodeId)
-                case None => None
-              }
-              val channels: Map[ShortChannelId, Relayer.OutgoingChannel] = nextNodeId_opt match {
-                case Some(nextNodeId) => node2channels.get(nextNodeId).map(channelUpdates).map(c => c.channelUpdate.shortChannelId -> c).toMap
-                case None => Map.empty
-              }
+        Behaviors.receiveMessage {
+          case Relay(channelRelayPacket) =>
+            val relayId = UUID.randomUUID()
+            val nextNodeId_opt: Option[PublicKey] = channelUpdates.get(channelRelayPacket.payload.outgoingChannelId) match {
+              case Some(channel) => Some(channel.nextNodeId)
+              case None => None
+            }
+            val channels: Map[ShortChannelId, Relayer.OutgoingChannel] = nextNodeId_opt match {
+              case Some(nextNodeId) => node2channels.get(nextNodeId).map(channelUpdates).map(c => c.channelUpdate.shortChannelId -> c).toMap
+              case None => Map.empty
+            }
             context.log.debug(s"spawning a new handler with relayId=$relayId to nextNodeId={} with channels={}", nextNodeId_opt.getOrElse(""), channels.keys.mkString(","))
-              context.spawn(ChannelRelay.apply(nodeParams, register, channels, relayId, channelRelayPacket), name = relayId.toString)
-              Behaviors.same
+            context.spawn(ChannelRelay.apply(nodeParams, register, channels, relayId, channelRelayPacket), name = relayId.toString)
+            Behaviors.same
 
-            case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>
-              val channels = if (enabledOnly) {
-                channelUpdates.values.filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
-              } else {
-                channelUpdates.values
-              }
-              replyTo ! Relayer.OutgoingChannels(channels.toSeq)
-              Behaviors.same
+          case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>
+            val channels = if (enabledOnly) {
+              channelUpdates.values.filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
+            } else {
+              channelUpdates.values
+            }
+            replyTo ! Relayer.OutgoingChannels(channels.toSeq)
+            Behaviors.same
 
-            case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
-              context.log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
-              val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> Relayer.OutgoingChannel(remoteNodeId, channelUpdate, commitments))
-              val node2channels1 = node2channels.addOne(remoteNodeId, channelUpdate.shortChannelId)
-              apply(nodeParams, register, channelUpdates1, node2channels1)
+          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
+            context.log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
+            val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> Relayer.OutgoingChannel(remoteNodeId, channelUpdate, commitments))
+            val node2channels1 = node2channels.addOne(remoteNodeId, channelUpdate.shortChannelId)
+            apply(nodeParams, register, channelUpdates1, node2channels1)
 
-            case WrappedLocalChannelDown(LocalChannelDown(_, channelId, shortChannelId, remoteNodeId)) =>
-              context.log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
-              val node2channels1 = node2channels.subtractOne(remoteNodeId, shortChannelId)
-              apply(nodeParams, register, channelUpdates - shortChannelId, node2channels1)
+          case WrappedLocalChannelDown(LocalChannelDown(_, channelId, shortChannelId, remoteNodeId)) =>
+            context.log.debug(s"removed local channel info for channelId=$channelId shortChannelId=$shortChannelId")
+            val node2channels1 = node2channels.subtractOne(remoteNodeId, shortChannelId)
+            apply(nodeParams, register, channelUpdates - shortChannelId, node2channels1)
 
-            case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, shortChannelId, commitments)) =>
-              val channelUpdates1 = channelUpdates.get(shortChannelId) match {
-                case Some(c: Relayer.OutgoingChannel) =>
-                  context.log.debug(s"available balance changed for channelId=$channelId shortChannelId=$shortChannelId availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
-                  channelUpdates + (shortChannelId -> c.copy(commitments = commitments))
-                case None => channelUpdates // we only consider the balance if we have the channel_update
-              }
-              apply(nodeParams, register, channelUpdates1, node2channels)
+          case WrappedAvailableBalanceChanged(AvailableBalanceChanged(_, channelId, shortChannelId, commitments)) =>
+            val channelUpdates1 = channelUpdates.get(shortChannelId) match {
+              case Some(c: Relayer.OutgoingChannel) =>
+                context.log.debug(s"available balance changed for channelId=$channelId shortChannelId=$shortChannelId availableForSend={} availableForReceive={}", commitments.availableBalanceForSend, commitments.availableBalanceForReceive)
+                channelUpdates + (shortChannelId -> c.copy(commitments = commitments))
+              case None => channelUpdates // we only consider the balance if we have the channel_update
+            }
+            apply(nodeParams, register, channelUpdates1, node2channels)
 
-            case WrappedShortChannelIdAssigned(ShortChannelIdAssigned(_, channelId, shortChannelId, previousShortChannelId_opt)) =>
-              val (channelUpdates1, node2channels1) = previousShortChannelId_opt match {
-                case Some(previousShortChannelId) if previousShortChannelId != shortChannelId =>
-                  context.log.debug(s"shortChannelId changed for channelId=$channelId ($previousShortChannelId->$shortChannelId, probably due to chain re-org)")
-                  // We simply remove the old entry: we should receive a LocalChannelUpdate with the new shortChannelId shortly.
-                  val node2channels1 = channelUpdates.get(previousShortChannelId).map(_.nextNodeId) match {
-                    case Some(remoteNodeId) => node2channels.subtractOne(remoteNodeId, previousShortChannelId)
-                    case None => node2channels
-                  }
-                  (channelUpdates - previousShortChannelId, node2channels1)
-                case _ => (channelUpdates, node2channels)
-              }
-              apply(nodeParams, register, channelUpdates1, node2channels1)
-          }
+          case WrappedShortChannelIdAssigned(ShortChannelIdAssigned(_, channelId, shortChannelId, previousShortChannelId_opt)) =>
+            val (channelUpdates1, node2channels1) = previousShortChannelId_opt match {
+              case Some(previousShortChannelId) if previousShortChannelId != shortChannelId =>
+                context.log.debug(s"shortChannelId changed for channelId=$channelId ($previousShortChannelId->$shortChannelId, probably due to chain re-org)")
+                // We simply remove the old entry: we should receive a LocalChannelUpdate with the new shortChannelId shortly.
+                val node2channels1 = channelUpdates.get(previousShortChannelId).map(_.nextNodeId) match {
+                  case Some(remoteNodeId) => node2channels.subtractOne(remoteNodeId, previousShortChannelId)
+                  case None => node2channels
+                }
+                (channelUpdates - previousShortChannelId, node2channels1)
+              case _ => (channelUpdates, node2channels)
+            }
+            apply(nodeParams, register, channelUpdates1, node2channels1)
+        }
       }
     }
 }
