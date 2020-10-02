@@ -49,7 +49,7 @@ import scala.util.Try
  * payment (because of multi-part): we have lost the intermediate state necessary to retry that payment, so we need to
  * wait for the partial HTLC set sent downstream to either fail or fulfill the payment in our DB.
  */
-class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with ActorLogging {
+class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
   import PostRestartHtlcCleaner._
 
@@ -71,8 +71,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
       Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
       Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.keySet.size)
       // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
-      Try(initialized.map(_.success(Done)))
       context become main(brokenHtlcs)
+      sender ! Done
 
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
     case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
@@ -244,7 +244,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
 object PostRestartHtlcCleaner {
 
-  def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
+  def props(nodeParams: NodeParams, register: ActorRef) = Props(new PostRestartHtlcCleaner(nodeParams, register))
 
   case object GetBrokenHtlcs
 

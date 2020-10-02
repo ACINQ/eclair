@@ -38,8 +38,9 @@ import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
+import akka.pattern.ask
+import akka.util.Timeout
 
-import scala.concurrent.Promise
 import scala.concurrent.duration._
 
 /**
@@ -50,10 +51,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
   import PostRestartHtlcCleanerSpec._
 
+  implicit val timeout = Timeout(30 seconds)
+
   case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
     def createRelayer(): ActorRef = {
       val relayer = system.actorOf(Relayer.props(nodeParams, TestProbe().ref, register.ref, TestProbe().ref))
-      relayer ! PostRestartHtlcCleaner.emptyPluginHtlcs
+      val future = (relayer ? PostRestartHtlcCleaner.emptyPluginHtlcs).mapTo[Done]
+      awaitCond(future.isCompleted)
       relayer
     }
   }
@@ -286,10 +290,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
-    val initialized = Promise[Done]()
-    val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, register.ref, Some(initialized)))
-    postRestart ! PostRestartHtlcCleaner.emptyPluginHtlcs
-    awaitCond(initialized.isCompleted)
+    val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, register.ref))
+    val future = (postRestart ? PostRestartHtlcCleaner.emptyPluginHtlcs).mapTo[Done]
+    awaitCond(future.isCompleted)
     register.expectNoMsg(100 millis)
 
     val probe = TestProbe()

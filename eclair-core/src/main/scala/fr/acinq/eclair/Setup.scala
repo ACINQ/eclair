@@ -57,7 +57,7 @@ import fr.acinq.eclair.wire.NodeAddress
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
-
+import akka.pattern.ask
 import scala.concurrent._
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
@@ -220,7 +220,6 @@ class Setup(datadir: File,
       zmqTxConnected = Promise[Done]()
       tcpBound = Promise[Done]()
       routerInitialized = Promise[Done]()
-      postRestartCleanUpInitialized = Promise[Done]()
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
@@ -306,11 +305,11 @@ class Setup(datadir: File,
       _ = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register), "payment-handler", SupervisorStrategy.Resume))
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
-      _ = relayer ! pluginHtlcs
-      _ <- postRestartCleanUpInitialized.future
+      _ <- (relayer ? pluginHtlcs).mapTo[Done]
+
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       _ = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, router, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
