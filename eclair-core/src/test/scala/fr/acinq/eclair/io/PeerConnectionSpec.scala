@@ -31,8 +31,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.wire._
+import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
 import scala.collection.mutable
@@ -61,11 +61,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val transport = TestProbe()
     val peer = TestProbe()
     val remoteNodeId = Bob.nodeParams.nodeId
-
-    import com.softwaremill.quicklens._
-    val aliceParams = TestConstants.Alice.nodeParams//.peerConnectionConf
-//      .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-bob"))(Set(remoteNodeId))
-//      .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
+    
+    val aliceParams = TestConstants.Alice.nodeParams
 
     val peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection] = TestFSMRef(new PeerConnection(aliceParams.keyPair, aliceParams.peerConnectionConf, switchboard.ref, router.ref))
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
