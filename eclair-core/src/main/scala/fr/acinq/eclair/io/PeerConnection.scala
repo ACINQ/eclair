@@ -20,6 +20,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -56,7 +57,7 @@ import scala.util.Random
  *
  * Created by PM on 11/03/2020.
  */
-class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[PeerConnection.State, PeerConnection.Data] {
+class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[PeerConnection.State, PeerConnection.Data] {
 
   import PeerConnection._
 
@@ -69,14 +70,14 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         case None =>
           Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticating).increment()
           context.actorOf(TransportHandler.props(
-            keyPair = KeyPair(nodeParams.nodeId.value, nodeParams.privateKey.value),
+            keyPair = keyPair,
             rs = p.remoteNodeId_opt.map(_.value),
             connection = p.connection,
             codec = LightningMessageCodecs.meteredLightningMessageCodec),
             name = "transport")
       }
       context.watch(transport)
-      setTimer(AUTH_TIMER, AuthTimeout, nodeParams.authTimeout)
+      setTimer(AUTH_TIMER, AuthTimeout, conf.authTimeout)
       goto(AUTHENTICATING) using AuthenticatingData(p, transport)
   }
 
@@ -90,24 +91,20 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
 
     case Event(AuthTimeout, d: AuthenticatingData) =>
-      log.warning(s"authentication timed out after ${nodeParams.authTimeout}")
+      log.warning(s"authentication timed out after ${conf.authTimeout}")
       d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.AuthenticationFailed("authentication timed out"))
       stop(FSM.Normal)
   }
 
   when(BEFORE_INIT) {
-    case Event(InitializeConnection(peer), d: BeforeInitData) =>
+    case Event(InitializeConnection(peer, chainHash, localFeatures, doSync), d: BeforeInitData) =>
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
-      val localFeatures = nodeParams.overrideFeatures.get(d.remoteNodeId) match {
-        case Some(f) => f
-        case None => nodeParams.features.maskFeaturesForEclairMobile()
-      }
       log.info(s"using features=$localFeatures")
-      val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(nodeParams.chainHash :: Nil)))
+      val localInit = wire.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
       d.transport ! localInit
-      setTimer(INIT_TIMER, InitTimeout, nodeParams.initTimeout)
-      goto(INITIALIZING) using InitializingData(nodeParams, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit)
+      setTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
+      goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync)
   }
 
   when(INITIALIZING) {
@@ -119,7 +116,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
 
         val featureGraphErr_opt = Features.validateFeatureGraph(remoteInit.features)
-        if (remoteInit.networks.nonEmpty && !remoteInit.networks.contains(d.nodeParams.chainHash)) {
+        if (remoteInit.networks.nonEmpty && remoteInit.networks.intersect(d.localInit.networks).isEmpty) {
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible networks"))
           d.transport ! PoisonPill
@@ -151,9 +148,9 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
             // if they support channel queries we don't send routing info yet, if they want it they will query us
             // we will query them, using extended queries if supported
             val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-            if (d.nodeParams.syncWhitelist.isEmpty || d.nodeParams.syncWhitelist.contains(d.remoteNodeId)) {
+            if (d.doSync) {
               log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-              router ! SendChannelQuery(nodeParams.chainHash, d.remoteNodeId, self, flags_opt = flags_opt)
+              router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, flags_opt = flags_opt)
             } else {
               log.info("not syncing with this peer")
             }
@@ -164,15 +161,15 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           }
 
           // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
-          val rebroadcastDelay = Random.nextInt(d.nodeParams.routerConf.routerBroadcastInterval.toSeconds.toInt).seconds
+          val rebroadcastDelay = Random.nextInt(conf.maxRebroadcastDelay.toSeconds.toInt).seconds
           log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
           context.system.eventStream.subscribe(self, classOf[Rebroadcast])
 
-          goto(CONNECTED) using ConnectedData(d.nodeParams, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
+          goto(CONNECTED) using ConnectedData(d.chainHash, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
         }
 
       case Event(InitTimeout, d: InitializingData) =>
-        log.warning(s"initialization timed out after ${nodeParams.initTimeout}")
+        log.warning(s"initialization timed out after ${conf.initTimeout}")
         d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("initialization timed out"))
         stop(FSM.Normal)
     }
@@ -190,7 +187,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           val pingSize = Random.nextInt(1000)
           val pongSize = Random.nextInt(1000)
           val ping = wire.Ping(pongSize, ByteVector.fill(pingSize)(0))
-          setTimer(PingTimeout.toString, PingTimeout(ping), d.nodeParams.pingTimeout, repeat = false)
+          setTimer(PingTimeout.toString, PingTimeout(ping), conf.pingTimeout, repeat = false)
           d.transport ! ping
           stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
         } else {
@@ -199,7 +196,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
         }
 
       case Event(PingTimeout(ping), d: ConnectedData) =>
-        if (d.nodeParams.pingDisconnect) {
+        if (conf.pingDisconnect) {
           log.warning(s"no response to ping=$ping, closing connection")
           d.transport ! PoisonPill
         } else {
@@ -261,7 +258,7 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
           case (count, (_, origins)) if origins.contains(thisRemote) =>
             // the announcement came from this peer, we don't send it back
             count
-          case (count, (msg, origins)) if !timestampInRange(d.nodeParams, msg, origins, d.gossipTimestampFilter) =>
+          case (count, (msg, origins)) if !timestampInRange(msg, origins, d.gossipTimestampFilter) =>
             // the peer has set up a filter on timestamp and this message is out of range
             count
           case (count, (msg, _)) =>
@@ -281,8 +278,8 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
       case Event(msg: GossipTimestampFilter, d: ConnectedData) =>
         // special case: time range filters are peer specific and must not be sent to the router
         d.transport ! TransportHandler.ReadAck(msg)
-        if (msg.chainHash != d.nodeParams.chainHash) {
-          log.warning("received gossip_timestamp_range message for chain {}, we're on {}", msg.chainHash, d.nodeParams.chainHash)
+        if (msg.chainHash != d.chainHash) {
+          log.warning("received gossip_timestamp_range message for chain {}, we're on {}", msg.chainHash, d.chainHash)
           stay
         } else {
           log.info(s"setting up gossipTimestampFilter=$msg")
@@ -432,8 +429,8 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   }
 
   def scheduleNextPing(): Unit = {
-    log.debug("next ping scheduled in {}", nodeParams.pingInterval)
-    setTimer(SEND_PING_TIMER, SendPing, nodeParams.pingInterval)
+    log.debug("next ping scheduled in {}", conf.pingInterval)
+    setTimer(SEND_PING_TIMER, SendPing, conf.pingInterval)
   }
 
   initialize()
@@ -474,7 +471,14 @@ object PeerConnection {
   val MAX_FUNDING_TX_ALREADY_SPENT = 10
   // @formatter:on
 
-  def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef): Props = Props(new PeerConnection(nodeParams, switchboard, router))
+  def props(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props = Props(new PeerConnection(keyPair, conf, switchboard, router))
+
+  case class Conf(authTimeout: FiniteDuration,
+                  initTimeout: FiniteDuration,
+                  pingInterval: FiniteDuration,
+                  pingTimeout: FiniteDuration,
+                  pingDisconnect: Boolean,
+                  maxRebroadcastDelay: FiniteDuration)
 
   // @formatter:off
 
@@ -483,8 +487,9 @@ object PeerConnection {
   case object Nothing extends Data
   case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
   case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
-  case class InitializingData(nodeParams: NodeParams, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init) extends Data with HasTransport
-  case class ConnectedData(nodeParams: NodeParams, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init, remoteInit: wire.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
+  case class InitializingData(chainHash: ByteVector32, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init, doSync: Boolean) extends Data with HasTransport
+  case class ConnectedData(chainHash: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: wire.Init, remoteInit: wire.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
+
   case class ExpectedPong(ping: Ping, timestamp: Long = System.currentTimeMillis)
   case class PingTimeout(ping: Ping)
 
@@ -499,7 +504,7 @@ object PeerConnection {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey)
-  case class InitializeConnection(peer: ActorRef)
+  case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features, doSync: Boolean)
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
 
   sealed trait ConnectionResult
@@ -530,10 +535,9 @@ object PeerConnection {
    *         - true if there is a filter and msg has no timestamp, or has one that matches the filter
    *         - false otherwise
    */
-  def timestampInRange(nodeParams: NodeParams, msg: RoutingMessage, origins: Set[GossipOrigin], gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
+  def timestampInRange(msg: RoutingMessage, origins: Set[GossipOrigin], gossipTimestampFilter_opt: Option[GossipTimestampFilter]): Boolean = {
     // For our own gossip, we should ignore the peer's timestamp filter.
     val isOurGossip = msg match {
-      case n: NodeAnnouncement if n.nodeId == nodeParams.nodeId => true
       case _ if origins.contains(LocalGossip) => true
       case _ => false
     }

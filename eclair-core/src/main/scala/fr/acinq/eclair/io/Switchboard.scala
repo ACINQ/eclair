@@ -72,7 +72,12 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
     case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
-      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)
+      val features = nodeParams.overrideFeatures.get(authenticated.remoteNodeId) match {
+        case Some(f) => f
+        case None => nodeParams.features.maskFeaturesForEclairMobile()
+      }
+      val doSync = nodeParams.syncWhitelist.isEmpty || nodeParams.syncWhitelist.contains(authenticated.remoteNodeId)
+      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
 
     case Symbol("peers") => sender ! context.children
 

@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain}
@@ -57,6 +57,8 @@ trait AbstractCommitments {
   def localNodeId: PublicKey
 
   def remoteNodeId: PublicKey
+
+  def capacity: Satoshi
 
   def availableBalanceForReceive: MilliSatoshi
 
@@ -143,6 +145,8 @@ case class Commitments(channelVersion: ChannelVersion,
   val remoteNodeId: PublicKey = remoteParams.nodeId
 
   val announceChannel: Boolean = (channelFlags & 0x01) != 0
+
+  val capacity: Satoshi = commitInput.txOut.amount
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the funder keeps an extra buffer on top
   // of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see

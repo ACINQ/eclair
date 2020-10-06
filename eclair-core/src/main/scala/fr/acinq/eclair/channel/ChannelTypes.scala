@@ -302,6 +302,12 @@ final case class DATA_CLOSING(commitments: Commitments,
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
+
+/**
+ * @param features current connection features, or last features used if the channel is disconnected. Note that these
+ *                 features are updated at each reconnection and may be different from the ones that were used when the
+ *                 channel was created. See [[ChannelVersion]] for permanent features associated to a channel.
+ */
 final case class LocalParams(nodeId: PublicKey,
                              fundingKeyPath: DeterministicWallet.KeyPath,
                              dustLimit: Satoshi,
@@ -315,6 +321,9 @@ final case class LocalParams(nodeId: PublicKey,
                              walletStaticPaymentBasepoint: Option[PublicKey],
                              features: Features)
 
+/**
+ * @param features see [[LocalParams.features]]
+ */
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
                               maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi

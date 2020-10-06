@@ -30,7 +30,9 @@ import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
+import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
@@ -49,9 +51,9 @@ case class NodeParams(keyManager: KeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       features: Features,
-                      pluginParams: Seq[PluginParams],
                       overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
+                      pluginParams: Seq[PluginParams],
                       dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
@@ -69,11 +71,6 @@ case class NodeParams(keyManager: KeyManager,
                       maxReserveToFundingRatio: Double,
                       db: Databases,
                       revocationTimeout: FiniteDuration,
-                      authTimeout: FiniteDuration,
-                      initTimeout: FiniteDuration,
-                      pingInterval: FiniteDuration,
-                      pingTimeout: FiniteDuration,
-                      pingDisconnect: Boolean,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
@@ -85,12 +82,14 @@ case class NodeParams(keyManager: KeyManager,
                       multiPartPaymentExpiry: FiniteDuration,
                       minFundingSatoshis: Satoshi,
                       maxFundingSatoshis: Satoshi,
+                      peerConnectionConf: PeerConnection.Conf,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
+  val keyPair = KeyPair(nodeId.value, privateKey.value)
 
   def currentBlockHeight: Long = blockCount.get
 }
@@ -287,11 +286,6 @@ object NodeParams {
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       db = database,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
-      authTimeout = FiniteDuration(config.getDuration("auth-timeout").getSeconds, TimeUnit.SECONDS),
-      initTimeout = FiniteDuration(config.getDuration("init-timeout").getSeconds, TimeUnit.SECONDS),
-      pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
-      pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
-      pingDisconnect = config.getBoolean("ping-disconnect"),
       autoReconnect = config.getBoolean("auto-reconnect"),
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
@@ -303,6 +297,14 @@ object NodeParams {
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),
       minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
       maxFundingSatoshis = Satoshi(config.getLong("max-funding-satoshis")),
+      peerConnectionConf = PeerConnection.Conf(
+        authTimeout = FiniteDuration(config.getDuration("peer-connection.auth-timeout").getSeconds, TimeUnit.SECONDS),
+        initTimeout = FiniteDuration(config.getDuration("peer-connection.init-timeout").getSeconds, TimeUnit.SECONDS),
+        pingInterval = FiniteDuration(config.getDuration("peer-connection.ping-interval").getSeconds, TimeUnit.SECONDS),
+        pingTimeout = FiniteDuration(config.getDuration("peer-connection.ping-timeout").getSeconds, TimeUnit.SECONDS),
+        pingDisconnect = config.getBoolean("peer-connection.ping-disconnect"),
+        maxRebroadcastDelay = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS) // it makes sense to not delay rebroadcast by more than the rebroadcast period
+      ),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),

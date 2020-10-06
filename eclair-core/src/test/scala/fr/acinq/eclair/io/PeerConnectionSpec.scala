@@ -31,8 +31,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.wire._
+import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{Outcome, Tag}
 import scodec.bits._
 
 import scala.collection.mutable
@@ -61,29 +61,26 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val transport = TestProbe()
     val peer = TestProbe()
     val remoteNodeId = Bob.nodeParams.nodeId
-
-    import com.softwaremill.quicklens._
+    
     val aliceParams = TestConstants.Alice.nodeParams
-      .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-bob"))(Set(remoteNodeId))
-      .modify(_.syncWhitelist).setToIf(test.tags.contains("sync-whitelist-random"))(Set(randomKey.publicKey))
 
-    val peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection] = TestFSMRef(new PeerConnection(aliceParams, switchboard.ref, router.ref))
+    val peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection] = TestFSMRef(new PeerConnection(aliceParams.keyPair, aliceParams.peerConnectionConf, switchboard.ref, router.ref))
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
   }
 
-  def connect(remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features), expectSync: Boolean = false): Unit = {
+  def connect(aliceParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features), doSync: Boolean = false): Unit = {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, aliceParams.chainHash, aliceParams.features, doSync))
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[wire.Init]
     assert(localInit.networks === List(Block.RegtestGenesisBlock.hash))
     transport.send(peerConnection, remoteInit)
     transport.expectMsgType[TransportHandler.ReadAck]
-    if (expectSync) {
+    if (doSync) {
       router.expectMsgType[SendChannelQuery]
     } else {
       router.expectNoMsg(1 second)
@@ -94,7 +91,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("establish connection") { f =>
     import f._
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
   }
 
   test("handle connection closed during authentication") { f =>
@@ -112,7 +109,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val origin = TestProbe()
     probe.watch(peerConnection)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
-    probe.expectTerminated(peerConnection, nodeParams.authTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
+    probe.expectTerminated(peerConnection, nodeParams.peerConnectionConf.authTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
     origin.expectMsg(PeerConnection.ConnectionResult.AuthenticationFailed("authentication timed out"))
   }
 
@@ -123,8 +120,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(peerConnection)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
-    probe.expectTerminated(peerConnection, nodeParams.initTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
+    probe.expectTerminated(peerConnection, nodeParams.peerConnectionConf.initTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("initialization timed out"))
   }
 
@@ -135,7 +132,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
@@ -151,7 +148,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
@@ -167,7 +164,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     // remote activated MPP but forgot payment secret
@@ -177,31 +174,6 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("basic_mpp is set but is missing a dependency (payment_secret)"))
   }
 
-  test("masks off MPP and PaymentSecret features") { f =>
-    import f._
-    val probe = TestProbe()
-
-    val testCases = Seq(
-      (bin"                00000010", bin"                00000010"), // option_data_loss_protect
-      (bin"        0000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex
-      (bin"        1000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
-      (bin"        0100101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
-      (bin"000000101000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp
-      (bin"000010101000101010001010", bin"000010000000101010001010") // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp and large_channel_support (optional)
-    )
-
-    for ((configuredFeatures, sentFeatures) <- testCases) {
-      val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(configuredFeatures))
-      val peerConnection = TestFSMRef(new PeerConnection(nodeParams, switchboard.ref, router.ref))
-      probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
-      transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-      probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
-      transport.expectMsgType[TransportHandler.Listener]
-      val init = transport.expectMsgType[wire.Init]
-      assert(init.features.toByteVector === sentFeatures.bytes)
-    }
-  }
-
   test("disconnect if incompatible networks") { f =>
     import f._
     val probe = TestProbe()
@@ -209,7 +181,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     probe.watch(transport.ref)
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     transport.send(peerConnection, wire.Init(Bob.nodeParams.features, TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SegnetGenesisBlock.hash :: Nil))))
@@ -218,27 +190,15 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible networks"))
   }
 
-  test("sync if no whitelist is defined") { f =>
+  test("sync when requested") { f =>
     import f._
     val remoteInit = wire.Init(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional))))
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, expectSync = true)
-  }
-
-  test("sync if whitelist contains peer", Tag("sync-whitelist-bob")) { f =>
-    import f._
-    val remoteInit = wire.Init(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(VariableLengthOnion, Optional))))
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, expectSync = true)
-  }
-
-  test("don't sync if whitelist doesn't contain peer", Tag("sync-whitelist-random")) { f =>
-    import f._
-    val remoteInit = wire.Init(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional)))) // bob supports channel range queries
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, expectSync = false)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, doSync = true)
   }
 
   test("reply to ping") { f =>
     import f._
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     val ping = Ping(42, randomBytes(127))
     transport.send(peerConnection, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
@@ -247,14 +207,14 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("send a ping if no message after init") { f =>
     import f._
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     // ~30s without an incoming message: peer should send a ping
     transport.expectMsgType[Ping](35 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
   }
 
   test("send a ping if no message received for 30s") { f =>
     import f._
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     // we make the transport send a message, this will delay the sending of a ping
     val dummy = updates.head
     for (_ <- 1 to 5) { // the goal of this loop is to make sure that we don't send pings when we receive messages
@@ -268,7 +228,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("ignore malicious ping") { f =>
     import f._
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     // huge requested pong length
     val ping = Ping(Int.MaxValue, randomBytes(127))
     transport.send(peerConnection, ping)
@@ -280,7 +240,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     val sender = TestProbe()
     val deathWatcher = TestProbe()
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     // we manually trigger a ping because we don't want to wait too long in tests
     sender.send(peerConnection, PeerConnection.SendPing)
     transport.expectMsgType[Ping]
@@ -292,7 +252,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     val probe = TestProbe()
     val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     probe.send(peerConnection, rebroadcast)
     transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
@@ -300,7 +260,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("filter gossip message (filtered by origin)") { f =>
     import f._
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
     val bobOrigin = RemoteGossip(peerConnection, remoteNodeId)
     val rebroadcast = Rebroadcast(
@@ -319,7 +279,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("filter gossip message (filtered by timestamp)") { f =>
     import f._
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     val timestamps = updates.map(_.timestamp).sorted.slice(10, 30)
@@ -337,7 +297,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("does not filter our own gossip message") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
     val rebroadcast = Rebroadcast(
       channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(LocalGossip)),
@@ -355,7 +315,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("react to peer's bad behavior") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
 
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,

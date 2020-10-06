@@ -32,7 +32,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.NoLock
 import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
-import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
@@ -177,11 +177,6 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       db = inMemoryDb(sqliteInMemory()),
       revocationTimeout = 20 seconds,
-      authTimeout = 10 seconds,
-      initTimeout = 10 seconds,
-      pingInterval = 30 seconds,
-      pingTimeout = 10 seconds,
-      pingDisconnect = true,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -193,6 +188,14 @@ object TestConstants {
       multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
       maxFundingSatoshis = 16777215 sat,
+      peerConnectionConf = PeerConnection.Conf(
+        authTimeout = 10 seconds,
+        initTimeout = 10 seconds,
+        pingInterval = 30 seconds,
+        pingTimeout = 10 seconds,
+        pingDisconnect = true,
+        maxRebroadcastDelay = 5 seconds
+      ),
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
@@ -267,11 +270,6 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       db = inMemoryDb(sqliteInMemory()),
       revocationTimeout = 20 seconds,
-      authTimeout = 10 seconds,
-      initTimeout = 10 seconds,
-      pingInterval = 30 seconds,
-      pingTimeout = 10 seconds,
-      pingDisconnect = true,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
       maxReconnectInterval = 1 hour,
@@ -283,6 +281,14 @@ object TestConstants {
       multiPartPaymentExpiry = 30 seconds,
       minFundingSatoshis = 1000 sat,
       maxFundingSatoshis = 16777215 sat,
+      peerConnectionConf = PeerConnection.Conf(
+        authTimeout = 10 seconds,
+        initTimeout = 10 seconds,
+        pingInterval = 30 seconds,
+        pingTimeout = 10 seconds,
+        pingDisconnect = true,
+        maxRebroadcastDelay = 5 seconds
+      ),
       routerConf = RouterConf(
         randomizeRouteSelection = false,
         channelExcludeDuration = 60 seconds,
