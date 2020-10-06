@@ -18,8 +18,7 @@ package fr.acinq.eclair.gui.controllers
 
 import akka.actor.ActorRef
 import com.google.common.base.Strings
-import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.CoinUtils
+import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_CLOSE, CMD_FORCECLOSE, AbstractCommitments, Commitments}
 import fr.acinq.eclair.gui.FxApp
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
@@ -130,7 +129,7 @@ class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) ex
 
   def updateBalance(commitments: Commitments) {
     balance = commitments.localCommit.spec.toLocal
-    capacity = commitments.localCommit.spec.totalFunds
+    capacity = commitments.capacity.toMilliSatoshi
   }
 
   def refreshBalance(): Unit = {
