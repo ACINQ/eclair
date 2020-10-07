@@ -376,4 +376,5 @@ case class SwapOutResponse(chainHash: ByteVector32,
 
 //
 
-case class FCMToken(token: String) extends LightningMessage
+case class SetFCMToken(token: String) extends LightningMessage
+case object UnsetFCMToken extends LightningMessage

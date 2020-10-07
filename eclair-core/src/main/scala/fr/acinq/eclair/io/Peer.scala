@@ -146,9 +146,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         context.system.eventStream.publish(swapOutResponse)
         stay
 
-    case Event(f: SendFCMToken, d: ConnectedData) =>
-      log.info(s"peer forwarding $f to peerConnection")
-      d.peerConnection ! FCMToken(f.token)
+    case Event(f: SendSetFCMToken, d: ConnectedData) =>
+      d.peerConnection ! SetFCMToken(f.token)
+      stay
+
+    case Event(f: SendUnsetFCMToken, d: ConnectedData) =>
+      d.peerConnection ! UnsetFCMToken
       stay
 
     case Event(c: Peer.OpenChannel, d: ConnectedData) =>
@@ -491,7 +494,8 @@ object Peer {
 
   case class SendSwapOutRequest(nodeId: PublicKey, amountSatoshis: Satoshi, bitcoinAddress: String, feeratePerKw: Long)
   case class SendSwapInRequest(nodeId: PublicKey)
-  case class SendFCMToken(nodeId: PublicKey, token: String)
+  case class SendSetFCMToken(nodeId: PublicKey, token: String)
+  case class SendUnsetFCMToken(nodeId: PublicKey)
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubkey: ByteVector, localPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {

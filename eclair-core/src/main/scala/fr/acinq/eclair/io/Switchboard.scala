@@ -81,10 +81,16 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
       }
 
-    case f: Peer.SendFCMToken =>
+    case f: Peer.SendSetFCMToken =>
       getPeer(f.nodeId) match {
         case Some(peer) => peer forward f
-        case None => log.error(s"could not register fcm token=${f.token} with unknown peer=${f.nodeId}")
+        case None => log.error(s"could not register fcm token=${f.token} to unknown peer=${f.nodeId}")
+      }
+
+    case f: Peer.SendUnsetFCMToken =>
+      getPeer(f.nodeId) match {
+        case Some(peer) => peer forward f
+        case None => log.error(s"could not discard fcm token to unknown peer=${f.nodeId}")
       }
 
     case authenticated: PeerConnection.Authenticated =>
