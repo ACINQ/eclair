@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.singleaddress
 
 import fr.acinq.bitcoin.{Crypto, Satoshi, Transaction}
-import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
+import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse, OnChainBalance}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
@@ -28,7 +28,7 @@ import scala.concurrent.Future
  */
 class SingleAddressEclairWallet(finalAddress: String) extends EclairWallet {
 
-  override def getBalance: Future[Satoshi] = Future.successful(Satoshi(0))
+  override def getBalance: Future[OnChainBalance] = Future.successful(OnChainBalance(Satoshi(0), Satoshi(0)))
 
   override def getReceiveAddress: Future[String] = Future.successful(finalAddress)
 

@@ -54,7 +54,7 @@ class CheckElectrumSetup(datadir: File,
 
   val config = system.settings.config.getConfig("eclair")
   val chain = config.getString("chain")
-  val keyManager = new LocalKeyManager(randomBytes(32), NodeParams.makeChainHash(chain))
+  val keyManager = new LocalKeyManager(randomBytes(32), NodeParams.hashFromChain(chain))
   val database = db match {
     case Some(d) => d
     case None => Databases.sqliteJDBC(new File(datadir, chain))

@@ -46,12 +46,20 @@ object FormParamExtractors {
     ByteVector32.fromValidHex(bin)
   }
 
+  implicit val sha256HashesUnmarshaller: Deserializer[Option[String], Option[List[ByteVector32]]] = strictDeserializer { bin =>
+    bin.split(",").map(ByteVector32.fromValidHex).toList
+  }
+
   implicit val bolt11Unmarshaller: Deserializer[Option[String], Option[PaymentRequest]] = strictDeserializer { rawRequest =>
     PaymentRequest.read(rawRequest)
   }
 
   implicit val shortChannelIdUnmarshaller: Deserializer[Option[String], Option[ShortChannelId]] = strictDeserializer { str =>
     ShortChannelId(str)
+  }
+
+  implicit val shortChannelIdsUnmarshaller: Deserializer[Option[String], Option[List[ShortChannelId]]] = strictDeserializer { str =>
+    str.split(",").map(ShortChannelId(_)).toList
   }
 
   implicit val javaUUIDUnmarshaller: Deserializer[Option[String], Option[UUID]] = strictDeserializer { str =>
@@ -88,7 +96,6 @@ object FormParamExtractors {
   implicit val millisatoshiUnmarshallerOpt: Deserializer[Option[String], Option[MilliSatoshi]] = strictDeserializer { str =>
     MilliSatoshi(str.toLong)
   }
-
 
   def strictDeserializer[T](f: String => T): Deserializer[Option[String], Option[T]] = Deserializer.fromFunction2Converter {
     case Some(str) => Some(f(str))

@@ -21,6 +21,7 @@ import fr.acinq.eclair.channel.ChannelVersion._
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
+import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.relay.{Origin, Relayer}
 import fr.acinq.eclair.transactions.DirectedHtlc._
@@ -65,7 +66,7 @@ case class Commitments(channelVersion: ChannelVersion,
                        remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32,
                        remoteChannelData: Option[ByteVector] = None) {
 
-  require(!channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) || (channelVersion.isSet(USE_STATIC_REMOTEKEY_BIT) && localParams.localPaymentBasepoint.isDefined), s"localParams.localPaymentBasepoint must be defined for commitments with version=$channelVersion")
+  require(!channelVersion.hasStaticRemotekey || (channelVersion.hasStaticRemotekey && localParams.staticPaymentBasepoint.isDefined), s"localParams.localPaymentBasepoint must be defined for commitments with version=$channelVersion")
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
@@ -78,8 +79,8 @@ case class Commitments(channelVersion: ChannelVersion,
   }
 
   /**
-   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the pre-image for those
-   * HTLCs, we need to get a remote signed updated commitment that removes this HTLC.
+   * HTLCs that are close to timing out upstream are potentially dangerous. If we received the preimage for those HTLCs,
+   * we need to get a remote signed updated commitment that removes those HTLCs.
    * Otherwise when we get close to the upstream timeout, we risk an on-chain race condition between their HTLC timeout
    * and our HTLC success in case of a force-close.
    */
@@ -397,13 +398,15 @@ object Commitments {
     }
   }
 
-  def receiveFee(commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: Double): Try[Commitments] = {
+  def receiveFee(commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets, fee: UpdateFee, maxFeerateMismatch: Double)(implicit log: LoggingAdapter): Try[Commitments] = {
     if (commitments.localParams.isFunder) {
       Failure(FundeeCannotSendUpdateFee(commitments.channelId))
     } else if (fee.feeratePerKw < fr.acinq.eclair.MinimumFeeratePerKw) {
       Failure(FeerateTooSmall(commitments.channelId, remoteFeeratePerKw = fee.feeratePerKw))
     } else {
+      Metrics.RemoteFeeratePerKw.withoutTags().record(fee.feeratePerKw)
       val localFeeratePerKw = feeEstimator.getFeeratePerKw(target = feeTargets.commitmentBlockTarget)
+      log.info("remote feeratePerKw={}, local feeratePerKw={}, ratio={}", fee.feeratePerKw, localFeeratePerKw, fee.feeratePerKw.toDouble / localFeeratePerKw)
       if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
         Failure(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw))
       } else {
@@ -610,16 +613,10 @@ object Commitments {
     val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val remotePaymentPubkey = channelVersion match {
-      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => remoteParams.paymentBasepoint
-      case _ => Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
-    }
+    val remotePaymentPubkey = if (channelVersion.hasStaticRemotekey) remoteParams.paymentBasepoint else Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    val localPaymentBasepoint = channelVersion match {
-      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
-      case _ => keyManager.paymentPoint(channelKeyPath).publicKey
-    }
+    val localPaymentBasepoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
     val outputs = makeCommitTxOutputs(localParams.isFunder, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, spec)
     val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
     val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.feeratePerKw, outputs)
@@ -633,14 +630,8 @@ object Commitments {
                     remotePerCommitmentPoint: PublicKey,
                     spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
-    val localPaymentBasepoint = channelVersion match {
-      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
-      case _ => keyManager.paymentPoint(channelKeyPath).publicKey
-    }
-    val localPaymentPubkey = channelVersion match {
-      case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localPaymentBasepoint
-      case _ => Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
-    }
+    val localPaymentBasepoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+    val localPaymentPubkey = if (channelVersion.hasStaticRemotekey) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)

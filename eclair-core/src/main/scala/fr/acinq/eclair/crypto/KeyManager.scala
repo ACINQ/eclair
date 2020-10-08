@@ -45,7 +45,7 @@ trait KeyManager {
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
 
-  def channelKeyPath(localParams: LocalParams, channelVersion: ChannelVersion): DeterministicWallet.KeyPath = if (channelVersion.isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT)) {
+  def channelKeyPath(localParams: LocalParams, channelVersion: ChannelVersion): DeterministicWallet.KeyPath = if (channelVersion.hasPubkeyKeyPath) {
     // deterministic mode: use the funding pubkey to compute the channel key path
     KeyManager.channelKeyPath(fundingPublicKey(localParams.fundingKeyPath))
   } else {

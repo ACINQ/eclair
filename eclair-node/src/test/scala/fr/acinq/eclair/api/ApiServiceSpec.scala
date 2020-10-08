@@ -22,6 +22,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair.channel.ChannelCommandResponse
 import fr.acinq.eclair.channel.ChannelCommandResponse.ChannelClosed
@@ -30,7 +31,7 @@ import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
-import fr.acinq.eclair.wire.NodeAddress
+import fr.acinq.eclair.wire.{Color, NodeAddress}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi, _}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.matchers.should.Matchers
@@ -171,15 +172,16 @@ class ApiServiceSpec extends AnyFunSuiteLike with ScalatestRouteTest with RouteT
     val mockEclair = mock[Eclair]
     val service = new MockService(mockEclair)
 
-    mockEclair.getInfoResponse()(any[Timeout]) returns Future.successful(GetInfoResponse(
+    mockEclair.getInfo()(any[Timeout]) returns Future.successful(GetInfoResponse(
+      version = "1.0.0-SNAPSHOT-e3f1ec0",
+      color = Color(0.toByte, 1.toByte, 2.toByte).toString,
+      features = Features(Set(ActivatedFeature(OptionDataLossProtect, Mandatory), ActivatedFeature(ChannelRangeQueriesExtended, Optional))),
       nodeId = aliceNodeId,
       alias = "alice",
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
+      network = "regtest",
       blockHeight = 9999,
-      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
-      version = "1.0.0-SNAPSHOT-e3f1ec0",
-      color = "#000102",
-      features = Features(Set(ActivatedFeature(OptionDataLossProtect, FeatureSupport.Mandatory), ActivatedFeature(ChannelRangeQueriesExtended, FeatureSupport.Optional)))
+      publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil
     ))
 
     Post("/getinfo") ~>
@@ -189,8 +191,8 @@ class ApiServiceSpec extends AnyFunSuiteLike with ScalatestRouteTest with RouteT
         assert(handled)
         assert(status == OK)
         val resp = responseAs[String]
-        assert(resp.toString.contains(aliceNodeId.toString))
-        mockEclair.getInfoResponse()(any[Timeout]).wasCalled(once)
+        assert(resp.contains(aliceNodeId.toString))
+        mockEclair.getInfo()(any[Timeout]).wasCalled(once)
         matchTestJson("getinfo", resp)
       }
   }

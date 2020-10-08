@@ -25,6 +25,8 @@ object Monitoring {
     val ChannelsCount = Kamon.gauge("channels.count")
     val ChannelErrors = Kamon.counter("channels.errors")
     val ChannelLifecycleEvents = Kamon.counter("channels.lifecycle")
+    val LocalFeeratePerKw = Kamon.gauge("channels.local-feerate-per-kw")
+    val RemoteFeeratePerKw = Kamon.histogram("channels.remote-feerate-per-kw")
   }
 
   object Tags {

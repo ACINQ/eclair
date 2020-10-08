@@ -33,15 +33,15 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
-import fr.acinq.eclair.{TestConstants, UInt64, randomBytes, randomBytes32, randomKey, _}
+import fr.acinq.eclair.wire.CommonCodecs.setCodec
+import fr.acinq.eclair.{TestConstants, UInt64, randomBytes32, randomKey, _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
-import scodec.{Attempt, DecodeResult}
+import scodec.{Attempt, Codec, DecodeResult}
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.util.Random
@@ -68,7 +68,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(keyPath === decoded.value)
   }
 
-  test("encode/decode channel version in a backward compatible way") {
+  test("encode/decode channel version in a backward compatible way (legacy)") {
+    val codec = LegacyChannelCodecs.channelVersionCodec
+
     // before we had commitment version, public keys were stored first (they started with 0x02 and 0x03)
     val legacy02 = hex"02a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
     val legacy03 = hex"03d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
@@ -76,17 +78,36 @@ class ChannelCodecsSpec extends AnyFunSuite {
     val current03 = hex"010000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
     val current04 = hex"010000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
-    assert(channelVersionCodec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
-    assert(channelVersionCodec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
-    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
-    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
-    assert(channelVersionCodec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(5).bits)))
+    assert(codec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
+    assert(codec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
+    assert(codec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
+    assert(codec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
+    assert(codec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(5).bits)))
 
-    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
-    assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"0100000003".bits))
+    assert(codec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
+    assert(codec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"0100000003".bits))
+  }
+
+  test("encode/decode channel version") {
+    val current02 = hex"0000000102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
+    val current03 = hex"0000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current04 = hex"0000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+
+    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(4).bits)))
+    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(4).bits)))
+    assert(channelVersionCodec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(4).bits)))
+
+    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"00000001".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"00000003".bits))
   }
 
   test("encode/decode localparams") {
+    def roundtrip(localParams: LocalParams, codec: Codec[LocalParams]) = {
+      val encoded = codec.encode(localParams).require
+      val decoded = codec.decode(encoded).require
+      assert(localParams === decoded.value)
+    }
+
     val o = LocalParams(
       nodeId = randomKey.publicKey,
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
@@ -96,37 +117,21 @@ class ChannelCodecsSpec extends AnyFunSuite {
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
-      localPaymentBasepoint = None,
-      isFunder = Random.nextBoolean(),
-      features = TestConstants.Alice.nodeParams.features)
-    val encoded = localParamsCodec(ChannelVersion.ZEROES).encode(o).require
-    val decoded = localParamsCodec(ChannelVersion.ZEROES).decode(encoded).require.value
-    assert(decoded.localPaymentBasepoint.isEmpty)
-    assert(o === decoded)
-
-    // Backwards-compatibility: decode localparams with global features.
-    val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
-    val withGlobalFeaturesDecoded = localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
-
-    val o1 = LocalParams(
-      nodeId = randomKey.publicKey,
-      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
-      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
-      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
-      localPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey),
+      staticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
       features = Features(randomBytes(256)))
-    val encoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).encode(o1).require
-    val decoded1 = localParamsCodec(ChannelVersion.STATIC_REMOTEKEY).decode(encoded1).require.value
-    assert(decoded1.localPaymentBasepoint.isDefined)
-    assert(o1 === decoded1)
+    val o1 = o.copy(staticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey))
+
+    roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
+    roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
+  }
+
+  test("backward compatibility local params with global features") {
+    // Backwards-compatibility: decode localparams with global features.
+    val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
+    val withGlobalFeaturesDecoded = LegacyChannelCodecs.localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
+    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
   }
 
   test("encode/decode remoteparams") {
@@ -169,6 +174,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
   }
 
   test("backward compatibility of htlc codec") {
+
+    val codec = LegacyChannelCodecs.htlcCodec
+
     // these encoded HTLC were produced by a previous version of the codec (at commit 8932785e001ddfe32839b3f83468ea19cf00b289)
     val encodedHtlc1 = hex"89d5618930919bd77c07ea3931e7791010a9637c3d06e091b2dad38f21bbcffa00000000384ffa48000000003dbf35101f8724fbd36096ea5f462be20d20bc2f93ebc2c8a3f00b7a78c5158b5a0e9f6b1666923e800f1d073e2adcfba5904f1b8234af1c43a6e84a862a044d15f33addf8d41b3cfb7f96d815d2248322aeadd0ce7bacbcc44e611f66c35c439423c099e678c077203d5fc415ec37b798c6c74c9eed0806e6cb20f2b613855772c086cee60642b3b9c3919627c877a62a57dcf6ce003bedc53a8b7a0d7aa91b2304ef8b512fe1a9a043e410d7cd3009edffcb5d4c05cfb545aced4afea8bbe26c5ff492602edf9d4eb731541e60e48fd1ae5e33b04a614346fb16e09ccd9bcb8907fe9fc287757ea9280a03462299e950a274c1dc53fbae8c421e67d7de35709eda0f11bcd417c0f215667e8b8ccae1035d0281214af25bf690102b180e5d4b57323d02ab5cee5d3669b4300539d02eff553143f085cd70e5428b7af3262418aa7664d56c3fd29c00a2f88a6a5ee9685f45b6182c45d492b2170b092e4b5891247bcffe82623b86637bec291cca1dc729f5747d842ecdf2fc24eaf95c522cbebe9a841e7cff837e715b689f0b366b92a2850875636962ba42863ab6df12ee938ada6e6ae795f8b4fbe81adea478caa9899fed0d6ccdf7a2173b69b2d3ff1b93c82c08c4da63b426d2f94912109997e8ee5830c5ffe3b60c97438ae1521a2956e73a9a60f16dc13a5e6565904e04bf66ceda3db693fc7a0c6ad4f7dc8cb7f1ef54527c11589b7c35ce5b20e7f23a0ab107a406fa747435ff08096a7533a8ab7f5d3630d5c20c9161101f922c76079497e00e3ca62bce033b2bb065ea1733c50b5a06492d2b46715812003f29a8754b5dc1649082893e7be76550c58d98e81556e4ddf20a244f363bc23e756c95224335d0eeccd3da06a9161c4c72ae3d93afe902a806eadd2167d15c04cf3028fc61d0843bd270fd702a2c5af889ab5bc79a294847914f8dd409a9b990a96397d9046c385ca9810fb7c7b2c61491c67264257a601be7fe8c47a859b56af41caf06be7ea1cdb540719fc3bc2603675b79fd36a6f2911043b78da9f186d2a01f1209d0d91508e8ebecce09fd72823d0c166542f6d059fa8725d9d719a2532289c88f7a291a6bbe01f5b1f83cc2232d716f7dfc6a103fb8637d759aab939aaa278cffe04a64f4142564113080276bee7d3ec62e3f887838e3821f0dd713337972df994160edc29ccb9b9630c41a9ec7c994cbef2501a610e1c3684e697df230fd6f6f10526c9446e8307a1fb7e4988cdf7fc8aa32c8a09206113d8247aaae42e3942c0ffd291d67837d2c88231c85882667582eca1d2566134c4ee1301de8e1637f09467b473ba3e353992488048bd34b26dcc6f6f474751b7ac5bbad468c64eda2aeabfe6a92150a4faab142229d7934c4a24427441850d0deae5db802b02940435f39ceaa85e2d3d2269510881ab26926c3167487aa138d38b9cf650f59f0aa0b84297479271c2009cde61e5c58c26bf8a15aba86869af83941ec14972d93b6ae4a6ecf6584238150a61487d6bd394db40a10d710fd2d065850e52ea6536a74d88947448221c1ce493fecbf2070998e04d5263935488c2935f2d3afed4d0fc7472c03e652f928e6a18f78029043f219f652d992e104529149a978e5c660c0081fe6a179dbe62dcb597f3b4e497c6049b0255f8f306e4b18c97c339c98270abf86a4eb1af93b14d880eeda203bb3ba5b6e3113d0e003f8e55f3d446bd4dcda686b357ca0adf1fe25390767a40ff086a9258d04c19b0474488aaafac321f087d2bd0dc0e056ad9f5b5afa5f3d82bc3f18b33de9044529637fed05879f6bd440f331c06008dd38c2fb822c22fc4201e97f9ef9fc351807c045dece147d19fd01a68604c3cb6b5e0db1b4d1ebe387670021067d94206fbdc9ed33ac1f49d87f961cb5d44f48805e55f8637ca3de4ec9dd969944ed61de45970b7ef96d9f313a41de1cae380e0fe4b56729f275e2a0a87403c90e80"
     val encodedHtlc2 = hex"09d5618930919bd77c07ea3931e7791010a9637c3d06e091b2dad38f21bbcffa00000000384ffa48000000003dbf35101f8724fbd36096ea5f462be20d20bc2f93ebc2c8a3f00b7a78c5158b5a0e9f6b1666923e800f1d073e2adcfba5904f1b8234af1c43a6e84a862a044d15f33addf8d41b3cfb7f96d815d2248322aeadd0ce7bacbcc44e611f66c35c439423c099e678c077203d5fc415ec37b798c6c74c9eed0806e6cb20f2b613855772c086cee60642b3b9c3919627c877a62a57dcf6ce003bedc53a8b7a0d7aa91b2304ef8b512fe1a9a043e410d7cd3009edffcb5d4c05cfb545aced4afea8bbe26c5ff492602edf9d4eb731541e60e48fd1ae5e33b04a614346fb16e09ccd9bcb8907fe9fc287757ea9280a03462299e950a274c1dc53fbae8c421e67d7de35709eda0f11bcd417c0f215667e8b8ccae1035d0281214af25bf690102b180e5d4b57323d02ab5cee5d3669b4300539d02eff553143f085cd70e5428b7af3262418aa7664d56c3fd29c00a2f88a6a5ee9685f45b6182c45d492b2170b092e4b5891247bcffe82623b86637bec291cca1dc729f5747d842ecdf2fc24eaf95c522cbebe9a841e7cff837e715b689f0b366b92a2850875636962ba42863ab6df12ee938ada6e6ae795f8b4fbe81adea478caa9899fed0d6ccdf7a2173b69b2d3ff1b93c82c08c4da63b426d2f94912109997e8ee5830c5ffe3b60c97438ae1521a2956e73a9a60f16dc13a5e6565904e04bf66ceda3db693fc7a0c6ad4f7dc8cb7f1ef54527c11589b7c35ce5b20e7f23a0ab107a406fa747435ff08096a7533a8ab7f5d3630d5c20c9161101f922c76079497e00e3ca62bce033b2bb065ea1733c50b5a06492d2b46715812003f29a8754b5dc1649082893e7be76550c58d98e81556e4ddf20a244f363bc23e756c95224335d0eeccd3da06a9161c4c72ae3d93afe902a806eadd2167d15c04cf3028fc61d0843bd270fd702a2c5af889ab5bc79a294847914f8dd409a9b990a96397d9046c385ca9810fb7c7b2c61491c67264257a601be7fe8c47a859b56af41caf06be7ea1cdb540719fc3bc2603675b79fd36a6f2911043b78da9f186d2a01f1209d0d91508e8ebecce09fd72823d0c166542f6d059fa8725d9d719a2532289c88f7a291a6bbe01f5b1f83cc2232d716f7dfc6a103fb8637d759aab939aaa278cffe04a64f4142564113080276bee7d3ec62e3f887838e3821f0dd713337972df994160edc29ccb9b9630c41a9ec7c994cbef2501a610e1c3684e697df230fd6f6f10526c9446e8307a1fb7e4988cdf7fc8aa32c8a09206113d8247aaae42e3942c0ffd291d67837d2c88231c85882667582eca1d2566134c4ee1301de8e1637f09467b473ba3e353992488048bd34b26dcc6f6f474751b7ac5bbad468c64eda2aeabfe6a92150a4faab142229d7934c4a24427441850d0deae5db802b02940435f39ceaa85e2d3d2269510881ab26926c3167487aa138d38b9cf650f59f0aa0b84297479271c2009cde61e5c58c26bf8a15aba86869af83941ec14972d93b6ae4a6ecf6584238150a61487d6bd394db40a10d710fd2d065850e52ea6536a74d88947448221c1ce493fecbf2070998e04d5263935488c2935f2d3afed4d0fc7472c03e652f928e6a18f78029043f219f652d992e104529149a978e5c660c0081fe6a179dbe62dcb597f3b4e497c6049b0255f8f306e4b18c97c339c98270abf86a4eb1af93b14d880eeda203bb3ba5b6e3113d0e003f8e55f3d446bd4dcda686b357ca0adf1fe25390767a40ff086a9258d04c19b0474488aaafac321f087d2bd0dc0e056ad9f5b5afa5f3d82bc3f18b33de9044529637fed05879f6bd440f331c06008dd38c2fb822c22fc4201e97f9ef9fc351807c045dece147d19fd01a68604c3cb6b5e0db1b4d1ebe387670021067d94206fbdc9ed33ac1f49d87f961cb5d44f48805e55f8637ca3de4ec9dd969944ed61de45970b7ef96d9f313a41de1cae380e0fe4b56729f275e2a0a87403c90e80"
@@ -187,16 +195,16 @@ class ChannelCodecsSpec extends AnyFunSuite {
     )
     val remaining = bin"0000000" // 7 bits remainder because the direction is encoded with 1 bit and we are dealing with bytes
 
-    val DecodeResult(h1, r1) = htlcCodec.decode(encodedHtlc1.toBitVector).require
-    val DecodeResult(h2, r2) = htlcCodec.decode(encodedHtlc2.toBitVector).require
+    val DecodeResult(h1, r1) = codec.decode(encodedHtlc1.toBitVector).require
+    val DecodeResult(h2, r2) = codec.decode(encodedHtlc2.toBitVector).require
 
     assert(h1 == IncomingHtlc(ref))
     assert(h2 == OutgoingHtlc(ref))
     assert(r1 == remaining)
     assert(r2 == remaining)
 
-    assert(htlcCodec.encode(h1).require.bytes === encodedHtlc1)
-    assert(htlcCodec.encode(h2).require.bytes === encodedHtlc2)
+    assert(codec.encode(h1).require.bytes === encodedHtlc1)
+    assert(codec.encode(h2).require.bytes === encodedHtlc2)
   }
 
   test("encode/decode commitment spec") {
@@ -232,7 +240,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
   test("encode/decode origin") {
     val id = UUID.randomUUID()
     assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
-    assert(originCodec.decodeValue(hex"0001 0123456789abcdef0123456789abcdef".bits).require === Local(UNKNOWN_UUID, None))
+    val ZERO_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
     val relayed = Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
     assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
     val trampolineRelayed = TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None)
@@ -311,8 +319,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(System.currentTimeMillis.milliseconds.toSeconds - data_new.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSince < 3600) // we just set this timestamp to current time
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
-    // data should now be encoded under the new format, with version=0 and type=8
-    assert(bin_new.startsWith(hex"000008"))
+    // data should now be encoded under the new format
+    assert(bin_new.startsWith(hex"010020"))
     // now let's decode it again
     val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
@@ -326,8 +334,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
     val u2 = hex"A94A853FCDE515F89259E03D10368B1A600B3BF78F6BD5C968469C0816F45EFF7878714DF26B580D5A304334E46816D5AC37B098EBC46C1CE47E37504D052DD643497FD7F826957108F4A30FD9CEC3AEBA79972084E90EAD01EA33090000000013AB9500006E00005D1149290001009000000000000003E8000003E800000001".bits
 
     // check that we decode correct length, and that we just take a peek without actually consuming data
-    assert(noUnknownFieldsChannelUpdateSizeCodec.decode(u1) == Attempt.successful(DecodeResult(136, u1)))
-    assert(noUnknownFieldsChannelUpdateSizeCodec.decode(u2) == Attempt.successful(DecodeResult(128, u2)))
+    assert(LegacyChannelCodecs.noUnknownFieldsChannelUpdateSizeCodec.decode(u1) == Attempt.successful(DecodeResult(136, u1)))
+    assert(LegacyChannelCodecs.noUnknownFieldsChannelUpdateSizeCodec.decode(u2) == Attempt.successful(DecodeResult(128, u2)))
   }
 
   test("backward compatibility DATA_NORMAL_COMPAT_03_Codec (roundtrip)") {
@@ -354,8 +362,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
       val oldnormal = stateDataCodec.decode(oldbin.bits).require.value
       // and we encode with new codec
       val newbin = stateDataCodec.encode(oldnormal).require.bytes
-      // make sure that encoding used the new 0x10 codec
-      assert(newbin.startsWith(hex"000010"))
+      // make sure that encoding used the new codec
+      assert(newbin.startsWith(hex"010022"))
       // make sure that roundtrip yields the same data
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       assert(newnormal === oldnormal)
@@ -424,7 +432,7 @@ object ChannelCodecsSpec {
     toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
-    localPaymentBasepoint = None,
+    staticPaymentBasepoint = None,
     isFunder = true,
     features = Features.empty)
 

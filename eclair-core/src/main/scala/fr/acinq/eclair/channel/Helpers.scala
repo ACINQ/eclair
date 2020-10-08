@@ -128,7 +128,7 @@ object Helpers {
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (isFeeTooSmall(open.feeratePerKw)) throw FeerateTooSmall(open.temporaryChannelId, open.feeratePerKw)
 
-    if (getChannelVersion(open).isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
+    if (getChannelVersion(open).hasZeroReserve) {
       // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
     } else {
       // BOLT #2: The receiving node MUST fail the channel if: dust_limit_satoshis is greater than channel_reserve_satoshis.
@@ -173,7 +173,7 @@ object Helpers {
     // MAY reject the channel.
     if (accept.toSelfDelay > Channel.MAX_TO_SELF_DELAY || accept.toSelfDelay > nodeParams.maxToLocalDelayBlocks) throw ToSelfDelayTooHigh(accept.temporaryChannelId, accept.toSelfDelay, nodeParams.maxToLocalDelayBlocks)
 
-    if (getChannelVersion(open).isSet(ChannelVersion.ZERO_RESERVE_BIT)) {
+    if (getChannelVersion(open).hasZeroReserve) {
       // in zero-reserve channels, we don't make any requirements on the fundee's reserve (set by the funder in the open_message).
     } else {
       // if channel_reserve_satoshis from the open_channel message is less than dust_limit_satoshis:
@@ -653,7 +653,7 @@ object Helpers {
       }.toSeq.flatten
 
       channelVersion match {
-        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+        case v if v.hasStaticRemotekey =>
           RemoteCommitPublished(
             commitTx = tx,
             claimMainOutputTx = None,
@@ -714,10 +714,7 @@ object Helpers {
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
-      val localPaymentPoint = channelVersion match {
-        case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) => localParams.localPaymentBasepoint.get
-        case _ => keyManager.paymentPoint(channelKeyPath).publicKey
-      }
+      val localPaymentPoint = localParams.staticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
       // this tx has been published by remote, so we need to invert local/remote params
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
@@ -739,7 +736,7 @@ object Helpers {
 
           // first we will claim our main output right away
           val mainTx = channelVersion match {
-            case v if v.isSet(USE_STATIC_REMOTEKEY_BIT) =>
+            case v if v.hasStaticRemotekey =>
               log.info(s"channel uses option_static_remotekey, not claiming our p2wpkh output")
               None
             case _ => generateTx("claim-p2wpkh-output") {

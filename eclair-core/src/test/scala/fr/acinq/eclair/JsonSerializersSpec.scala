@@ -64,7 +64,7 @@ class JsonSerializersSpec extends AnyFunSuite with Logging {
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
       isFunder = Random.nextBoolean(),
       features = Features(randomBytes(256)),
-      localPaymentBasepoint = None)
+      staticPaymentBasepoint = None)
 
     logger.info(write(localParams))
 

@@ -26,8 +26,7 @@ import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
@@ -37,28 +36,28 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
 import fr.acinq.eclair.db.{BackupHandler, Databases}
-import fr.acinq.eclair.io.{ClientSpawner, Server, Switchboard}
+import fr.acinq.eclair.io.{ClientSpawner, Switchboard}
 import fr.acinq.eclair.payment.Auditor
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
-import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
+import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 import scala.concurrent._
 import scala.concurrent.duration._
-import scala.util.{Failure, Success}
 
 /**
  * Setup eclair from a data directory.
  *
  * Created by PM on 25/01/2016.
  *
- * @param datadir          directory where eclair-core will write/read its data.
- * @param seed_opt         optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
- * @param db               optional databases to use, if not set eclair will create the necessary databases
+ * @param datadir  directory where eclair-core will write/read its data.
+ * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+ * @param db       optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
             seed_opt: Option[ByteVector] = None,
@@ -80,7 +79,7 @@ class Setup(datadir: File,
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
-  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val keyManager = new LocalKeyManager(seed, NodeParams.hashFromChain(chain))
 
   val database = db match {
     case Some(d) => d
@@ -126,6 +125,15 @@ class Setup(datadir: File,
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
+
+  def setFeerates(feerates: FeeratesPerKB, feeratesRetrieved: Promise[Done]): Unit = {
+    feeratesPerKB.set(feerates)
+    feeratesPerKw.set(FeeratesPerKw(feerates))
+    channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget))
+    system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
+    logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
+    feeratesRetrieved.trySuccess(Done)
+  }
 
   def bootstrap: Future[Kit] =
     for {
@@ -183,17 +191,22 @@ class Setup(datadir: File,
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) => new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case _ =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte) // order matters!
+          val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "feerates.sqlite")}")
+          val db = new SqliteFeeratesDb(sqlite)
+          db.getFeerates().foreach { feerates =>
+            logger.info(s"starting with feerates previously stored in db: feeratesPerKB=$feeratesPerKB")
+            setFeerates(feerates, feeratesRetrieved)
+          }
+          new DbFeeProvider(
+            db,
+            new FallbackFeeProvider(
+              new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) ::
+                new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: Nil, // order matters!
+              minFeeratePerByte)
+          )
       }
-      _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
-        case feerates: FeeratesPerKB =>
-          feeratesPerKB.set(feerates)
-          feeratesPerKw.set(FeeratesPerKw(feerates))
-          system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${feeratesPerKB.get()} feeratesPerKw=${feeratesPerKw.get()}")
-          feeratesRetrieved.trySuccess(Done)
-      })
-      _ <- feeratesRetrieved.future
+      _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map(feerates => setFeerates(feerates, feeratesRetrieved)))
+      _ <- feeratesRetrieved.future // if we're using a db fee provider and we already had stored a feerate, then the promise will already be completed
 
       watcher = bitcoin match {
         case Electrum(electrumClient) =>

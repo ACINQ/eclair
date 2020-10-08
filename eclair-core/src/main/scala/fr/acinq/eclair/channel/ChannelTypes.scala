@@ -214,7 +214,8 @@ final case class DATA_CLOSING(commitments: Commitments,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  def spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
@@ -232,7 +233,7 @@ final case class LocalParams(nodeId: PublicKey,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
-                             localPaymentBasepoint: Option[PublicKey],
+                             staticPaymentBasepoint: Option[PublicKey],
                              features: Features)
 
 final case class RemoteParams(nodeId: PublicKey,
@@ -255,29 +256,36 @@ object ChannelFlags {
 }
 
 case class ChannelVersion(bits: BitVector) {
+  import ChannelVersion._
+
   require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
 
   def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
   def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
   def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
-  def isSet(bit: Int) = bits.reverse.get(bit)
+
+  private def isSet(bit: Int) = bits.reverse.get(bit)
+
+  // formatter:off
+  def hasPubkeyKeyPath: Boolean = isSet(USE_PUBKEY_KEYPATH_BIT)
+  def hasStaticRemotekey: Boolean = isSet(USE_STATIC_REMOTEKEY_BIT)
+  def hasZeroReserve: Boolean = isSet(ZERO_RESERVE_BIT)
+  // formatter:on
 }
 
 object ChannelVersion {
   import scodec.bits._
-  val LENGTH_BITS = 4 * 8
+  val LENGTH_BITS: Int = 4 * 8
+
+  private val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+  private val USE_STATIC_REMOTEKEY_BIT = 1
+  private val ZERO_RESERVE_BIT = 3
+
+  private def setBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
+
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
-  val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
-  val USE_STATIC_REMOTEKEY_BIT = 1
-  val ZERO_RESERVE_BIT = 3
-
-  def fromBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
-
-  val USE_PUBKEY_KEYPATH = fromBit(USE_PUBKEY_KEYPATH_BIT)
-  val USE_STATIC_REMOTEKEY = fromBit(USE_STATIC_REMOTEKEY_BIT)
-  val ZERO_RESERVE = fromBit(ZERO_RESERVE_BIT)
-
-  val STANDARD = ZEROES | USE_PUBKEY_KEYPATH
-  val STATIC_REMOTEKEY = STANDARD | USE_STATIC_REMOTEKEY // USE_PUBKEY_KEYPATH + USE_STATIC_REMOTEKEY
+  val STANDARD = ZEROES | setBit(USE_PUBKEY_KEYPATH_BIT)
+  val STATIC_REMOTEKEY = STANDARD | setBit(USE_STATIC_REMOTEKEY_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY
+  val ZERO_RESERVE = STANDARD | setBit(ZERO_RESERVE_BIT)
 }
 // @formatter:on

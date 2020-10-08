@@ -89,22 +89,20 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
   def reachNormal(setup: SetupFixture,
                   tags: Set[String] = Set.empty): Unit = {
     import setup._
-    // TODO: add tests with static remote key on
-    var channelVersion = ChannelVersion.STANDARD
-    if (tags.contains("static_remotekey")) channelVersion = channelVersion | ChannelVersion.STATIC_REMOTEKEY
-    if (tags.contains("zero_reserve")) channelVersion = channelVersion |  ChannelVersion.ZERO_RESERVE
+    val channelVersion = List(
+      ChannelVersion.STANDARD,
+      if (tags.contains("static_remotekey")) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.ZEROES,
+      if (tags.contains("zero_reserve")) ChannelVersion.ZERO_RESERVE else ChannelVersion.ZEROES
+    ).reduce(_ | _)
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val aliceParams = Alice.channelParams
-      .modify(_.channelReserve).setToIf(channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT))(0.sat)
-      .modify(_.localPaymentBasepoint).setToIf(channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))(Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      .modify(_.features).setToIf(channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))))
-
+      .modify(_.channelReserve).setToIf(channelVersion.hasZeroReserve)(0.sat)
+      .modify(_.features).setToIf(channelVersion.hasStaticRemotekey)(Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional))))
+      .modify(_.staticPaymentBasepoint).setToIf(channelVersion.hasStaticRemotekey)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val bobParams = Bob.channelParams
-      .modify(_.localPaymentBasepoint).setToIf(channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))(Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      .modify(_.features).setToIf(channelVersion.isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT))(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))))
-
-    //    val (aliceParams, bobParams) = (Alice.channelParams.modify(_.channelReserve).setToIf(channelVersion.isSet(ChannelVersion.ZERO_RESERVE_BIT))(0.sat), Bob.channelParams)
+      .modify(_.features).setToIf(channelVersion.hasStaticRemotekey)(Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional))))
+      .modify(_.staticPaymentBasepoint).setToIf(channelVersion.hasStaticRemotekey)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
