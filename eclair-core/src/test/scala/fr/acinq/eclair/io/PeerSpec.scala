@@ -36,7 +36,7 @@ import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement, UnknownMessage}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -169,9 +169,9 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     system.eventStream.subscribe(listener.ref, classOf[UnknownMessageReceived])
     connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
 
-    peerConnection.send(peer, UnknownMessage(tag = TestConstants.pluginParams.tags.head, data = ByteVector.empty))
+    peerConnection.send(peer, UnknownMessage(tag = TestConstants.pluginParams.tags.head, data = BitVector.empty))
     listener.expectMsgType[UnknownMessageReceived]
-    peerConnection.send(peer, UnknownMessage(tag = 60005, data = ByteVector.empty)) // No plugin is subscribed to this tag
+    peerConnection.send(peer, UnknownMessage(tag = 60005, data = BitVector.empty)) // No plugin is subscribed to this tag
     listener.expectNoMessage()
   }
 

@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector}
 
 import scala.util.Try
 
@@ -308,4 +308,4 @@ case class GossipTimestampFilter(chainHash: ByteVector32,
 
 //
 
-case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage
+case class UnknownMessage(tag: Int, data: BitVector) extends LightningMessage

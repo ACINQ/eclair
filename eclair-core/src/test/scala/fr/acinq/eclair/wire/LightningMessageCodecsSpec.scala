@@ -26,7 +26,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 
 /**
  * Created by PM on 31/05/2016.
@@ -195,7 +195,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L, randomKey, randomKey.publicKey)
 
-    val unknown_message = UnknownMessage(tag = 60000, data = ByteVector32.One.bytes)
+    val unknown_message = UnknownMessage(tag = 60000, data = BitVector.one)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
@@ -214,7 +214,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
 
   test("Unknown messages") {
     // Non-standard tag number so this message can only be handled by a codec with a fallback
-    val unknown = UnknownMessage(tag = 47282, data = ByteVector32.Zeroes.bytes)
+    val unknown = UnknownMessage(tag = 47282, data = BitVector.zero)
     assert(lightningMessageCodec.encode(unknown).isFailure)
     val encoded1 = lightningMessageCodecWithFallback.encode(unknown).require
     val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value

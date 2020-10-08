@@ -298,7 +298,7 @@ object LightningMessageCodecs {
 
   val unknownMessageCodec: Codec[UnknownMessage] = (
     ("tag" | uint16) ::
-      ("message" | varsizebinarydata)
+      ("message" | variableSizeBits(uint16, bits))
     ).as[UnknownMessage]
 
   // NB: blank lines to minimize merge conflicts
