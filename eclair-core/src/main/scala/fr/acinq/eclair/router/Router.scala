@@ -341,19 +341,35 @@ object Router {
     }
   }
 
+  case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
+    // @formatter:off
+    def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
+    def ++(ignoreNodes: Set[PublicKey]): Ignore = copy(nodes = nodes ++ ignoreNodes)
+    def +(ignoreChannel: ChannelDesc): Ignore = copy(channels = channels + ignoreChannel)
+    def emptyNodes(): Ignore = copy(nodes = Set.empty)
+    def emptyChannels(): Ignore = copy(channels = Set.empty)
+    // @formatter:on
+  }
+
+  object Ignore {
+    def empty: Ignore = Ignore(Set.empty, Set.empty)
+  }
+
   case class RouteRequest(source: PublicKey,
                           target: PublicKey,
                           amount: MilliSatoshi,
                           maxFee: MilliSatoshi,
                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                          ignoreNodes: Set[PublicKey] = Set.empty,
-                          ignoreChannels: Set[ChannelDesc] = Set.empty,
-                          routeParams: Option[RouteParams] = None)
+                          ignore: Ignore = Ignore.empty,
+                          routeParams: Option[RouteParams] = None,
+                          allowMultiPart: Boolean = false,
+                          pendingPayments: Seq[Route] = Nil)
 
   case class FinalizeRoute(amount: MilliSatoshi, hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
 
-  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop], allowEmpty: Boolean = false) {
-    require(allowEmpty || hops.nonEmpty, "route cannot be empty")
+  case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop]) {
+    require(hops.nonEmpty, "route cannot be empty")
+
     val length = hops.length
     lazy val fee: MilliSatoshi = {
       val amountToSend = hops.drop(1).reverse.foldLeft(amount) { case (amount1, hop) => amount1 + hop.fee(amount1) }
@@ -362,6 +378,11 @@ object Router {
 
     /** This method retrieves the channel update that we used when we built the route. */
     def getChannelUpdateForNode(nodeId: PublicKey): Option[ChannelUpdate] = hops.find(_.nodeId == nodeId).map(_.lastUpdate)
+
+    def printNodes(): String = hops.map(_.nextNodeId).mkString("->")
+
+    def printChannels(): String = hops.map(_.lastUpdate.shortChannelId).mkString("->")
+
   }
 
   case class RouteResponse(routes: Seq[Route]) {

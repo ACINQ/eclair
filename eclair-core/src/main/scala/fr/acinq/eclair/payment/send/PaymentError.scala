@@ -41,8 +41,6 @@ object PaymentError {
   // @formatter:on
 
   // @formatter:off
-  /** Outbound capacity is too low. */
-  case object BalanceTooLow extends PaymentError
   /** Payment attempts exhausted without success. */
   case object RetryExhausted extends PaymentError
   // @formatter:on

@@ -29,11 +29,11 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentError, PaymentLifecycle}
+import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
 import fr.acinq.eclair.router.Router.RouteParams
-import fr.acinq.eclair.router.{RouteCalculation, RouteNotFound}
+import fr.acinq.eclair.router.{BalanceTooLow, RouteCalculation, RouteNotFound}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
 
 import scala.collection.immutable.Queue
 
@@ -46,7 +46,7 @@ import scala.collection.immutable.Queue
  * It aggregates incoming HTLCs (in case multi-part was used upstream) and then forwards the requested amount (using the
  * router to find a route to the remote node and potentially splitting the payment using multi-part).
  */
-class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) extends Actor with DiagnosticActorLogging {
+class NodeRelayer(nodeParams: NodeParams, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) extends Actor with DiagnosticActorLogging {
 
   import NodeRelayer._
 
@@ -147,7 +147,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
   def spawnOutgoingPayFSM(cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
     if (multiPart) {
-      context.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, relayer, router, register))
+      context.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, router, register))
     } else {
       context.actorOf(PaymentLifecycle.props(nodeParams, cfg, router, register))
     }
@@ -157,15 +157,21 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
     val paymentId = UUID.randomUUID()
     val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
+    // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     payloadOut.invoiceFeatures match {
-      case Some(_) =>
-        log.debug("relaying trampoline payment to non-trampoline recipient")
+      case Some(features) =>
         val routingHints = payloadOut.invoiceRoutingInfo.map(_.map(_.toSeq).toSeq).getOrElse(Nil)
-        // TODO: @t-bast: MPP is disabled for trampoline to non-trampoline payments until we improve the splitting algorithm for nodes with a lot of channels.
-        val payFSM = spawnOutgoingPayFSM(paymentCfg, multiPart = false)
-        val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
-        val payment = SendPayment(payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
-        payFSM ! payment
+        payloadOut.paymentSecret match {
+          case Some(paymentSecret) if Features(features).hasFeature(Features.BasicMultiPartPayment) =>
+            log.debug("relaying trampoline payment to non-trampoline recipient using MPP")
+            val payment = SendMultiPartPayment(paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+            spawnOutgoingPayFSM(paymentCfg, multiPart = true) ! payment
+          case _ =>
+            log.debug("relaying trampoline payment to non-trampoline recipient without MPP")
+            val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
+            val payment = SendPayment(payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+            spawnOutgoingPayFSM(paymentCfg, multiPart = false) ! payment
+        }
       case None =>
         log.debug("relaying trampoline payment to next trampoline node")
         val payFSM = spawnOutgoingPayFSM(paymentCfg, multiPart = true)
@@ -208,7 +214,7 @@ class NodeRelayer(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, c
 
 object NodeRelayer {
 
-  def props(nodeParams: NodeParams, relayer: ActorRef, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) = Props(new NodeRelayer(nodeParams, relayer, router, commandBuffer, register))
+  def props(nodeParams: NodeParams, router: ActorRef, commandBuffer: ActorRef, register: ActorRef) = Props(new NodeRelayer(nodeParams, router, commandBuffer, register))
 
   /**
    * We start by aggregating an incoming HTLC set. Once we received the whole set, we will compute a route to the next
@@ -259,15 +265,11 @@ object NodeRelayer {
    * should return upstream.
    */
   private def translateError(failures: Seq[PaymentFailure], outgoingNodeId: PublicKey): Option[FailureMessage] = {
-    def tooManyRouteNotFound(failures: Seq[PaymentFailure]): Boolean = {
-      val routeNotFoundCount = failures.collect { case f@LocalFailure(_, RouteNotFound) => f }.length
-      routeNotFoundCount > failures.length / 2
-    }
-
+    val routeNotFound = failures.collectFirst { case f@LocalFailure(_, RouteNotFound) => f }.nonEmpty
     failures match {
       case Nil => None
-      case LocalFailure(_, PaymentError.BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
-      case _ if tooManyRouteNotFound(failures) => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
+      case LocalFailure(_, BalanceTooLow) :: Nil => Some(TemporaryNodeFailure) // we don't have enough outgoing liquidity at the moment
+      case _ if routeNotFound => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.
         val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, e) if e.originNode == outgoingNodeId => e.failureMessage }

@@ -248,7 +248,7 @@ class Setup(datadir: File,
       _ <- postRestartCleanUpInitialized.future
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
-      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, relayer, register), "payment-initiator", SupervisorStrategy.Restart))
+      paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
       kit = Kit(
         nodeParams = nodeParams,

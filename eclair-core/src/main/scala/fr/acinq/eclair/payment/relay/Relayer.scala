@@ -79,7 +79,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
 
   private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, commandBuffer, initialized))
   private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register, commandBuffer))
-  private val nodeRelayer = context.actorOf(NodeRelayer.props(nodeParams, self, router, commandBuffer, register))
+  private val nodeRelayer = context.actorOf(NodeRelayer.props(nodeParams, router, commandBuffer, register))
 
   override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId])
 
@@ -202,7 +202,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
 object Relayer extends Logging {
 
   def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) =
-    Props(classOf[Relayer], nodeParams, router, register, commandBuffer, paymentHandler, initialized)
+    Props(new Relayer(nodeParams, router, register, commandBuffer, paymentHandler, initialized))
 
   type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
   type NodeChannels =  mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]

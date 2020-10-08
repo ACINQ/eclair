@@ -402,19 +402,25 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
 
     // Via private channels.
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
+    sender.send(router, RouteRequest(a, g, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
-    sender.send(router, RouteRequest(a, h, 50000000 msat, Long.MaxValue.msat))
-    sender.expectMsg(Failure(RouteNotFound))
+    sender.send(router, RouteRequest(a, g, 50000000 msat, Long.MaxValue.msat))
+    sender.expectMsg(Failure(BalanceTooLow))
+    sender.send(router, RouteRequest(a, g, 50000000 msat, Long.MaxValue.msat, allowMultiPart = true))
+    sender.expectMsg(Failure(BalanceTooLow))
 
     // Via public channels.
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
+    sender.send(router, RouteRequest(a, b, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
     val commitments1 = CommitmentsSpec.makeCommitments(10000000 msat, 20000000 msat, a, b, announceChannel = true)
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments1))
-    sender.send(router, RouteRequest(a, d, 12000000 msat, Long.MaxValue.msat))
-    sender.expectMsg(Failure(RouteNotFound))
-    sender.send(router, RouteRequest(a, d, 5000000 msat, Long.MaxValue.msat))
+    sender.send(router, RouteRequest(a, b, 12000000 msat, Long.MaxValue.msat))
+    sender.expectMsg(Failure(BalanceTooLow))
+    sender.send(router, RouteRequest(a, b, 12000000 msat, Long.MaxValue.msat, allowMultiPart = true))
+    sender.expectMsg(Failure(BalanceTooLow))
+    sender.send(router, RouteRequest(a, b, 5000000 msat, Long.MaxValue.msat))
+    sender.expectMsgType[RouteResponse]
+    sender.send(router, RouteRequest(a, b, 5000000 msat, Long.MaxValue.msat, allowMultiPart = true))
     sender.expectMsgType[RouteResponse]
   }
 
