@@ -45,7 +45,11 @@ object OpenChannelTlv {
 
   val openTlvCodec: Codec[TlvStream[OpenChannelTlv]] = tlvStream(discriminated[OpenChannelTlv].by(varint)
     .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript])
+    // TODO: @t-bast: once enough active Phoenix users have upgraded to versions > 1.3.3, we should configure the ACINQ
+    // node to write with the new encoding (0x47000001).
+    // Once that's done, we can remove the old encoding below (0x47000000) for future Phoenix upgrades.
     .typecase(UInt64(0x47000000), bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion].as[ChannelVersionTlv])
+    .typecase(UInt64(0x47000001), variableSizeBytesLong(varintoverflow, bits(ChannelVersion.LENGTH_BITS)).as[ChannelVersion].as[ChannelVersionTlv])
   )
 
 }
