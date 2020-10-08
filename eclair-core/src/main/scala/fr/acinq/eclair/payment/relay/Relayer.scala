@@ -60,7 +60,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
   def receive: Receive = {
     case RelayForward(add) =>
       log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
-      IncomingPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {
+      IncomingPacket.decrypt(add, nodeParams.privateKey) match {
         case Right(p: IncomingPacket.FinalPacket) =>
           log.debug(s"forwarding htlc #${add.id} to payment-handler")
           paymentHandler forward p
