@@ -42,6 +42,7 @@ import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
+import fr.acinq.eclair.router.Router.PredefinedNodeRoute
 import fr.acinq.eclair.router.{NetworkStats, Stats}
 import fr.acinq.eclair.wire.{Color, NodeAddress}
 import org.mockito.scalatest.IdiomaticMockito
@@ -433,15 +434,15 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val expected = """{"paymentId":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","parentId":"2ad8c6d7-99cb-4238-8f67-89024b8eed0d"}"""
     val externalId = UUID.randomUUID().toString
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey, "Some invoice", CltvExpiryDelta(24))
-    val expectedRoute = List(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"))
+    val expectedRoute = PredefinedNodeRoute(Seq(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28")))
     val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
-    val jsonNodes = serialization.write(expectedRoute)
+    val jsonNodes = serialization.write(expectedRoute.nodes)
 
     val eclair = mock[Eclair]
-    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[PaymentRequest], any[CltvExpiryDelta], any[List[PublicKey]], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
+    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[PaymentRequest], any[CltvExpiryDelta], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
     val mockService = new MockService(eclair)
 
-    Post("/sendtoroute", FormData("route" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId, "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
+    Post("/sendtoroute", FormData("nodeIds" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId, "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>
@@ -453,7 +454,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     // this test uses CSV encoded route
-    Post("/sendtoroute", FormData("route" -> csvNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
+    Post("/sendtoroute", FormData("nodeIds" -> csvNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.route) ~>

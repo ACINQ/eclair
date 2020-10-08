@@ -38,6 +38,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.channel.{ChannelClosed, ChannelCreated, ChannelEvent, ChannelStateChanged, WAIT_FOR_INIT_INTERNAL}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
+import fr.acinq.eclair.router.Router.{PredefinedChannelRoute, PredefinedNodeRoute}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -250,9 +251,16 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("sendtoroute") {
-                          formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "finalCltvExpiry".as[Int], "route".as[List[PublicKey]](pubkeyListUnmarshaller), "externalId".?, "parentId".as[UUID].?, "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, "trampolineNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?) {
-                            (amountMsat, recipientAmountMsat_opt, invoice, finalCltvExpiry, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) =>
-                              complete(eclairApi.sendToRoute(amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
+                          withRoute { hops =>
+                            formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "finalCltvExpiry".as[Int], "externalId".?, "parentId".as[UUID].?, "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, "trampolineNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?) {
+                              (amountMsat, recipientAmountMsat_opt, invoice, finalCltvExpiry, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) => {
+                                val route = hops match {
+                                  case Left(shortChannelIds) => PredefinedChannelRoute(invoice.nodeId, shortChannelIds)
+                                  case Right(nodeIds) => PredefinedNodeRoute(nodeIds)
+                                }
+                                complete(eclairApi.sendToRoute(amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
+                              }
+                            }
                           }
                         } ~
                         path("sendonchain") {

@@ -275,7 +275,7 @@ object PaymentInitiator {
                                        parentId: Option[UUID],
                                        paymentRequest: PaymentRequest,
                                        fallbackFinalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
-                                       route: Seq[PublicKey],
+                                       route: PredefinedRoute,
                                        trampolineSecret: Option[ByteVector32],
                                        trampolineFees: MilliSatoshi,
                                        trampolineExpiryDelta: CltvExpiryDelta,

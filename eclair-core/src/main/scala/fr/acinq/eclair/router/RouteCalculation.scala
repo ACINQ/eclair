@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef, Status}
-import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
+import akka.event.DiagnosticLoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
@@ -38,7 +38,7 @@ import scala.util.{Failure, Random, Success, Try}
 
 object RouteCalculation {
 
-  def finalizeRoute(d: Data, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def finalizeRoute(d: Data, localNodeId: PublicKey, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     Logs.withMdc(log)(Logs.mdc(
       category_opt = Some(LogCategory.PAYMENT),
       parentPaymentId_opt = fr.paymentContext.map(_.parentId),
@@ -46,21 +46,44 @@ object RouteCalculation {
       paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
       implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-      val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.hops.last, fr.amount)).toMap
+      val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.route.targetNodeId, fr.amount)).toMap
       val extraEdges = assistedChannels.values.map(ac =>
         GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
       ).toSet
       val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
-      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
-      fr.hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
-        case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
-          // select the largest edge (using balance when available, otherwise capacity).
-          val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
-          val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
-          ctx.sender ! RouteResponse(Route(fr.amount, hops) :: Nil)
-        case _ => // some nodes in the supplied route aren't connected in our graph
-          ctx.sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+
+      fr.route match {
+        case PredefinedNodeRoute(hops) =>
+          // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
+          hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
+            case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
+              // select the largest edge (using balance when available, otherwise capacity).
+              val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
+              val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
+              ctx.sender ! RouteResponse(Route(fr.amount, hops) :: Nil)
+            case _ =>
+              // some nodes in the supplied route aren't connected in our graph
+              ctx.sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+          }
+        case PredefinedChannelRoute(targetNodeId, channels) =>
+          val (end, hops) = channels.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
+            case ((start, current), shortChannelId) =>
+              d.channels.get(shortChannelId).flatMap(c => start match {
+                case c.ann.nodeId1 => g.getEdge(ChannelDesc(shortChannelId, c.ann.nodeId1, c.ann.nodeId2))
+                case c.ann.nodeId2 => g.getEdge(ChannelDesc(shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
+                case _ => None
+              }) match {
+                case Some(edge) => (edge.desc.b, current :+ ChannelHop(edge.desc.a, edge.desc.b, edge.update))
+                case None => (start, current)
+              }
+          }
+          if (end != targetNodeId || hops.length != channels.length) {
+            ctx.sender ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
+          } else {
+            ctx.sender ! RouteResponse(Route(fr.amount, hops) :: Nil)
+          }
       }
+
       d
     }
   }

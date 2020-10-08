@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
-import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PublicChannel}
+import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
 import fr.acinq.eclair.wire.{Color, NodeAnnouncement}
 import org.mockito.Mockito
@@ -379,7 +379,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val route = Seq(randomKey.publicKey)
+    val route = PredefinedNodeRoute(Seq(randomKey.publicKey))
     val trampolines = Seq(randomKey.publicKey, randomKey.publicKey)
     val parentId = UUID.randomUUID()
     val secret = randomBytes32
@@ -488,4 +488,5 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val verifiedMessage: VerifiedMessage = eclair.verifyMessage(bytesMsg, invalidSignature)
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
+
 }
