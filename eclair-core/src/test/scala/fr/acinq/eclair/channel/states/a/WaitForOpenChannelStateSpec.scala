@@ -42,15 +42,17 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
+    val aliceParams = Alice.channelParams
+
     val bobNodeParams = Bob.nodeParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(1))
+    val bobParams = Bob.channelParams
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
 
     val setup = init(nodeParamsB = bobNodeParams)
 
     import setup._
     val channelVersion = ChannelVersion.STANDARD
-    val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {

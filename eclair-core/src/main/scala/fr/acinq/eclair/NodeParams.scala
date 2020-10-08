@@ -51,7 +51,7 @@ case class NodeParams(keyManager: KeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       features: Features,
-                      overrideFeatures: Map[PublicKey, Features],
+                      private val overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       dustLimit: Satoshi,
@@ -92,6 +92,8 @@ case class NodeParams(keyManager: KeyManager,
   val keyPair = KeyPair(nodeId.value, privateKey.value)
 
   def currentBlockHeight: Long = blockCount.get
+
+  def featuresFor(nodeId: PublicKey) = overrideFeatures.getOrElse(nodeId, features)
 }
 
 object NodeParams {

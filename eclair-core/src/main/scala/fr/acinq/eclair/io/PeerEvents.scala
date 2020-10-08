@@ -23,7 +23,7 @@ import fr.acinq.eclair.wire
 
 sealed trait PeerEvent
 
-case class ConnectionInfo(peerConnection: ActorRef, remoteInit: wire.Init)
+case class ConnectionInfo(peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init)
 
 case class PeerConnected(peer: ActorRef, nodeId: PublicKey, connectionInfo: ConnectionInfo) extends PeerEvent
 
