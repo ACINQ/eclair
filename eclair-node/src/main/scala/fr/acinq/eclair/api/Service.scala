@@ -258,7 +258,11 @@ trait Service extends ExtraDirectives with Logging {
                                   case Left(shortChannelIds) => PredefinedChannelRoute(invoice.nodeId, shortChannelIds)
                                   case Right(nodeIds) => PredefinedNodeRoute(nodeIds)
                                 }
-                                complete(eclairApi.sendToRoute(amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
+                                if (route.targetNodeId != invoice.nodeId) {
+                                  reject(MalformedFormFieldRejection("nodeIds", "The last node in the route must be the invoice owner"))
+                                } else {
+                                  complete(eclairApi.sendToRoute(amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)))
+                                }
                               }
                             }
                           }
