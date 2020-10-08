@@ -215,6 +215,8 @@ object NodeParams {
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = Features.fromConfiguration(e)
+      val err = Features.validateFeatureGraph(f)
+      require(err.isEmpty, err.map(_.message))
       require(f.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
       p -> f.copy(unknown = f.unknown ++ pluginParams.map(_.pluginFeature))
     }.toMap

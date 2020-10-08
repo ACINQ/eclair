@@ -22,7 +22,7 @@ import java.util.concurrent.atomic.AtomicLong
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.FeatureSupport.Mandatory
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.crypto.LocalKeyManager
 import org.scalatest.funsuite.AnyFunSuite
@@ -99,10 +99,12 @@ class StartupSpec extends AnyFunSuite {
       s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
     ).asJava)
 
-    // basic_mpp without var_onion_optin
-    val illegalButAllowedFeaturesConf = ConfigFactory.parseMap(Map(
-      s"features.${PaymentSecret.rfcName}" -> "optional",
-      s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
+    // var_onion_optin cannot be disabled
+    val noVariableLengthOnionConf = ConfigFactory.parseMap(Map(
+      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${InitialRoutingSync.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueries.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional"
     ).asJava)
 
     // basic_mpp without payment_secret
@@ -111,7 +113,7 @@ class StartupSpec extends AnyFunSuite {
     ).asJava)
 
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(legalFeaturesConf))).isSuccess)
-    assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalButAllowedFeaturesConf))).isSuccess)
+    assert(Try(makeNodeParamsWithDefaults(finalizeConf(noVariableLengthOnionConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalFeaturesConf))).isFailure)
   }
 
@@ -122,7 +124,9 @@ class StartupSpec extends AnyFunSuite {
         |      {
         |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         |          features {
-        |             basic_mpp = mandatory
+        |            var_onion_optin = optional
+        |            payment_secret = mandatory
+        |            basic_mpp = mandatory
         |          }
         |      }
         |  ]
@@ -131,7 +135,7 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
     val perNodeFeatures = nodeParams.featuresFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
-    assert(perNodeFeatures.hasFeature(BasicMultiPartPayment, Some(Mandatory)))
+    assert(perNodeFeatures === Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Mandatory), ActivatedFeature(BasicMultiPartPayment, Mandatory))))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {
