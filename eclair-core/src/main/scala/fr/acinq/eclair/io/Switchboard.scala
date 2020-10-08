@@ -72,7 +72,6 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
     case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
-      // TODO: @tbast: we now apply maskFeaturesForEclairMobile to custom features as well, is that ok?
       val features = nodeParams.featuresFor(authenticated.remoteNodeId).maskFeaturesForEclairMobile()
       val doSync = nodeParams.syncWhitelist.isEmpty || nodeParams.syncWhitelist.contains(authenticated.remoteNodeId)
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
