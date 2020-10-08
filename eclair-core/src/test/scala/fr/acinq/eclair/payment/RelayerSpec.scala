@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPa
 import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.router.Router.{ChannelHop, Ignore, NodeHop}
 import fr.acinq.eclair.router.{Announcements, _}
 import fr.acinq.eclair.wire.Onion.{ChannelRelayTlvPayload, FinalLegacyPayload, FinalTlvPayload, PerHopPayload}
@@ -474,6 +475,9 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, InsufficientFunds(channelId_bc, origin.amountOut, 100 sat, 0 sat, 0 sat), origin, Some(channelUpdate_bc), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(TemporaryChannelFailure(channelUpdate_bc)))
 
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, FeerateTooDifferent(channelId_bc, 1000, 300), origin, Some(channelUpdate_bc), None)))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(TemporaryChannelFailure(channelUpdate_bc)))
+
     val channelUpdate_bc_disabled = channelUpdate_bc.copy(channelFlags = 2)
     sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ChannelUnavailable(channelId_bc), origin, Some(channelUpdate_bc_disabled), None)))
     assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ChannelDisabled(channelUpdate_bc_disabled.messageFlags, channelUpdate_bc_disabled.channelFlags, channelUpdate_bc_disabled)))
@@ -550,8 +554,9 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     }
     sender.send(relayer, forwardFulfill)
 
-    // the FSM responsible for the payment should receive the fulfill.
+    // the FSM responsible for the payment should receive the fulfill and emit a preimage event.
     payFSM.expectMsg(forwardFulfill)
+    system.actorSelection(relayer.path.child("node-relayer")).tell(PreimageReceived(paymentHash, preimage), payFSM.ref)
 
     // the payment should be immediately fulfilled upstream.
     val upstream1 = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]

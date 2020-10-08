@@ -39,6 +39,8 @@ object Kamon {
 
     def increment(a: Int) = this
 
+    def increment(a: Long) = this
+
     def decrement() = this
 
     def record(a: Long) = this

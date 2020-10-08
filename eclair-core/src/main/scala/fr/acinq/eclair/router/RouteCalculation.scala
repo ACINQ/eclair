@@ -17,9 +17,10 @@
 package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef, Status}
-import akka.event.LoggingAdapter
+import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -37,62 +38,75 @@ import scala.util.{Failure, Random, Success, Try}
 
 object RouteCalculation {
 
-  def finalizeRoute(d: Data, fr: FinalizeRoute)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
-    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+  def finalizeRoute(d: Data, fr: FinalizeRoute)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    Logs.withMdc(log)(Logs.mdc(
+      category_opt = Some(LogCategory.PAYMENT),
+      parentPaymentId_opt = fr.paymentContext.map(_.parentId),
+      paymentId_opt = fr.paymentContext.map(_.id),
+      paymentHash_opt = fr.paymentContext.map(_.paymentHash))) {
+      implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-    val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.hops.last, fr.amount)).toMap
-    val extraEdges = assistedChannels.values.map(ac =>
-      GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
-    ).toSet
-    val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
-    // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
-    fr.hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
-      case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
-        // select the largest edge (using balance when available, otherwise capacity).
-        val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
-        val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
-        ctx.sender ! RouteResponse(Route(fr.amount, hops) :: Nil)
-      case _ => // some nodes in the supplied route aren't connected in our graph
-        ctx.sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+      val assistedChannels: Map[ShortChannelId, AssistedChannel] = fr.assistedRoutes.flatMap(toAssistedChannels(_, fr.hops.last, fr.amount)).toMap
+      val extraEdges = assistedChannels.values.map(ac =>
+        GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
+      ).toSet
+      val g = extraEdges.foldLeft(d.graph) { case (g: DirectedGraph, e: GraphEdge) => g.addEdge(e) }
+      // split into sublists [(a,b),(b,c), ...] then get the edges between each of those pairs
+      fr.hops.sliding(2).map { case List(v1, v2) => g.getEdgesBetween(v1, v2) }.toList match {
+        case edges if edges.nonEmpty && edges.forall(_.nonEmpty) =>
+          // select the largest edge (using balance when available, otherwise capacity).
+          val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
+          val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
+          ctx.sender ! RouteResponse(Route(fr.amount, hops) :: Nil)
+        case _ => // some nodes in the supplied route aren't connected in our graph
+          ctx.sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+      }
+      d
     }
-    d
   }
 
-  def handleRouteRequest(d: Data, routerConf: RouterConf, currentBlockHeight: Long, r: RouteRequest)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
-    implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
+  def handleRouteRequest(d: Data, routerConf: RouterConf, currentBlockHeight: Long, r: RouteRequest)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+    Logs.withMdc(log)(Logs.mdc(
+      category_opt = Some(LogCategory.PAYMENT),
+      parentPaymentId_opt = r.paymentContext.map(_.parentId),
+      paymentId_opt = r.paymentContext.map(_.id),
+      paymentHash_opt = r.paymentContext.map(_.paymentHash))) {
+      implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
 
-    // we convert extra routing info provided in the payment request to fake channel_update
-    // it takes precedence over all other channel_updates we know
-    val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount)).toMap
-    val extraEdges = assistedChannels.values.map(ac =>
-      GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
-    ).toSet
-    val ignoredEdges = r.ignore.channels ++ d.excludedChannels
-    val params = r.routeParams.getOrElse(getDefaultRouteParams(routerConf))
-    val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
+      // we convert extra routing info provided in the payment request to fake channel_update
+      // it takes precedence over all other channel_updates we know
+      val assistedChannels: Map[ShortChannelId, AssistedChannel] = r.assistedRoutes.flatMap(toAssistedChannels(_, r.target, r.amount))
+        .filterNot { case (_, ac) => ac.extraHop.nodeId == r.source } // we ignore routing hints for our own channels, we have more accurate information
+        .toMap
+      val extraEdges = assistedChannels.values.map(ac =>
+        GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
+      ).toSet
+      val ignoredEdges = r.ignore.channels ++ d.excludedChannels
+      val params = r.routeParams.getOrElse(getDefaultRouteParams(routerConf))
+      val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
-    log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
-    log.info("finding routes with randomize={} params={}", params.randomize, params)
-    val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
-    KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
-      val result = if (r.allowMultiPart) {
-        findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, params, currentBlockHeight)
-      } else {
-        findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight)
+      log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
+      log.info("finding routes with randomize={} params={}", params.randomize, params)
+      val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
+      KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
+        val result = if (r.allowMultiPart) {
+          findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, params, currentBlockHeight)
+        } else {
+          findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight)
+        }
+        result match {
+          case Success(routes) =>
+            Metrics.RouteResults.withTags(tags).record(routes.length)
+            routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
+            ctx.sender ! RouteResponse(routes)
+          case Failure(t) =>
+            val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
+            Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
+            ctx.sender ! Status.Failure(failure)
+        }
       }
-      result match {
-        case Success(routes) =>
-          Metrics.RouteResults.withTags(tags).record(routes.length)
-          routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
-          ctx.sender ! RouteResponse(routes)
-        case Failure(t) =>
-          val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
-          Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
-          ctx.sender ! Status.Failure(failure)
-      }
+      d
     }
-
-    d
   }
 
   private def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
@@ -114,6 +128,11 @@ object RouteCalculation {
         val nextAmount = amount + nodeFee(extraHop.feeBase, extraHop.feeProportionalMillionths, amount)
         (nextAmount, acs + (extraHop.shortChannelId -> AssistedChannel(extraHop, nextNodeId, nextAmount)))
     }._2
+  }
+
+  def toChannelDescs(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Seq[ChannelDesc] = {
+    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
+    extraRoute.zip(nextNodeIds).map { case (hop, nextNodeId) => ChannelDesc(hop.shortChannelId, hop.nodeId, nextNodeId) }
   }
 
   /** Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount. */

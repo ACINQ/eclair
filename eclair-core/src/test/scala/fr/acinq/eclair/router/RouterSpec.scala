@@ -595,6 +595,21 @@ class RouterSpec extends BaseRouterSpec {
       assert(balances.contains(edge_ab.balance_opt))
       assert(edge_ba.balance_opt === None)
     }
+
+    {
+      // Private channels should also update the graph when HTLCs are relayed through them.
+      val balances = Set(33000000 msat, 5000000 msat)
+      val commitments = CommitmentsSpec.makeCommitments(33000000 msat, 5000000 msat, a, g, announceChannel = false)
+      sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ag, commitments))
+      sender.send(router, Symbol("data"))
+      val data = sender.expectMsgType[Data]
+      val channel_ag = data.privateChannels(channelId_ag)
+      assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) === balances)
+      // And the graph should be updated too.
+      val edge_ag = data.graph.getEdge(ChannelDesc(channelId_ag, a, g)).get
+      assert(edge_ag.capacity == channel_ag.capacity)
+      assert(edge_ag.balance_opt === Some(33000000 msat))
+    }
   }
 
 }

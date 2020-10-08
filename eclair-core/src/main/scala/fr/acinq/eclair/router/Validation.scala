@@ -475,25 +475,29 @@ object Validation {
     }
   }
 
-  def handleAvailableBalanceChanged(d: Data, e: AvailableBalanceChanged): Data = {
-    val (channels1, graph1) = d.channels.get(e.shortChannelId) match {
+  def handleAvailableBalanceChanged(d: Data, e: AvailableBalanceChanged)(implicit log: LoggingAdapter): Data = {
+    val desc = ChannelDesc(e.shortChannelId, e.commitments.localParams.nodeId, e.commitments.remoteParams.nodeId)
+    val (publicChannels1, graph1) = d.channels.get(e.shortChannelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
-        val desc = ChannelDesc(e.shortChannelId, e.commitments.localParams.nodeId, e.commitments.remoteParams.nodeId)
+        log.debug("public channel balance updated: {}", pc1)
         val update_opt = if (e.commitments.localParams.nodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
         val graph1 = update_opt.map(u => d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(d.graph)
         (d.channels + (e.shortChannelId -> pc1), graph1)
       case None =>
         (d.channels, d.graph)
     }
-    val privateChannels1 = d.privateChannels.get(e.shortChannelId) match {
+    val (privateChannels1, graph2) = d.privateChannels.get(e.shortChannelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
-        d.privateChannels + (e.shortChannelId -> pc1)
+        log.debug("private channel balance updated: {}", pc1)
+        val update_opt = if (e.commitments.localParams.nodeId == pc1.nodeId1) pc1.update_1_opt else pc1.update_2_opt
+        val graph2 = update_opt.map(u => graph1.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(graph1)
+        (d.privateChannels + (e.shortChannelId -> pc1), graph2)
       case None =>
-        d.privateChannels
+        (d.privateChannels, graph1)
     }
-    d.copy(channels = channels1, privateChannels = privateChannels1, graph = graph1)
+    d.copy(channels = publicChannels1, privateChannels = privateChannels1, graph = graph2)
   }
 
 }

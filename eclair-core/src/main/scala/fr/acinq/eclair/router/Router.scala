@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.router
 
+import java.util.UUID
+
 import akka.Done
 import akka.actor.{ActorRef, Props}
 import akka.event.DiagnosticLoggingAdapter
@@ -31,6 +33,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
@@ -363,9 +366,18 @@ object Router {
                           ignore: Ignore = Ignore.empty,
                           routeParams: Option[RouteParams] = None,
                           allowMultiPart: Boolean = false,
-                          pendingPayments: Seq[Route] = Nil)
+                          pendingPayments: Seq[Route] = Nil,
+                          paymentContext: Option[PaymentContext] = None)
 
-  case class FinalizeRoute(amount: MilliSatoshi, hops: Seq[PublicKey], assistedRoutes: Seq[Seq[ExtraHop]] = Nil)
+  case class FinalizeRoute(amount: MilliSatoshi,
+                           hops: Seq[PublicKey],
+                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                           paymentContext: Option[PaymentContext] = None)
+
+  /**
+   * Useful for having appropriate logging context at hand when finding routes
+   */
+  case class PaymentContext(id: UUID, parentId: UUID, paymentHash: ByteVector32)
 
   case class Route(amount: MilliSatoshi, hops: Seq[ChannelHop]) {
     require(hops.nonEmpty, "route cannot be empty")

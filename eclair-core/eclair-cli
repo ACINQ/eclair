@@ -33,7 +33,7 @@ and COMMAND is one of the available commands:
     - connect
     - disconnect
     - peers
-    - allnodes
+    - nodes
     - audit
 
   === Channel ===

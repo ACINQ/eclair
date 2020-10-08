@@ -115,7 +115,12 @@ trait Service extends ExtraDirectives with Logging {
                 }
               } ~
               path("peers") {
-                complete(eclairApi.peersInfo())
+                complete(eclairApi.peers())
+              } ~
+              path("nodes") {
+                formFields(nodeIdsFormParam_opt) { nodeIds_opt =>
+                  complete(eclairApi.nodes(nodeIds_opt))
+                }
               } ~
               path("channels") {
                 formFields(nodeIdFormParam_opt) { toRemoteNodeId_opt =>
@@ -126,9 +131,6 @@ trait Service extends ExtraDirectives with Logging {
                 withChannelIdentifier { channelIdentifier =>
                   complete(eclairApi.channelInfo(channelIdentifier))
                 }
-              } ~
-              path("allnodes") {
-                complete(eclairApi.allNodes())
               } ~
               path("allchannels") {
                 complete(eclairApi.allChannels())
@@ -228,7 +230,9 @@ trait Service extends ExtraDirectives with Logging {
                 }
               } ~
               path("channelstats") {
-                complete(eclairApi.channelStats())
+                formFields(fromFormParam_opt.?, toFormParam_opt.?) { (from_opt, to_opt) =>
+                  complete(eclairApi.channelStats(from_opt, to_opt))
+                }
               } ~
               path("usablebalances") {
                 complete(eclairApi.usableBalances())

@@ -24,8 +24,9 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair.Features.StaticRemoteKey
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.UInt64.Conversions._
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Channel._
@@ -40,7 +41,6 @@ import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, htlcSuccessWeight, htlcTimeoutWeight, weight2fee}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
-import fr.acinq.eclair._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
@@ -343,6 +343,31 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val error = InsufficientFunds(channelId(alice), add2.amount, 567453 sat, 20000 sat, 10680 sat)
     sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add2.paymentHash, error, Origin.Local(add2.upstream.asInstanceOf[Upstream.Local].id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add2))))
     alice2bob.expectNoMsg(200 millis)
+  }
+
+  test("recv CMD_ADD_HTLC (channel feerate mismatch)") { f =>
+    import f._
+
+    val sender = TestProbe()
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(20000))
+    sender.send(bob, CurrentFeerates(FeeratesPerKw.single(20000)))
+    bob2alice.expectNoMsg(100 millis) // we don't close because the commitment doesn't contain any HTLC
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val upstream = Upstream.Local(UUID.randomUUID())
+    val add = CMD_ADD_HTLC(500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, upstream)
+    sender.send(bob, add)
+    val error = FeerateTooDifferent(channelId(bob), 20000, 10000)
+    sender.expectMsg(Failure(AddHtlcFailed(channelId(bob), add.paymentHash, error, Origin.Local(upstream.id, Some(sender.ref)), Some(initialState.channelUpdate), Some(add))))
+    bob2alice.expectNoMsg(100 millis) // we don't close the channel, we can simply avoid using it while we disagree on feerate
+
+    // we now agree on feerate so we can send HTLCs
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(11000))
+    sender.send(bob, CurrentFeerates(FeeratesPerKw.single(11000)))
+    bob2alice.expectNoMsg(100 millis)
+    sender.send(bob, add)
+    sender.expectMsg(ChannelCommandResponse.Ok)
+    bob2alice.expectMsgType[UpdateAddHtlc]
   }
 
   test("recv CMD_ADD_HTLC (after having sent Shutdown)") { f =>
@@ -1174,9 +1199,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
   }
 
-  test("recv CMD_FULFILL_HTLC") { testReceiveCmdFulfillHtlc _ }
+  test("recv CMD_FULFILL_HTLC") {
+    testReceiveCmdFulfillHtlc _
+  }
 
-  test("recv CMD_FULFILL_HTLC (static_remotekey)", Tag("static_remotekey")) { testReceiveCmdFulfillHtlc _ }
+  test("recv CMD_FULFILL_HTLC (static_remotekey)", Tag("static_remotekey")) {
+    testReceiveCmdFulfillHtlc _
+  }
 
   test("recv CMD_FULFILL_HTLC (unknown htlc id)") { f =>
     import f._
@@ -1232,9 +1261,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(forward.htlc === htlc)
   }
 
-  test("recv UpdateFulfillHtlc") { testUpdateFulfillHtlc _ }
+  test("recv UpdateFulfillHtlc") {
+    testUpdateFulfillHtlc _
+  }
 
-  test("recv UpdateFulfillHtlc (static_remotekey)", Tag("(static_remotekey)")) { testUpdateFulfillHtlc _ }
+  test("recv UpdateFulfillHtlc (static_remotekey)", Tag("(static_remotekey)")) {
+    testUpdateFulfillHtlc _
+  }
 
   test("recv UpdateFulfillHtlc (sender has not signed htlc)") { f =>
     import f._
@@ -1308,9 +1341,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   }
 
-  test("recv CMD_FAIL_HTLC") { testCmdFailHtlc _ }
+  test("recv CMD_FAIL_HTLC") {
+    testCmdFailHtlc _
+  }
 
-  test("recv CMD_FAIL_HTLC (static_remotekey)", Tag("static_remotekey")) { testCmdFailHtlc _ }
+  test("recv CMD_FAIL_HTLC (static_remotekey)", Tag("static_remotekey")) {
+    testCmdFailHtlc _
+  }
 
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { f =>
     import f._
@@ -1397,8 +1434,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     relayerA.expectNoMsg()
   }
 
-  test("recv UpdateFailHtlc") { testUpdateFailHtlc _ }
-  test("recv UpdateFailHtlc (static_remotekey)", Tag("static_remotekey")) { testUpdateFailHtlc _ }
+  test("recv UpdateFailHtlc") {
+    testUpdateFailHtlc _
+  }
+  test("recv UpdateFailHtlc (static_remotekey)", Tag("static_remotekey")) {
+    testUpdateFailHtlc _
+  }
 
   test("recv UpdateFailMalformedHtlc") { f =>
     import f._
@@ -1536,19 +1577,19 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
-    bob ! fee1
-    val fee2 = UpdateFee(ByteVector32.Zeroes, 14000)
-    bob ! fee2
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee2), remoteNextHtlcId = 0)))
+    val fee = UpdateFee(ByteVector32.Zeroes, 12000)
+    bob ! fee
+    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
   }
 
   test("recv UpdateFee (two in a row)") { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val fee = UpdateFee(ByteVector32.Zeroes, 12000)
-    bob ! fee
-    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
+    val fee1 = UpdateFee(ByteVector32.Zeroes, 12000)
+    bob ! fee1
+    val fee2 = UpdateFee(ByteVector32.Zeroes, 14000)
+    bob ! fee2
+    awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee2), remoteNextHtlcId = 0)))
   }
 
   test("recv UpdateFee (when sender is not funder)") { f =>
@@ -1585,16 +1626,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
+
     bob.feeEstimator.setFeerate(FeeratesPerKw(1000, 2000, 6000, 12000, 36000, 72000, 140000))
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
-    // Alice will use $localFeeRate when performing the checks for update_fee
-    val localFeeRate = bob.feeEstimator.getFeeratePerKw(bob.feeTargets.commitmentBlockTarget)
-    assert(localFeeRate === 2000)
-    val remoteFeeUpdate = 85000
-    sender.send(bob, UpdateFee(ByteVector32.Zeroes, remoteFeeUpdate))
+    val localFeerate = bob.feeEstimator.getFeeratePerKw(bob.feeTargets.commitmentBlockTarget)
+    assert(localFeerate === 2000)
+    val remoteFeerate = 4000
+    sender.send(bob, UpdateFee(ByteVector32.Zeroes, remoteFeerate))
+    bob2alice.expectNoMsg(250 millis) // we don't close because the commitment doesn't contain any HTLC
+
+    // when we try to add an HTLC, we still disagree on the feerate so we close
+    alice2bob.send(bob, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === s"local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeUpdate localFeeratePerKw=$localFeeRate")
+    assert(new String(error.data.toArray).contains("local/remote feerates are too different"))
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
@@ -2006,11 +2051,34 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectNoMsg(500 millis)
   }
 
-  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { f =>
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different, with HTLCs)") { f =>
     import f._
+
+    addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
     val sender = TestProbe()
-    val event = CurrentFeerates(FeeratesPerKw.single(100))
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(14000))
+    val event = CurrentFeerates(FeeratesPerKw.single(14000))
     sender.send(bob, event)
+    bob2alice.expectMsgType[Error]
+    bob2blockchain.expectMsgType[PublishAsap] // commit tx
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    bob2blockchain.expectMsgType[WatchConfirmed]
+    awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different, without HTLCs)") { f =>
+    import f._
+
+    val sender = TestProbe()
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(1000))
+    val event = CurrentFeerates(FeeratesPerKw.single(1000))
+    sender.send(bob, event)
+    bob2alice.expectNoMsg(250 millis) // we don't close because the commitment doesn't contain any HTLC
+
+    // when we try to add an HTLC, we still disagree on the feerate so we close
+    alice2bob.send(bob, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap] // commit tx
     bob2blockchain.expectMsgType[PublishAsap] // main delayed

@@ -27,7 +27,7 @@ import com.google.common.io.Files
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
@@ -143,7 +143,9 @@ object NodeParams {
       "update-fee_min-diff-ratio" -> "on-chain-fees.update-fee-min-diff-ratio",
       // v0.3.3
       "global-features" -> "features",
-      "local-features" -> "features"
+      "local-features" -> "features",
+      // v0.4.1
+      "on-chain-fees.max-feerate-mismatch" -> "on-chain-fees.feerate-tolerance.ratio-low / on-chain-fees.feerate-tolerance.ratio-high"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -246,7 +248,7 @@ object NodeParams {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
-        maxFeerateMismatch = config.getDouble("on-chain-fees.max-feerate-mismatch"),
+        maxFeerateMismatch = FeerateTolerance(config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"), config.getDouble("on-chain-fees.feerate-tolerance.ratio-high")),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio")
       ),

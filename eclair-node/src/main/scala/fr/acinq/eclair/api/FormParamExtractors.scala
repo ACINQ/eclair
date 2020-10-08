@@ -38,6 +38,10 @@ object FormParamExtractors {
     PublicKey(ByteVector.fromValidHex(str))
   }
 
+  implicit val publicKeysUnmarshaller: Deserializer[Option[String], Option[Set[PublicKey]]] = strictDeserializer { bin =>
+    bin.split(",").map(str => PublicKey(ByteVector.fromValidHex(str))).toSet
+  }
+
   implicit val binaryDataUnmarshaller: Deserializer[Option[String], Option[ByteVector]] = strictDeserializer { str =>
     ByteVector.fromValidHex(str)
   }

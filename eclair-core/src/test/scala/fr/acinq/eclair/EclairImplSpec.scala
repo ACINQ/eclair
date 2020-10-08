@@ -35,6 +35,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPa
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
+import fr.acinq.eclair.wire.{Color, NodeAnnouncement}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -148,6 +149,54 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val expiredInvoice = invoice2.copy(timestamp = 0L)
     assertThrows[IllegalArgumentException](Await.result(eclair.send(None, nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(expiredInvoice)), 50 millis))
+  }
+
+  test("return node announcements") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+    val remoteNodeAnn1 = NodeAnnouncement(randomBytes64, Features.empty, 42L, randomKey.publicKey, Color(42, 42, 42), "LN-rocks", Nil)
+    val remoteNodeAnn2 = NodeAnnouncement(randomBytes64, Features.empty, 43L, randomKey.publicKey, Color(43, 43, 43), "LN-papers", Nil)
+    val allNodes = Seq(
+      NodeAnnouncement(randomBytes64, Features.empty, 561L, randomKey.publicKey, Color(0, 0, 0), "some-node", Nil),
+      remoteNodeAnn1,
+      remoteNodeAnn2,
+      NodeAnnouncement(randomBytes64, Features.empty, 1105L, randomKey.publicKey, Color(0, 0, 0), "some-other-node", Nil)
+    )
+
+    {
+      val fRes = eclair.nodes()
+      router.expectMsg(Symbol("nodes"))
+      router.reply(allNodes)
+      awaitCond(fRes.value match {
+        case Some(Success(nodes)) =>
+          assert(nodes.toSet === allNodes.toSet)
+          true
+        case _ => false
+      })
+    }
+    {
+      val fRes = eclair.nodes(Some(Set(remoteNodeAnn1.nodeId, remoteNodeAnn2.nodeId)))
+      router.expectMsg(Symbol("nodes"))
+      router.reply(allNodes)
+      awaitCond(fRes.value match {
+        case Some(Success(nodes)) =>
+          assert(nodes.toSet === Set(remoteNodeAnn1, remoteNodeAnn2))
+          true
+        case _ => false
+      })
+    }
+    {
+      val fRes = eclair.nodes(Some(Set(randomKey.publicKey)))
+      router.expectMsg(Symbol("nodes"))
+      router.reply(allNodes)
+      awaitCond(fRes.value match {
+        case Some(Success(nodes)) =>
+          assert(nodes.isEmpty)
+          true
+        case _ => false
+      })
+    }
   }
 
   test("allupdates can filter by nodeId") { f =>

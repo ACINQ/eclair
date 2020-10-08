@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,18 +14,18 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.blockchain.fee
+package fr.acinq.eclair.crypto
 
-trait FeeEstimator {
+import kamon.Kamon
 
-  def getFeeratePerKb(target: Int): Long
+object Monitoring {
 
-  def getFeeratePerKw(target: Int): Long
+  object Metrics {
+    val OnionPayloadFormat = Kamon.counter("crypto.sphinx.onion-payload-format")
+  }
+
+  object Tags {
+    val LegacyOnion = "legacy"
+  }
 
 }
-
-case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)
-
-case class FeerateTolerance(ratioLow: Double, ratioHigh: Double)
-
-case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, maxFeerateMismatch: FeerateTolerance, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double)

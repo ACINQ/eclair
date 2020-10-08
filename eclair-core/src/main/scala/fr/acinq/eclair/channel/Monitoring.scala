@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel
 
+import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc}
 import kamon.Kamon
 import kamon.tag.TagSet
 
@@ -25,15 +26,35 @@ object Monitoring {
     val ChannelsCount = Kamon.gauge("channels.count")
     val ChannelErrors = Kamon.counter("channels.errors")
     val ChannelLifecycleEvents = Kamon.counter("channels.lifecycle")
+    val HtlcsInFlight = Kamon.histogram("channels.htlc-in-flight", "Per-channel HTLCs in flight")
+    val HtlcsInFlightGlobal = Kamon.gauge("channels.htlc-in-flight-global", "Global HTLCs in flight across all channels")
+    val HtlcValueInFlight = Kamon.histogram("channels.htlc-value-in-flight", "Per-channel HTLC value in flight")
+    val HtlcValueInFlightGlobal = Kamon.gauge("channels.htlc-value-in-flight-global", "Global HTLC value in flight across all channels")
     val LocalFeeratePerKw = Kamon.gauge("channels.local-feerate-per-kw")
     val RemoteFeeratePerKw = Kamon.histogram("channels.remote-feerate-per-kw")
+
+    def recordHtlcsInFlight(remoteSpec: CommitmentSpec, previousRemoteSpec: CommitmentSpec): Unit = {
+      for (direction <- Tags.Directions.Incoming :: Tags.Directions.Outgoing :: Nil) {
+        // NB: IN/OUT htlcs are inverted because this is the remote commit
+        val filter = if (direction == Tags.Directions.Incoming) DirectedHtlc.outgoing else DirectedHtlc.incoming
+        // NB: we need the `toSeq` because otherwise duplicate amounts would be removed (since htlcs are sets)
+        val htlcs = remoteSpec.htlcs.collect(filter).toSeq.map(_.amountMsat)
+        val previousHtlcs = previousRemoteSpec.htlcs.collect(filter).toSeq.map(_.amountMsat)
+        HtlcsInFlight.withTag(Tags.Direction, direction).record(htlcs.length)
+        HtlcsInFlightGlobal.withTag(Tags.Direction, direction).increment(htlcs.length - previousHtlcs.length)
+        val (value, previousValue) = (htlcs.sum.truncateToSatoshi.toLong, previousHtlcs.sum.truncateToSatoshi.toLong)
+        HtlcValueInFlight.withTag(Tags.Direction, direction).record(value)
+        HtlcValueInFlightGlobal.withTag(Tags.Direction, direction).increment(value - previousValue)
+      }
+    }
   }
 
   object Tags {
-    val Event = TagSet.Empty
-    val Fatal = TagSet.Empty
-    val Origin = TagSet.Empty
-    val State = TagSet.Empty
+    val Direction = "direction"
+    val Event = "event"
+    val Fatal = "fatal"
+    val Origin = "origin"
+    val State = "state"
 
     object Events {
       val Created = "created"
@@ -44,6 +65,11 @@ object Monitoring {
     object Origins {
       val Local = "local"
       val Remote = "remote"
+    }
+
+    object Directions {
+      val Incoming = "incoming"
+      val Outgoing = "outgoing"
     }
 
   }
