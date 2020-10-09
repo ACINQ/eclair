@@ -28,6 +28,7 @@ object Monitoring {
     val FindRouteDuration = Kamon.timer("router.find-route.duration", "Path-finding duration")
     val FindRouteErrors = Kamon.counter("router.find-route.errors", "Path-finding errors")
     val RouteLength = Kamon.histogram("router.find-route.length", "Path-finding result length")
+    val RouteResults = Kamon.histogram("router.find-route.results", "Path-finding number of routes found")
 
     object QueryChannelRange {
       val Blocks = Kamon.histogram("router.gossip.query-channel-range.blocks", "Number of blocks requested in query-channel-range")
@@ -71,6 +72,7 @@ object Monitoring {
     val Announced = "announced"
     val Direction = "direction"
     val Error = "error"
+    val MultiPart = "multiPart"
     val NumberOfRoutes = "numRoutes"
 
     object Directions {

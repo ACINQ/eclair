@@ -45,7 +45,7 @@ trait AuditDb extends Closeable {
 
   def listNetworkFees(from: Long, to: Long): Seq[NetworkFee]
 
-  def stats: Seq[Stats]
+  def stats(from: Long, to: Long): Seq[Stats]
 
 }
 
@@ -53,4 +53,4 @@ case class ChannelLifecycleEvent(channelId: ByteVector32, remoteNodeId: PublicKe
 
 case class NetworkFee(remoteNodeId: PublicKey, channelId: ByteVector32, txId: ByteVector32, fee: Satoshi, txType: String, timestamp: Long)
 
-case class Stats(channelId: ByteVector32, avgPaymentAmount: Satoshi, paymentCount: Int, relayFee: Satoshi, networkFee: Satoshi)
+case class Stats(channelId: ByteVector32, direction: String, avgPaymentAmount: Satoshi, paymentCount: Int, relayFee: Satoshi, networkFee: Satoshi)

@@ -407,7 +407,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       """[^$]+""").r
     // this regex extracts htlc direction and amounts
     val htlcRegex =
-      """.*HTLC ([a-z]+) amount ([0-9]+).*""".r
+      """.*HTLC [0-9] ([a-z]+) amount ([0-9]+).*""".r
 
     val dustLimit = 546 sat
     case class TestSetup(name: String, dustLimit: Satoshi, spec: CommitmentSpec, expectedFee: Satoshi)
@@ -422,7 +422,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         }
       }).toSet
       TestSetup(name, dustLimit, CommitmentSpec(htlcs = htlcs, feeratePerKw = feerate_per_kw.toLong, toLocal = MilliSatoshi(to_local_msat.toLong), toRemote = MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
-    })
+    }).toSeq
 
     // simple non-reg test making sure we are not missing tests
     assert(tests.size === 15, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f")

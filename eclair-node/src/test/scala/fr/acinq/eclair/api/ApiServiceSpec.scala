@@ -123,7 +123,7 @@ class ApiServiceSpec extends AnyFunSuiteLike with ScalatestRouteTest with RouteT
   test("'peers' should ask the switchboard for current known peers") {
     val mockEclair = mock[Eclair]
     val service = new MockService(mockEclair)
-    mockEclair.peersInfo()(any[Timeout]) returns Future.successful(List(
+    mockEclair.peers()(any[Timeout]) returns Future.successful(List(
       PeerInfo(
         nodeId = aliceNodeId,
         state = "CONNECTED",
@@ -142,7 +142,7 @@ class ApiServiceSpec extends AnyFunSuiteLike with ScalatestRouteTest with RouteT
         assert(handled)
         assert(status == OK)
         val response = responseAs[String]
-        mockEclair.peersInfo()(any[Timeout]).wasCalled(once)
+        mockEclair.peers()(any[Timeout]).wasCalled(once)
         matchTestJson("peers", response)
       }
   }

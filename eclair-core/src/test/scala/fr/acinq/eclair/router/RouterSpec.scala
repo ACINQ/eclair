@@ -402,19 +402,25 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
 
     // Via private channels.
-    sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
+    sender.send(router, RouteRequest(a, g, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
-    sender.send(router, RouteRequest(a, h, 50000000 msat, Long.MaxValue.msat))
-    sender.expectMsg(Failure(RouteNotFound))
+    sender.send(router, RouteRequest(a, g, 50000000 msat, Long.MaxValue.msat))
+    sender.expectMsg(Failure(BalanceTooLow))
+    sender.send(router, RouteRequest(a, g, 50000000 msat, Long.MaxValue.msat, allowMultiPart = true))
+    sender.expectMsg(Failure(BalanceTooLow))
 
     // Via public channels.
-    sender.send(router, RouteRequest(a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
+    sender.send(router, RouteRequest(a, b, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsgType[RouteResponse]
     val commitments1 = CommitmentsSpec.makeCommitments(10000000 msat, 20000000 msat, a, b, announceChannel = true)
     sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ab, b, Some(chan_ab), update_ab, commitments1))
-    sender.send(router, RouteRequest(a, d, 12000000 msat, Long.MaxValue.msat))
-    sender.expectMsg(Failure(RouteNotFound))
-    sender.send(router, RouteRequest(a, d, 5000000 msat, Long.MaxValue.msat))
+    sender.send(router, RouteRequest(a, b, 12000000 msat, Long.MaxValue.msat))
+    sender.expectMsg(Failure(BalanceTooLow))
+    sender.send(router, RouteRequest(a, b, 12000000 msat, Long.MaxValue.msat, allowMultiPart = true))
+    sender.expectMsg(Failure(BalanceTooLow))
+    sender.send(router, RouteRequest(a, b, 5000000 msat, Long.MaxValue.msat))
+    sender.expectMsgType[RouteResponse]
+    sender.send(router, RouteRequest(a, b, 5000000 msat, Long.MaxValue.msat, allowMultiPart = true))
     sender.expectMsgType[RouteResponse]
   }
 
@@ -588,6 +594,21 @@ class RouterSpec extends BaseRouterSpec {
       // assert(edge_ab.capacity == channel_ab.capacity && edge_ba.capacity == channel_ab.capacity)
       assert(balances.contains(edge_ab.balance_opt))
       assert(edge_ba.balance_opt === None)
+    }
+
+    {
+      // Private channels should also update the graph when HTLCs are relayed through them.
+      val balances = Set(33000000 msat, 5000000 msat)
+      val commitments = CommitmentsSpec.makeCommitments(33000000 msat, 5000000 msat, a, g, announceChannel = false)
+      sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ag, commitments))
+      sender.send(router, Symbol("data"))
+      val data = sender.expectMsgType[Data]
+      val channel_ag = data.privateChannels(channelId_ag)
+      assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) === balances)
+      // And the graph should be updated too.
+      val edge_ag = data.graph.getEdge(ChannelDesc(channelId_ag, a, g)).get
+      assert(edge_ag.capacity == channel_ag.capacity)
+      assert(edge_ag.balance_opt === Some(33000000 msat))
     }
   }
 

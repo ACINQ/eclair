@@ -22,10 +22,10 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.FeatureSupport.Mandatory
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, ChannelRangeQueriesExtended, InitialRoutingSync, OptionDataLossProtect, PaymentSecret, VariableLengthOnion}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.crypto.LocalKeyManager
-import scodec.bits.ByteVector
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.bits.ByteVector
 
 import scala.collection.JavaConversions._
 import scala.collection.JavaConverters._
@@ -46,6 +46,7 @@ class StartupSpec extends AnyFunSuite {
   test("check configuration") {
     assert(Try(makeNodeParamsWithDefaults(ConfigFactory.load().getConfig("eclair"))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(ConfigFactory.load().getConfig("eclair").withFallback(ConfigFactory.parseMap(Map("max-feerate-mismatch" -> 42).asJava)))).isFailure)
+    assert(Try(makeNodeParamsWithDefaults(ConfigFactory.load().getConfig("eclair").withFallback(ConfigFactory.parseMap(Map("on-chain-fees.max-feerate-mismatch" -> 1.56).asJava)))).isFailure)
   }
 
   test("NodeParams should fail if the alias is illegal (over 32 bytes)") {
@@ -84,6 +85,10 @@ class StartupSpec extends AnyFunSuite {
   }
 
   test("NodeParams should fail if features are inconsistent") {
+    // Because of https://github.com/ACINQ/eclair/issues/1434, we need to remove the default features when falling back
+    // to the default configuration.
+    def finalizeConf(testCfg: Config): Config = testCfg.withFallback(defaultConf.withoutPath("features"))
+
     val legalFeaturesConf = ConfigFactory.parseMap(Map(
       s"features.${OptionDataLossProtect.rfcName}" -> "optional",
       s"features.${InitialRoutingSync.rfcName}" -> "optional",
@@ -105,9 +110,9 @@ class StartupSpec extends AnyFunSuite {
       s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
     ).asJava)
 
-    assert(Try(makeNodeParamsWithDefaults(legalFeaturesConf.withFallback(defaultConf))).isSuccess)
-    assert(Try(makeNodeParamsWithDefaults(illegalButAllowedFeaturesConf.withFallback(defaultConf))).isSuccess)
-    assert(Try(makeNodeParamsWithDefaults(illegalFeaturesConf.withFallback(defaultConf))).isFailure)
+    assert(Try(makeNodeParamsWithDefaults(finalizeConf(legalFeaturesConf))).isSuccess)
+    assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalButAllowedFeaturesConf))).isSuccess)
+    assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalFeaturesConf))).isFailure)
   }
 
   test("parse human readable override features") {

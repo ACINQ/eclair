@@ -77,9 +77,9 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
 
-  private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, commandBuffer, initialized))
-  private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register, commandBuffer))
-  private val nodeRelayer = context.actorOf(NodeRelayer.props(nodeParams, self, router, commandBuffer, register))
+  private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, commandBuffer, initialized), "post-restart-htlc-cleaner")
+  private val channelRelayer = context.actorOf(ChannelRelayer.props(nodeParams, self, register, commandBuffer), "channel-relayer")
+  private val nodeRelayer = context.actorOf(NodeRelayer.props(nodeParams, router, commandBuffer, register), "node-relayer")
 
   override def receive: Receive = main(Map.empty, new mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId])
 
@@ -167,7 +167,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
         commandBuffer ! CommandBuffer.CommandSend(originChannelId, cmd)
         context.system.eventStream.publish(ChannelPaymentRelayed(amountIn, amountOut, ff.htlc.paymentHash, originChannelId, ff.htlc.channelId))
       case Origin.TrampolineRelayed(_, None) => postRestartCleaner forward ff
-      case Origin.TrampolineRelayed(_, Some(_)) => nodeRelayer forward ff
+      case Origin.TrampolineRelayed(_, Some(paymentSender)) => paymentSender ! ff
     }
 
     case ff: ForwardFail => ff.to match {
@@ -206,7 +206,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, comm
 object Relayer extends Logging {
 
   def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, commandBuffer: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) =
-    Props(classOf[Relayer], nodeParams, router, register, commandBuffer, paymentHandler, initialized)
+    Props(new Relayer(nodeParams, router, register, commandBuffer, paymentHandler, initialized))
 
   type ChannelUpdates = Map[ShortChannelId, OutgoingChannel]
   type NodeChannels =  mutable.HashMap[PublicKey, mutable.Set[ShortChannelId]] with mutable.MultiMap[PublicKey, ShortChannelId]

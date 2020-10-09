@@ -86,7 +86,9 @@ trait Eclair {
 
   def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[RES_GETINFO]
 
-  def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
+  def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]]
+
+  def nodes(nodeIds_opt: Option[Set[PublicKey]] = None)(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
 
   def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest]
 
@@ -108,7 +110,7 @@ trait Eclair {
 
   def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]]
 
-  def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]]
+  def channelStats(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[Stats]]
 
   def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]]
 
@@ -117,8 +119,6 @@ trait Eclair {
   def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
 
   def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
-
-  def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]]
 
   def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]]
 
@@ -174,10 +174,16 @@ class EclairImpl(appKit: Kit) extends Eclair {
     sendToChannels[ChannelCommandResponse](channels, CMD_UPDATE_RELAY_FEE(feeBaseMsat, feeProportionalMillionths))
   }
 
-  override def peersInfo()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
+  override def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
     peers <- (appKit.switchboard ? Symbol("peers")).mapTo[Iterable[ActorRef]]
     peerinfos <- Future.sequence(peers.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
   } yield peerinfos
+
+  override def nodes(nodeIds_opt: Option[Set[PublicKey]])(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = {
+    (appKit.router ? Symbol("nodes"))
+      .mapTo[Iterable[NodeAnnouncement]]
+      .map(_.filter(n => nodeIds_opt.forall(_.contains(n.nodeId))))
+  }
 
   override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = toRemoteNode_opt match {
     case Some(pk) => for {
@@ -193,8 +199,6 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[RES_GETINFO] = {
     sendToChannel[RES_GETINFO](channel, CMD_GETINFO)
   }
-
-  override def allNodes()(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = (appKit.router ? Symbol("nodes")).mapTo[Iterable[NodeAnnouncement]]
 
   override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {
     (appKit.router ? Symbol("channels")).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
@@ -312,7 +316,10 @@ class EclairImpl(appKit: Kit) extends Eclair {
     Future(appKit.nodeParams.db.audit.listNetworkFees(filter.from, filter.to))
   }
 
-  override def channelStats()(implicit timeout: Timeout): Future[Seq[Stats]] = Future(appKit.nodeParams.db.audit.stats)
+  override def channelStats(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[Stats]] = {
+    val filter = getDefaultTimestampFilters(from_opt, to_opt)
+    Future(appKit.nodeParams.db.audit.stats(filter.from, filter.to))
+  }
 
   override def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]] = (appKit.router ? GetNetworkStats).mapTo[GetNetworkStatsResponse].map(_.stats)
 

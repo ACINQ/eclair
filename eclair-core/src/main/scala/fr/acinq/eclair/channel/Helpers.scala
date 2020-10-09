@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.{ChaCha20Poly1305, Generators, KeyManager}
 import fr.acinq.eclair.db.ChannelsDb
@@ -32,7 +32,6 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.OpenChannelTlv.ChannelVersionTlv
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, ShortChannelId, addressToPublicKeyScript, _}
-import fr.acinq.eclair.channel.ChannelVersion.USE_STATIC_REMOTEKEY_BIT
 import scodec.bits.ByteVector
 
 import scala.concurrent.Await
@@ -143,7 +142,7 @@ object Helpers {
     }
 
     val localFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-    if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
+    if (isFeeDiffTooHigh(localFeeratePerKw, open.feeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
@@ -207,25 +206,20 @@ object Helpers {
   }
 
   /**
-   * @param referenceFeePerKw reference fee rate per kiloweight
-   * @param currentFeePerKw   current fee rate per kiloweight
-   * @return the "normalized" difference between i.e local and remote fee rate: |reference - current| / avg(current, reference)
+   * To avoid spamming our peers with fee updates every time there's a small variation, we only update the fee when the
+   * difference exceeds a given ratio (updateFeeMinDiffRatio).
    */
-  def feeRateMismatch(referenceFeePerKw: Long, currentFeePerKw: Long): Double =
-    Math.abs((2.0 * (referenceFeePerKw - currentFeePerKw)) / (currentFeePerKw + referenceFeePerKw))
-
-  def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long, updateFeeMinDiffRatio: Double): Boolean =
-    feeRateMismatch(networkFeeratePerKw, commitmentFeeratePerKw) > updateFeeMinDiffRatio
+  def shouldUpdateFee(currentFeeratePerKw: Long, nextFeeratePerKw: Long, updateFeeMinDiffRatio: Double): Boolean =
+    currentFeeratePerKw == 0 || Math.abs((currentFeeratePerKw - nextFeeratePerKw).toDouble / currentFeeratePerKw) > updateFeeMinDiffRatio
 
   /**
-   * @param referenceFeePerKw       reference fee rate per kiloweight
-   * @param currentFeePerKw         current fee rate per kiloweight
-   * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
-   * @return true if the difference between current and reference fee rates is too high.
-   *         the actual check is |reference - current| / avg(current, reference) > mismatch ratio
+   * @param referenceFeePerKw  reference fee rate per kiloweight
+   * @param currentFeePerKw    current fee rate per kiloweight
+   * @param maxFeerateMismatch maximum fee rate mismatch tolerated
+   * @return true if the difference between proposed and reference fee rates is too high.
    */
-  def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
-    feeRateMismatch(referenceFeePerKw, currentFeePerKw) > maxFeerateMismatchRatio
+  def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatch: FeerateTolerance): Boolean =
+    currentFeePerKw < referenceFeePerKw * maxFeerateMismatch.ratioLow || referenceFeePerKw * maxFeerateMismatch.ratioHigh < currentFeePerKw
 
   /**
    * @param remoteFeeratePerKw remote fee rate per kiloweight
@@ -663,9 +657,9 @@ object Helpers {
           )
         case _ =>
           claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx, feeEstimator, feeTargets).copy(
-          claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
-          claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
-        )
+            claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
+            claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
+          )
       }
     }
 
