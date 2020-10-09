@@ -19,11 +19,8 @@ package fr.acinq.eclair.db
 import java.io.File
 import java.sql.{Connection, DriverManager}
 
-import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.db.sqlite._
 import grizzled.slf4j.Logging
-import org.sqlite.SQLiteException
 
 trait Databases {
 
@@ -45,11 +42,11 @@ trait Databases {
 object Databases extends Logging {
 
   /**
-    * Given a parent folder it creates or loads all the databases from a JDBC connection
-    *
-    * @param dbdir
-    * @return
-    */
+   * Given a parent folder it creates or loads all the databases from a JDBC connection
+   *
+   * @param dbdir
+   * @return
+   */
   def sqliteJDBC(dbdir: File): Databases = {
     dbdir.mkdir()
     var sqliteEclair: Connection = null
@@ -75,7 +72,7 @@ object Databases extends Logging {
   }
 
   def databaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection) = new Databases {
-    override val network = new SqliteNetworkDb(networkJdbc, Block.RegtestGenesisBlock.hash)
+    override val network = new SqliteNetworkDb(networkJdbc)
     override val audit = new SqliteAuditDb(auditJdbc)
     override val channels = new SqliteChannelsDb(eclairJdbc)
     override val peers = new SqlitePeersDb(eclairJdbc)

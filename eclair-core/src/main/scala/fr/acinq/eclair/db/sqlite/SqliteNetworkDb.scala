@@ -20,20 +20,19 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair.{Features, ShortChannelId}
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel
-import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
+import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.{Features, ShortChannelId}
 import grizzled.slf4j.Logging
 import scodec.Codec
-import scodec.bits.ByteVector
 
 import scala.collection.immutable.SortedMap
 
-class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends NetworkDb with Logging {
-  import SqliteUtils._
+class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   import SqliteUtils.ExtendedResultSet._
+  import SqliteUtils._
 
   val DB_NAME = "network"
   val CURRENT_VERSION = 2
@@ -60,7 +59,7 @@ class SqliteNetworkDb(sqlite: Connection, chainHash: ByteVector32) extends Netwo
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val channelUpdateWitnessCodec =
-    ("chainHash" | provide(chainHash)) ::
+    ("chainHash" | provide(null.asInstanceOf[ByteVector32])) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | uint32) ::
       (("messageFlags" | byte) >>:~ { messageFlags =>

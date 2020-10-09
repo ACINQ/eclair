@@ -26,10 +26,9 @@ import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Color, NodeAddress, Tor2}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
-import scodec.bits.HexStringSyntax
 
 import scala.collection.{SortedMap, mutable}
 
@@ -39,8 +38,8 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("init sqlite 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
-    val db1 = new SqliteNetworkDb(sqlite, Block.RegtestGenesisBlock.hash)
-    val db2 = new SqliteNetworkDb(sqlite, Block.RegtestGenesisBlock.hash)
+    val db1 = new SqliteNetworkDb(sqlite)
+    val db2 = new SqliteNetworkDb(sqlite)
   }
 
   test("migration test 1->2") {
@@ -82,7 +81,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("add/remove/list nodes") {
     val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteNetworkDb(sqlite, Block.RegtestGenesisBlock.hash)
+    val db = new SqliteNetworkDb(sqlite)
 
     val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
     val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(Set(ActivatedFeature(VariableLengthOnion, Optional))))
@@ -107,7 +106,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("correctly handle txids that start with 0") {
     val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteNetworkDb(sqlite, Block.RegtestGenesisBlock.hash)
+    val db = new SqliteNetworkDb(sqlite)
     val sig = ByteVector64.Zeroes
     val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
     val c_shrunk = shrink(c)
@@ -118,10 +117,10 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   def shrink(c: ChannelAnnouncement) = c.copy(bitcoinKey1 = null, bitcoinKey2 = null, bitcoinSignature1 = null, bitcoinSignature2 = null, nodeSignature1 = null, nodeSignature2 = null, chainHash = null, features = null)
 
-  def shrink(c: ChannelUpdate) = c.copy(signature = null)
+  def shrink(c: ChannelUpdate) = c.copy(signature = null, chainHash = null)
 
   def simpleTest(sqlite: Connection) = {
-    val db = new SqliteNetworkDb(sqlite, Block.RegtestGenesisBlock.hash)
+    val db = new SqliteNetworkDb(sqlite)
 
     def sig = Crypto.sign(randomBytes32, randomKey)
 
@@ -229,7 +228,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("remove many channels") {
     val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteNetworkDb(sqlite, Block.RegtestGenesisBlock.hash)
+    val db = new SqliteNetworkDb(sqlite)
     val sig = Crypto.sign(randomBytes32, randomKey)
     val priv = randomKey
     val pub = priv.publicKey
@@ -250,7 +249,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("prune many channels") {
     val sqlite = TestConstants.sqliteInMemory()
-    val db = new SqliteNetworkDb(sqlite, Block.RegtestGenesisBlock.hash)
+    val db = new SqliteNetworkDb(sqlite)
 
     db.addToPruned(shortChannelIds)
     shortChannelIds.foreach { id => assert(db.isPruned((id))) }
