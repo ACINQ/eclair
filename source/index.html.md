@@ -1260,7 +1260,14 @@ externalId      | Extra payment identifier specified by the caller              
 ## SendToRoute
 
 ```shell
-curl -u :<eclair_api_password> -X POST -F route=node1,node2 \
+curl -u :<eclair_api_password> -X POST -F nodeIds=node1,node2 \
+  -F amountMsat=<amount> \
+  -F paymentHash=<some_hash> \
+  -F finalCltvExpiry=<some_value> \
+  -F invoice=<some_invoice> \
+  "http://localhost:8080/sendtoroute"
+
+curl -u :<eclair_api_password> -X POST -F shortChannelIds=42x1x0,56x7x3 \
   -F amountMsat=<amount> \
   -F paymentHash=<some_hash> \
   -F finalCltvExpiry=<some_value> \
@@ -1268,7 +1275,8 @@ curl -u :<eclair_api_password> -X POST -F route=node1,node2 \
   "http://localhost:8080/sendtoroute"
 
 # with eclair-cli
-eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<some_hash> --finalCltvExpiry=<some_value> --invoice=<some_invoice>
+eclair-cli sendtoroute --nodeIds=node1,node2 --amountMsat=<amount> --paymentHash=<some_hash> --finalCltvExpiry=<some_value> --invoice=<some_invoice>
+eclair-cli sendtoroute --shortChannelIds=42x1x0,56x7x3 --amountMsat=<amount> --paymentHash=<some_hash> --finalCltvExpiry=<some_value> --invoice=<some_invoice>
 ```
 
 > The above command returns:
@@ -1280,11 +1288,14 @@ eclair-cli sendtoroute --route=node1,node2 --amountMsat=<amount> --paymentHash=<
 }
 ```
 
-Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
-nodeIds that the payment will traverse, it can be a json-encoded array (same as [findroute](#findroute) output) or a comma
-separated list of nodeIds. Note that the channels between the nodes in the route must be public. It's possible to add an
-extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
+Sends money to a node forcing the payment to go through the given route. The API works in a fire-and-forget fashion where
+the unique identifier for this payment attempt is immediately returned to the caller. The route parameter can either be
+a list of nodeIds that the payment will traverse or a list of shortChannelIds. If nodeIds are specified, a suitable channel
+will be automatically selected for each hop (note that in that case, the specified nodes need to have public channels between
+them).
+
+This route can either be a json-encoded array (same as [findroute](#findroute) output) or a comma-separated list.
+It's possible to add an extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
 This command may also be used to send multipart payments with your own splitting algorithm.
 Go to the [wiki](https://github.com/ACINQ/eclair/wiki) for details on how to do that.
@@ -1295,16 +1306,19 @@ Go to the [wiki](https://github.com/ACINQ/eclair/wiki) for details on how to do 
 
 ### Parameters
 
-Parameter           | Description                                                   | Optional | Type
-------------------- | ------------------------------------------------------------- | -------- | ---------------------------
-invoice             | The invoice you want to pay                                   | No       | String
-route               | A list of nodeIds from source to destination of the payment   | No       | List of nodeIds
-amountMsat          | Amount to pay                                                 | No       | Millisatoshi (Integer)
-paymentHash         | The payment hash for this payment                             | No       | 32-bytes-HexString (String)
-finalCltvExpiry     | The total CLTV expiry value for this payment                  | No       | Integer
-recipientAmountMsat | Total amount that the recipient should receive (if using MPP) | Yes      | Millisatoshi (Integer)
-parentId            | Id of the whole payment (if using MPP)                        | Yes      | Java's UUID (String)
-externalId          | Extra payment identifier specified by the caller              | Yes      | String
+Parameter           | Description                                                         | Optional | Type
+------------------- | ------------------------------------------------------------------- | -------- | ---------------------------
+invoice             | The invoice you want to pay                                         | No       | String
+nodeIds             | A list of nodeIds from source to destination of the payment         | Yes (*)  | List of nodeIds
+shortChannelIds     | A list of shortChannelIds from source to destination of the payment | Yes (*)  | List of shortChannelIds
+amountMsat          | Amount to pay                                                       | No       | Millisatoshi (Integer)
+paymentHash         | The payment hash for this payment                                   | No       | 32-bytes-HexString (String)
+finalCltvExpiry     | The total CLTV expiry value for this payment                        | No       | Integer
+recipientAmountMsat | Total amount that the recipient should receive (if using MPP)       | Yes      | Millisatoshi (Integer)
+parentId            | Id of the whole payment (if using MPP)                              | Yes      | Java's UUID (String)
+externalId          | Extra payment identifier specified by the caller                    | Yes      | String
+
+(*): you must specify either nodeIds or shortChannelIds, but not both.
 
 ## GetSentInfo
 
@@ -1908,6 +1922,73 @@ Parameter | Description                      | Optional | Type
 count     | Number of transactions to return | Yes      | Integer
 skip      | Number of transactions to skip   | No       | Integer
 
+# Messages
+
+## SignMessage
+
+```shell
+curl -u :<eclair_api_password> -X POST -F msg=aGVsbG8gd29ybGQ= "http://localhost:8080/signmessage"
+
+# with eclair-cli
+eclair-cli signmessage --msg=$(echo -n 'hello world' | base64)
+```
+
+> The above command returns:
+
+```json
+{
+  "nodeId": "0334171a1d556289f583b7c138c5cb5d02d4553245d5713a62d9953f6566a6fe12",
+  "message": "aGVsbG8gd29ybGQ=",
+  "signature": "1f9a6cc947bdb6fc14caae87be6bd76a6877d87cc83a80dec9aa8d1a23d1529fad418ce4ab5a7fb7afcfb351b317deb83d8141e68ba442f4aa4bbb534a8d27f851"
+}
+```
+
+Sign a base64-encoded message with the node's private key.
+
+### HTTP Request
+
+`POST http://localhost:8080/signmessage`
+
+### Parameters
+
+Parameter | Description                    | Optional | Type
+--------- | ------------------------------ | -------- | ---------------
+msg       | Base64-encoded message to sign | No       | String (Base64)
+
+## VerifyMessage
+
+```shell
+curl -u :<eclair_api_password> -X POST -F msg=aGVsbG8gd29ybGQ= \
+  -F sig=1f9a6cc947bdb6fc14caae87be6bd76a6877d87cc83a80dec9aa8d1a23d1529fad418ce4ab5a7fb7afcfb351b317deb83d8141e68ba442f4aa4bbb534a8d27f851 \
+  "http://localhost:8080/verifymessage"
+
+# with eclair-cli
+eclair-cli verifymessage --msg=$(echo -n 'hello world' | base64) --sig=1f9a6cc947bdb6fc14caae87be6bd76a6877d87cc83a80dec9aa8d1a23d1529fad418ce4ab5a7fb7afcfb351b317deb83d8141e68ba442f4aa4bbb534a8d27f851
+```
+
+> The above command returns:
+
+```json
+{
+  "valid": true,
+  "publicKey": "0334171a1d556289f583b7c138c5cb5d02d4553245d5713a62d9953f6566a6fe12"
+}
+```
+
+Verify a base64-encoded message signature.
+The public key of the signing node will be identified and returned.
+
+### HTTP Request
+
+`POST http://localhost:8080/verifymessage`
+
+### Parameters
+
+Parameter | Description                    | Optional | Type
+--------- | ------------------------------ | -------- | ---------------
+msg       | Base64-encoded message to sign | No       | String (Base64)
+sig       | Message signature              | No       | String (Hex)
+
 # Miscellaneous
 
 ## Audit
@@ -2153,6 +2234,9 @@ Retrieves information about the available balance of local channels.
 
 ## WS
 
+This is a simple [websocket](https://tools.ietf.org/html/rfc6455) that will output payment related events, it supports
+several types covering all the possible outcomes. All monetary values are expressed in millisatoshi.
+
 > Payment relayed event
 
 ```json
@@ -2241,8 +2325,39 @@ Retrieves information about the available balance of local channels.
 }
 ```
 
-This is a simple [websocket](https://tools.ietf.org/html/rfc6455) that will output payment related events, it supports
-several types covering all the possible outcomes. All monetary values are expressed in millisatoshi.
+> Channel opened event
+
+```json
+{
+  "type": "channel-opened",
+  "remoteNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+  "isFunder": true,
+  "temporaryChannelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+  "initialFeeratePerKw": 1200,
+  "fundingTxFeeratePerKw": 2000
+}
+```
+
+> Channel state change event
+
+```json
+{
+  "type": "channel-state-changed",
+  "remoteNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
+  "previousState": "OFFLINE",
+  "currentState": "NORMAL"
+}
+```
+
+> Channel closed event
+
+```json
+{
+  "type": "channel-closed",
+  "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+  "closingType": "MutualClose"
+}
+```
 
 ### Response types
 
