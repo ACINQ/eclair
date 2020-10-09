@@ -198,10 +198,14 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
+    def validateFeatures(features: Features): Unit = {
+      val featuresErr = Features.validateFeatureGraph(features)
+      require(featuresErr.isEmpty, featuresErr.map(_.message))
+      require(features.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
+    }
+
     val features = Features.fromConfiguration(config)
-    val featuresErr = Features.validateFeatureGraph(features)
-    require(featuresErr.isEmpty, featuresErr.map(_.message))
-    require(features.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
+    validateFeatures(features)
 
     require(pluginParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
     require(pluginParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
@@ -215,9 +219,7 @@ object NodeParams {
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = Features.fromConfiguration(e)
-      val err = Features.validateFeatureGraph(f)
-      require(err.isEmpty, err.map(_.message))
-      require(f.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
+      validateFeatures(f)
       p -> f.copy(unknown = f.unknown ++ pluginParams.map(_.pluginFeature))
     }.toMap
 
