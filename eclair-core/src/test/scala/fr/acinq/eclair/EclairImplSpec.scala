@@ -284,15 +284,15 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kit)
 
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Nil)
-    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE))
+    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)))
 
     eclair.forceClose(Right(ShortChannelId("568749x2597x0")) :: Nil)
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE))
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE(ActorRef.noSender)))
 
     eclair.forceClose(Left(ByteVector32.Zeroes) :: Right(ShortChannelId("568749x2597x0")) :: Nil)
     register.expectMsgAllOf(
-      Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE),
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE)
+      Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_FORCECLOSE(ActorRef.noSender)),
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE(ActorRef.noSender))
     )
 
     eclair.close(Left(ByteVector32.Zeroes) :: Nil, None)

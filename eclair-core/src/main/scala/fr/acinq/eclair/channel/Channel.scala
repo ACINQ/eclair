@@ -1664,7 +1664,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FORCECLOSE, d) =>
       d match {
         case data: HasCommitments =>
-          c.replyTo ! RES_SUCCESS(c, data.channelId)
+          val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+          replyTo ! RES_SUCCESS(c, data.channelId)
           handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c))
         case _ => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "forceclose", stateName), c)
       }
