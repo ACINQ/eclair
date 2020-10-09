@@ -376,6 +376,17 @@
               </ul>
           </li>
           <li>
+            <a href="#messages" class="toc-h1 toc-link" data-title="Messages">Messages</a>
+              <ul class="toc-list-h2">
+                  <li>
+                    <a href="#signmessage" class="toc-h2 toc-link" data-title="SignMessage">SignMessage</a>
+                  </li>
+                  <li>
+                    <a href="#verifymessage" class="toc-h2 toc-link" data-title="VerifyMessage">VerifyMessage</a>
+                  </li>
+              </ul>
+          </li>
+          <li>
             <a href="#miscellaneous" class="toc-h1 toc-link" data-title="Miscellaneous">Miscellaneous</a>
               <ul class="toc-list-h2">
                   <li>
@@ -1805,7 +1816,14 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 <td>String</td>
 </tr>
 </tbody></table>
-<h2 id='sendtoroute'>SendToRoute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">route</span><span class="o">=</span>node1,node2 <span class="se">\</span>
+<h2 id='sendtoroute'>SendToRoute</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeIds</span><span class="o">=</span>node1,node2 <span class="se">\</span>
+  -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; <span class="se">\</span>
+  -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="se">\</span>
+  -F <span class="nv">finalCltvExpiry</span><span class="o">=</span>&lt;some_value&gt; <span class="se">\</span>
+  -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_invoice&gt; <span class="se">\</span>
+  <span class="s2">"http://localhost:8080/sendtoroute"</span>
+
+curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">shortChannelIds</span><span class="o">=</span>42x1x0,56x7x3 <span class="se">\</span>
   -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;amount&gt; <span class="se">\</span>
   -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="se">\</span>
   -F <span class="nv">finalCltvExpiry</span><span class="o">=</span>&lt;some_value&gt; <span class="se">\</span>
@@ -1813,7 +1831,8 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
   <span class="s2">"http://localhost:8080/sendtoroute"</span>
 
 <span class="c"># with eclair-cli</span>
-eclair-cli sendtoroute --route<span class="o">=</span>node1,node2 --amountMsat<span class="o">=</span>&lt;amount&gt; --paymentHash<span class="o">=</span>&lt;some_hash&gt; --finalCltvExpiry<span class="o">=</span>&lt;some_value&gt; --invoice<span class="o">=</span>&lt;some_invoice&gt;
+eclair-cli sendtoroute --nodeIds<span class="o">=</span>node1,node2 --amountMsat<span class="o">=</span>&lt;amount&gt; --paymentHash<span class="o">=</span>&lt;some_hash&gt; --finalCltvExpiry<span class="o">=</span>&lt;some_value&gt; --invoice<span class="o">=</span>&lt;some_invoice&gt;
+eclair-cli sendtoroute --shortChannelIds<span class="o">=</span>42x1x0,56x7x3 --amountMsat<span class="o">=</span>&lt;amount&gt; --paymentHash<span class="o">=</span>&lt;some_hash&gt; --finalCltvExpiry<span class="o">=</span>&lt;some_value&gt; --invoice<span class="o">=</span>&lt;some_invoice&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns:</p>
@@ -1823,11 +1842,14 @@ eclair-cli sendtoroute --route<span class="o">=</span>node1,node2 --amountMsat<s
   </span><span class="s2">"parentId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"20b2a854-261a-4e9f-a4ca-59b381aee4bc"</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Sends money to a node forcing the payment to go through the given route, the API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller. The route parameter is a simple list of
-nodeIds that the payment will traverse, it can be a json-encoded array (same as <a href="#findroute">findroute</a> output) or a comma
-separated list of nodeIds. Note that the channels between the nodes in the route must be public. It&#39;s possible to add an
-extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
+<p>Sends money to a node forcing the payment to go through the given route. The API works in a fire-and-forget fashion where
+the unique identifier for this payment attempt is immediately returned to the caller. The route parameter can either be
+a list of nodeIds that the payment will traverse or a list of shortChannelIds. If nodeIds are specified, a suitable channel
+will be automatically selected for each hop (note that in that case, the specified nodes need to have public channels between
+them).</p>
+
+<p>This route can either be a json-encoded array (same as <a href="#findroute">findroute</a> output) or a comma-separated list.
+It&#39;s possible to add an extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
 
 <p>This command may also be used to send multipart payments with your own splitting algorithm.
 Go to the <a href="https://github.com/ACINQ/eclair/wiki">wiki</a> for details on how to do that.</p>
@@ -1849,10 +1871,16 @@ Go to the <a href="https://github.com/ACINQ/eclair/wiki">wiki</a> for details on
 <td>String</td>
 </tr>
 <tr>
-<td>route</td>
+<td>nodeIds</td>
 <td>A list of nodeIds from source to destination of the payment</td>
-<td>No</td>
+<td>Yes (*)</td>
 <td>List of nodeIds</td>
+</tr>
+<tr>
+<td>shortChannelIds</td>
+<td>A list of shortChannelIds from source to destination of the payment</td>
+<td>Yes (*)</td>
+<td>List of shortChannelIds</td>
 </tr>
 <tr>
 <td>amountMsat</td>
@@ -1891,6 +1919,8 @@ Go to the <a href="https://github.com/ACINQ/eclair/wiki">wiki</a> for details on
 <td>String</td>
 </tr>
 </tbody></table>
+
+<p>(*): you must specify either nodeIds or shortChannelIds, but not both.</p>
 <h2 id='getsentinfo'>GetSentInfo</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/getsentinfo"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -2538,6 +2568,80 @@ eclair-cli onchaintransactions --count<span class="o">=</span>2 --skip<span clas
 <td>Integer</td>
 </tr>
 </tbody></table>
+<h1 id='messages'>Messages</h1><h2 id='signmessage'>SignMessage</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">msg</span><span class="o">=</span><span class="nv">aGVsbG8gd29ybGQ</span><span class="o">=</span> <span class="s2">"http://localhost:8080/signmessage"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli signmessage --msg<span class="o">=</span><span class="k">$(</span><span class="nb">echo</span> -n <span class="s1">'hello world'</span> | base64<span class="k">)</span>
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0334171a1d556289f583b7c138c5cb5d02d4553245d5713a62d9953f6566a6fe12"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"aGVsbG8gd29ybGQ="</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1f9a6cc947bdb6fc14caae87be6bd76a6877d87cc83a80dec9aa8d1a23d1529fad418ce4ab5a7fb7afcfb351b317deb83d8141e68ba442f4aa4bbb534a8d27f851"</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<p>Sign a base64-encoded message with the node&#39;s private key.</p>
+<h3 id='http-request-31'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/signmessage</code></p>
+<h3 id='parameters-27'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>msg</td>
+<td>Base64-encoded message to sign</td>
+<td>No</td>
+<td>String (Base64)</td>
+</tr>
+</tbody></table>
+<h2 id='verifymessage'>VerifyMessage</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">msg</span><span class="o">=</span><span class="nv">aGVsbG8gd29ybGQ</span><span class="o">=</span> <span class="se">\</span>
+  -F <span class="nv">sig</span><span class="o">=</span>1f9a6cc947bdb6fc14caae87be6bd76a6877d87cc83a80dec9aa8d1a23d1529fad418ce4ab5a7fb7afcfb351b317deb83d8141e68ba442f4aa4bbb534a8d27f851 <span class="se">\</span>
+  <span class="s2">"http://localhost:8080/verifymessage"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli verifymessage --msg<span class="o">=</span><span class="k">$(</span><span class="nb">echo</span> -n <span class="s1">'hello world'</span> | base64<span class="k">)</span> --sig<span class="o">=</span>1f9a6cc947bdb6fc14caae87be6bd76a6877d87cc83a80dec9aa8d1a23d1529fad418ce4ab5a7fb7afcfb351b317deb83d8141e68ba442f4aa4bbb534a8d27f851
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+  </span><span class="s2">"valid"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"publicKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0334171a1d556289f583b7c138c5cb5d02d4553245d5713a62d9953f6566a6fe12"</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<p>Verify a base64-encoded message signature.
+The public key of the signing node will be identified and returned.</p>
+<h3 id='http-request-32'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/verifymessage</code></p>
+<h3 id='parameters-28'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>msg</td>
+<td>Base64-encoded message to sign</td>
+<td>No</td>
+<td>String (Base64)</td>
+</tr>
+<tr>
+<td>sig</td>
+<td>Message signature</td>
+<td>No</td>
+<td>String (Hex)</td>
+</tr>
+</tbody></table>
 <h1 id='miscellaneous'>Miscellaneous</h1><h2 id='audit'>Audit</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/audit"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -2632,9 +2736,9 @@ eclair-cli audit
 </span></code></pre>
 <p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.
 All monetary values are expressed in millisatoshi.</p>
-<h3 id='http-request-31'>HTTP Request</h3>
+<h3 id='http-request-33'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
-<h3 id='parameters-27'>Parameters</h3>
+<h3 id='parameters-29'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2676,9 +2780,9 @@ eclair-cli networkfees
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about on-chain fees paid during channel operations, currency values are in Satoshis.</p>
-<h3 id='http-request-32'>HTTP Request</h3>
+<h3 id='http-request-34'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/networkfees</code></p>
-<h3 id='parameters-28'>Parameters</h3>
+<h3 id='parameters-30'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2745,9 +2849,9 @@ eclair-cli channelstats
 </span></code></pre>
 <p>Retrieves information about local channels, the information is then aggregated in order to display
 statistics about the routing activity of the channels. Values are in Satoshis.</p>
-<h3 id='http-request-33'>HTTP Request</h3>
+<h3 id='http-request-35'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
-<h3 id='parameters-29'>Parameters</h3>
+<h3 id='parameters-31'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2788,9 +2892,12 @@ eclair-cli usablebalances
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the available balance of local channels.</p>
-<h3 id='http-request-34'>HTTP Request</h3>
+<h3 id='http-request-36'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/usablebalances</code></p>
 <h1 id='websocket'>Websocket</h1><h2 id='ws'>WS</h2>
+<p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">websocket</a> that will output payment related events, it supports
+several types covering all the possible outcomes. All monetary values are expressed in millisatoshi.</p>
+
 <blockquote>
 <p>Payment relayed event</p>
 </blockquote>
@@ -2874,9 +2981,37 @@ eclair-cli usablebalances
    </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1553785442676</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">websocket</a> that will output payment related events, it supports
-several types covering all the possible outcomes. All monetary values are expressed in millisatoshi.</p>
-<h3 id='response-types'>Response types</h3>
+<blockquote>
+<p>Channel opened event</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+  </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"channel-opened"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"isFunder"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"temporaryChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"initialFeeratePerKw"</span><span class="p">:</span><span class="w"> </span><span class="mi">1200</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"fundingTxFeeratePerKw"</span><span class="p">:</span><span class="w"> </span><span class="mi">2000</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<blockquote>
+<p>Channel state change event</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+  </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"channel-state-changed"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"previousState"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OFFLINE"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"currentState"</span><span class="p">:</span><span class="w"> </span><span class="s2">"NORMAL"</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre>
+<blockquote>
+<p>Channel closed event</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
+  </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"channel-closed"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"closingType"</span><span class="p">:</span><span class="w"> </span><span class="s2">"MutualClose"</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre><h3 id='response-types'>Response types</h3>
 <table><thead>
 <tr>
 <th>Type</th>
@@ -2904,7 +3039,7 @@ several types covering all the possible outcomes. All monetary values are expres
 <td>A payment failed</td>
 </tr>
 </tbody></table>
-<h3 id='http-request-35'>HTTP Request</h3>
+<h3 id='http-request-37'>HTTP Request</h3>
 <p><code>GET ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
