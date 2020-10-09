@@ -2368,6 +2368,9 @@ payment-relayed          | A payment has been successfully relayed
 payment-sent             | A payment has been successfully sent
 payment-settling-onchain | A payment wasn't fulfilled and its HTLC is being redeemed on-chain
 payment-failed           | A payment failed
+channel-opened           | A channel opening flow has started
+channel-state-changed    | A channel state changed (e.g. going from offline to connected)
+channel-closed           | A channel has been closed
 
 ### HTTP Request
 
