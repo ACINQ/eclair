@@ -438,7 +438,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       val t = FuzzTest(
         isFunder = Random.nextInt(2) == 0,
         pendingHtlcs = Random.nextInt(10),
-        feeRatePerKw = Random.nextInt(10000),
+        feeRatePerKw = Random.nextInt(10000).max(1),
         dustLimit = Random.nextInt(1000).sat,
         // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
         toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,
@@ -466,7 +466,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       val t = FuzzTest(
         isFunder = Random.nextInt(2) == 0,
         pendingHtlcs = Random.nextInt(10),
-        feeRatePerKw = Random.nextInt(10000),
+        feeRatePerKw = Random.nextInt(10000).max(1),
         dustLimit = Random.nextInt(1000).sat,
         // We make sure both sides have enough to send/receive at least the initial pending HTLCs.
         toLocal = maxPendingHtlcAmount * 2 * 10 + Random.nextInt(1000000000).msat,

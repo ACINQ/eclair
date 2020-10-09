@@ -451,13 +451,16 @@ object PaymentRequest {
     }
 
     def decode(input: String): Option[MilliSatoshi] =
-      input match {
+      (input match {
         case "" => None
         case a if a.last == 'p' => Some(MilliSatoshi(a.dropRight(1).toLong / 10L)) // 1 pico-bitcoin == 10 milli-satoshis
         case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
         case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
         case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
         case a => Some(MilliSatoshi(a.toLong * 100000000000L))
+      }).flatMap {
+        case MilliSatoshi(0) => None
+        case amount => Some(amount)
       }
 
     def encode(amount: Option[MilliSatoshi]): String = {

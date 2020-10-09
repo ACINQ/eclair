@@ -30,7 +30,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 
 class FileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
-  test("process backups") {
+  ignore("process backups") {
     val db = TestConstants.inMemoryDb()
     val wip = new File(TestUtils.BUILD_DIRECTORY, s"wip-${UUID.randomUUID()}")
     val dest = new File(TestUtils.BUILD_DIRECTORY, s"backup-${UUID.randomUUID()}")

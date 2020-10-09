@@ -20,6 +20,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
@@ -96,7 +97,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
   }
 
-  override def addNode(n: NodeAnnouncement): Unit = {
+  override def addNode(n: NodeAnnouncement): Unit = withMetrics("network/add-node") {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO nodes VALUES (?, ?)")) { statement =>
       statement.setBytes(1, n.nodeId.value.toArray)
       statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
@@ -104,7 +105,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def updateNode(n: NodeAnnouncement): Unit = {
+  override def updateNode(n: NodeAnnouncement): Unit = withMetrics("network/update-node") {
     using(sqlite.prepareStatement("UPDATE nodes SET data=? WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
       statement.setBytes(2, n.nodeId.value.toArray)
@@ -112,7 +113,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
+  override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = withMetrics("network/get-node") {
     using(sqlite.prepareStatement("SELECT data FROM nodes WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
       val rs = statement.executeQuery()
@@ -120,21 +121,21 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def removeNode(nodeId: Crypto.PublicKey): Unit = {
+  override def removeNode(nodeId: Crypto.PublicKey): Unit = withMetrics("network/remove-node") {
     using(sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
       statement.executeUpdate()
     }
   }
 
-  override def listNodes(): Seq[NodeAnnouncement] = {
+  override def listNodes(): Seq[NodeAnnouncement] = withMetrics("network/list-nodes") {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM nodes")
       codecSequence(rs, nodeAnnouncementCodec)
     }
   }
 
-  override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = {
+  override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = withMetrics("network/add-channel") {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?, ?, NULL, NULL)")) { statement =>
       statement.setLong(1, c.shortChannelId.toLong)
       statement.setString(2, txid.toHex)
@@ -144,7 +145,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def updateChannel(u: ChannelUpdate): Unit = {
+  override def updateChannel(u: ChannelUpdate): Unit = withMetrics("network/update-channel") {
     val column = if (u.isNode1) "channel_update_1" else "channel_update_2"
     using(sqlite.prepareStatement(s"UPDATE channels SET $column=? WHERE short_channel_id=?")) { statement =>
       statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
@@ -153,7 +154,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def listChannels(): SortedMap[ShortChannelId, PublicChannel] = {
+  override def listChannels(): SortedMap[ShortChannelId, PublicChannel] = withMetrics("network/list-channels") {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM channels")
       var m = SortedMap.empty[ShortChannelId, PublicChannel]
@@ -169,7 +170,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = {
+  override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = withMetrics("network/remove-channels") {
     using(sqlite.createStatement) { statement =>
       shortChannelIds
         .grouped(1000) // remove channels by batch of 1000
@@ -180,7 +181,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
+  override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = withMetrics("network/add-to-pruned") {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO pruned VALUES (?)"), inTransaction = true) { statement =>
       shortChannelIds.foreach(shortChannelId => {
         statement.setLong(1, shortChannelId.toLong)
@@ -190,13 +191,13 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def removeFromPruned(shortChannelId: ShortChannelId): Unit = {
+  override def removeFromPruned(shortChannelId: ShortChannelId): Unit = withMetrics("network/remove-from-pruned") {
     using(sqlite.createStatement) { statement =>
       statement.executeUpdate(s"DELETE FROM pruned WHERE short_channel_id=${shortChannelId.toLong}")
     }
   }
 
-  override def isPruned(shortChannelId: ShortChannelId): Boolean = {
+  override def isPruned(shortChannelId: ShortChannelId): Boolean = withMetrics("network/is-pruned") {
     using(sqlite.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
       statement.setLong(1, shortChannelId.toLong)
       val rs = statement.executeQuery()
@@ -205,5 +206,5 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   }
 
   // used by mobile apps
-  override def close(): Unit = sqlite.close
+  override def close(): Unit = sqlite.close()
 }

@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
@@ -61,6 +61,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
   override def withFixture(test: OneArgTest): Outcome = {
     val fuzzy = test.tags.contains("fuzzy")
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
+    val aliceParams = Alice.nodeParams
+    val bobParams = Bob.nodeParams
     val alicePeer = TestProbe()
     val bobPeer = TestProbe()
     TestUtils.forwardOutgoingToPipe(alicePeer, pipe)
@@ -69,15 +71,13 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     val bob2blockchain = TestProbe()
     val registerA = system.actorOf(Props(new TestRegister()))
     val registerB = system.actorOf(Props(new TestRegister()))
-    val commandBufferA = system.actorOf(Props(new TestCommandBuffer(Alice.nodeParams, registerA)))
-    val commandBufferB = system.actorOf(Props(new TestCommandBuffer(Bob.nodeParams, registerB)))
-    val paymentHandlerA = system.actorOf(Props(new PaymentHandler(Alice.nodeParams, commandBufferA)))
-    val paymentHandlerB = system.actorOf(Props(new PaymentHandler(Bob.nodeParams, commandBufferB)))
-    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, TestProbe().ref, registerA, commandBufferA, paymentHandlerA))
-    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, TestProbe().ref, registerB, commandBufferB, paymentHandlerB))
+    val paymentHandlerA = system.actorOf(Props(new PaymentHandler(aliceParams, registerA)))
+    val paymentHandlerB = system.actorOf(Props(new PaymentHandler(bobParams, registerB)))
+    val relayerA = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, registerA, paymentHandlerA))
+    val relayerB = system.actorOf(Relayer.props(bobParams, TestProbe().ref, registerB, paymentHandlerB))
     val wallet = new TestWallet
-    val alice: TestFSMRef[State, Data, Channel] = new TestFSMRef(system, Channel.props(Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA, None), alicePeer.ref, randomName)
-    val bob: TestFSMRef[State, Data, Channel] = new TestFSMRef(system, Channel.props(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB, None), bobPeer.ref, randomName)
+    val alice: TestFSMRef[State, Data, Channel] = new TestFSMRef(system, Props(new Channel(aliceParams, wallet, bobParams.nodeId, alice2blockchain.ref, relayerA)), alicePeer.ref, randomName)
+    val bob: TestFSMRef[State, Data, Channel] = new TestFSMRef(system, Props(new Channel(bobParams, wallet, aliceParams.nodeId, bob2blockchain.ref, relayerB)), bobPeer.ref, randomName)
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.features)
       val bobInit = Init(Bob.channelParams.features)
@@ -112,16 +112,6 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
       case Register.Forward(_, msg) => channel forward msg
       case Register.ForwardShortId(_, msg) => channel forward msg
     }
-  }
-
-  class TestCommandBuffer(nodeParams: NodeParams, register: ActorRef) extends CommandBuffer(nodeParams, register) {
-    def filterRemoteEvents: Receive = {
-      // This is needed because we use the same actor system for A and B's CommandBuffers. If A receives an event from
-      // B's channel and it has a pending relay with the same htlcId as one of B's htlc, it may mess up B's state.
-      case ChannelStateChanged(_, _, remoteNodeId, _, _, _) if remoteNodeId == nodeParams.nodeId => ()
-    }
-
-    override def receive: Receive = filterRemoteEvents orElse super.receive
   }
 
   class SenderActor(sendChannel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, latch: CountDownLatch, count: Int) extends Actor with ActorLogging {

@@ -43,7 +43,7 @@ import fr.acinq.eclair.db.{Databases, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Switchboard}
 import fr.acinq.eclair.payment.Auditor
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
@@ -246,9 +246,8 @@ class Setup(datadir: File,
       }
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
-      commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))
-      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, commandBuffer), "payment-handler", SupervisorStrategy.Resume))
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, commandBuffer, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
+      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register), "payment-handler", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
       _ <- postRestartCleanUpInitialized.future
@@ -262,7 +261,6 @@ class Setup(datadir: File,
         watcher = watcher,
         paymentHandler = paymentHandler,
         register = register,
-        commandBuffer = commandBuffer,
         relayer = relayer,
         router = router,
         switchboard = switchboard,
@@ -282,7 +280,6 @@ case class Kit(nodeParams: NodeParams,
                watcher: ActorRef,
                paymentHandler: ActorRef,
                register: ActorRef,
-               commandBuffer: ActorRef,
                relayer: ActorRef,
                router: ActorRef,
                switchboard: ActorRef,
