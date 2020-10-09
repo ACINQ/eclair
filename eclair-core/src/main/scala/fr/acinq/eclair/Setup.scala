@@ -19,6 +19,7 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
@@ -36,8 +37,9 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
-import fr.acinq.eclair.db.{BackupHandler, Databases}
+import fr.acinq.eclair.db.{Databases, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Switchboard}
 import fr.acinq.eclair.payment.Auditor
 import fr.acinq.eclair.payment.receive.PaymentHandler
@@ -79,11 +81,11 @@ class Setup(datadir: File,
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.hashFromChain(chain))
+  val instanceId = UUID.randomUUID()
 
-  val database = db match {
-    case Some(d) => d
-    case None => Databases.sqliteJDBC(chaindir)
-  }
+  logger.info(s"instanceid=$instanceId")
+
+  val databases = Databases.init(config.getConfig("db"), instanceId, datadir, chaindir, db)
 
   /**
    * This counter holds the current blockchain height.
@@ -111,7 +113,7 @@ class Setup(datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, blockCount, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, None, databases, blockCount, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -228,12 +230,16 @@ class Setup(datadir: File,
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
       backupHandler = if (config.getBoolean("enable-db-backup")) {
-        system.actorOf(SimpleSupervisor.props(
-          BackupHandler.props(
-            nodeParams.db,
-            new File(chaindir, "eclair.sqlite.bak"),
-            if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
-          ), "backuphandler", SupervisorStrategy.Resume))
+        nodeParams.db match {
+          case fileBackup: FileBackup => system.actorOf(SimpleSupervisor.props(
+            FileBackupHandler.props(
+              fileBackup,
+              new File(chaindir, "eclair.sqlite.bak"),
+              if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None),
+            "backuphandler", SupervisorStrategy.Resume))
+          case _ =>
+            system.deadLetters
+        }
       } else {
         logger.warn("database backup is disabled")
         system.deadLetters
