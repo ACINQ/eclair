@@ -59,6 +59,7 @@ object BlockchainWatchdog {
           case CheckLatestHeaders(blockCount) =>
             context.spawn(HeadersOverDns(chainHash, blockCount, blockCountDelta), HeadersOverDns.Source) ! HeadersOverDns.CheckLatestHeaders(context.self)
             context.spawn(BlockstreamInfo(chainHash, blockCount, blockCountDelta), BlockstreamInfo.Source) ! BlockstreamInfo.CheckLatestHeaders(context.self)
+            context.spawn(Blockcypher(chainHash, blockCount, blockCountDelta), Blockcypher.Source) ! Blockcypher.CheckLatestHeaders(context.self)
             Behaviors.same
           case LatestHeaders(blockCount, blockHeaders, source) =>
             val missingBlocks = blockHeaders match {

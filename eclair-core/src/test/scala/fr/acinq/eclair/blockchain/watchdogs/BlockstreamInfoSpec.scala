@@ -26,23 +26,23 @@ import scodec.bits.HexStringSyntax
 
 class BlockstreamInfoSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  test("fetch genesis block header") {
-    val blockstreamInfo = testKit.spawn(BlockstreamInfo(Block.LivenetGenesisBlock.hash, 0, 1))
+  test("fetch old block header") {
+    val blockstreamInfo = testKit.spawn(BlockstreamInfo(Block.LivenetGenesisBlock.hash, 1, 1))
     val sender = testKit.createTestProbe[LatestHeaders]()
     blockstreamInfo ! CheckLatestHeaders(sender.ref)
-    sender.expectMessage(LatestHeaders(0, Set(BlockHeaderAt(0, Block.LivenetGenesisBlock.header)), BlockstreamInfo.Source))
+    sender.expectMessage(LatestHeaders(1, Set(BlockHeaderAt(1, BlockHeader.read(hex"010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299".toArray))), BlockstreamInfo.Source))
   }
 
-  test("fetch first 3 block headers") {
-    val blockstreamInfo = testKit.spawn(BlockstreamInfo(Block.LivenetGenesisBlock.hash, 0, 3))
+  test("fetch old block headers") {
+    val blockstreamInfo = testKit.spawn(BlockstreamInfo(Block.LivenetGenesisBlock.hash, 1, 3))
     val sender = testKit.createTestProbe[LatestHeaders]()
     blockstreamInfo ! CheckLatestHeaders(sender.ref)
     val expectedHeaders = Set(
-      BlockHeaderAt(0, Block.LivenetGenesisBlock.header),
       BlockHeaderAt(1, BlockHeader.read(hex"010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299".toArray)),
       BlockHeaderAt(2, BlockHeader.read(hex"010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd61".toArray)),
+      BlockHeaderAt(3, BlockHeader.read(hex"01000000bddd99ccfda39da1b108ce1a5d70038d0a967bacb68b6b63065f626a0000000044f672226090d85db9a9f2fbfe5f0f9609b387af7be5b7fbb7a1767c831c9e995dbe6649ffff001d05e0ed6d".toArray)),
     )
-    sender.expectMessage(LatestHeaders(0, expectedHeaders, BlockstreamInfo.Source))
+    sender.expectMessage(LatestHeaders(1, expectedHeaders, BlockstreamInfo.Source))
   }
 
   test("fetch some block headers") {

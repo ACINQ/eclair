@@ -16,15 +16,19 @@
 
 package fr.acinq.eclair.blockchain.watchdogs
 
-import akka.actor.typed.scaladsl.Behaviors
+import java.time.OffsetDateTime
+
+import akka.actor.ActorSystem
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
+import akka.pattern.after
 import com.softwaremill.sttp.json4s.asJson
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import com.softwaremill.sttp.{StatusCodes, SttpBackend, Uri, UriContext, sttp}
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{BlockHeaderAt, LatestHeaders}
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
-import org.json4s.JsonAST.{JArray, JInt}
+import org.json4s.JsonAST.{JInt, JObject, JString}
 import org.json4s.jackson.Serialization
 import org.json4s.{DefaultFormats, Serialization}
 
@@ -33,17 +37,17 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 /**
- * Created by t-bast on 30/09/2020.
+ * Created by t-bast on 09/10/2020.
  */
 
-/** This actor queries https://blockstream.info/ to fetch block headers. See https://github.com/Blockstream/esplora/blob/master/API.md. */
-object BlockstreamInfo {
+/** This actor queries https://blockcypher.com/ to fetch block headers. See https://www.blockcypher.com/dev/bitcoin/#introduction. */
+object Blockcypher {
 
   implicit val formats: DefaultFormats = DefaultFormats
   implicit val serialization: Serialization = Serialization
   implicit val sttpBackend: SttpBackend[Future, Nothing] = OkHttpFutureBackend()
 
-  val Source = "blockstream.info"
+  val Source = "blockcypher.com"
 
   // @formatter:off
   sealed trait Command
@@ -54,17 +58,16 @@ object BlockstreamInfo {
 
   def apply(chainHash: ByteVector32, currentBlockCount: Long, blockCountDelta: Int): Behavior[Command] = {
     Behaviors.setup { context =>
-      implicit val executionContext: ExecutionContext = context.executionContext
       Behaviors.receiveMessage {
         case CheckLatestHeaders(replyTo) =>
           val uri_opt = chainHash match {
-            case Block.LivenetGenesisBlock.hash => Some(uri"https://blockstream.info/api")
-            case Block.TestnetGenesisBlock.hash => Some(uri"https://blockstream.info/testnet/api")
+            case Block.LivenetGenesisBlock.hash => Some(uri"https://api.blockcypher.com/v1/btc/main")
+            case Block.TestnetGenesisBlock.hash => Some(uri"https://api.blockcypher.com/v1/btc/test3")
             case _ => None
           }
           uri_opt match {
             case Some(uri) =>
-              context.pipeToSelf(getHeaders(uri, currentBlockCount, currentBlockCount + blockCountDelta - 1)) {
+              context.pipeToSelf(getHeaders(uri, currentBlockCount, currentBlockCount + blockCountDelta - 1)(context)) {
                 case Success(headers) => WrappedLatestHeaders(replyTo, headers)
                 case Failure(e) => WrappedFailure(e)
               }
@@ -85,32 +88,37 @@ object BlockstreamInfo {
     }
   }
 
-  private def getHeaders(baseUri: Uri, from: Long, to: Long)(implicit ec: ExecutionContext): Future[LatestHeaders] = {
-    val chunks = (0 to (to - from).toInt / 10).map(i => getChunk(baseUri, to - 10 * i))
-    Future.sequence(chunks).map(headers => LatestHeaders(from, headers.flatten.filter(_.blockCount >= from).toSet, Source))
+  private def getHeaders(baseUri: Uri, from: Long, to: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
+    implicit val classicSystem: ActorSystem = context.system.classicSystem
+    implicit val ec: ExecutionContext = context.system.executionContext
+    // We add delays between API calls to avoid getting throttled.
+    Future.sequence((from to to).map(i => after((i - from).toInt * 1.second)(getHeader(baseUri, i))))
+      .map(headers => LatestHeaders(from, headers.flatten.filter(_.blockCount >= from).toSet, Source))
   }
 
-  /** blockstream.info returns chunks of 10 headers between ]startHeight-10; startHeight] */
-  private def getChunk(baseUri: Uri, startHeight: Long)(implicit ec: ExecutionContext): Future[Seq[BlockHeaderAt]] = for {
-    headers <- sttp.readTimeout(10 seconds).get(baseUri.path(baseUri.path :+ "blocks" :+ startHeight.toString))
-      .response(asJson[JArray])
+  private def getHeader(baseUri: Uri, blockCount: Long)(implicit ec: ExecutionContext): Future[Seq[BlockHeaderAt]] = for {
+    header <- sttp.readTimeout(30 seconds).get(baseUri.path(baseUri.path :+ "blocks" :+ blockCount.toString))
+      .response(asJson[JObject])
       .send()
       .map(r => r.code match {
         // HTTP 404 is a "normal" error: we're trying to lookup future blocks that haven't been mined.
         case StatusCodes.NotFound => Seq.empty
-        case _ => r.unsafeBody.arr
+        case _ => r.unsafeBody \ "error" match {
+          case JString(error) if error == s"Block $blockCount not found." => Seq.empty
+          case _ => Seq(r.unsafeBody)
+        }
       })
       .map(blocks => blocks.map(block => {
         val JInt(height) = block \ "height"
-        val JInt(version) = block \ "version"
-        val JInt(time) = block \ "timestamp"
+        val JInt(version) = block \ "ver"
+        val JString(time) = block \ "time"
         val JInt(bits) = block \ "bits"
         val JInt(nonce) = block \ "nonce"
-        val previousBlockHash = (block \ "previousblockhash").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-        val merkleRoot = (block \ "merkle_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-        val header = BlockHeader(version.toLong, previousBlockHash, merkleRoot, time.toLong, bits.toLong, nonce.toLong)
+        val previousBlockHash = (block \ "prev_block").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
+        val merkleRoot = (block \ "mrkl_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
+        val header = BlockHeader(version.toLong, previousBlockHash, merkleRoot, OffsetDateTime.parse(time).toEpochSecond, bits.toLong, nonce.toLong)
         BlockHeaderAt(height.toLong, header)
       }))
-  } yield headers
+  } yield header
 
 }
