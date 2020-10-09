@@ -182,7 +182,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]] = {
-    sendToChannels[CommandResponse[CMD_FORCECLOSE]](channels, CMD_FORCECLOSE)
+    sendToChannels[CommandResponse[CMD_FORCECLOSE]](channels, CMD_FORCECLOSE(ActorRef.noSender))
   }
 
   override def updateRelayFee(channels: List[ApiTypes.ChannelIdentifier], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
