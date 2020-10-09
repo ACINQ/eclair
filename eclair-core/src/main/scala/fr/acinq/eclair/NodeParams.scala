@@ -91,6 +91,8 @@ case class NodeParams(keyManager: KeyManager,
   val nodeId = keyManager.nodeId
   val keyPair = KeyPair(nodeId.value, privateKey.value)
 
+  val pluginMessageTags: Set[Int] = pluginParams.flatMap(_.tags).toSet
+
   def currentBlockHeight: Long = blockCount.get
 
   def featuresFor(nodeId: PublicKey) = overrideFeatures.getOrElse(nodeId, features)
