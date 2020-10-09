@@ -30,9 +30,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{Features, LongToBtcAmount, NodeParams}
-import scodec.bits.ByteVector
 
-import scala.compat.Platform
 import scala.concurrent.Promise
 import scala.util.Try
 
@@ -51,7 +49,7 @@ import scala.util.Try
  * payment (because of multi-part): we have lost the intermediate state necessary to retry that payment, so we need to
  * wait for the partial HTLC set sent downstream to either fail or fulfill the payment in our DB.
  */
-class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with ActorLogging {
+class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with ActorLogging {
 
   import PostRestartHtlcCleaner._
 
@@ -118,8 +116,6 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
 
     case GetBrokenHtlcs => sender ! brokenHtlcs
 
-    case ack: CommandBuffer.CommandAck => commandBuffer forward ack
-
     case ChannelCommandResponse.Ok => // ignoring responses from channels
   }
 
@@ -161,7 +157,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
             log.info(s"received preimage for paymentHash=${fulfilledHtlc.paymentHash}: fulfilling ${origins.length} HTLCs upstream")
             origins.foreach { case (channelId, htlcId) =>
               Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = true).increment()
-              commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
+              PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FULFILL_HTLC(htlcId, paymentPreimage, commit = true))
             }
           }
           val relayedOut1 = relayedOut diff Set((fulfilledHtlc.channelId, fulfilledHtlc.id))
@@ -210,7 +206,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
                   Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = true).increment()
                   // We don't bother decrypting the downstream failure to forward a more meaningful error upstream, it's
                   // very likely that it won't be actionable anyway because of our node restart.
-                  commandBuffer ! CommandBuffer.CommandSend(channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
+                  PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, CMD_FAIL_HTLC(htlcId, Right(TemporaryNodeFailure), commit = true))
                 }
               case _: Origin.Relayed =>
                 Metrics.Unhandled.withTag(Metrics.Hint, origin.getClass.getSimpleName).increment()
@@ -232,7 +228,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, commandBuffer: ActorRef, in
 
 object PostRestartHtlcCleaner {
 
-  def props(nodeParams: NodeParams, commandBuffer: ActorRef, initialized: Option[Promise[Done]] = None) = Props(classOf[PostRestartHtlcCleaner], nodeParams, commandBuffer, initialized)
+  def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
 
   case object GetBrokenHtlcs
 
@@ -375,7 +371,7 @@ object PostRestartHtlcCleaner {
 
   /**
    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]] in a database
-   * (see [[fr.acinq.eclair.payment.relay.CommandBuffer]]) because we don't want to lose preimages, or to forget to fail
+   * (see [[fr.acinq.eclair.db.PendingRelayDb]]) because we don't want to lose preimages, or to forget to fail
    * incoming htlcs, which would lead to unwanted channel closings.
    *
    * Because of the way our watcher works, in a scenario where a downstream channel has gone to the blockchain, it may

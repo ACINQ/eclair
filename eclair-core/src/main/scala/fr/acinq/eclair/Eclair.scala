@@ -25,7 +25,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.blockchain.OnChainBalance
-import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
@@ -45,7 +44,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 
-case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, network: String, blockHeight: Int, publicAddresses: Seq[NodeAddress])
+case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, network: String, blockHeight: Int, publicAddresses: Seq[NodeAddress], instanceId: String)
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
@@ -224,21 +223,18 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def onChainBalance(): Future[OnChainBalance] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.getBalance
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
 
   override def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.listTransactions(count, skip)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
 
   override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.sendToAddress(address, amount, confirmationTarget)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
@@ -367,7 +363,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
       chainHash = appKit.nodeParams.chainHash,
       network = NodeParams.chainFromHash(appKit.nodeParams.chainHash),
       blockHeight = appKit.nodeParams.currentBlockHeight.toInt,
-      publicAddresses = appKit.nodeParams.publicAddresses)
+      publicAddresses = appKit.nodeParams.publicAddresses,
+      instanceId = appKit.nodeParams.instanceId.toString)
   )
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =

@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel.{ChannelErrorOccurred, _}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Origin}
+import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
@@ -1337,7 +1337,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     sender.send(bob, CMD_FULFILL_HTLC(42, randomBytes32)) // this will fail
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
-    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
   private def testUpdateFulfillHtlc(f: FixtureParam) = {
@@ -1462,12 +1462,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_FAIL_HTLC (acknowledge in case of failure)") { f =>
     import f._
     val sender = TestProbe()
-    val r = randomBytes32
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure))) // this will fail
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
-    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
   test("recv CMD_FAIL_MALFORMED_HTLC") { f =>
@@ -1512,7 +1511,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, ByteVector32.Zeroes, FailureMessageCodecs.BADONION)) // this will fail
     sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
-    relayerB.expectMsg(CommandBuffer.CommandAck(initialState.channelId, 42))
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
   private def testUpdateFailHtlc(f: FixtureParam) = {

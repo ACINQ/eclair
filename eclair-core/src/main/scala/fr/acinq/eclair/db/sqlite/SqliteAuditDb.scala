@@ -22,6 +22,7 @@ import java.util.UUID
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
+import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi}
@@ -107,7 +108,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def add(e: ChannelLifecycleEvent): Unit =
+  override def add(e: ChannelLifecycleEvent): Unit = withMetrics("audit/add-channel-lifecycle") {
     using(sqlite.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.remoteNodeId.value.toArray)
@@ -118,8 +119,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(7, System.currentTimeMillis)
       statement.executeUpdate()
     }
+  }
 
-  override def add(e: PaymentSent): Unit =
+  override def add(e: PaymentSent): Unit = withMetrics("audit/add-payment-sent") {
     using(sqlite.prepareStatement("INSERT INTO sent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
       e.parts.foreach(p => {
         statement.setLong(1, p.amount.toLong)
@@ -136,8 +138,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       })
       statement.executeBatch()
     }
+  }
 
-  override def add(e: PaymentReceived): Unit =
+  override def add(e: PaymentReceived): Unit = withMetrics("audit/add-payment-received") {
     using(sqlite.prepareStatement("INSERT INTO received VALUES (?, ?, ?, ?)")) { statement =>
       e.parts.foreach(p => {
         statement.setLong(1, p.amount.toLong)
@@ -148,8 +151,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       })
       statement.executeBatch()
     }
+  }
 
-  override def add(e: PaymentRelayed): Unit = {
+  override def add(e: PaymentRelayed): Unit = withMetrics("audit/add-payment-relayed") {
     val payments = e match {
       case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, ts) =>
         // non-trampoline relayed payments have one input and one output
@@ -171,7 +175,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def add(e: NetworkFeePaid): Unit =
+  override def add(e: NetworkFeePaid): Unit = withMetrics("audit/add-network-fee") {
     using(sqlite.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.remoteNodeId.value.toArray)
@@ -181,8 +185,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(6, System.currentTimeMillis)
       statement.executeUpdate()
     }
+  }
 
-  override def add(e: ChannelErrorOccurred): Unit =
+  override def add(e: ChannelErrorOccurred): Unit = withMetrics("audit/add-channel-error") {
     using(sqlite.prepareStatement("INSERT INTO channel_errors VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       val (errorName, errorMessage) = e.error match {
         case LocalError(t) => (t.getClass.getSimpleName, t.getMessage)
@@ -196,6 +201,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(6, System.currentTimeMillis)
       statement.executeUpdate()
     }
+  }
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
     using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>

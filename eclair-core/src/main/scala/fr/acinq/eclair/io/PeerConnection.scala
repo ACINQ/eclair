@@ -18,7 +18,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
@@ -425,7 +425,8 @@ class PeerConnection(nodeParams: NodeParams, switchboard: ActorRef, router: Acto
   }
 
   def scheduleNextPing(): Unit = {
-    setTimer(SEND_PING_TIMER, SendPing, 30 seconds)
+    log.debug("next ping scheduled in {}", nodeParams.pingInterval)
+    setTimer(SEND_PING_TIMER, SendPing, nodeParams.pingInterval)
   }
 
   initialize()

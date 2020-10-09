@@ -27,7 +27,7 @@ import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
 import fr.acinq.eclair.payment.OutgoingPacket.{buildCommand, buildOnion, buildPacket}
 import fr.acinq.eclair.payment.relay.Origin._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.router.Router.{ChannelHop, Ignore, NodeHop}
 import fr.acinq.eclair.router.{Announcements, _}
@@ -54,10 +54,9 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     within(30 seconds) {
       val nodeParams = TestConstants.Bob.nodeParams
       val (router, register) = (TestProbe(), TestProbe())
-      val commandBuffer = system.actorOf(Props(new CommandBuffer(nodeParams, register.ref)))
       val paymentHandler = TestProbe()
       // we are node B in the route A -> B -> C -> ....
-      val relayer = system.actorOf(Relayer.props(nodeParams, router.ref, register.ref, commandBuffer, paymentHandler.ref))
+      val relayer = system.actorOf(Relayer.props(nodeParams, router.ref, register.ref, paymentHandler.ref))
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, relayer, router, register, paymentHandler, TestProbe())))
     }
   }
@@ -379,8 +378,7 @@ class RelayerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     val nodeParams = TestConstants.Bob.nodeParams.copy(enableTrampolinePayment = false)
-    val commandBuffer = system.actorOf(Props(new CommandBuffer(nodeParams, register.ref)))
-    val relayer = system.actorOf(Relayer.props(nodeParams, router.ref, register.ref, commandBuffer, paymentHandler.ref))
+    val relayer = system.actorOf(Relayer.props(nodeParams, router.ref, register.ref, paymentHandler.ref))
 
     // we use this to build a valid trampoline onion inside a normal onion
     val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: NodeHop(b, c, channelUpdate_bc.cltvExpiryDelta, fee_b) :: Nil

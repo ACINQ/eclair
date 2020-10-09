@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import java.io.File
+import java.util.UUID
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props, ReceiveTimeout, SupervisorStrategy}
@@ -53,6 +54,7 @@ class SyncLiteSetup(datadir: File,
   val config = system.settings.config.getConfig("eclair")
   val chain = config.getString("chain")
   val keyManager = new LocalKeyManager(randomBytes32, NodeParams.hashFromChain(chain))
+  val instanceId = UUID.randomUUID()
   val database = db match {
     case Some(d) => d
     case None => Databases.sqliteJDBC(new File(datadir, chain))
@@ -81,7 +83,7 @@ class SyncLiteSetup(datadir: File,
     override def getFeeratePerKw(target: Int): Long = feeratesPerKw.get().feePerBlock(target)
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, blockCount, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, None, database, blockCount, feeEstimator)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")

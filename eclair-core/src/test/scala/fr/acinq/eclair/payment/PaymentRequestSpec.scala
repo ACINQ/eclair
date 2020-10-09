@@ -53,6 +53,15 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert('m' === Amount.unit((1 btc).toMilliSatoshi))
   }
 
+  test("decode empty amount") {
+    assert(Amount.decode("") === None)
+    assert(Amount.decode("0") === None)
+    assert(Amount.decode("0p") === None)
+    assert(Amount.decode("0n") === None)
+    assert(Amount.decode("0u") === None)
+    assert(Amount.decode("0m") === None)
+  }
+
   test("check that we can still decode non-minimal amount encoding") {
     assert(Amount.decode("1000u") === Some(100000000 msat))
     assert(Amount.decode("1000000n") === Some(100000000 msat))
@@ -75,7 +84,6 @@ class PaymentRequestSpec extends AnyFunSuite {
 
   test("verify that padding is zero") {
     val codec = PaymentRequest.Codecs.alignedBytesCodec(bits)
-
     assert(codec.decode(bin"1010101000").require == DecodeResult(bin"10101010", BitVector.empty))
     assert(codec.decode(bin"1010101001").isFailure) // non-zero padding
   }

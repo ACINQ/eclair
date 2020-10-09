@@ -19,6 +19,7 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.sql.DriverManager
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
@@ -36,12 +37,13 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
-import fr.acinq.eclair.db.{BackupHandler, Databases}
+import fr.acinq.eclair.db.{Databases, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Switchboard}
 import fr.acinq.eclair.payment.Auditor
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.relay.{CommandBuffer, Relayer}
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
@@ -80,11 +82,11 @@ class Setup(datadir: File,
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
   val keyManager = new LocalKeyManager(seed, NodeParams.hashFromChain(chain))
+  val instanceId = UUID.randomUUID()
 
-  val database = db match {
-    case Some(d) => d
-    case None => Databases.sqliteJDBC(chaindir)
-  }
+  logger.info(s"instanceid=$instanceId")
+
+  val databases = Databases.init(config.getConfig("db"), instanceId, datadir, chaindir, db)
 
   /**
    * This counter holds the current blockchain height.
@@ -112,7 +114,7 @@ class Setup(datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, keyManager, None, database, blockCount, feeEstimator)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, None, databases, blockCount, feeEstimator)
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -232,21 +234,24 @@ class Setup(datadir: File,
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
       backupHandler = if (config.getBoolean("enable-db-backup")) {
-        system.actorOf(SimpleSupervisor.props(
-          BackupHandler.props(
-            nodeParams.db,
-            new File(chaindir, "eclair.sqlite.bak"),
-            if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None
-          ), "backuphandler", SupervisorStrategy.Resume))
+        nodeParams.db match {
+          case fileBackup: FileBackup => system.actorOf(SimpleSupervisor.props(
+            FileBackupHandler.props(
+              fileBackup,
+              new File(chaindir, "eclair.sqlite.bak"),
+              if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None),
+            "backuphandler", SupervisorStrategy.Resume))
+          case _ =>
+            system.deadLetters
+        }
       } else {
         logger.warn("database backup is disabled")
         system.deadLetters
       }
       audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
-      commandBuffer = system.actorOf(SimpleSupervisor.props(Props(new CommandBuffer(nodeParams, register)), "command-buffer", SupervisorStrategy.Resume))
-      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, commandBuffer), "payment-handler", SupervisorStrategy.Resume))
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, commandBuffer, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
+      paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register), "payment-handler", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
       _ <- postRestartCleanUpInitialized.future
@@ -260,7 +265,6 @@ class Setup(datadir: File,
         watcher = watcher,
         paymentHandler = paymentHandler,
         register = register,
-        commandBuffer = commandBuffer,
         relayer = relayer,
         router = router,
         switchboard = switchboard,
@@ -280,7 +284,6 @@ case class Kit(nodeParams: NodeParams,
                watcher: ActorRef,
                paymentHandler: ActorRef,
                register: ActorRef,
-               commandBuffer: ActorRef,
                relayer: ActorRef,
                router: ActorRef,
                switchboard: ActorRef,
