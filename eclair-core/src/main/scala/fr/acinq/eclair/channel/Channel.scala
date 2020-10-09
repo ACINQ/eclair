@@ -1776,7 +1776,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case cmds =>
           log.info("replaying {} unacked fulfills/fails", cmds.size)
           cmds.foreach(self ! _) // they all have commit = false
-          self ! CMD_SIGN // so we can sign all of them at once
+          self ! CMD_SIGN() // so we can sign all of them at once
       }
   }
 
