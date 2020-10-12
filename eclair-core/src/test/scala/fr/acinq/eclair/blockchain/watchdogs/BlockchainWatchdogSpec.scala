@@ -16,30 +16,45 @@
 
 package fr.acinq.eclair.blockchain.watchdogs
 
-import akka.actor.testkit.typed.scaladsl.{LogCapturing, LoggingTestKit, ScalaTestWithActorTestKit}
+import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{DangerousBlocksSkew, WrappedCurrentBlockCount}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import scala.concurrent.duration.DurationInt
 
-class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike with LogCapturing {
+class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  test("fetch block headers from DNS on mainnet") {
+  test("fetch block headers from three sources on mainnet") {
+    val eventListener = TestProbe[DangerousBlocksSkew]()
+    system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val watchdog = testKit.spawn(BlockchainWatchdog(Block.LivenetGenesisBlock.hash, 10, 1 second))
-    LoggingTestKit.warn("bitcoinheaders.net: we are 9 blocks late: we may be eclipsed from the bitcoin network").expect {
-      system.eventStream ! EventStream.Publish(CurrentBlockCount(630561))
-    }
+    watchdog ! WrappedCurrentBlockCount(630561)
+
+    val events = Seq(
+      eventListener.expectMessageType[DangerousBlocksSkew],
+      eventListener.expectMessageType[DangerousBlocksSkew],
+      eventListener.expectMessageType[DangerousBlocksSkew]
+    )
+    eventListener.expectNoMessage(100 millis)
+    assert(events.map(_.recentHeaders.source).toSet === Set("bitcoinheaders.net", "blockcypher.com", "blockstream.info"))
     testKit.stop(watchdog)
   }
 
-  test("fetch block headers from blockstream.info on testnet") {
+  test("fetch block headers from two sources on testnet") {
+    val eventListener = TestProbe[DangerousBlocksSkew]()
+    system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 16, 1 second))
-    LoggingTestKit.warn("blockstream.info: we are 15 blocks late: we may be eclipsed from the bitcoin network").expect {
-      system.eventStream ! EventStream.Publish(CurrentBlockCount(500000))
-    }
+    watchdog ! WrappedCurrentBlockCount(500000)
+
+    val events = Seq(
+      eventListener.expectMessageType[DangerousBlocksSkew],
+      eventListener.expectMessageType[DangerousBlocksSkew]
+    )
+    eventListener.expectNoMessage(100 millis)
+    assert(events.map(_.recentHeaders.source).toSet === Set("blockcypher.com", "blockstream.info"))
     testKit.stop(watchdog)
   }
 

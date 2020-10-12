@@ -36,9 +36,18 @@ object BlockchainWatchdog {
   case class BlockHeaderAt(blockCount: Long, blockHeader: BlockHeader)
 
   // @formatter:off
+  sealed trait BlockchainWatchdogEvent
+  /**
+   * We are missing too many blocks compared to one of our blockchain watchdogs.
+   * We may be eclipsed from the bitcoin network.
+   *
+   * @param recentHeaders headers fetched from the watchdog blockchain source.
+   */
+  case class DangerousBlocksSkew(recentHeaders: LatestHeaders) extends BlockchainWatchdogEvent
+
   sealed trait Command
   case class LatestHeaders(currentBlockCount: Long, blockHeaders: Set[BlockHeaderAt], source: String) extends Command
-  private case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
+  private[watchdogs] case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   private case class CheckLatestHeaders(currentBlockCount: Long) extends Command
   // @formatter:on
 
@@ -58,16 +67,17 @@ object BlockchainWatchdog {
             Behaviors.same
           case CheckLatestHeaders(blockCount) =>
             context.spawn(HeadersOverDns(chainHash, blockCount, blockCountDelta), HeadersOverDns.Source) ! HeadersOverDns.CheckLatestHeaders(context.self)
-            context.spawn(BlockstreamInfo(chainHash, blockCount, blockCountDelta), BlockstreamInfo.Source) ! BlockstreamInfo.CheckLatestHeaders(context.self)
-            context.spawn(Blockcypher(chainHash, blockCount, blockCountDelta), Blockcypher.Source) ! Blockcypher.CheckLatestHeaders(context.self)
+            context.spawn(ExplorerApi(chainHash, blockCount, blockCountDelta, ExplorerApi.BlockstreamExplorer()), "blockstream") ! ExplorerApi.CheckLatestHeaders(context.self)
+            context.spawn(ExplorerApi(chainHash, blockCount, blockCountDelta, ExplorerApi.BlockcypherExplorer()), "blockcypher") ! ExplorerApi.CheckLatestHeaders(context.self)
             Behaviors.same
-          case LatestHeaders(blockCount, blockHeaders, source) =>
+          case headers@LatestHeaders(blockCount, blockHeaders, source) =>
             val missingBlocks = blockHeaders match {
               case h if h.isEmpty => 0
               case _ => blockHeaders.map(_.blockCount).max - blockCount
             }
             if (missingBlocks >= 6) {
               context.log.warn("{}: we are {} blocks late: we may be eclipsed from the bitcoin network", source, missingBlocks)
+              context.system.eventStream ! EventStream.Publish(DangerousBlocksSkew(headers))
             } else {
               context.log.info("{}: we are {} blocks late", source, missingBlocks)
             }
