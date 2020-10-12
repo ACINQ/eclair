@@ -1641,17 +1641,20 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(WatchEventLost(BITCOIN_FUNDING_LOST), _) => goto(ERR_FUNDING_LOST)
 
-    case Event(CMD_GETSTATE, _) =>
-      sender ! RES_GETSTATE(stateName)
+    case Event(c: CMD_GETSTATE, _) =>
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+      replyTo ! RES_GETSTATE(stateName)
       stay
 
-    case Event(CMD_GETSTATEDATA, _) =>
-      sender ! RES_GETSTATEDATA(stateData)
+    case Event(c: CMD_GETSTATEDATA, _) =>
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+      replyTo ! RES_GETSTATEDATA(stateData)
       stay
 
-    case Event(CMD_GETINFO, _) =>
+    case Event(c: CMD_GETINFO, _) =>
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
       val channelId = Helpers.getChannelId(stateData)
-      sender ! RES_GETINFO(remoteNodeId, channelId, stateName, stateData)
+      replyTo ! RES_GETINFO(remoteNodeId, channelId, stateName, stateData)
       stay
 
     case Event(c: CMD_ADD_HTLC, d: HasCommitments) =>

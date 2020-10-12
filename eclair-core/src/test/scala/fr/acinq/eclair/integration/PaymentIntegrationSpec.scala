@@ -18,6 +18,7 @@ package fr.acinq.eclair.integration
 
 import java.util.UUID
 
+import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -170,7 +171,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").router, Symbol("channels"))
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
     // we also need the full commitment
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO)
+    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO(ActorRef.noSender))
     val commitmentBC = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].commitments
     // we then forge a new channel_update for B-C...
     val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.nodeId, shortIdBC, nodes("B").nodeParams.expiryDelta + 1, nodes("C").nodeParams.htlcMinimum, nodes("B").nodeParams.feeBase, nodes("B").nodeParams.feeProportionalMillionth, 500000000 msat)
@@ -201,7 +202,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
     sender.expectNoMsg(3 seconds)
     nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, BroadcastChannelUpdate(PeriodicRefresh))
-    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO)
+    nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO(ActorRef.noSender))
     val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
     logger.info(s"channelUpdateBC=$channelUpdateBC")
     logger.info(s"channelUpdateBC_new=$channelUpdateBC_new")

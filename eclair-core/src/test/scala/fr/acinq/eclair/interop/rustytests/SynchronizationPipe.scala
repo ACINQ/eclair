@@ -81,7 +81,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         fout.newLine()
         exec(rest, a, b)
       case dump(x) :: rest =>
-        resolve(x) ! CMD_GETSTATEDATA
+        resolve(x) ! CMD_GETSTATEDATA(ActorRef.noSender)
         context.become(wait(a, b, script))
       case "" :: rest =>
         exec(rest, a, b)
