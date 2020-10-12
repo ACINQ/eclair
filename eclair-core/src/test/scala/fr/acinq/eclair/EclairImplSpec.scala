@@ -231,7 +231,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     }
 
     val mockNetworkDb = mock[NetworkDb](withSettings.lenient()) // on Android listNodes() and removeNode() are not used
-    mockNetworkDb.listChannels() returns channels
+    mockNetworkDb.listChannels(Block.RegtestGenesisBlock.hash) returns channels
     mockNetworkDb.listNodes() returns Seq.empty
     Mockito.doNothing().when(mockNetworkDb).removeNode(kit.nodeParams.nodeId)
 

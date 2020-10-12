@@ -59,8 +59,11 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
       ("bitcoinSignature2" | provide(null.asInstanceOf[ByteVector64])) ::
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
-  val channelUpdateWitnessCodec =
-    ("chainHash" | provide(null.asInstanceOf[ByteVector32])) ::
+  /**
+   * we override the chain hash because we don't write it but we need it at runtime to compute channel queries checksums
+   */
+  def channelUpdateWitnessCodec(chainHash: ByteVector32) =
+    ("chainHash" | provide(chainHash)) ::
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | uint32) ::
       (("messageFlags" | byte) >>:~ { messageFlags =>
@@ -73,9 +76,9 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
           ("unknownFields" | bytes)
       })
 
-  val channelUpdateCodec: Codec[ChannelUpdate] = (
+  def channelUpdateCodec(chainHash: ByteVector32): Codec[ChannelUpdate] = (
     ("signature" | provide(null.asInstanceOf[ByteVector64])) ::
-      channelUpdateWitnessCodec).as[ChannelUpdate]
+      channelUpdateWitnessCodec(chainHash)).as[ChannelUpdate]
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
@@ -145,16 +148,16 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
     }
   }
 
-  override def updateChannel(u: ChannelUpdate): Unit = withMetrics("network/update-channel") {
+  override def updateChannel(chainHash: ByteVector32, u: ChannelUpdate): Unit = withMetrics("network/update-channel") {
     val column = if (u.isNode1) "channel_update_1" else "channel_update_2"
     using(sqlite.prepareStatement(s"UPDATE channels SET $column=? WHERE short_channel_id=?")) { statement =>
-      statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
+      statement.setBytes(1, channelUpdateCodec(chainHash).encode(u).require.toByteArray)
       statement.setLong(2, u.shortChannelId.toLong)
       statement.executeUpdate()
     }
   }
 
-  override def listChannels(): SortedMap[ShortChannelId, PublicChannel] = withMetrics("network/list-channels") {
+  override def listChannels(chainHash: ByteVector32): SortedMap[ShortChannelId, PublicChannel] = withMetrics("network/list-channels") {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM channels")
       var m = SortedMap.empty[ShortChannelId, PublicChannel]
@@ -162,8 +165,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
         val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
         val txId = ByteVector32.fromValidHex(rs.getString("txid"))
         val capacity = rs.getLong("capacity_sat")
-        val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
-        val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
+        val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec(chainHash).decode(_).require.value)
+        val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec(chainHash).decode(_).require.value)
         m = m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
       }
       m

@@ -71,7 +71,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
   {
     log.info("loading network announcements from db...")
     // On Android, we discard the node announcements
-    val channels = db.listChannels()
+    val channels = db.listChannels(nodeParams.chainHash)
     log.info("loaded from db: channels={}", channels.size)
     val initChannels = channels
     // this will be used to calculate routes
