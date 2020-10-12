@@ -57,8 +57,10 @@ class FeaturesSpec extends AnyFunSuite {
   test("'option_static_remotekey' feature") {
     assert(Features(hex"1000").hasFeature(StaticRemoteKey))
     assert(Features(hex"1000").hasFeature(StaticRemoteKey, Some(Mandatory)))
+    assert(areSupported(Features(hex"1000")))
     assert(Features(hex"2000").hasFeature(StaticRemoteKey))
     assert(Features(hex"2000").hasFeature(StaticRemoteKey, Some(Optional)))
+    assert(areSupported(Features(hex"2000")))
   }
 
   test("features dependencies") {
