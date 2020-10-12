@@ -470,6 +470,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.forward(alice)
 
     bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.expectMsgType[CommitSig]
   }
 
   test("pending non-relayed fulfill htlcs will timeout upstream") { f =>

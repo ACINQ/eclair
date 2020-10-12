@@ -19,21 +19,21 @@ package fr.acinq.eclair.io
 import java.net.{InetAddress, ServerSocket, Socket}
 import java.util.concurrent.Executors
 
-import akka.actor.FSM
 import akka.actor.Status.Failure
+import akka.actor.{ActorRef, FSM}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.{Btc, Script}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Btc, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, DATA_WAIT_FOR_ACCEPT_CHANNEL, HasCommitments, RES_GETINFO, WAIT_FOR_ACCEPT_CHANNEL}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer._
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement, UnknownMessage}
+import fr.acinq.eclair.wire._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -306,7 +306,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
     peer.stateData.channels.foreach { case (_, channelRef) =>
-      probe.send(channelRef, CMD_GETINFO)
+      probe.send(channelRef, CMD_GETINFO(probe.ref))
       val info = probe.expectMsgType[RES_GETINFO]
       assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
       val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
