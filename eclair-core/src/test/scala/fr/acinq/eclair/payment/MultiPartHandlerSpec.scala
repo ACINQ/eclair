@@ -530,7 +530,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
   }
 
-  test("PaymentHandler should handle single-part payment success (pay-to-open, with user confirmation)") { f =>
+  test("PaymentHandler should handle single-part payment success (pay-to-open, with auto confirmation)") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = featuresWithMpp)
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
     val eventListener = TestProbe()
@@ -549,7 +549,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
     assert(e1.payToOpenRequest === p1)
     assert(e1.peer === f.sender.ref)
-    e1.decision.success(true)
+    //e1.decision.success(true)
 
     val r1 = f.sender.expectMsgType[PayToOpenResponse]
     assert(Crypto.sha256(r1.paymentPreimage) === p1.paymentHash)
@@ -568,7 +568,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
   }
 
-  test("PaymentHandler should handle single-part payment success (pay-to-open, user says no)") { f =>
+  ignore("PaymentHandler should handle single-part payment success (pay-to-open, user says no)") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = featuresWithMpp)
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
     val eventListener = TestProbe()
@@ -596,7 +596,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
   }
 
-  test("PaymentHandler should handle single-part payment success (pay-to-open, timeout)") { f =>
+  ignore("PaymentHandler should handle single-part payment success (pay-to-open, timeout)") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = featuresWithMpp)
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
     val eventListener = TestProbe()
@@ -683,7 +683,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       htlc_opt = None
     ))
     assert(e1.peer === f.sender.ref)
-    e1.decision.success(true)
+    //e1.decision.success(true)
 
     val r1 = f.sender.expectMsgType[PayToOpenResponse]
     assert(Crypto.sha256(r1.paymentPreimage) === p1.paymentHash)
