@@ -34,11 +34,12 @@ import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnection}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
+import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest, SendPaymentToRouteResponse}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{NetworkStats, RouteCalculation}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -215,8 +216,11 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def receive(description: String, amount_opt: Option[MilliSatoshi], expire_opt: Option[Long], fallbackAddress_opt: Option[String], paymentPreimage_opt: Option[ByteVector32])(implicit timeout: Timeout): Future[PaymentRequest] = {
+    val trampolineNodeId = appKit.nodeParams.trampolineNode.nodeId
+    val hop = PaymentRequest.ExtraHop(trampolineNodeId, ShortChannelId.peerId(appKit.nodeParams.nodeId), MilliSatoshi(1000), 100, CltvExpiryDelta(144))
+    val extraHops = List(List(hop))
     fallbackAddress_opt.map { fa => fr.acinq.eclair.addressToPublicKeyScript(fa, appKit.nodeParams.chainHash) } // if it's not a bitcoin address throws an exception
-    (appKit.paymentHandler ? ReceivePayment(amount_opt, description, expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt)).mapTo[PaymentRequest]
+    (appKit.paymentHandler ? ReceivePayment(amount_opt, description, expire_opt, fallbackAddress = fallbackAddress_opt, paymentPreimage = paymentPreimage_opt, extraHops = extraHops)).mapTo[PaymentRequest]
   }
 
   override def newAddress(): Future[String] = Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
@@ -262,6 +266,63 @@ class EclairImpl(appKit: Kit) extends Eclair {
     }
   }
 
+  def getPessimisticRouteSettingsFromHint(amount: MilliSatoshi, paymentRequest: PaymentRequest): (MilliSatoshi, CltvExpiryDelta) = {
+    val aggregateByRoutes = paymentRequest.routingInfo
+      .map { hops =>
+        // get the aggregate (fee, expiry) for this route
+        hops
+          .map { hop => (nodeFee(hop.feeBase, hop.feeProportionalMillionths, amount), hop.cltvExpiryDelta) }
+          .reduce[(MilliSatoshi, CltvExpiryDelta)] { case ((fee1, cltv1), (fee2, cltv2)) => (fee1 + fee2, cltv1 + cltv2) }
+      }
+    // return (max of fee, max of cltv expiry delta)
+    val maxFee = if (aggregateByRoutes.isEmpty) 0.msat else aggregateByRoutes.map(_._1).max
+    val maxCltvExpiryDelta = if (aggregateByRoutes.isEmpty) CltvExpiryDelta(0) else aggregateByRoutes.map(_._2).max
+    (maxFee, maxCltvExpiryDelta)
+  }
+
+  def payInvoice(amount: MilliSatoshi, paymentRequest: PaymentRequest, subtractFee: Boolean): Either[PaymentInitiator.SendTrampolinePaymentRequest, PaymentInitiator.SendPaymentRequest] = {
+    val cltvExpiryDelta = paymentRequest.minFinalCltvExpiryDelta.getOrElse(Channel.MIN_CLTV_EXPIRY_DELTA)
+    val trampolineNodeId = appKit.nodeParams.trampolineNode.nodeId
+    val isTrampoline = paymentRequest.nodeId != trampolineNodeId
+
+    if (isTrampoline) {
+      // 1 - compute trampoline fee settings for this payment
+      // note that if we have to subtract the fee from the amount, use ONLY the most expensive trampoline setting option, to make sure that the payment will go through
+      case class TrampolineFeeSetting(baseFee: MilliSatoshi, proportionalFee: Double, cltvExpiryDelta: CltvExpiryDelta)
+      val DEFAULT_TRAMPOLINE_SETTINGS = List(
+        TrampolineFeeSetting(MilliSatoshi(1000), 0.0001, CltvExpiryDelta(576)), // 1 sat + 0.01 %
+        TrampolineFeeSetting(MilliSatoshi(3000), 0.0001, CltvExpiryDelta(576)), // 3 sat + 0.01 %
+        TrampolineFeeSetting(MilliSatoshi(5000), 0.0005, CltvExpiryDelta(576)), // 5 sat + 0.05 %
+        TrampolineFeeSetting(MilliSatoshi(5000), 0.001, CltvExpiryDelta(576)), // 5 sat + 0.1 %
+        TrampolineFeeSetting(MilliSatoshi(5000), 0.0012, CltvExpiryDelta(576))) // 5 sat + 0.12 %
+      val feeSettingsFromHints = getPessimisticRouteSettingsFromHint(amount, paymentRequest)
+      val finalTrampolineFeesList = DEFAULT_TRAMPOLINE_SETTINGS.map {
+        feeSettings => (feeSettings.baseFee + amount * feeSettings.proportionalFee + feeSettingsFromHints._1, feeSettings.cltvExpiryDelta + feeSettingsFromHints._2)
+      }
+      // 2 - compute amount to send, which changes if fees must be subtracted from it (empty wallet)
+      val amountFinal = if (subtractFee) amount - finalTrampolineFeesList.head._1 else amount
+
+      // 3 - build trampoline payment object
+      Left(PaymentInitiator.SendTrampolinePaymentRequest(
+        recipientAmount = amountFinal,
+        paymentRequest = paymentRequest,
+        trampolineNodeId = trampolineNodeId,
+        trampolineAttempts = finalTrampolineFeesList,
+        finalExpiryDelta = cltvExpiryDelta
+      ))
+    } else {
+      //log.info("sending payment (direct) [ amount=$amount ] for pr=${PaymentRequest.write(paymentRequest)}")
+        Right(PaymentInitiator.SendPaymentRequest(
+          recipientAmount = amount,
+          paymentHash = paymentRequest.paymentHash,
+          recipientNodeId = paymentRequest.nodeId,
+          maxAttempts = 5,
+          finalExpiryDelta = cltvExpiryDelta,
+          paymentRequest = Some(paymentRequest),
+          assistedRoutes = paymentRequest.routingInfo))
+    }
+  }
+
   override def send(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     val defaultRouteParams = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf)
@@ -273,16 +334,13 @@ class EclairImpl(appKit: Kit) extends Eclair {
     externalId_opt match {
       case Some(externalId) if externalId.length > externalIdMaxLength => Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
       case _ => invoice_opt match {
+        case None => Future.failed(new IllegalArgumentException("invoice is mandatory"))
         case Some(invoice) if invoice.isExpired => Future.failed(new IllegalArgumentException("invoice has expired"))
         case Some(invoice) =>
-          val sendPayment = invoice.minFinalCltvExpiryDelta match {
-            case Some(minFinalCltvExpiryDelta) => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, minFinalCltvExpiryDelta, invoice_opt, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
-            case None => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, paymentRequest = invoice_opt, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
+          payInvoice(amount, invoice, subtractFee = false) match {
+            case Left(sendPayment) => (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+            case Right(sendPayment) =>   (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
           }
-          (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
-        case None =>
-          val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, externalId = externalId_opt, routeParams = Some(routeParams))
-          (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
       }
     }
   }

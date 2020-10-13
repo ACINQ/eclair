@@ -31,6 +31,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateToleranc
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
@@ -85,6 +86,7 @@ case class NodeParams(keyManager: KeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
+                      trampolineNode: NodeURI,
                       enableTrampolinePayment: Boolean) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
@@ -304,6 +306,7 @@ object NodeParams {
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
+      trampolineNode = NodeURI.parse(config.getString("trampoline-node")),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
     )
   }

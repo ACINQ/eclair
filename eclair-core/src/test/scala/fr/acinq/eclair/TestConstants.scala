@@ -20,6 +20,7 @@ import java.sql.{Connection, DriverManager, Statement}
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
@@ -29,7 +30,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
-import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import scodec.bits.ByteVector
@@ -169,6 +170,7 @@ object TestConstants {
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
+      trampolineNode = NodeURI(randomKey.publicKey, HostAndPort.fromString("localhost:42111")),
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     )
@@ -256,6 +258,7 @@ object TestConstants {
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
+      trampolineNode = NodeURI(randomKey.publicKey, HostAndPort.fromString("localhost:42222")),
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
     )

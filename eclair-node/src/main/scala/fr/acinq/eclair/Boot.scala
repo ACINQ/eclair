@@ -22,6 +22,8 @@ import akka.actor.{ActorSystem, Props, SupervisorStrategy}
 import akka.io.IO
 import com.typesafe.config.Config
 import fr.acinq.eclair.api.{Service, ServiceActor}
+import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.wire.NodeAddress
 import grizzled.slf4j.Logging
 import spray.can.Http
 
@@ -42,11 +44,18 @@ object Boot extends App with Logging {
     implicit val ec: ExecutionContext = system.dispatcher
     val setup = new Setup(datadir)
 
+    val trampolineNode = setup.nodeParams.trampolineNode
+    if (setup.nodeParams.db.peers.getPeer(trampolineNode.nodeId).isEmpty) {
+      setup.nodeParams.db.peers.addOrUpdatePeer(trampolineNode.nodeId, NodeAddress.fromParts(trampolineNode.address.getHost, trampolineNode.address.getPort).get)
+      logger.info("added trampoline node to peer database")
+    }
+
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
       case Success(kit) =>
         startApiServiceIfEnabled(kit)
         plugins.foreach(_.onKit(kit))
+        kit.switchboard ! Peer.Connect(trampolineNode)
       case Failure(t) => onError(t)
     }
   } catch {

@@ -93,7 +93,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(open1.fundingTxFeeratePerKw_opt === Some(MinimumFeeratePerKw))
   }
 
-  test("call send with passing correct arguments") { f =>
+  ignore("call send with passing correct arguments") { f =>
     import f._
 
     val eclair = new EclairImpl(kit)
