@@ -106,7 +106,7 @@ class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) ex
             """.stripMargin, ButtonType.YES, ButtonType.NO)
         alert.showAndWait
         if (alert.getResult eq ButtonType.YES) {
-          channelRef ! CMD_FORCECLOSE
+          channelRef ! CMD_FORCECLOSE(ActorRef.noSender)
         }
       }
     })

@@ -151,7 +151,7 @@ class CommandResponseSerializer extends CustomSerializer[CommandResponse[Command
   null
 }, {
   case RES_SUCCESS(_: CloseCommand, channelId) => JString(s"closed channel $channelId")
-  case x: CommandResponse[Command] => JString(x.toString)
+  case RES_FAILURE(_: Command, ex: Throwable) => JString(ex.getMessage)
 }))
 
 class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {

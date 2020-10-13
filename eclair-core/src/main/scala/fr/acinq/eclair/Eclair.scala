@@ -29,7 +29,6 @@ import fr.acinq.eclair.blockchain.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
-import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.{IncomingPayment, NetworkFee, OutgoingPayment, Stats}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
@@ -117,7 +116,7 @@ trait Eclair {
 
   def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: Seq[PublicKey], trampolineSecret_opt: Option[ByteVector32] = None, trampolineFees_opt: Option[MilliSatoshi] = None, trampolineExpiryDelta_opt: Option[CltvExpiryDelta] = None, trampolineNodes_opt: Seq[PublicKey] = Nil)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
+  def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32] = None, trampolineFees_opt: Option[MilliSatoshi] = None, trampolineExpiryDelta_opt: Option[CltvExpiryDelta] = None, trampolineNodes_opt: Seq[PublicKey] = Nil)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
 
   def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse]
 
@@ -183,7 +182,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]] = {
-    sendToChannels[CommandResponse[CMD_FORCECLOSE]](channels, CMD_FORCECLOSE)
+    sendToChannels[CommandResponse[CMD_FORCECLOSE]](channels, CMD_FORCECLOSE(ActorRef.noSender))
   }
 
   override def updateRelayFee(channels: List[ApiTypes.ChannelIdentifier], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
@@ -204,16 +203,16 @@ class EclairImpl(appKit: Kit) extends Eclair {
   override def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]] = toRemoteNode_opt match {
     case Some(pk) => for {
       channelIds <- (appKit.register ? Symbol("channelsTo")).mapTo[Map[ByteVector32, PublicKey]].map(_.filter(_._2 == pk).keys)
-      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[RES_GETINFO](Left(channelId), CMD_GETINFO)))
+      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[RES_GETINFO](Left(channelId), CMD_GETINFO(ActorRef.noSender))))
     } yield channels
     case None => for {
       channelIds <- (appKit.register ? Symbol("channels")).mapTo[Map[ByteVector32, ActorRef]].map(_.keys)
-      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[RES_GETINFO](Left(channelId), CMD_GETINFO)))
+      channels <- Future.sequence(channelIds.map(channelId => sendToChannel[RES_GETINFO](Left(channelId), CMD_GETINFO(ActorRef.noSender))))
     } yield channels
   }
 
   override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[RES_GETINFO] = {
-    sendToChannel[RES_GETINFO](channel, CMD_GETINFO)
+    sendToChannel[RES_GETINFO](channel, CMD_GETINFO(ActorRef.noSender))
   }
 
   override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {
@@ -269,7 +268,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.router ? RouteRequest(appKit.nodeParams.nodeId, targetNodeId, amount, maxFee, assistedRoutes)).mapTo[RouteResponse]
   }
 
-  override def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: Seq[PublicKey], trampolineSecret_opt: Option[ByteVector32], trampolineFees_opt: Option[MilliSatoshi], trampolineExpiryDelta_opt: Option[CltvExpiryDelta], trampolineNodes_opt: Seq[PublicKey])(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
+  override def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32], trampolineFees_opt: Option[MilliSatoshi], trampolineExpiryDelta_opt: Option[CltvExpiryDelta], trampolineNodes_opt: Seq[PublicKey])(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
     val recipientAmount = recipientAmount_opt.getOrElse(invoice.amount.getOrElse(amount))
     val sendPayment = SendPaymentToRouteRequest(amount, recipientAmount, externalId_opt, parentId_opt, invoice, finalCltvExpiryDelta, route, trampolineSecret_opt, trampolineFees_opt.getOrElse(0 msat), trampolineExpiryDelta_opt.getOrElse(CltvExpiryDelta(0)), trampolineNodes_opt)
     if (invoice.isExpired) {
@@ -368,8 +367,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
     case Right(shortChannelId) => appKit.register ? Register.ForwardShortId(ActorRef.noSender, shortChannelId, request)
   }).map {
     case t: T => t
-    case t: Register.ForwardFailure[T] @unchecked => throw new RuntimeException(s"channel ${t.fwd.channelId} not found")
-    case t: Register.ForwardShortIdFailure[T] @unchecked => throw new RuntimeException(s"channel ${t.fwd.shortChannelId} not found")
+    case t: Register.ForwardFailure[T]@unchecked => throw new RuntimeException(s"channel ${t.fwd.channelId} not found")
+    case t: Register.ForwardShortIdFailure[T]@unchecked => throw new RuntimeException(s"channel ${t.fwd.shortChannelId} not found")
   }
 
   /**

@@ -70,4 +70,10 @@ trait ExtraDirectives extends Directives {
       provide((channelId ++ channelIds ++ shortChannelId ++ shortChannelIds).distinct)
   }
 
+  def withRoute: Directive1[Either[Seq[ShortChannelId], Seq[PublicKey]]] = formFields(shortChannelIdsFormParam.?, nodeIdsFormParam.?).tflatMap {
+    case (None, None) => reject(MalformedFormFieldRejection("nodeIds/shortChannelIds", "Must specify either nodeIds or shortChannelIds (but not both)"))
+    case (Some(shortChannelIds), _) => provide(Left(shortChannelIds))
+    case (_, Some(nodeIds)) => provide(Right(nodeIds))
+  }
+
 }

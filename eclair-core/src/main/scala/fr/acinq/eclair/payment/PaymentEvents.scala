@@ -21,7 +21,6 @@ import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.channel.RES_ADD_FAILED
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}

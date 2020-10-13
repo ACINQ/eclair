@@ -22,12 +22,11 @@ import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, CannotExtractSharedSecret, Origin}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, UInt64, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64, randomKey}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
@@ -59,16 +58,11 @@ object IncomingPacket {
 
   case class DecodedOnionPacket[T <: Onion.PacketType](payload: T, next: OnionRoutingPacket)
 
-  private def decryptOnion[T <: Onion.PacketType : ClassTag](add: UpdateAddHtlc, privateKey: PrivateKey, features: Features)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
+  private def decryptOnion[T <: Onion.PacketType : ClassTag](add: UpdateAddHtlc, privateKey: PrivateKey)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
     packetType.peel(privateKey, add.paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         OnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits) match {
-          case Attempt.Successful(DecodeResult(_: Onion.TlvFormat, _)) if !features.hasFeature(VariableLengthOnion) => Left(InvalidRealm)
-          case Attempt.Successful(DecodeResult(perHopPayload: T, remainder)) =>
-            if (remainder.nonEmpty) {
-              log.warning(s"${remainder.length} bits remaining after per-hop payload decoding: there might be an issue with the onion codec")
-            }
-            Right(DecodedOnionPacket(perHopPayload, nextPacket))
+          case Attempt.Successful(DecodeResult(perHopPayload: T, remainder)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
           case Attempt.Failure(e: OnionCodecs.MissingRequiredTlv) => Left(e.failureMessage)
           // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
           // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
@@ -86,17 +80,16 @@ object IncomingPacket {
    *
    * @param add        incoming htlc
    * @param privateKey this node's private key
-   * @param features   this node's supported features
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
-  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey, features: Features)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPacket] = {
-    decryptOnion(add, privateKey, features)(add.onionRoutingPacket, Sphinx.PaymentPacket) match {
+  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPacket] = {
+    decryptOnion(add, privateKey)(add.onionRoutingPacket, Sphinx.PaymentPacket) match {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
       case Right(DecodedOnionPacket(payload: Onion.ChannelRelayPayload, next)) => Right(ChannelRelayPacket(add, payload, next))
       case Right(DecodedOnionPacket(payload: Onion.FinalLegacyPayload, _)) => validateFinal(add, payload)
       case Right(DecodedOnionPacket(payload: Onion.FinalTlvPayload, _)) => payload.records.get[OnionTlv.TrampolineOnion] match {
-        case Some(OnionTlv.TrampolineOnion(trampolinePacket)) => decryptOnion(add, privateKey, features)(trampolinePacket, Sphinx.TrampolinePacket) match {
+        case Some(OnionTlv.TrampolineOnion(trampolinePacket)) => decryptOnion(add, privateKey)(trampolinePacket, Sphinx.TrampolinePacket) match {
           case Left(failure) => Left(failure)
           case Right(DecodedOnionPacket(innerPayload: Onion.NodeRelayPayload, next)) => validateNodeRelay(add, payload, innerPayload, next)
           case Right(DecodedOnionPacket(innerPayload: Onion.FinalPayload, _)) => validateFinal(add, payload, innerPayload)
@@ -236,7 +229,7 @@ object OutgoingPacket {
     (firstAmount, firstExpiry, onion)
   }
 
-  // @formatter: off
+  // @formatter:off
   sealed trait Upstream
   object Upstream {
     case class Local(id: UUID) extends Upstream
@@ -245,7 +238,7 @@ object OutgoingPacket {
       val expiryIn: CltvExpiry = adds.map(_.cltvExpiry).min
     }
   }
-  // @formatter: on
+  // @formatter:on
 
   /**
    * Build the command to add an HTLC with the given final payload and using the provided hops.

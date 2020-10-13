@@ -29,7 +29,7 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFa
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{Features, LongToBtcAmount, NodeParams}
+import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
 
 import scala.concurrent.Promise
 import scala.util.Try
@@ -61,7 +61,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
   val brokenHtlcs = {
     val channels = listLocalChannels(nodeParams.db.channels)
     cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, nodeParams.features)
+    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey)
   }
 
   Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
@@ -298,14 +298,14 @@ object PostRestartHtlcCleaner {
    * Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
    * result upstream to preserve channels.
    */
-  private def checkBrokenHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, features: Features)(implicit log: LoggingAdapter): BrokenHtlcs = {
+  private def checkBrokenHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey)(implicit log: LoggingAdapter): BrokenHtlcs = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     val htlcsIn = channels
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .collect(outgoing)
-      .map(IncomingPacket.decrypt(_, privateKey, features))
+      .map(IncomingPacket.decrypt(_, privateKey))
       .collect {
         // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
         case Right(IncomingPacket.ChannelRelayPacket(add, _, _)) => IncomingHtlc(add, None)

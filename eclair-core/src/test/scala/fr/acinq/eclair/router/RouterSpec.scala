@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.router
 
+import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -471,18 +472,58 @@ class RouterSpec extends BaseRouterSpec {
     assert(stats.cltvExpiryDelta.median === CltvExpiryDelta(7))
   }
 
-  test("given a pre-computed route add the proper channel updates") { fixture =>
+  test("given a pre-defined nodes route add the proper channel updates") { fixture =>
     import fixture._
 
     val sender = TestProbe()
-    val preComputedRoute = Seq(a, b, c, d)
+    val preComputedRoute = PredefinedNodeRoute(Seq(a, b, c, d))
     sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
-    assert(response.routes.head.hops.map(_.nodeId).toList == preComputedRoute.dropRight(1).toList)
-    assert(response.routes.head.hops.last.nextNodeId == preComputedRoute.last)
+    assert(response.routes.head.hops.map(_.nodeId).toList == preComputedRoute.nodes.dropRight(1).toList)
+    assert(response.routes.head.hops.last.nextNodeId == preComputedRoute.targetNodeId)
     assert(response.routes.head.hops.map(_.lastUpdate).toList == List(update_ab, update_bc, update_cd))
+  }
+
+  test("given a pre-defined channels route add the proper channel updates") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    val preComputedRoute = PredefinedChannelRoute(d, Seq(channelId_ab, channelId_bc, channelId_cd))
+    sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+
+    val response = sender.expectMsgType[RouteResponse]
+    // the route hasn't changed (nodes are the same)
+    assert(response.routes.head.hops.map(_.nodeId).toList == Seq(a, b, c))
+    assert(response.routes.head.hops.last.nextNodeId == preComputedRoute.targetNodeId)
+    assert(response.routes.head.hops.map(_.lastUpdate).toList == List(update_ab, update_bc, update_cd))
+  }
+
+  test("given an invalid pre-defined channels route return an error") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+
+    {
+      val preComputedRoute = PredefinedChannelRoute(d, Seq(channelId_ab, channelId_cd))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.expectMsgType[Status.Failure]
+    }
+    {
+      val preComputedRoute = PredefinedChannelRoute(d, Seq(channelId_ab, channelId_bc))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.expectMsgType[Status.Failure]
+    }
+    {
+      val preComputedRoute = PredefinedChannelRoute(d, Seq(channelId_bc, channelId_cd))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.expectMsgType[Status.Failure]
+    }
+    {
+      val preComputedRoute = PredefinedChannelRoute(d, Seq(channelId_ab, ShortChannelId(1105), channelId_cd))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      sender.expectMsgType[Status.Failure]
+    }
   }
 
   test("ask for channels that we marked as stale for which we receive a new update") { fixture =>

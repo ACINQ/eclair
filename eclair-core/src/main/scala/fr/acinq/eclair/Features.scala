@@ -230,6 +230,7 @@ object Features {
     ChannelRangeQueries,
     VariableLengthOnion,
     ChannelRangeQueriesExtended,
+    StaticRemoteKey,
     PaymentSecret,
     BasicMultiPartPayment,
     Wumbo

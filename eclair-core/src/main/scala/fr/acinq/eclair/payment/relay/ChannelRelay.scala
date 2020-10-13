@@ -198,7 +198,7 @@ class ChannelRelay private(nodeParams: NodeParams,
    */
   def selectPreferredChannel(alreadyTried: Seq[ShortChannelId]): Option[ShortChannelId] = {
     val requestedShortChannelId = r.payload.outgoingChannelId
-    context.log.debug("selecting next channel")
+    context.log.debug("selecting next channel with requestedShortChannelId={}", requestedShortChannelId)
     nextNodeId_opt match {
       case Some(_) =>
         // we then filter out channels that we have already tried
@@ -224,13 +224,13 @@ class ChannelRelay private(nodeParams: NodeParams,
             context.log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, preferredShortChannelId, commitments.availableBalanceForSend)
             Some(preferredShortChannelId)
           case Some(_) =>
-            // the requested short_channel_id is already our preferred channel
+            context.log.debug("requested short channel id is our preferred channel")
             Some(requestedShortChannelId)
           case None if !alreadyTried.contains(requestedShortChannelId) =>
-            // no channel seem to work for this payment, we keep the requested channel id
+            context.log.debug("no channel seems to work for this payment, we will try to use the requested short channel id")
             Some(requestedShortChannelId)
           case None =>
-            // no channel seem to work for this payment and we have already tried the requested channel id: we give up
+            context.log.debug("no channel seems to work for this payment and we have already tried the requested channel id: giving up")
             None
         }
       case _ => Some(requestedShortChannelId) // we don't have a channel_update for this short_channel_id

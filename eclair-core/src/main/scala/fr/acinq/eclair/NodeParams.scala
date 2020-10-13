@@ -51,7 +51,7 @@ case class NodeParams(keyManager: KeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       features: Features,
-                      overrideFeatures: Map[PublicKey, Features],
+                      private val overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       dustLimit: Satoshi,
@@ -91,7 +91,11 @@ case class NodeParams(keyManager: KeyManager,
   val nodeId = keyManager.nodeId
   val keyPair = KeyPair(nodeId.value, privateKey.value)
 
+  val pluginMessageTags: Set[Int] = pluginParams.flatMap(_.tags).toSet
+
   def currentBlockHeight: Long = blockCount.get
+
+  def featuresFor(nodeId: PublicKey) = overrideFeatures.getOrElse(nodeId, features)
 }
 
 object NodeParams {
@@ -196,10 +200,15 @@ object NodeParams {
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
-    val features = Features.fromConfiguration(config)
-    val featuresErr = Features.validateFeatureGraph(features)
+    def validateFeatures(features: Features): Unit = {
+      val featuresErr = Features.validateFeatureGraph(features)
+      require(featuresErr.isEmpty, featuresErr.map(_.message))
+      require(features.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
+    }
 
-    require(featuresErr.isEmpty, featuresErr.map(_.message))
+    val features = Features.fromConfiguration(config)
+    validateFeatures(features)
+
     require(pluginParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
     require(pluginParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
     require(pluginParams.flatMap(_.tags).forall(_ > 32768), "Plugin messages tags must be > 32768")
@@ -212,7 +221,8 @@ object NodeParams {
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = Features.fromConfiguration(e)
-      p -> f
+      validateFeatures(f)
+      p -> f.copy(unknown = f.unknown ++ pluginParams.map(_.pluginFeature))
     }.toMap
 
     val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
@@ -333,8 +343,8 @@ object NodeParams {
 }
 
 /**
- * @param tags: a set of LightningMessage tags that plugin is interested in
- * @param feature: a Feature bit that plugin advertizes through Init message
+ * @param tags    a set of LightningMessage tags that plugin is interested in
+ * @param feature a Feature bit that plugin advertises through Init message
  */
 case class PluginParams(tags: Set[Int], feature: Feature) {
   def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)

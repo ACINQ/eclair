@@ -33,7 +33,6 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
@@ -185,7 +184,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       stay
 
     case Event(fr: FinalizeRoute, d) =>
-      stay using RouteCalculation.finalizeRoute(d, fr)
+      stay using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr)
 
     case Event(r: RouteRequest, d) =>
       stay using RouteCalculation.handleRouteRequest(d, nodeParams.routerConf, nodeParams.currentBlockHeight, r)
@@ -406,7 +405,7 @@ object Router {
                           paymentContext: Option[PaymentContext] = None)
 
   case class FinalizeRoute(amount: MilliSatoshi,
-                           hops: Seq[PublicKey],
+                           route: PredefinedRoute,
                            assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                            paymentContext: Option[PaymentContext] = None)
 
@@ -436,6 +435,21 @@ object Router {
   case class RouteResponse(routes: Seq[Route]) {
     require(routes.nonEmpty, "routes cannot be empty")
   }
+
+  // @formatter:off
+  /** A pre-defined route chosen outside of eclair (e.g. manually by a user to do some re-balancing). */
+  sealed trait PredefinedRoute {
+    def isEmpty: Boolean
+    def targetNodeId: PublicKey
+  }
+  case class PredefinedNodeRoute(nodes: Seq[PublicKey]) extends PredefinedRoute {
+    override def isEmpty = nodes.isEmpty
+    override def targetNodeId: PublicKey = nodes.last
+  }
+  case class PredefinedChannelRoute(targetNodeId: PublicKey, channels: Seq[ShortChannelId]) extends PredefinedRoute {
+    override def isEmpty = channels.isEmpty
+  }
+  // @formatter:on
 
   // @formatter:off
   /** This is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed) */

@@ -289,7 +289,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit, channelVersion))) =>
       log.info("received OpenChannel={}", open)
-      Try(Helpers.validateParamsFundee(nodeParams, open)) match {
+      Try(Helpers.validateParamsFundee(nodeParams, localParams.features, open)) match {
         case Failure(t) => handleLocalError(t, d, Some(open))
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
@@ -1641,17 +1641,20 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(WatchEventLost(BITCOIN_FUNDING_LOST), _) => goto(ERR_FUNDING_LOST)
 
-    case Event(CMD_GETSTATE, _) =>
-      sender ! RES_GETSTATE(stateName)
+    case Event(c: CMD_GETSTATE, _) =>
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+      replyTo ! RES_GETSTATE(stateName)
       stay
 
-    case Event(CMD_GETSTATEDATA, _) =>
-      sender ! RES_GETSTATEDATA(stateData)
+    case Event(c: CMD_GETSTATEDATA, _) =>
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+      replyTo ! RES_GETSTATEDATA(stateData)
       stay
 
-    case Event(CMD_GETINFO, _) =>
+    case Event(c: CMD_GETINFO, _) =>
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
       val channelId = Helpers.getChannelId(stateData)
-      sender ! RES_GETINFO(remoteNodeId, channelId, stateName, stateData)
+      replyTo ! RES_GETINFO(remoteNodeId, channelId, stateName, stateData)
       stay
 
     case Event(c: CMD_ADD_HTLC, d: HasCommitments) =>
@@ -1664,7 +1667,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FORCECLOSE, d) =>
       d match {
         case data: HasCommitments =>
-          c.replyTo ! RES_SUCCESS(c, data.channelId)
+          val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+          replyTo ! RES_SUCCESS(c, data.channelId)
           handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c))
         case _ => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "forceclose", stateName), c)
       }
@@ -1775,7 +1779,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case cmds =>
           log.info("replaying {} unacked fulfills/fails", cmds.size)
           cmds.foreach(self ! _) // they all have commit = false
-          self ! CMD_SIGN // so we can sign all of them at once
+          self ! CMD_SIGN() // so we can sign all of them at once
       }
   }
 

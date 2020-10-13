@@ -224,6 +224,7 @@ object TestConstants {
 
     def channelParams = Peer.makeChannelParams(
       nodeParams,
+      nodeParams.features,
       Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       None,
       isFunder = true,
@@ -317,6 +318,7 @@ object TestConstants {
 
     def channelParams = Peer.makeChannelParams(
       nodeParams,
+      nodeParams.features,
       Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
       None,
       isFunder = false,

@@ -301,24 +301,6 @@ object LightningMessageCodecs {
       ("message" | varsizebinarydata)
     ).as[UnknownMessage]
 
-  // NB: blank lines to minimize merge conflicts
-
-  //
-
-  //
-
-  //
-
-  //
-
-  //
-
-  //
-
-  //
-
-  //
-
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
