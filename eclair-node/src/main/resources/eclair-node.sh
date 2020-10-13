@@ -293,7 +293,7 @@ java_version_check() {
     if [[ "$major" -lt "8" ]]; then
       echo
       echo The java installation you have is not up to date, eclair-node requires
-      echo at least version 1.8+ \(version 11 recommended\) buy you have version $java_version
+      echo at least version 1.8+ \(version 11 recommended\) but you have version $java_version
       echo
       echo Please go to 'https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot' and download
       echo a valid Java Runtime and install before running eclair-node.
