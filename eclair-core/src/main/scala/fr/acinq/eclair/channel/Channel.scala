@@ -1603,7 +1603,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // first and then go silent. This is due to a race condition on their side, so we trigger a reconnection, hoping that
     // we will eventually receive their channel_reestablish.
     case Event(_: FundingLocked, _) =>
-      log.error("received funding_locked before channel_reestablish (known lnd bug): disconnecting...")
+      log.warning("received funding_locked before channel_reestablish (known lnd bug): disconnecting...")
       peer ! Peer.Disconnect(remoteNodeId)
       stay
 
