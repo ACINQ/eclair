@@ -46,6 +46,7 @@ import scala.util.Random
 class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends FSMDiagnosticActorLogging[ReconnectionTask.State, ReconnectionTask.Data] {
 
   import ReconnectionTask._
+  context.system.eventStream.subscribe(self, TickReconnect.getClass)
 
   startWith(IDLE, IdleData(Nothing))
 
