@@ -1598,6 +1598,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         goto(NEGOTIATING) using d.copy(closingTxProposed = closingTxProposed1) sending d.localShutdown
       }
 
+    // This handler is a workaround for an issue in lnd: starting with versions 0.10 / 0.11, they sometimes fail to send
+    // a channel_reestablish when reconnecting a channel that recently got confirmed, and instead send a funding_locked
+    // first and then go silent. This is due to a race condition on their side, so we trigger a reconnection, hoping that
+    // we will eventually receive their channel_reestablish.
+    case Event(_: FundingLocked, _) =>
+      log.warning("received funding_locked before channel_reestablish (known lnd bug): disconnecting...")
+      peer ! Peer.Disconnect(remoteNodeId)
+      stay
+
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
 
     case Event(c: CurrentFeerates, d: HasCommitments) =>
