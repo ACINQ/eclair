@@ -196,7 +196,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
         log.info(s"got new connection, killing current one and switching")
-        context unwatch d.peerConnection
         d.peerConnection ! PoisonPill
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
