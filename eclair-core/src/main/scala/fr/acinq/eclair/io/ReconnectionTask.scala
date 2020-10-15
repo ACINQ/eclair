@@ -91,22 +91,23 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
             // reason to eagerly retry
             // That's why we set the next reconnection delay to a random value between MAX_RECONNECT_INTERVAL/2 and MAX_RECONNECT_INTERVAL.
             val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
+            log.debug("first connection attempt in {}", initialDelay)
             (initialDelay, firstNextReconnectionDelay)
           case (_, cd: ConnectingData) if System.currentTimeMillis.milliseconds - d.since < 30.seconds =>
-            log.info("peer is disconnected (shortly after connection was established)")
             // If our latest successful connection attempt was less than 30 seconds ago, we pick up the exponential
             // back-off retry delay where we left it. The goal is to address cases where the reconnection is successful,
             // but we are disconnected right away.
             val initialDelay = cd.nextReconnectionDelay
             val firstNextReconnectionDelay = nextReconnectionDelay(initialDelay, nodeParams.maxReconnectInterval)
+            log.info("peer got disconnected shortly after connection was established, next reconnection in {}", initialDelay)
             (initialDelay, firstNextReconnectionDelay)
           case _ =>
-            log.info("peer is disconnected")
             // Randomizing the initial delay is important in the case of a reconnection. If both peers have a public
             // address, they may attempt to simultaneously connect back to each other, which could result in reconnection loop,
             // given that each new connection will cause the previous one to be killed.
             val initialDelay = randomizeDelay(nodeParams.initialRandomReconnectDelay)
             val firstNextReconnectionDelay = nextReconnectionDelay(initialDelay, nodeParams.maxReconnectInterval)
+            log.info("peer is disconnected, next reconnection in {}", initialDelay)
             (initialDelay, firstNextReconnectionDelay)
         }
         setReconnectTimer(initialDelay)
