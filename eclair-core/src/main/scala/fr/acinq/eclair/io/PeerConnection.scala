@@ -406,7 +406,9 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
   }
 
   onTermination {
-    case StopEvent(_, CONNECTED, _: ConnectedData) => Metrics.PeerConnectionsConnected.withoutTags().decrement()
+    case StopEvent(_, CONNECTED, d: ConnectedData) =>
+      Metrics.PeerConnectionsConnected.withoutTags().decrement()
+      d.peer ! Peer.ConnectionDown(self)
   }
 
   /**

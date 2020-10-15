@@ -172,7 +172,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         d.peerConnection ! PoisonPill
         stay
 
-      case Event(Terminated(actor), d: ConnectedData) if actor == d.peerConnection =>
+      case Event(ConnectionDown(peerConnection), d: ConnectedData) if peerConnection == d.peerConnection =>
         Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
           log.info("connection lost")
         }
@@ -196,7 +196,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
         log.info(s"got new connection, killing current one and switching")
-        context unwatch d.peerConnection
         d.peerConnection ! PoisonPill
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
@@ -253,8 +252,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   def gotoConnected(connectionReady: PeerConnection.ConnectionReady, channels: Map[ChannelId, ActorRef]): State = {
     require(remoteNodeId == connectionReady.remoteNodeId, s"invalid nodeid: $remoteNodeId != ${connectionReady.remoteNodeId}")
     log.debug("got authenticated connection to address {}:{}", connectionReady.address.getHostString, connectionReady.address.getPort)
-
-    context watch connectionReady.peerConnection
 
     if (connectionReady.outgoing) {
       // we store the node address upon successful outgoing connection, so we can reconnect later
@@ -396,6 +393,12 @@ object Peer {
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage)
 
   case class Transition(previousData: Peer.Data, nextData: Peer.Data)
+
+  /**
+   * Sent by the peer-connection to notify the peer that the connection is down.
+   * We could use watchWith on the peer-connection but it doesn't work with akka cluster when untrusted mode is enabled
+   */
+  case class ConnectionDown(peerConnection: ActorRef)
 
   // @formatter:on
 
