@@ -44,6 +44,7 @@ class AnnouncementsSpec extends AnyFunSuite {
     val (node_b_sig, bitcoin_b_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42L), node_b, node_a.publicKey, bitcoin_b, bitcoin_a.publicKey, Features.empty)
     val ann = makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42L), node_a.publicKey, node_b.publicKey, bitcoin_a.publicKey, bitcoin_b.publicKey, node_a_sig, node_b_sig, bitcoin_a_sig, bitcoin_b_sig)
     assert(checkSigs(ann))
+    assert(checkSigs(ann, checkBitcoinSigs = false))
     assert(checkSigs(ann.copy(nodeId1 = randomKey.publicKey)) === false)
   }
 

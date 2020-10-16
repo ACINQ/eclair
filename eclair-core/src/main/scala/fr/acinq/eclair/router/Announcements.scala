@@ -149,12 +149,10 @@ object Announcements {
     )
   }
 
-  def checkSigs(ann: ChannelAnnouncement): Boolean = {
+  def checkSigs(ann: ChannelAnnouncement, checkBitcoinSigs: Boolean = true): Boolean = {
     val witness = channelAnnouncementWitnessEncode(ann.chainHash, ann.shortChannelId, ann.nodeId1, ann.nodeId2, ann.bitcoinKey1, ann.bitcoinKey2, ann.features, ann.unknownFields)
-    verifySignature(witness, ann.nodeSignature1, ann.nodeId1) &&
-      verifySignature(witness, ann.nodeSignature2, ann.nodeId2) &&
-      verifySignature(witness, ann.bitcoinSignature1, ann.bitcoinKey1) &&
-      verifySignature(witness, ann.bitcoinSignature2, ann.bitcoinKey2)
+    val nodeSigs = verifySignature(witness, ann.nodeSignature1, ann.nodeId1) && verifySignature(witness, ann.nodeSignature2, ann.nodeId2)
+    if (checkBitcoinSigs) nodeSigs && verifySignature(witness, ann.bitcoinSignature1, ann.bitcoinKey1) && verifySignature(witness, ann.bitcoinSignature2, ann.bitcoinKey2) else nodeSigs
   }
 
   def checkSig(ann: NodeAnnouncement): Boolean = {
