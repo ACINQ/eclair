@@ -75,8 +75,6 @@ final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: FeerateP
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }
 
   def findOutgoingHtlcById(id: Long): Option[OutgoingHtlc] = htlcs.collectFirst { case htlc: OutgoingHtlc if htlc.add.id == id => htlc }
-
-  val totalFunds: MilliSatoshi = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
 object CommitmentSpec {

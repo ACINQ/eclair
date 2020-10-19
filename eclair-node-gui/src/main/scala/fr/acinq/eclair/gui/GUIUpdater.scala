@@ -79,16 +79,16 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       runInGuiThread(() => mainController.channelBox.getChildren.addAll(root))
       context.become(main(m + (channel -> channelPaneController)))
 
-    case ChannelRestored(channel, peer, remoteNodeId, isFunder, channelId, currentData) =>
+    case ChannelRestored(channel, channelId, peer, remoteNodeId, isFunder, currentData: Commitments) => // We are specifically interested in normal Commitments with funding txid here
       context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, channelId)
-      channelPaneController.updateBalance(currentData.commitments)
+      channelPaneController.updateBalance(currentData)
       val m1 = m + (channel -> channelPaneController)
       val totalBalance = m1.values.map(_.getBalance).sum
       runInGuiThread(() => {
         channelPaneController.refreshBalance()
         mainController.refreshTotalBalance(totalBalance)
-        channelPaneController.txId.setText(currentData.commitments.commitInput.outPoint.txid.toHex)
+        channelPaneController.txId.setText(currentData.commitInput.outPoint.txid.toHex)
         mainController.channelBox.getChildren.addAll(root)
       })
       context.become(main(m1))

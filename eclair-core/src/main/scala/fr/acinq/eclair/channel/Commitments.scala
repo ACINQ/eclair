@@ -18,16 +18,17 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
-import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain}
+import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{MilliSatoshi, _}
+import fr.acinq.eclair._
 
 import scala.util.{Failure, Success, Try}
 
@@ -46,6 +47,30 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, r
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
+trait AbstractCommitments {
+  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
+
+  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
+
+  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc]
+
+  def localNodeId: PublicKey
+
+  def remoteNodeId: PublicKey
+
+  def capacity: Satoshi
+
+  def availableBalanceForReceive: MilliSatoshi
+
+  def availableBalanceForSend: MilliSatoshi
+
+  def originChannels: Map[Long, Origin]
+
+  def channelId: ByteVector32
+
+  def announceChannel: Boolean
+}
+
 /**
  * about remoteNextCommitInfo:
  * we either:
@@ -63,11 +88,9 @@ case class Commitments(channelVersion: ChannelVersion,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
+                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) extends AbstractCommitments {
 
   require(channelVersion.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (version=$channelVersion)")
-
-  val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
@@ -81,6 +104,22 @@ case class Commitments(channelVersion: ChannelVersion,
     localCommit.spec.htlcs.collect(outgoing).filter(expired) ++
       remoteCommit.spec.htlcs.collect(incoming).filter(expired) ++
       remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(expired).toSet)
+  }
+
+  def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
+    localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
+    remoteSigned <- localCommit.spec.findOutgoingHtlcById(htlcId)
+  } yield {
+    require(localSigned.add == remoteSigned.add)
+    localSigned.add
+  }
+
+  def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
+    localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
+    remoteSigned <- localCommit.spec.findIncomingHtlcById(htlcId)
+  } yield {
+    require(localSigned.add == remoteSigned.add)
+    localSigned.add
   }
 
   /**
@@ -99,7 +138,15 @@ case class Commitments(channelVersion: ChannelVersion,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
+  val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
+
+  val localNodeId: PublicKey = localParams.nodeId
+
+  val remoteNodeId: PublicKey = remoteParams.nodeId
+
   val announceChannel: Boolean = (channelFlags & 0x01) != 0
+
+  val capacity: Satoshi = commitInput.txOut.amount
 
   // NB: when computing availableBalanceForSend and availableBalanceForReceive, the funder keeps an extra buffer on top
   // of its usual channel reserve to avoid getting channels stuck in case the on-chain feerate increases (see
@@ -325,24 +372,8 @@ object Commitments {
     commitments1
   }
 
-  def getOutgoingHtlcCrossSigned(commitments: Commitments, htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findIncomingHtlcById(htlcId)
-    remoteSigned <- commitments.localCommit.spec.findOutgoingHtlcById(htlcId)
-  } yield {
-    require(localSigned.add == remoteSigned.add)
-    localSigned.add
-  }
-
-  def getIncomingHtlcCrossSigned(commitments: Commitments, htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit).spec.findOutgoingHtlcById(htlcId)
-    remoteSigned <- commitments.localCommit.spec.findIncomingHtlcById(htlcId)
-  } yield {
-    require(localSigned.add == remoteSigned.add)
-    localSigned.add
-  }
-
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): Try[(Commitments, UpdateFulfillHtlc)] =
-    getIncomingHtlcCrossSigned(commitments, cmd.id) match {
+    commitments.getIncomingHtlcCrossSigned(cmd.id) match {
       case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         Failure(UnknownHtlcId(commitments.channelId, cmd.id))
@@ -355,30 +386,20 @@ object Commitments {
     }
 
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
-    getOutgoingHtlcCrossSigned(commitments, fulfill.id) match {
+    commitments.getOutgoingHtlcCrossSigned(fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Try((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
       case Some(_) => Failure(InvalidHtlcPreimage(commitments.channelId, fulfill.id))
       case None => Failure(UnknownHtlcId(commitments.channelId, fulfill.id))
     }
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): Try[(Commitments, UpdateFailHtlc)] =
-    getIncomingHtlcCrossSigned(commitments, cmd.id) match {
+    commitments.getIncomingHtlcCrossSigned(cmd.id) match {
       case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         Failure(UnknownHtlcId(commitments.channelId, cmd.id))
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        Sphinx.PaymentPacket.peel(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket) match {
-          case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
-            val reason = cmd.reason match {
-              case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
-              case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
-            }
-            val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
-            val commitments1 = addLocalProposal(commitments, fail)
-            Success((commitments1, fail))
-          case Left(_) => Failure(CannotExtractSharedSecret(commitments.channelId, htlc))
-        }
+        OutgoingPacket.buildHtlcFailure(nodeSecret, cmd, htlc).map(fail => (addLocalProposal(commitments, fail), fail))
       case None => Failure(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 
@@ -387,7 +408,7 @@ object Commitments {
     if ((cmd.failureCode & FailureMessageCodecs.BADONION) == 0) {
       Failure(InvalidFailureCode(commitments.channelId))
     } else {
-      getIncomingHtlcCrossSigned(commitments, cmd.id) match {
+      commitments.getIncomingHtlcCrossSigned(cmd.id) match {
         case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
           // we have already sent a fail/fulfill for this htlc
           Failure(UnknownHtlcId(commitments.channelId, cmd.id))
@@ -401,7 +422,7 @@ object Commitments {
   }
 
   def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
-    getOutgoingHtlcCrossSigned(commitments, fail.id) match {
+    commitments.getOutgoingHtlcCrossSigned(fail.id) match {
       case Some(htlc) => Try((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
       case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
     }
@@ -411,7 +432,7 @@ object Commitments {
     if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
       Failure(InvalidFailureCode(commitments.channelId))
     } else {
-      getOutgoingHtlcCrossSigned(commitments, fail.id) match {
+      commitments.getOutgoingHtlcCrossSigned(fail.id) match {
         case Some(htlc) => Try((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
         case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
       }

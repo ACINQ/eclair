@@ -79,7 +79,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
       val acked = brokenHtlcs.notRelayed
         .filter(_.add.channelId == data.channelId) // only consider htlcs coming from this channel
         .filter {
-          case IncomingHtlc(htlc, preimage_opt) if Commitments.getIncomingHtlcCrossSigned(data.commitments, htlc.id).isDefined =>
+          case IncomingHtlc(htlc, preimage_opt) if data.commitments.getIncomingHtlcCrossSigned(htlc.id).isDefined =>
             // this htlc is cross signed in the current commitment, we can settle it
             preimage_opt match {
               case Some(preimage) =>

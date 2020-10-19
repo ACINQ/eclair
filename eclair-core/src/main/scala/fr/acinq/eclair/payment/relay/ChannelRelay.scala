@@ -207,7 +207,7 @@ class ChannelRelay private(nodeParams: NodeParams,
         candidateChannels
           .map { case (shortChannelId, channelInfo) =>
             val relayResult = relayOrFail(Some(channelInfo.channelUpdate))
-            context.log.debug(s"candidate channel: shortChannelId={} balanceMsat={} capacitySat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo.commitments.availableBalanceForSend, channelInfo.commitments.commitInput.txOut.amount, channelInfo.channelUpdate, relayResult)
+            context.log.debug(s"candidate channel: shortChannelId={} balanceMsat={} capacitySat={} channelUpdate={} relayResult={}", shortChannelId, channelInfo.commitments.availableBalanceForSend, channelInfo.commitments.capacity, channelInfo.channelUpdate, relayResult)
             (shortChannelId, channelInfo, relayResult)
           }
           .collect {
@@ -218,7 +218,7 @@ class ChannelRelay private(nodeParams: NodeParams,
           // we want to use the channel with:
           //  - the lowest available capacity to ensure we keep high-capacity channels for big payments
           //  - the lowest available balance to increase our incoming liquidity
-          .sortBy { case (_, commitments) => (commitments.commitInput.txOut.amount, commitments.availableBalanceForSend) }
+          .sortBy { case (_, commitments) => (commitments.capacity, commitments.availableBalanceForSend) }
           .headOption match {
           case Some((preferredShortChannelId, commitments)) if preferredShortChannelId != requestedShortChannelId =>
             context.log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, preferredShortChannelId, commitments.availableBalanceForSend)
