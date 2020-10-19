@@ -946,8 +946,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
       log.info("updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = Helpers.aboveReserve(d.commitments))
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+      replyTo ! RES_SUCCESS(c, d.channelId)
       // we use GOTO instead of stay because we want to fire transitions
-      c.replyTo ! RES_SUCCESS(c, d.channelId)
       goto(NORMAL) using d.copy(channelUpdate = channelUpdate) storing()
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
@@ -1446,8 +1447,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
       log.info(s"updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.localCommit.spec.totalFunds, enable = false)
+      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
+      replyTo ! RES_SUCCESS(c, d.channelId)
       // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
-      c.replyTo ! RES_SUCCESS(c, d.channelId)
       stay using d.copy(channelUpdate = channelUpdate) storing()
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSince, d.fundingTx)
