@@ -99,7 +99,7 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
   override def toString: String = {
     val a = activated.map(f => f.feature.rfcName + ":" + f.support).mkString(",")
     val u = unknown.map(_.bitIndex).mkString(",")
-    s"features=$a" + (if (unknown.nonEmpty) s" (unknown=$u)" else "")
+    s"$a" + (if (unknown.nonEmpty) s" (unknown=$u)" else "")
   }
 }
 
