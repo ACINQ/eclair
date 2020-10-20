@@ -75,36 +75,10 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef) extends
 
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
     case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
-      log.debug("channel {}: {} -> {}", data.channelId, e.previousState, e.currentState)
-      val acked = brokenHtlcs.notRelayed
-        .filter(_.add.channelId == data.channelId) // only consider htlcs coming from this channel
-        .filter {
-          case IncomingHtlc(htlc, preimage_opt) if data.commitments.getIncomingHtlcCrossSigned(htlc.id).isDefined =>
-            // this htlc is cross signed in the current commitment, we can settle it
-            preimage_opt match {
-              case Some(preimage) =>
-                log.info(s"fulfilling broken htlc=$htlc")
-                Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = false).increment()
-                if (e.currentState != CLOSED) {
-                  channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
-                }
-              case None =>
-                log.info(s"failing not relayed htlc=$htlc")
-                Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = false).increment()
-                if (e.currentState != CLOSING && e.currentState != CLOSED) {
-                  channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
-                }
-            }
-            false // the channel may very well be disconnected before we sign (=ack) the fail/fulfill, so we keep it for now
-          case _ =>
-            true // the htlc has already been settled, we can forget about it now
-        }
-      acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.add.id} channelId=${htlc.add.channelId}"))
-      val notRelayed1 = brokenHtlcs.notRelayed diff acked
-      Metrics.PendingNotRelayed.update(notRelayed1.size)
-      context become main(brokenHtlcs.copy(notRelayed = notRelayed1))
+      resolveNotRelayedBrokenHtlcs(brokenHtlcs, e.previousState, e.currentState, channel, data.commitments)
 
-    case _: ChannelStateChanged => // ignore other channel state changes
+    case e@PluginChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, commitments) =>
+      resolveNotRelayedBrokenHtlcs(brokenHtlcs, e.previousState, e.currentState, channel, commitments)
 
     case RES_ADD_SETTLED(o: Origin.Cold, htlc, fulfill: HtlcResult.Fulfill) =>
       log.info("htlc fulfilled downstream: ({},{})", htlc.channelId, htlc.id)
@@ -115,6 +89,37 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef) extends
       handleDownstreamFailure(brokenHtlcs, o, htlc, fail)
 
     case GetBrokenHtlcs => sender ! brokenHtlcs
+  }
+
+  private def resolveNotRelayedBrokenHtlcs(brokenHtlcs: BrokenHtlcs, previousState: State, currentState: State, channel: ActorRef, commitments: AbstractCommitments): Unit = {
+    log.debug("channel {}: {} -> {}", commitments.channelId, previousState, currentState)
+    val acked = brokenHtlcs.notRelayed
+      .filter(_.add.channelId == commitments.channelId) // only consider htlcs coming from this channel
+      .filter {
+        case IncomingHtlc(htlc, preimage_opt) if commitments.getIncomingHtlcCrossSigned(htlc.id).isDefined =>
+          // this htlc is cross signed in the current commitment, we can settle it
+          preimage_opt match {
+            case Some(preimage) =>
+              log.info(s"fulfilling broken htlc=$htlc")
+              Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = false).increment()
+              if (currentState != CLOSED) {
+                channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
+              }
+            case None =>
+              log.info(s"failing not relayed htlc=$htlc")
+              Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = false).increment()
+              if (currentState != CLOSING && currentState != CLOSED) {
+                channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+              }
+          }
+          false // the channel may very well be disconnected before we sign (=ack) the fail/fulfill, so we keep it for now
+        case _ =>
+          true // the htlc has already been settled, we can forget about it now
+      }
+    acked.foreach(htlc => log.info(s"forgetting htlc id=${htlc.add.id} channelId=${htlc.add.channelId}"))
+    val notRelayed1 = brokenHtlcs.notRelayed diff acked
+    Metrics.PendingNotRelayed.update(notRelayed1.size)
+    context become main(brokenHtlcs.copy(notRelayed = notRelayed1))
   }
 
   private def handleDownstreamFulfill(brokenHtlcs: BrokenHtlcs, origin: Origin.Cold, fulfilledHtlc: UpdateAddHtlc, paymentPreimage: ByteVector32): Unit =

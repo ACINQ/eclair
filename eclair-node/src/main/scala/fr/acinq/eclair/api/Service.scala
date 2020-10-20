@@ -35,7 +35,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
-import fr.acinq.eclair.channel.{ChannelClosed, ChannelCreated, ChannelEvent, ChannelStateChanged, WAIT_FOR_INIT_INTERNAL}
+import fr.acinq.eclair.channel.{ChannelClosed, ChannelCreated, ChannelStateChanged, WAIT_FOR_INIT_INTERNAL}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
 import fr.acinq.eclair.router.Router.{PredefinedChannelRoute, PredefinedNodeRoute}
