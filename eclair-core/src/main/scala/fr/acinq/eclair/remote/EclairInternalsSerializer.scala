@@ -30,7 +30,7 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.queryFlagsCodec
-import fr.acinq.eclair.wire.{AnnouncementMessage, EncodingType, QueryChannelRangeTlv, RoutingMessage}
+import fr.acinq.eclair.wire.{AnnouncementMessage, ChannelAnnouncement, ChannelUpdate, EncodingType, Init, LightningMessage, NodeAnnouncement, QueryChannelRangeTlv, RoutingMessage}
 import fr.acinq.eclair.{CltvExpiryDelta, Features}
 import scodec._
 import scodec.codecs._
@@ -44,8 +44,6 @@ object EclairInternalsSerializer {
   trait RemoteTypes extends Serializable
 
   def finiteDurationCodec: Codec[FiniteDuration] = int64.xmap(_.milliseconds, _.toMillis)
-
-  def set[A](codec: Codec[A]): Codec[Set[A]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 
   def iterable[A](codec: Codec[A]): Codec[Iterable[A]] = listOfN(uint16, codec).xmap(_.toIterable, _.toList)
 
@@ -81,12 +79,12 @@ object EclairInternalsSerializer {
       ("pingDisconnect" | bool(8)) ::
       ("maxRebroadcastDelay" | finiteDurationCodec)).as[PeerConnection.Conf]
 
-  val lengthPrefixedInitCodec = variableSizeBytes(uint16, initCodec)
-  val lengthPrefixedNodeAnnouncementCodec = variableSizeBytes(uint16, nodeAnnouncementCodec)
-  val lengthPrefixedChannelAnnouncementCodec = variableSizeBytes(uint16, channelAnnouncementCodec)
-  val lengthPrefixedChannelUpdateCodec = variableSizeBytes(uint16, channelUpdateCodec)
-  val lengthPrefixedAnnouncementCodec = variableSizeBytes(uint16, lightningMessageCodec.downcast[AnnouncementMessage])
-  val lengthPrefixedLightningMessageCodec = variableSizeBytes(uint16, lightningMessageCodec)
+  val lengthPrefixedInitCodec: Codec[Init] = variableSizeBytes(uint16, initCodec)
+  val lengthPrefixedNodeAnnouncementCodec: Codec[NodeAnnouncement] = variableSizeBytes(uint16, nodeAnnouncementCodec)
+  val lengthPrefixedChannelAnnouncementCodec: Codec[ChannelAnnouncement] = variableSizeBytes(uint16, channelAnnouncementCodec)
+  val lengthPrefixedChannelUpdateCodec: Codec[ChannelUpdate] = variableSizeBytes(uint16, channelUpdateCodec)
+  val lengthPrefixedAnnouncementCodec: Codec[AnnouncementMessage] = variableSizeBytes(uint16, lightningMessageCodec.downcast[AnnouncementMessage])
+  val lengthPrefixedLightningMessageCodec: Codec[LightningMessage] = variableSizeBytes(uint16, lightningMessageCodec)
 
   def actorRefCodec(system: ExtendedActorSystem): Codec[ActorRef] = variableSizeBytes(uint16, utf8).xmap(
     (path: String) => system.provider.resolveActorRef(path),
