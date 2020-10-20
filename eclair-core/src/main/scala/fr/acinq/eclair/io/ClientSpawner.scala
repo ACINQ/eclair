@@ -21,6 +21,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorLogging, ActorRef, DeadLetter, Props}
 import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
+import akka.cluster.pubsub.DistributedPubSubMediator.Put
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
@@ -33,7 +34,6 @@ class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyP
   if (context.system.hasExtension(Cluster)) {
     val roles = context.system.extension(Cluster).selfRoles
     if (roles.contains("frontend")) {
-      import akka.cluster.pubsub.DistributedPubSubMediator.Put
       val mediator = DistributedPubSub(context.system).mediator
       mediator ! Put(self)
     } else if (roles.contains("backend")) {
