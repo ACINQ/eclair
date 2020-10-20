@@ -53,7 +53,7 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
                           relayerB: TestProbe,
                           channelUpdateListener: TestProbe,
                           wallet: EclairWallet) {
-    def currentBlockHeight = alice.underlyingActor.nodeParams.currentBlockHeight
+    def currentBlockHeight: Long = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
