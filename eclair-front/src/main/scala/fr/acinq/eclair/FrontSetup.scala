@@ -93,7 +93,7 @@ class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
       routerSelection = system.actorSelection(RootActorPath(backendAddress) / "user" / "*" / "router")
       remoteRouter <- routerSelection.resolveOne()
 
-      RouterPeerConf(routerConf, peerConnectionConf) <- (switchBoardSelection ? GetRouterPeerConf).mapTo[RouterPeerConf]
+      RouterPeerConf(routerConf, peerConnectionConf) <- (remoteSwitchboard ? GetRouterPeerConf).mapTo[RouterPeerConf]
 
       frontRouterInitialized = Promise[Done]()
       frontRouter = system.actorOf(SimpleSupervisor.props(FrontRouter.props(routerConf, remoteRouter, Some(frontRouterInitialized)), "front-router", SupervisorStrategy.Resume))
