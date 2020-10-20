@@ -26,9 +26,6 @@ import kamon.Kamon
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
-/**
- * Created by PM on 25/01/2016.
- */
 object Boot extends App with Logging {
   try {
     val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
