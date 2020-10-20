@@ -62,6 +62,17 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
 
   def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
 
+  def areSupported(remoteFeatures: Features): Boolean = {
+    // we allow unknown odd features (it's ok to be odd)
+    val unknownFeaturesOk = !remoteFeatures.unknown.exists(_.bitIndex % 2 == 0)
+    // we verify that we activated every mandatory feature they require
+    val knownFeaturesOk = remoteFeatures.activated.forall {
+      case ActivatedFeature(_, Optional) => true
+      case ActivatedFeature(feature, Mandatory) => hasFeature(feature)
+    }
+    unknownFeaturesOk && knownFeaturesOk
+  }
+
   def toByteVector: ByteVector = {
     val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case ActivatedFeature(f, s) => f.supportBit(s) })
     val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))
@@ -225,17 +236,6 @@ object Features {
     KeySend
   )
 
-  private val supportedMandatoryFeatures: Set[Feature] = Set(
-    OptionDataLossProtect,
-    ChannelRangeQueries,
-    VariableLengthOnion,
-    ChannelRangeQueriesExtended,
-    StaticRemoteKey,
-    PaymentSecret,
-    BasicMultiPartPayment,
-    Wumbo
-  )
-
   // Features may depend on other features, as specified in Bolt 9.
   private val featuresDependency = Map(
     ChannelRangeQueriesExtended -> (ChannelRangeQueries :: Nil),
@@ -255,16 +255,8 @@ object Features {
       FeatureException(s"$feature is set but is missing a dependency (${dependencies.filter(d => !features.hasFeature(d)).mkString(" and ")})")
   }
 
-  /**
-   * A feature set is supported if all even bits are supported.
-   * We just ignore unknown odd bits.
-   */
-  def areSupported(features: Features): Boolean = {
-    !features.unknown.exists(_.bitIndex % 2 == 0) && features.activated.forall {
-      case ActivatedFeature(_, Optional) => true
-      case ActivatedFeature(feature, Mandatory) => supportedMandatoryFeatures.contains(feature)
-    }
-  }
+  /** Returns true if both feature sets are compatible. */
+  def areCompatible(ours: Features, theirs: Features): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
 
   /** returns true if both have at least optional support */
   def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {

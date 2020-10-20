@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
 import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features, LongToBtcAmount, ShortChannelId, TestConstants, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -247,7 +247,7 @@ class PaymentRequestSpec extends AnyFunSuite {
       assert(!pr.features.allowMultiPart)
       assert(!pr.features.requirePaymentSecret)
       assert(!pr.features.allowTrampoline)
-      assert(pr.features.supported)
+      assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
       assert(PaymentRequest.write(pr.sign(priv)) === ref.toLowerCase)
     }
   }
@@ -267,7 +267,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(!pr.features.allowMultiPart)
     assert(!pr.features.requirePaymentSecret)
     assert(!pr.features.allowTrampoline)
-    assert(!pr.features.supported)
+    assert(!pr.features.areSupported(TestConstants.Alice.nodeParams))
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -284,7 +284,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(pr.expiry === Some(604800L))
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(10)))
     assert(pr.routingInfo === Seq(Seq(ExtraHop(PublicKey(hex"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"), ShortChannelId("589390x3312x1"), 1000 msat, 2500, CltvExpiryDelta(40)))))
-    assert(pr.features.supported)
+    assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -382,6 +382,7 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("supported payment request features") {
+    val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(knownFeatures.map(ActivatedFeature(_, FeatureSupport.Optional))))
     case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule"
     val featureBits = Map(
       PaymentRequestFeatures(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
@@ -393,9 +394,9 @@ class PaymentRequestSpec extends AnyFunSuite {
       PaymentRequestFeatures(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       PaymentRequestFeatures(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       PaymentRequestFeatures(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"          0000110000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"          0000110000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"          0000100000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      PaymentRequestFeatures(bin"          0000100000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"          0010000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"     000001000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"     000100000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
@@ -405,7 +406,7 @@ class PaymentRequestSpec extends AnyFunSuite {
 
     for ((features, res) <- featureBits) {
       val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = Some(features))
-      assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.supported) === res)
+      assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.areSupported(nodeParams)) === res)
       assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
     }
   }

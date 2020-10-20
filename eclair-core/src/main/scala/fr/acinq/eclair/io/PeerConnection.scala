@@ -127,7 +127,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed(featureGraphErr.message))
           d.transport ! PoisonPill
           stay
-        } else if (!Features.areSupported(remoteInit.features)) {
+        } else if (!Features.areCompatible(d.localInit.features, remoteInit.features)) {
           log.warning("incompatible features, disconnecting")
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible features"))
           d.transport ! PoisonPill
