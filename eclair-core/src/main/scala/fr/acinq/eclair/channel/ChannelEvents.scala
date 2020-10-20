@@ -44,7 +44,7 @@ case class LocalChannelDown(channel: ActorRef, channelId: ByteVector32, shortCha
 
 case class ChannelStateChanged(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
 
-case class PluginChannelStateChanged(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, previousState: State, currentState: State, currentData: AbstractCommitments) extends ChannelEvent
+case class PluginWithHTLCStateChanged(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, previousState: State, currentState: State, currentData: AbstractCommitments) extends ChannelEvent
 
 case class ChannelSignatureSent(channel: ActorRef, commitments: Commitments) extends ChannelEvent
 

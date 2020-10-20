@@ -77,7 +77,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef) extends
     case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
       resolveNotRelayedBrokenHtlcs(brokenHtlcs, e.previousState, e.currentState, channel, data.commitments)
 
-    case e@PluginChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, commitments) =>
+    case e@PluginWithHTLCStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, commitments) =>
       resolveNotRelayedBrokenHtlcs(brokenHtlcs, e.previousState, e.currentState, channel, commitments)
 
     case RES_ADD_SETTLED(o: Origin.Cold, htlc, fulfill: HtlcResult.Fulfill) =>
