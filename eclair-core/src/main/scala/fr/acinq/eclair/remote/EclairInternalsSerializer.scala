@@ -35,7 +35,7 @@ import fr.acinq.eclair.{CltvExpiryDelta, Features}
 import scodec._
 import scodec.codecs._
 
-import scala.concurrent.duration.{FiniteDuration, _}
+import scala.concurrent.duration._
 
 class EclairInternalsSerializer(val system: ExtendedActorSystem) extends ScodecSerializer(43, EclairInternalsSerializer.codec(system))
 
