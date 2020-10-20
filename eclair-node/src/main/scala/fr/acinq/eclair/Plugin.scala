@@ -21,14 +21,17 @@ import java.net.{JarURLConnection, URL, URLClassLoader}
 import grizzled.slf4j.Logging
 import scala.util.{Failure, Success, Try}
 
-trait Plugin {
 
-  def params: Option[PluginParams]
+trait Plugin {
 
   def onSetup(setup: Setup): Unit
 
   def onKit(kit: Kit): Unit
 
+}
+
+trait PluginWithParams extends Plugin {
+  def params: PluginParams
 }
 
 object Plugin extends Logging {

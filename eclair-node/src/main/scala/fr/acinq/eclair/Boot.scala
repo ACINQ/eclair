@@ -41,7 +41,7 @@ object Boot extends App with Logging {
     implicit val system: ActorSystem = ActorSystem("eclair-node", config)
     implicit val ec: ExecutionContext = system.dispatcher
 
-    val pluginParams = plugins.flatMap(_.params)
+    val pluginParams = plugins.collect { case plugin: PluginWithParams => plugin.params }
     val setup = new Setup(datadir, pluginParams)
 
     if (config.getBoolean("eclair.enable-kamon")) {
