@@ -1736,7 +1736,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val newFeeBaseMsat = TestConstants.Alice.nodeParams.feeBase * 2
     val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.feeProportionalMillionth * 2
-    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, newFeeBaseMsat, newFeeProportionalMillionth)
+    sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
 
     val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
