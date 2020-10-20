@@ -27,6 +27,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.PluginHtlcs
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
@@ -46,14 +47,14 @@ import scala.concurrent.Promise
  * It also receives channel HTLC events (fulfill / failed) and relays those to the appropriate handlers.
  * It also maintains an up-to-date view of local channel balances.
  */
-class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
+class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef) extends Actor with DiagnosticActorLogging {
 
   import Relayer._
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: LoggingAdapter = log
 
-  private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, register, initialized), "post-restart-htlc-cleaner")
+  private val postRestartCleaner = context.actorOf(PostRestartHtlcCleaner.props(nodeParams, register), "post-restart-htlc-cleaner")
   private val channelRelayer = context.spawn(Behaviors.supervise(ChannelRelayer(nodeParams, register)).onFailure(SupervisorStrategy.resume), "channel-relayer")
   private val nodeRelayer = context.spawn(Behaviors.supervise(NodeRelayer(nodeParams, router, register)).onFailure(SupervisorStrategy.resume), name = "node-relayer")
 
@@ -92,6 +93,8 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
     case g: GetOutgoingChannels => channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender, g)
 
     case GetChildActors(replyTo) => replyTo ! ChildActors(postRestartCleaner, channelRelayer, nodeRelayer)
+
+    case pluginHtlcs: PluginHtlcs => postRestartCleaner forward pluginHtlcs
   }
 
   override def mdc(currentMessage: Any): MDC = {
@@ -108,8 +111,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
 object Relayer extends Logging {
 
-  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef, initialized: Option[Promise[Done]] = None): Props =
-    Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
+  def props(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paymentHandler: ActorRef): Props = Props(new Relayer(nodeParams, router, register, paymentHandler))
 
   // @formatter:off
   case class RelayForward(add: UpdateAddHtlc)

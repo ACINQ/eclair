@@ -21,11 +21,11 @@ import java.util.UUID
 import akka.Done
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
+import akka.util.Timeout
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
 import fr.acinq.eclair.payment.PaymentPacketSpec._
@@ -40,6 +40,7 @@ import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
 
+import akka.pattern.ask
 import scala.concurrent.Promise
 import scala.concurrent.duration._
 
@@ -51,9 +52,14 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
   import PostRestartHtlcCleanerSpec._
 
+  implicit val timeout: Timeout = Timeout(30 seconds)
+
   case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
     def createRelayer(): ActorRef = {
-      system.actorOf(Relayer.props(nodeParams, TestProbe().ref, register.ref, TestProbe().ref))
+      val relayer = system.actorOf(Relayer.props(nodeParams, TestProbe().ref, register.ref, TestProbe().ref))
+      val future = (relayer ? PostRestartHtlcCleaner.emptyPluginHtlcs).mapTo[Done]
+      awaitCond(future.isCompleted)
+      relayer
     }
   }
 
@@ -285,9 +291,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
-    val initialized = Promise[Done]()
-    val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, register.ref, Some(initialized)))
-    awaitCond(initialized.isCompleted)
+    val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, register.ref))
+    val future = (postRestart ? PostRestartHtlcCleaner.emptyPluginHtlcs).mapTo[Done]
+    awaitCond(future.isCompleted)
     register.expectNoMsg(100 millis)
 
     val probe = TestProbe()

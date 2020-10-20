@@ -18,7 +18,10 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.{JarURLConnection, URL, URLClassLoader}
+
+import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.PluginHtlcs
 import grizzled.slf4j.Logging
+
 import scala.util.{Failure, Success, Try}
 
 
@@ -32,6 +35,10 @@ trait Plugin {
 
 trait PluginWithParams extends Plugin {
   def params: PluginParams
+}
+
+trait PluginWithHTLC extends Plugin {
+  def htlcs: PluginHtlcs
 }
 
 object Plugin extends Logging {

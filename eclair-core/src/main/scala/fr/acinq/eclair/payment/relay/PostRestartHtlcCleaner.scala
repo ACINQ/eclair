@@ -27,7 +27,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
-import fr.acinq.eclair.transactions.OutgoingHtlc
+import fr.acinq.eclair.transactions.{DirectedHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
 
@@ -49,7 +49,7 @@ import scala.util.Try
  * payment (because of multi-part): we have lost the intermediate state necessary to retry that payment, so we need to
  * wait for the partial HTLC set sent downstream to either fail or fulfill the payment in our DB.
  */
-class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with ActorLogging {
+class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
   import PostRestartHtlcCleaner._
 
@@ -58,21 +58,21 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
-  val brokenHtlcs = {
-    val channels = listLocalChannels(nodeParams.db.channels)
-    cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey)
-  }
-
-  Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
-  Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.keySet.size)
-
-  override def receive: Receive = main(brokenHtlcs)
-
-  // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
-  Try(initialized.map(_.success(Done)))
+  override def receive: Receive = main(BrokenHtlcs(Seq.empty, Map.empty, Set.empty))
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
+    case pluginHtlcs: PluginHtlcs =>
+      val brokenHtlcs = {
+        val channels = listLocalChannels(nodeParams.db.channels)
+        cleanupRelayDb(channels, nodeParams.db.pendingRelay, pluginHtlcs)
+        checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey, pluginHtlcs)
+      }
+      Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
+      Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.keySet.size)
+      // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
+      context become main(brokenHtlcs)
+      sender ! Done
+
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
     case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
       log.debug("channel {}: {} -> {}", data.channelId, e.previousState, e.currentState)
@@ -236,9 +236,19 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
 object PostRestartHtlcCleaner {
 
-  def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
+  def props(nodeParams: NodeParams, register: ActorRef) = Props(new PostRestartHtlcCleaner(nodeParams, register))
 
   case object GetBrokenHtlcs
+
+  /**
+   * @param outgoingFromRemoteCrossSigned: locally incoming HTLCs (seen as outgoing from remote side) which are cross-signed in HTLC-enabled plugin
+   * @param relayedOut: locally outgoing HTLCs which are relayed out through HTLC-enabled plugin and are still pending
+   */
+  case class PluginHtlcs(outgoingFromRemoteCrossSigned: Set[OutgoingHtlc], relayedOut: Set[(Origin, ByteVector32, Long)]) {
+    def merge(that: PluginHtlcs): PluginHtlcs = PluginHtlcs(outgoingFromRemoteCrossSigned ++ that.outgoingFromRemoteCrossSigned, relayedOut ++ that.relayedOut)
+  }
+
+  val emptyPluginHtlcs: PluginHtlcs = PluginHtlcs(Set.empty, Set.empty)
 
   object Metrics {
 
@@ -298,12 +308,13 @@ object PostRestartHtlcCleaner {
    * Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
    * result upstream to preserve channels.
    */
-  private def checkBrokenHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey)(implicit log: LoggingAdapter): BrokenHtlcs = {
+  private def checkBrokenHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey, pluginHtlcs: PluginHtlcs)(implicit log: LoggingAdapter): BrokenHtlcs = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
-    val htlcsIn = channels
-      .flatMap(_.commitments.remoteCommit.spec.htlcs)
+    val crossSigned: Seq[DirectedHtlc] = channels.flatMap(_.commitments.remoteCommit.spec.htlcs) :++ pluginHtlcs.outgoingFromRemoteCrossSigned
+
+    val htlcsIn = crossSigned
       .collect(outgoing)
       .map(IncomingPacket.decrypt(_, privateKey))
       .collect {
@@ -348,7 +359,10 @@ object PostRestartHtlcCleaner {
         }
         c.commitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
       }
+
+    val relayedOutWithPlugins = (relayedOut :++ pluginHtlcs.relayedOut)
       .groupBy { case (origin, _, _) => origin }
+      .view
       .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) }.toSet)
       // We are only interested in HTLCs that are pending upstream (not fulfilled nor failed yet).
       // It may be the case that we have unresolved HTLCs downstream that have been resolved upstream when the downstream
@@ -361,11 +375,11 @@ object PostRestartHtlcCleaner {
       }
       .toMap
 
-    val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
-    log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
+    val notRelayed = htlcsIn.filterNot(htlcIn => relayedOutWithPlugins.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
+    log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOutWithPlugins.values.flatten.size}")
     log.info("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
-    log.info("relayedOut={}", relayedOut)
-    BrokenHtlcs(notRelayed, relayedOut, Set.empty)
+    log.info("relayedOutWithPlugins={}", relayedOutWithPlugins)
+    BrokenHtlcs(notRelayed, relayedOutWithPlugins, Set.empty)
   }
 
   /**
@@ -387,18 +401,18 @@ object PostRestartHtlcCleaner {
    *
    * That's why we need to periodically clean up the pending relay db.
    */
-  private def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb)(implicit log: LoggingAdapter): Unit = {
+  private def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb, pluginHtlcs: PluginHtlcs)(implicit log: LoggingAdapter): Unit = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
     // the command from the pending relay db.
-    val channel2Htlc: Set[(ByteVector32, Long)] =
-    channels
-      .flatMap(_.commitments.remoteCommit.spec.htlcs)
-      .collect { case OutgoingHtlc(add) => (add.channelId, add.id) }
-      .toSet
+    val crossSigned: Set[DirectedHtlc] = pluginHtlcs.outgoingFromRemoteCrossSigned ++ channels.flatMap(_.commitments.remoteCommit.spec.htlcs)
+
+    val channel2Htlc: Set[(ByteVector32, Long)] = crossSigned.collect { case OutgoingHtlc(add) => (add.channelId, add.id) }
 
     val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()
+
     val toClean = pendingRelay -- channel2Htlc
+
     toClean.foreach {
       case (channelId, htlcId) =>
         log.info(s"cleaning up channelId=$channelId htlcId=$htlcId from relay db")

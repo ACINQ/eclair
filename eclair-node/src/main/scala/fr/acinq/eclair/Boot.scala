@@ -22,6 +22,7 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.stream.{ActorMaterializer, BindFailedException}
 import fr.acinq.eclair.api.Service
+import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner
 import grizzled.slf4j.Logging
 import kamon.Kamon
 
@@ -42,7 +43,8 @@ object Boot extends App with Logging {
     implicit val ec: ExecutionContext = system.dispatcher
 
     val pluginParams = plugins.collect { case plugin: PluginWithParams => plugin.params }
-    val setup = new Setup(datadir, pluginParams)
+    val pluginHtlcs = plugins.collect { case plugin: PluginWithHTLC => plugin.htlcs }.fold(PostRestartHtlcCleaner.emptyPluginHtlcs)(_ merge _)
+    val setup = new Setup(datadir, pluginParams, pluginHtlcs)
 
     if (config.getBoolean("eclair.enable-kamon")) {
       Kamon.init(config)
