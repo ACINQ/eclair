@@ -57,6 +57,11 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
   }
 
   when(NORMAL) {
+    case Event(GetRoutingState, d) =>
+      log.info(s"getting valid announcements for $sender")
+      sender ! RoutingState(d.channels.values, d.nodes.values)
+      stay
+
     case Event(s: SendChannelQuery, _) =>
       remoteRouter forward s
       stay
