@@ -22,11 +22,11 @@ import akka.serialization.{ByteBufferSerializer, SerializerWithStringManifest}
 import scodec.Codec
 import scodec.bits.BitVector
 
-class ScodecSerializer[T <: AnyRef](override val identifier: Int, codec: Codec[T]) extends SerializerWithStringManifest  with ByteBufferSerializer {
+class ScodecSerializer[T <: AnyRef](override val identifier: Int, codec: Codec[T]) extends SerializerWithStringManifest with ByteBufferSerializer {
 
   override def toBinary(o: AnyRef, buf: ByteBuffer): Unit = buf.put(toBinary(o))
 
-  override def fromBinary(buf: ByteBuffer, manifest: String): AnyRef =  {
+  override def fromBinary(buf: ByteBuffer, manifest: String): AnyRef = {
     val bytes = Array.ofDim[Byte](buf.remaining())
     buf.get(bytes)
     fromBinary(bytes, manifest)
