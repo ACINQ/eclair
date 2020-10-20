@@ -30,6 +30,7 @@
       </includes>
       <lineEnding>unix</lineEnding>
     </fileSet>
+    <!-- uncomment if you want to include a keystore in the awseb package for TLS -->
     <!--fileSet>
       <directory>${project.basedir}/modules/awseb</directory>
       <outputDirectory>.</outputDirectory>
