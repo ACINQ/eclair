@@ -106,6 +106,10 @@ case class Commitments(channelVersion: ChannelVersion,
       remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(expired).toSet)
   }
 
+  /**
+   * Find an outgoing HTLC that is signed by both parties in at least one of the current commitment transactions (local/remote).
+   * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
+   */
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
     localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
     remoteSigned <- localCommit.spec.findOutgoingHtlcById(htlcId)
@@ -114,6 +118,10 @@ case class Commitments(channelVersion: ChannelVersion,
     localSigned.add
   }
 
+  /**
+   * Find an incoming HTLC that is signed by both parties in at least one of the current commitment transactions (local/remote).
+   * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
+   */
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
     localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
     remoteSigned <- localCommit.spec.findIncomingHtlcById(htlcId)
