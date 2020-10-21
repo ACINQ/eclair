@@ -19,9 +19,11 @@ package fr.acinq.eclair.channel
 import java.util.UUID
 
 import akka.actor.ActorRef
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -248,9 +250,14 @@ sealed trait Data
 
 case object Nothing extends Data
 
-sealed trait HasCommitments extends Data {
-  def commitments: Commitments
+trait HasAbstractCommitments {
+  def commitments: AbstractCommitments
   def channelId: ByteVector32 = commitments.channelId
+  def nonRelayableHtlcIds(log: LoggingAdapter): Set[Long] = Set.empty
+}
+
+sealed trait HasCommitments extends Data with HasAbstractCommitments {
+  def commitments: Commitments
 }
 
 case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
@@ -298,6 +305,30 @@ final case class DATA_CLOSING(commitments: Commitments,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
   val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
+
+  override def nonRelayableHtlcIds(log: LoggingAdapter): Set[Long] = {
+    val closingType_opt = Closing.isClosingTypeAlreadyKnown(this)
+    val overriddenHtlcs: Set[Long] = (closingType_opt match {
+      case Some(c: Closing.LocalClose) => Closing.overriddenOutgoingHtlcs(this, c.localCommitPublished.commitTx)(log)
+      case Some(c: Closing.RemoteClose) => Closing.overriddenOutgoingHtlcs(this, c.remoteCommitPublished.commitTx)(log)
+      case _ => Set.empty[UpdateAddHtlc]
+    }).map(_.id)
+    val irrevocablySpent = closingType_opt match {
+      case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSet
+      case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSet
+      case _ => Set.empty[ByteVector32]
+    }
+    val timedoutHtlcs: Set[Long] = (closingType_opt match {
+      case Some(c: Closing.LocalClose) =>
+        val confirmedTxs = c.localCommitPublished.commitTx :: c.localCommitPublished.htlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
+        confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(commitments.commitmentFormat, c.localCommit, c.localCommitPublished, commitments.localParams.dustLimit, tx)(log))
+      case Some(c: Closing.RemoteClose) =>
+        val confirmedTxs = c.remoteCommitPublished.commitTx :: c.remoteCommitPublished.claimHtlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
+        confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, commitments.remoteParams.dustLimit, tx)(log))
+      case _ => Seq.empty[UpdateAddHtlc]
+    }).map(_.id).toSet
+    overriddenHtlcs ++ timedoutHtlcs
+  }
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments

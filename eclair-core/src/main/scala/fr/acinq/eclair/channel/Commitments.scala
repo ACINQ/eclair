@@ -48,6 +48,8 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
 // @formatter:on
 
 trait AbstractCommitments {
+  def getOutgoingFromRemoteHtlcsCrossSigned: Set[UpdateAddHtlc]
+
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
 
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
@@ -105,6 +107,8 @@ case class Commitments(channelVersion: ChannelVersion,
       remoteCommit.spec.htlcs.collect(incoming).filter(expired) ++
       remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(expired).toSet)
   }
+
+  def getOutgoingFromRemoteHtlcsCrossSigned: Set[UpdateAddHtlc] = remoteCommit.spec.htlcs.collect(outgoing)
 
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
     localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
