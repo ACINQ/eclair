@@ -62,9 +62,10 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
 
   def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
 
+  /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
   def areSupported(remoteFeatures: Features): Boolean = {
     // we allow unknown odd features (it's ok to be odd)
-    val unknownFeaturesOk = !remoteFeatures.unknown.exists(_.bitIndex % 2 == 0)
+    val unknownFeaturesOk = remoteFeatures.unknown.forall(_.bitIndex % 2 == 1)
     // we verify that we activated every mandatory feature they require
     val knownFeaturesOk = remoteFeatures.activated.forall {
       case ActivatedFeature(_, Optional) => true

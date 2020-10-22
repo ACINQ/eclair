@@ -102,37 +102,105 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("features compatibility") {
-    case class TestCase(ours: Features, theirs: Features, compatible: Boolean)
+    case class TestCase(ours: Features, theirs: Features, oursSupportTheirs: Boolean, theirsSupportOurs: Boolean, compatible: Boolean)
     val testCases = Seq(
       // Empty features
-      TestCase(Features.empty, Features.empty, compatible = true),
-      TestCase(Features.empty, Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional))), compatible = true),
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(101), UnknownFeature(103))), compatible = true),
+      TestCase(
+        Features.empty,
+        Features.empty,
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      TestCase(
+        Features.empty,
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      TestCase(
+        Features.empty,
+        Features(Set.empty, Set(UnknownFeature(101), UnknownFeature(103))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
       // Same feature set
-      TestCase(Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))), Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))), compatible = true),
+      TestCase(
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
       // Many optional features
-      TestCase(Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(PaymentSecret, Optional))), Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(ChannelRangeQueriesExtended, Optional))), compatible = true),
+      TestCase(
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(PaymentSecret, Optional))),
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(ChannelRangeQueriesExtended, Optional))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
       // We support their mandatory features
-      TestCase(Features(Set(ActivatedFeature(VariableLengthOnion, Optional))), Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))), compatible = true),
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
       // They support our mandatory features
-      TestCase(Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory))), Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional))), compatible = true),
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory))),
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
       // They have unknown optional features
-      TestCase(Features(Set(ActivatedFeature(VariableLengthOnion, Optional))), Features(Set(ActivatedFeature(VariableLengthOnion, Optional)), Set(UnknownFeature(141))), compatible = true),
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional)), Set(UnknownFeature(141))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
       // They have unknown mandatory features
-      TestCase(Features(Set(ActivatedFeature(VariableLengthOnion, Optional))), Features(Set(ActivatedFeature(VariableLengthOnion, Optional)), Set(UnknownFeature(142))), compatible = false),
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional)), Set(UnknownFeature(142))),
+        oursSupportTheirs = false,
+        theirsSupportOurs = true,
+        compatible = false
+      ),
       // We don't support one of their mandatory features
-      TestCase(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional))), Features(Set(ActivatedFeature(ChannelRangeQueries, Mandatory), ActivatedFeature(VariableLengthOnion, Mandatory))), compatible = false),
+      TestCase(
+        Features(Set(ActivatedFeature(ChannelRangeQueries, Optional))),
+        Features(Set(ActivatedFeature(ChannelRangeQueries, Mandatory), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        oursSupportTheirs = false,
+        theirsSupportOurs = true,
+        compatible = false
+      ),
       // They don't support one of our mandatory features
-      TestCase(Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory), ActivatedFeature(PaymentSecret, Mandatory))), Features(Set(ActivatedFeature(VariableLengthOnion, Optional))), compatible = false),
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory), ActivatedFeature(PaymentSecret, Mandatory))),
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = false,
+        compatible = false
+      ),
       // nonreg testing of future features (needs to be updated with every new supported mandatory bit)
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(22))), compatible = false),
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(23))), compatible = true),
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(24))), compatible = false),
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(25))), compatible = true)
+      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(22))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(23))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true)
     )
 
     for (testCase <- testCases) {
-      assert(areCompatible(testCase.ours, testCase.theirs) === testCase.compatible)
+      assert(areCompatible(testCase.ours, testCase.theirs) === testCase.compatible, testCase)
+      assert(testCase.ours.areSupported(testCase.theirs) === testCase.oursSupportTheirs, testCase)
+      assert(testCase.theirs.areSupported(testCase.ours) === testCase.theirsSupportOurs, testCase)
     }
   }
 
