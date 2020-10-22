@@ -11,7 +11,7 @@ eclair-node.sh -Declair.datadir="/path/to/custom/eclair/data/folder"
 
 The first step is to **actually create the configuration file**.
 Go to `eclair.datadir` and create a file named `eclair.conf`.
-The dncoding should be UTF-8.
+The encoding should be UTF-8.
 
 Options are set as key-value pairs and follow the [HOCON syntax](https://github.com/lightbend/config/blob/master/HOCON.md).
 Values do not need to be surrounded by quotes, except if they contain special characters.
