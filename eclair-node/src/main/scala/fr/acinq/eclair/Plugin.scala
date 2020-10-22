@@ -16,14 +16,14 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-import java.net.{JarURLConnection, URL, URLClassLoader}
-import grizzled.slf4j.Logging
 import scala.util.{Failure, Success, Try}
+import java.net.{JarURLConnection, URL, URLClassLoader}
+import fr.acinq.eclair.channel.HasAbstractCommitments
+import grizzled.slf4j.Logging
+import java.io.File
+
 
 trait Plugin {
-
-  def params: Option[PluginParams]
 
   def onSetup(setup: Setup): Unit
 
@@ -31,13 +31,19 @@ trait Plugin {
 
 }
 
+trait PluginWithParams extends Plugin {
+  def params: PluginParams
+}
+
+trait PluginWithCommitments extends Plugin {
+  def commitments: Seq[HasAbstractCommitments]
+}
+
 object Plugin extends Logging {
 
   /**
     * The files passed to this function must be jars containing a manifest entry for "Main-Class" with the
     * FQDN of the entry point of the plugin. The entry point is the implementation of the interface "fr.acinq.eclair.Plugin"
-    * @param jars
-    * @return
     */
   def loadPlugins(jars: Seq[File]): Seq[Plugin] = {
     val urls = jars.flatMap(openJar)

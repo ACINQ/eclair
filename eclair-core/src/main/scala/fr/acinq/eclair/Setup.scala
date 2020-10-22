@@ -39,7 +39,7 @@ import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
-import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.channel.{HasAbstractCommitments, Register}
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.{Databases, FileBackupHandler}
@@ -55,6 +55,7 @@ import fr.acinq.eclair.wire.NodeAddress
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
+import akka.pattern.ask
 
 import scala.concurrent._
 import scala.concurrent.duration._
@@ -65,12 +66,15 @@ import scala.util.{Failure, Success}
  *
  * Created by PM on 25/01/2016.
  *
- * @param datadir  directory where eclair-core will write/read its data.
- * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
- * @param db       optional databases to use, if not set eclair will create the necessary databases
+ * @param datadir           directory where eclair-core will write/read its data.
+ * @param pluginParams      parameters for all configured plugins.
+ * @param pluginCommitments plugin-specific data types which contain an implementation of AbstractCommitments trait.
+ * @param seed_opt          optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
+ * @param db                optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
             pluginParams: Seq[PluginParams],
+            pluginCommitments: Seq[HasAbstractCommitments],
             seed_opt: Option[ByteVector] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
@@ -217,7 +221,6 @@ class Setup(datadir: File,
       zmqTxConnected = Promise[Done]()
       tcpBound = Promise[Done]()
       routerInitialized = Promise[Done]()
-      postRestartCleanUpInitialized = Promise[Done]()
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
@@ -285,7 +288,7 @@ class Setup(datadir: File,
       _ = wallet.getReceiveAddress.map(address => logger.info(s"initial wallet address=$address"))
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
 
-      backupHandler = if (config.getBoolean("enable-db-backup")) {
+      _ = if (config.getBoolean("enable-db-backup")) {
         nodeParams.db match {
           case fileBackup: FileBackup => system.actorOf(SimpleSupervisor.props(
             FileBackupHandler.props(
@@ -300,15 +303,15 @@ class Setup(datadir: File,
         logger.warn("database backup is disabled")
         system.deadLetters
       }
-      audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
+      _ = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register), "payment-handler", SupervisorStrategy.Resume))
-      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))
+      relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
-      _ <- postRestartCleanUpInitialized.future
+      _ <- (relayer ? PluginCommitmemnts(pluginCommitments)).mapTo[Done]
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
-      clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
+      _ = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams.keyPair, nodeParams.peerConnectionConf, switchboard, router, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, router, register), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
@@ -412,3 +415,5 @@ case object EmptyAPIPasswordException extends RuntimeException("must set a passw
 case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
+
+case class PluginCommitmemnts(commitments: Seq[HasAbstractCommitments])

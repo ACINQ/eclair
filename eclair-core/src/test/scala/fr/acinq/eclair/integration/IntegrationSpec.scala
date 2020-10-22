@@ -32,7 +32,7 @@ import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, NORMAL => _, State => _}
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, TestKitBaseClass}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, PluginCommitmemnts, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, Formats}
@@ -137,7 +137,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-eclair-$name")
     datadir.mkdirs()
     implicit val system: ActorSystem = ActorSystem(s"system-$name", config)
-    val setup = new Setup(datadir, pluginParams = Seq.empty)
+    val setup = new Setup(datadir, pluginParams = Seq.empty, pluginCommitments = Seq.empty)
     val kit = Await.result(setup.bootstrap, 10 seconds)
     nodes = nodes + (name -> kit)
   }

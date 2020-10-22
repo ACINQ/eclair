@@ -26,13 +26,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
-import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
-import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
-
-import scala.concurrent.Promise
-import scala.util.Try
+import fr.acinq.eclair.{LongToBtcAmount, NodeParams, PluginCommitmemnts}
 
 /**
  * Created by t-bast on 21/11/2019.
@@ -49,7 +44,7 @@ import scala.util.Try
  * payment (because of multi-part): we have lost the intermediate state necessary to retry that payment, so we need to
  * wait for the partial HTLC set sent downstream to either fail or fulfill the payment in our DB.
  */
-class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) extends Actor with ActorLogging {
+class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef) extends Actor with ActorLogging {
 
   import PostRestartHtlcCleaner._
 
@@ -58,21 +53,21 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
-  val brokenHtlcs = {
-    val channels: Seq[HasAbstractCommitments] = listLocalChannels(nodeParams.db.channels)
-    cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey)
-  }
-
-  Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
-  Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.keySet.size)
-
-  override def receive: Receive = main(brokenHtlcs)
-
-  // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
-  Try(initialized.map(_.success(Done)))
+  override def receive: Receive = main(BrokenHtlcs(Seq.empty, Map.empty, Set.empty))
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
+    case PluginCommitmemnts(pluginCommitmemnts) =>
+      val brokenHtlcs = {
+        val channels: Seq[HasAbstractCommitments] = listLocalChannels(nodeParams.db.channels) ++ pluginCommitmemnts
+        cleanupRelayDb(channels, nodeParams.db.pendingRelay)
+        checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey)
+      }
+      Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
+      Metrics.PendingRelayedOut.update(brokenHtlcs.relayedOut.keySet.size)
+      // Once we've loaded the channels and identified broken HTLCs, we let other components know they can proceed.
+      context become main(brokenHtlcs)
+      sender ! Done
+
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
     case e@ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, data: HasCommitments) =>
       log.debug("channel {}: {} -> {}", data.channelId, e.previousState, e.currentState)
@@ -236,7 +231,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
 object PostRestartHtlcCleaner {
 
-  def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
+  def props(nodeParams: NodeParams, register: ActorRef) = Props(new PostRestartHtlcCleaner(nodeParams, register))
 
   case object GetBrokenHtlcs
 
@@ -366,11 +361,9 @@ object PostRestartHtlcCleaner {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
     // the command from the pending relay db.
-    val channel2Htlc: Set[(ByteVector32, Long)] =
-    channels
+    val channel2Htlc: Seq[(ByteVector32, Long)] = channels
       .flatMap(_.commitments.getOutgoingFromRemoteHtlcsCrossSigned)
       .map(add => (add.channelId, add.id))
-      .toSet
 
     val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()
     val toClean = pendingRelay -- channel2Htlc
