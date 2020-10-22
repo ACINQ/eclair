@@ -309,7 +309,7 @@ class Setup(datadir: File,
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
       // Before initializing the switchboard (which re-connects us to the network) and the user-facing parts of the system,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
-      _ <- (relayer ? PluginCommitmemnts(pluginCommitments)).mapTo[Done]
+      _ <- (relayer ? PluginCommitments(pluginCommitments)).mapTo[Done]
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
       _ = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams.keyPair, nodeParams.peerConnectionConf, switchboard, router, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
@@ -416,4 +416,4 @@ case object IncompatibleDBException extends RuntimeException("database is not co
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
 
-case class PluginCommitmemnts(commitments: Seq[HasAbstractCommitments])
+case class PluginCommitments(commitments: Seq[HasAbstractCommitments])

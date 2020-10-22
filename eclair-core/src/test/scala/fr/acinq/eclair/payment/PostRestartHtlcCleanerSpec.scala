@@ -35,7 +35,7 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, PluginCommitmemnts, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, PluginCommitments, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -57,7 +57,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
   case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
     def createRelayer(): ActorRef = {
       val relayer = system.actorOf(Relayer.props(nodeParams, TestProbe().ref, register.ref, TestProbe().ref))
-      val future = (relayer ? PluginCommitmemnts(Nil)).mapTo[Done]
+      val future = (relayer ? PluginCommitments(Nil)).mapTo[Done]
       awaitCond(future.isCompleted)
       relayer
     }
@@ -292,7 +292,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val testCase = setupTrampolinePayments(nodeParams)
     val postRestart = system.actorOf(PostRestartHtlcCleaner.props(nodeParams, register.ref))
-    val future = (postRestart ? PluginCommitmemnts(Nil)).mapTo[Done]
+    val future = (postRestart ? PluginCommitments(Nil)).mapTo[Done]
     awaitCond(future.isCompleted)
     register.expectNoMsg(100 millis)
 

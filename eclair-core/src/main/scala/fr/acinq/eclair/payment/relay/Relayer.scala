@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, PluginCommitmemnts, ShortChannelId}
+import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, PluginCommitments, ShortChannelId}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
@@ -93,7 +93,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
 
     case GetChildActors(replyTo) => replyTo ! ChildActors(postRestartCleaner, channelRelayer, nodeRelayer)
 
-    case pluginCommitments: PluginCommitmemnts => postRestartCleaner forward pluginCommitments
+    case pluginCommitments: PluginCommitments => postRestartCleaner forward pluginCommitments
   }
 
   override def mdc(currentMessage: Any): MDC = {

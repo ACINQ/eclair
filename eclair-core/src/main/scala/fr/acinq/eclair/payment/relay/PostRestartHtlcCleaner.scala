@@ -27,7 +27,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{LongToBtcAmount, NodeParams, PluginCommitmemnts}
+import fr.acinq.eclair.{LongToBtcAmount, NodeParams, PluginCommitments}
 
 /**
  * Created by t-bast on 21/11/2019.
@@ -56,7 +56,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef) extends
   override def receive: Receive = main(BrokenHtlcs(Seq.empty, Map.empty, Set.empty))
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
-    case PluginCommitmemnts(pluginCommitmemnts) =>
+    case PluginCommitments(pluginCommitmemnts) =>
       val brokenHtlcs = {
         val channels: Seq[HasAbstractCommitments] = listLocalChannels(nodeParams.db.channels) ++ pluginCommitmemnts
         cleanupRelayDb(channels, nodeParams.db.pendingRelay)

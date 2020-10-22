@@ -32,7 +32,7 @@ import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, NORMAL => _, State => _}
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, PluginCommitmemnts, Setup, TestKitBaseClass}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, PluginCommitments, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, Formats}
