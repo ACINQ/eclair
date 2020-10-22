@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.io
 
+import java.net.InetSocketAddress
+
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.UnknownMessage
@@ -23,7 +25,7 @@ import fr.acinq.eclair.wire
 
 sealed trait PeerEvent
 
-case class ConnectionInfo(peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init)
+case class ConnectionInfo(address: InetSocketAddress, peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init)
 
 case class PeerConnected(peer: ActorRef, nodeId: PublicKey, connectionInfo: ConnectionInfo) extends PeerEvent
 
