@@ -362,7 +362,7 @@ object Peer {
   case object Nothing extends Data { override def channels = Map.empty }
   case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
   case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data {
-    val connectionInfo: ConnectionInfo = ConnectionInfo(peerConnection, localInit, remoteInit)
+    val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features = localInit.features
     def remoteFeatures: Features = remoteInit.features
   }
