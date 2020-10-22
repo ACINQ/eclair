@@ -107,7 +107,9 @@ case class Commitments(channelVersion: ChannelVersion,
   }
 
   /**
-   * Find an outgoing HTLC that is signed by both parties in at least one of the current commitment transactions (local/remote).
+   * Return the outgoing HTLC with the given id if it is:
+   *  - signed by us in their commitment transaction (remote)
+   *  - signed by them in our commitment transaction (local)
    * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
    */
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
@@ -119,7 +121,9 @@ case class Commitments(channelVersion: ChannelVersion,
   }
 
   /**
-   * Find an incoming HTLC that is signed by both parties in at least one of the current commitment transactions (local/remote).
+   * Return the incoming HTLC with the given id if it is:
+   *  - signed by us in their commitment transaction (remote)
+   *  - signed by them in our commitment transaction (local)
    * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
    */
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
