@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.eclair.channel.HasAbstractCommitments
+
 /** Custom plugin parameters. */
 sealed trait PluginParams {
   /** Plugin's friendly name. */
@@ -32,4 +34,9 @@ trait MessageFeaturePluginParams extends PluginParams {
 
   /** Plugin feature is always defined as unknown and optional. */
   def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
+}
+
+/** Parameters for a plugin that defined non-standard channels with custom commitment objects. */
+sealed trait HasAbstractCommitmentsPlugin extends PluginParams {
+  def channels: Seq[HasAbstractCommitments]
 }

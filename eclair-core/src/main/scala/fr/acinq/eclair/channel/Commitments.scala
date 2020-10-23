@@ -48,6 +48,9 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
 // @formatter:on
 
 trait AbstractCommitments {
+  /** Specifically return incoming HTLCs which were cross-signed AND relayed into another local channel. */
+  def getIncomingCrossSignedAndRelayedHtlcs: Set[UpdateAddHtlc]
+
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
 
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
@@ -97,6 +100,12 @@ case class Commitments(channelVersion: ChannelVersion,
   def hasPendingOrProposedHtlcs: Boolean = !hasNoPendingHtlcs ||
     localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
     remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
+
+  /** Incoming HTLC being in `remoteCommit` specifically means it was cross-signed AND relay attempt has been made.
+   *  Here we are interested in such HTLCs only because they won't be relayed again on restart so might need to be cleared out.
+   *  This is different from incoming cross-signed HTLC in `nextRemoteCommit` which will be acked again on reconnect and then relayed again.
+   * */
+  def getIncomingCrossSignedAndRelayedHtlcs: Set[UpdateAddHtlc] = remoteCommit.spec.htlcs.collect(outgoing)
 
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = {
     def expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong

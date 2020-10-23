@@ -298,13 +298,12 @@ object PostRestartHtlcCleaner {
    * Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
    * result upstream to preserve channels.
    */
-  private def checkBrokenHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey)(implicit log: LoggingAdapter): BrokenHtlcs = {
+  private def checkBrokenHtlcs(channels: Seq[HasAbstractCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey)(implicit log: LoggingAdapter): BrokenHtlcs = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     val htlcsIn = channels
-      .flatMap(_.commitments.remoteCommit.spec.htlcs)
-      .collect(outgoing)
+      .flatMap(_.commitments.getIncomingCrossSignedAndRelayedHtlcs)
       .map(IncomingPacket.decrypt(_, privateKey))
       .collect {
         // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
@@ -321,31 +320,7 @@ object PostRestartHtlcCleaner {
     val relayedOut = channels
       .flatMap { c =>
         // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
-        val htlcsToIgnore: Set[Long] = c match {
-          case d: DATA_CLOSING =>
-            val closingType_opt = Closing.isClosingTypeAlreadyKnown(d)
-            val overriddenHtlcs: Set[Long] = (closingType_opt match {
-              case Some(c: Closing.LocalClose) => Closing.overriddenOutgoingHtlcs(d, c.localCommitPublished.commitTx)
-              case Some(c: Closing.RemoteClose) => Closing.overriddenOutgoingHtlcs(d, c.remoteCommitPublished.commitTx)
-              case _ => Set.empty[UpdateAddHtlc]
-            }).map(_.id)
-            val irrevocablySpent = closingType_opt match {
-              case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSet
-              case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSet
-              case _ => Set.empty[ByteVector32]
-            }
-            val timedoutHtlcs: Set[Long] = (closingType_opt match {
-              case Some(c: Closing.LocalClose) =>
-                val confirmedTxs = c.localCommitPublished.commitTx :: c.localCommitPublished.htlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
-              case Some(c: Closing.RemoteClose) =>
-                val confirmedTxs = c.remoteCommitPublished.commitTx :: c.remoteCommitPublished.claimHtlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
-              case _ => Seq.empty[UpdateAddHtlc]
-            }).map(_.id).toSet
-            overriddenHtlcs ++ timedoutHtlcs
-          case _ => Set.empty
-        }
+        val htlcsToIgnore: Set[Long] = c.htlcsToFailInOrigin(log)
         c.commitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
       }
       .groupBy { case (origin, _, _) => origin }
@@ -387,15 +362,13 @@ object PostRestartHtlcCleaner {
    *
    * That's why we need to periodically clean up the pending relay db.
    */
-  private def cleanupRelayDb(channels: Seq[HasCommitments], relayDb: PendingRelayDb)(implicit log: LoggingAdapter): Unit = {
+  private def cleanupRelayDb(channels: Seq[HasAbstractCommitments], relayDb: PendingRelayDb)(implicit log: LoggingAdapter): Unit = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
     // the command from the pending relay db.
-    val channel2Htlc: Set[(ByteVector32, Long)] =
-    channels
-      .flatMap(_.commitments.remoteCommit.spec.htlcs)
-      .collect { case OutgoingHtlc(add) => (add.channelId, add.id) }
-      .toSet
+    val channel2Htlc: Seq[(ByteVector32, Long)] = channels
+      .flatMap(_.commitments.getIncomingCrossSignedAndRelayedHtlcs)
+      .map(add => (add.channelId, add.id))
 
     val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()
     val toClean = pendingRelay -- channel2Htlc
