@@ -277,9 +277,14 @@ object NodeParams {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
-        maxFeerateMismatch = FeerateTolerance(config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"), config.getDouble("on-chain-fees.feerate-tolerance.ratio-high")),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
-        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio")
+        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),
+        defaultFeerateTolerance = FeerateTolerance(config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"), config.getDouble("on-chain-fees.feerate-tolerance.ratio-high")),
+        perNodeFeerateTolerance = config.getConfigList("on-chain-fees.override-feerate-tolerance").asScala.map { e =>
+          val nodeId = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
+          val tolerance = FeerateTolerance(e.getDouble("feerate-tolerance.ratio-low"), e.getDouble("feerate-tolerance.ratio-high"))
+          nodeId -> tolerance
+        }.toMap
       ),
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,

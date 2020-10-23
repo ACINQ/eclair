@@ -158,9 +158,10 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
-        maxFeerateMismatch = FeerateTolerance(0.5, 8.0),
         closeOnOfflineMismatch = true,
-        updateFeeMinDiffRatio = 0.1
+        updateFeeMinDiffRatio = 0.1,
+        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0),
+        perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
@@ -252,9 +253,10 @@ object TestConstants {
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
-        maxFeerateMismatch = FeerateTolerance(0.75, 1.5),
         closeOnOfflineMismatch = true,
-        updateFeeMinDiffRatio = 0.1
+        updateFeeMinDiffRatio = 0.1,
+        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5),
+        perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,

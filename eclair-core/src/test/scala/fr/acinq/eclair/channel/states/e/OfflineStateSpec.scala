@@ -16,13 +16,11 @@
 
 package fr.acinq.eclair.channel.states.e
 
-import java.util.UUID
-
-import akka.actor.{ActorRef, Status}
+import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestConstants.{Alice, TestFeeEstimator}
+import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
@@ -211,7 +209,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("discover that we have a revoked commitment") { f =>
     import f._
-    val sender = TestProbe()
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -264,7 +261,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("discover that they have a more recent commit than the one we know") { f =>
     import f._
-    val sender = TestProbe()
 
     // we start by storing the current state
     val oldStateData = alice.stateData
@@ -314,7 +310,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("counterparty lies about having a more recent commitment") { f =>
     import f._
-    val sender = TestProbe()
 
     // we simulate a disconnection
     alice ! INPUT_DISCONNECTED
@@ -403,7 +398,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("replay pending commands when going back to NORMAL") { f =>
     import f._
-    val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -475,7 +469,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("pending non-relayed fulfill htlcs will timeout upstream") { f =>
     import f._
-    val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -514,7 +507,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("pending non-relayed fail htlcs will timeout upstream") { f =>
     import f._
-    val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -550,7 +542,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     // we simulate a disconnection
-    val sender = TestProbe()
     alice ! INPUT_DISCONNECTED
     bob ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
@@ -562,7 +553,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
-    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow)
+    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatchFor(Bob.nodeParams.nodeId).ratioLow)
     val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // alice is funder
@@ -582,7 +573,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // we simulate a disconnection
-    val sender = TestProbe()
     alice ! INPUT_DISCONNECTED
     bob ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
@@ -592,7 +582,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
-    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow)
+    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatchFor(Bob.nodeParams.nodeId).ratioLow)
     val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // this time Alice will ignore feerate changes for the offline channel
@@ -603,7 +593,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("handle feerate changes while offline (update at reconnection)") { f =>
     import f._
-    val sender = TestProbe()
 
     // we simulate a disconnection
     alice ! INPUT_DISCONNECTED
@@ -653,7 +642,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     // we simulate a disconnection
-    val sender = TestProbe()
     alice ! INPUT_DISCONNECTED
     bob ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
@@ -665,7 +653,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val currentFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
-    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatch.ratioLow)
+    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatchFor(Alice.nodeParams.nodeId).ratioLow)
     val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // bob is fundee
@@ -679,7 +667,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("re-send channel_update at reconnection for private channels") { f =>
     import f._
-    val sender = TestProbe()
 
     // we simulate a disconnection / reconnection
     alice ! INPUT_DISCONNECTED

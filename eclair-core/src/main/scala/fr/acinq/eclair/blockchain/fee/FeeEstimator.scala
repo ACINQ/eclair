@@ -16,16 +16,19 @@
 
 package fr.acinq.eclair.blockchain.fee
 
+import fr.acinq.bitcoin.Crypto.PublicKey
+
 trait FeeEstimator {
-
+  // @formatter:off
   def getFeeratePerKb(target: Int): FeeratePerKB
-
   def getFeeratePerKw(target: Int): FeeratePerKw
-
+  // @formatter:on
 }
 
 case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)
 
 case class FeerateTolerance(ratioLow: Double, ratioHigh: Double)
 
-case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, maxFeerateMismatch: FeerateTolerance, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double)
+case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
+  def maxFeerateMismatchFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
+}
