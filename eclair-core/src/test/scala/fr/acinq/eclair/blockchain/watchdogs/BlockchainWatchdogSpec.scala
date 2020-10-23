@@ -30,7 +30,7 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
   test("fetch block headers from three sources on mainnet") {
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
-    val watchdog = testKit.spawn(BlockchainWatchdog(Block.LivenetGenesisBlock.hash, 10, 1 second))
+    val watchdog = testKit.spawn(BlockchainWatchdog(Block.LivenetGenesisBlock.hash, 1 second))
     watchdog ! WrappedCurrentBlockCount(630561)
 
     val events = Seq(
@@ -46,7 +46,7 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
   test("fetch block headers from two sources on testnet") {
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
-    val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 16, 1 second))
+    val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 1 second))
     watchdog ! WrappedCurrentBlockCount(500000)
 
     val events = Seq(

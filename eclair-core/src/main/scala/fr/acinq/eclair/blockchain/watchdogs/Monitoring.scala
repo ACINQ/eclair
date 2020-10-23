@@ -26,7 +26,7 @@ object Monitoring {
 
   object Metrics {
     val BitcoinBlocksSkew = Kamon.gauge("bitcoin.watchdog.blocks.skew", "Number of blocks we're missing compared to other blockchain sources")
-    val WatchdogError = Kamon.counter("bitcoin.watchdog.error", "Number watchdog errors")
+    val WatchdogError = Kamon.counter("bitcoin.watchdog.error", "Number of watchdog errors")
   }
 
   object Tags {

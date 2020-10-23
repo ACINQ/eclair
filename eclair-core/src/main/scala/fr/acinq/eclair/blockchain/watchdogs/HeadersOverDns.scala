@@ -44,7 +44,7 @@ object HeadersOverDns {
   private case class WrappedDnsFailed(cause: Throwable) extends Command
   // @formatter:on
 
-  def apply(chainHash: ByteVector32, currentBlockCount: Long, blockCountDelta: Int): Behavior[Command] = {
+  def apply(chainHash: ByteVector32, currentBlockCount: Long): Behavior[Command] = {
     Behaviors.setup { context =>
       val dnsAdapters = {
         context.messageAdapter[DnsProtocol.Resolved](WrappedDnsResolved)
@@ -53,11 +53,12 @@ object HeadersOverDns {
       Behaviors.receiveMessage {
         case CheckLatestHeaders(replyTo) => chainHash match {
           case Block.LivenetGenesisBlock.hash =>
-            (currentBlockCount until currentBlockCount + blockCountDelta).foreach(blockCount => {
+            // We try to get the next 10 blocks; if we're late by more than 10 blocks, this is bad, no need to even look further.
+            (currentBlockCount until currentBlockCount + 10).foreach(blockCount => {
               val hostname = s"$blockCount.${blockCount / 10000}.bitcoinheaders.net"
               IO(Dns)(context.system.classicSystem).tell(DnsProtocol.resolve(hostname, DnsProtocol.Ip(ipv4 = false, ipv6 = true)), dnsAdapters)
             })
-            collect(replyTo, currentBlockCount, Set.empty, blockCountDelta)
+            collect(replyTo, currentBlockCount, Set.empty, 10)
           case _ =>
             // Headers over DNS is only supported for mainnet.
             Behaviors.stopped

@@ -52,11 +52,11 @@ object BlockchainWatchdog {
   // @formatter:on
 
   /**
-   * @param blockCountDelta number of future blocks to try fetching from secondary blockchain sources.
-   * @param maxRandomDelay  to avoid the herd effect whenever a block is created, we add a random delay before we query
-   *                        secondary blockchain sources. This parameter specifies the maximum delay we'll allow.
+   * @param chainHash      chain we're interested in.
+   * @param maxRandomDelay to avoid the herd effect whenever a block is created, we add a random delay before we query
+   *                       secondary blockchain sources. This parameter specifies the maximum delay we'll allow.
    */
-  def apply(chainHash: ByteVector32, blockCountDelta: Int, maxRandomDelay: FiniteDuration): Behavior[Command] = {
+  def apply(chainHash: ByteVector32, maxRandomDelay: FiniteDuration): Behavior[Command] = {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
       Behaviors.withTimers { timers =>
@@ -66,9 +66,9 @@ object BlockchainWatchdog {
             timers.startSingleTimer(CheckLatestHeaders(blockCount), delay)
             Behaviors.same
           case CheckLatestHeaders(blockCount) =>
-            context.spawn(HeadersOverDns(chainHash, blockCount, blockCountDelta), HeadersOverDns.Source) ! HeadersOverDns.CheckLatestHeaders(context.self)
-            context.spawn(ExplorerApi(chainHash, blockCount, blockCountDelta, ExplorerApi.BlockstreamExplorer()), "blockstream") ! ExplorerApi.CheckLatestHeaders(context.self)
-            context.spawn(ExplorerApi(chainHash, blockCount, blockCountDelta, ExplorerApi.BlockcypherExplorer()), "blockcypher") ! ExplorerApi.CheckLatestHeaders(context.self)
+            context.spawn(HeadersOverDns(chainHash, blockCount), HeadersOverDns.Source) ! HeadersOverDns.CheckLatestHeaders(context.self)
+            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockstreamExplorer()), "blockstream") ! ExplorerApi.CheckLatestHeaders(context.self)
+            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockcypherExplorer()), "blockcypher") ! ExplorerApi.CheckLatestHeaders(context.self)
             Behaviors.same
           case headers@LatestHeaders(blockCount, blockHeaders, source) =>
             val missingBlocks = blockHeaders match {

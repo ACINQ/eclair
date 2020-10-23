@@ -28,27 +28,8 @@ import scala.concurrent.duration.DurationInt
 
 class HeadersOverDnsSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  test("fetch genesis block header") {
-    val headersOverDns = testKit.spawn(HeadersOverDns(Block.LivenetGenesisBlock.hash, 0, 1))
-    val sender = testKit.createTestProbe[LatestHeaders]()
-    headersOverDns ! CheckLatestHeaders(sender.ref)
-    sender.expectMessage(LatestHeaders(0, Set(BlockHeaderAt(0, Block.LivenetGenesisBlock.header)), HeadersOverDns.Source))
-  }
-
-  test("fetch first 3 block headers") {
-    val headersOverDns = testKit.spawn(HeadersOverDns(Block.LivenetGenesisBlock.hash, 0, 3))
-    val sender = testKit.createTestProbe[LatestHeaders]()
-    headersOverDns ! CheckLatestHeaders(sender.ref)
-    val expectedHeaders = Set(
-      BlockHeaderAt(0, Block.LivenetGenesisBlock.header),
-      BlockHeaderAt(1, BlockHeader.read(hex"010000006fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000982051fd1e4ba744bbbe680e1fee14677ba1a3c3540bf7b1cdb606e857233e0e61bc6649ffff001d01e36299".toArray)),
-      BlockHeaderAt(2, BlockHeader.read(hex"010000004860eb18bf1b1620e37e9490fc8a427514416fd75159ab86688e9a8300000000d5fdcc541e25de1c7a5addedf24858b8bb665c9f36ef744ee42c316022c90f9bb0bc6649ffff001d08d2bd61".toArray)),
-    )
-    sender.expectMessage(LatestHeaders(0, expectedHeaders, HeadersOverDns.Source))
-  }
-
-  test("fetch some block headers") {
-    val headersOverDns = testKit.spawn(HeadersOverDns(Block.LivenetGenesisBlock.hash, 630450, 5))
+  test("fetch latest block headers") {
+    val headersOverDns = testKit.spawn(HeadersOverDns(Block.LivenetGenesisBlock.hash, 630450))
     val sender = testKit.createTestProbe[LatestHeaders]()
     headersOverDns ! CheckLatestHeaders(sender.ref)
     val expectedHeaders = Set(
@@ -57,19 +38,24 @@ class HeadersOverDnsSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       BlockHeaderAt(630452, BlockHeader.read(hex"000000200fce94e6ace8c26d3e9bb1fc7e9b85dc9c94ad51d8b00f000000000000000000ca0a5ba5b2cdba07b8926809e4909278c392587e7c8362dd6bd2a6669affff32715ebe5e397a1117efc39f19".toArray)),
       BlockHeaderAt(630453, BlockHeader.read(hex"00000020db608b10a44b0b60b556f40775edcfb29d5f39eeeb7f0b000000000000000000312b2dece5824b0cb3153a8ef7a06af70ae68fc2e45a694936cbbd609c747aa56762be5e397a1117fba42eac".toArray)),
       BlockHeaderAt(630454, BlockHeader.read(hex"0000c0200951bd9340565493bc25101f4f7cbad1d094614ea8010e000000000000000000fd0377e4c6753830fe345657921aface6159e41a57c09be4a6658ca9e2704ff0c665be5e397a11172d2ee501".toArray)),
+      BlockHeaderAt(630455, BlockHeader.read(hex"000000204119a86146d81a66ac2670f5f36e0508d1312385f75d0200000000000000000075871a6f838207ac1f55d201d5f4a306cb37e52b2be8006d7ac4cc3114ac6e9aba6abe5e397a11173085c79c".toArray)),
+      BlockHeaderAt(630456, BlockHeader.read(hex"00000020b87220b7dd743fe4f1ee09d4fd4fd1d70608544ffaf0010000000000000000009de701d6bd397e1be047ccc5fe30ff92f6d67bd71c526f9f67c1413c8a4c65cc5070be5e397a111706c44dd8".toArray)),
+      BlockHeaderAt(630457, BlockHeader.read(hex"0000002028a1a12e1de0d77e1f58e1d90de97dd52aebcd0a8b570500000000000000000093669292cc29488c77d159fd5f153b66d689c0edaa284f556a587dc77585f4422c76be5e397a11171c47271b".toArray)),
+      BlockHeaderAt(630458, BlockHeader.read(hex"00000020ff4dc9eaac1ba97f16bd7287a2a05ecb4f2b013cfd640e0000000000000000000a8ada0e68ebb19b68be274938df178a68de89031ff5bfc1c7612e82a83830b18780be5e397a11178e24035e".toArray)),
+      BlockHeaderAt(630459, BlockHeader.read(hex"0000002030b5d50005fb4b56c1dbe12bc70e951779ab0d07e4ad02000000000000000000a73e505c3943437b0fc732ee69bfda59b48c58709b4543c7b62af5134200684deb8fbe5e397a111745743f34".toArray)),
     )
     sender.expectMessage(LatestHeaders(630450, expectedHeaders, HeadersOverDns.Source))
   }
 
   test("fetch future block headers") {
-    val headersOverDns = testKit.spawn(HeadersOverDns(Block.LivenetGenesisBlock.hash, 60000000, 2))
+    val headersOverDns = testKit.spawn(HeadersOverDns(Block.LivenetGenesisBlock.hash, 60000000))
     val sender = testKit.createTestProbe[LatestHeaders]()
     headersOverDns ! CheckLatestHeaders(sender.ref)
     sender.expectMessage(LatestHeaders(60000000, Set.empty, HeadersOverDns.Source))
   }
 
   test("ignore testnet requests") {
-    val headersOverDns = testKit.spawn(HeadersOverDns(Block.TestnetGenesisBlock.hash, 0, 1))
+    val headersOverDns = testKit.spawn(HeadersOverDns(Block.TestnetGenesisBlock.hash, 500000))
     val sender = testKit.createTestProbe[LatestHeaders]()
     headersOverDns ! CheckLatestHeaders(sender.ref)
     sender.expectNoMessage(1 second)

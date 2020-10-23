@@ -54,7 +54,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
   context.system.eventStream.subscribe(self, classOf[NewTransaction])
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
 
-  private val watchdog = context.spawn(Behaviors.supervise(BlockchainWatchdog(chainHash, 10, 60 seconds)).onFailure(SupervisorStrategy.resume), "blockchain-watchdog")
+  private val watchdog = context.spawn(Behaviors.supervise(BlockchainWatchdog(chainHash, 150 seconds)).onFailure(SupervisorStrategy.resume), "blockchain-watchdog")
 
   // this is to initialize block count
   self ! TickNewBlock

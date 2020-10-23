@@ -53,8 +53,8 @@ object ExplorerApi {
     def name: String
     /** Map from chainHash to explorer API URI. */
     def baseUris: Map[ByteVector32, Uri]
-    /** Fetch headers from the explorer. */
-    def getHeaders(baseUri: Uri, from: Long, to: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders]
+    /** Fetch latest headers from the explorer. */
+    def getLatestHeaders(baseUri: Uri, currentBlockCount: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders]
     // @formatter:on
   }
 
@@ -65,13 +65,13 @@ object ExplorerApi {
   private case class WrappedFailure(e: Throwable) extends Command
   // @formatter:on
 
-  def apply(chainHash: ByteVector32, currentBlockCount: Long, blockCountDelta: Int, explorer: Explorer): Behavior[Command] = {
+  def apply(chainHash: ByteVector32, currentBlockCount: Long, explorer: Explorer): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.receiveMessage {
         case CheckLatestHeaders(replyTo) =>
           explorer.baseUris.get(chainHash) match {
             case Some(uri) =>
-              context.pipeToSelf(explorer.getHeaders(uri, currentBlockCount, currentBlockCount + blockCountDelta - 1)(context)) {
+              context.pipeToSelf(explorer.getLatestHeaders(uri, currentBlockCount)(context)) {
                 case Success(headers) => WrappedLatestHeaders(replyTo, headers)
                 case Failure(e) => WrappedFailure(e)
               }
@@ -103,13 +103,27 @@ object ExplorerApi {
       Block.LivenetGenesisBlock.hash -> uri"https://api.blockcypher.com/v1/btc/main"
     )
 
-    override def getHeaders(baseUri: Uri, from: Long, to: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
+    override def getLatestHeaders(baseUri: Uri, currentBlockCount: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
       implicit val classicSystem: ActorSystem = context.system.classicSystem
       implicit val ec: ExecutionContext = context.system.executionContext
-      // We add delays between API calls to avoid getting throttled.
-      Future.sequence((from to to).map(i => after((i - from).toInt * 1.second)(getHeader(baseUri, i))))
-        .map(headers => LatestHeaders(from, headers.flatten.filter(_.blockCount >= from).toSet, name))
+      for {
+        tip <- getTip(baseUri)
+        start = currentBlockCount.max(tip - 10)
+        // We add delays between API calls to avoid getting throttled.
+        headers <- Future.sequence((start to tip).map(i => after((i - start).toInt * 1.second)(getHeader(baseUri, i))))
+          .map(h => LatestHeaders(currentBlockCount, h.flatten.filter(_.blockCount >= currentBlockCount).toSet, name))
+      } yield headers
     }
+
+    private def getTip(baseUri: Uri)(implicit ec: ExecutionContext): Future[Long] = for {
+      tip <- sttp.readTimeout(30 seconds).get(baseUri)
+        .response(asJson[JObject])
+        .send()
+        .map(r => {
+          val JInt(latestHeight) = r.unsafeBody \ "height"
+          latestHeight.toLong
+        })
+    } yield tip
 
     private def getHeader(baseUri: Uri, blockCount: Long)(implicit ec: ExecutionContext): Future[Seq[BlockHeaderAt]] = for {
       header <- sttp.readTimeout(30 seconds).get(baseUri.path(baseUri.path :+ "blocks" :+ blockCount.toString))
@@ -148,34 +162,31 @@ object ExplorerApi {
       Block.LivenetGenesisBlock.hash -> uri"https://blockstream.info/api"
     )
 
-    override def getHeaders(baseUri: Uri, from: Long, to: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
+    override def getLatestHeaders(baseUri: Uri, currentBlockCount: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
       implicit val ec: ExecutionContext = context.system.executionContext
-      val chunks = (0 to (to - from).toInt / 10).map(i => getChunk(baseUri, to - 10 * i))
-      Future.sequence(chunks).map(headers => LatestHeaders(from, headers.flatten.filter(_.blockCount >= from).toSet, name))
+      for {
+        headers <- sttp.readTimeout(10 seconds).get(baseUri.path(baseUri.path :+ "blocks"))
+          .response(asJson[JArray])
+          .send()
+          .map(r => r.code match {
+            // HTTP 404 is a "normal" error: we're trying to lookup future blocks that haven't been mined.
+            case StatusCodes.NotFound => Seq.empty
+            case _ => r.unsafeBody.arr
+          })
+          .map(blocks => blocks.map(block => {
+            val JInt(height) = block \ "height"
+            val JInt(version) = block \ "version"
+            val JInt(time) = block \ "timestamp"
+            val JInt(bits) = block \ "bits"
+            val JInt(nonce) = block \ "nonce"
+            val previousBlockHash = (block \ "previousblockhash").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
+            val merkleRoot = (block \ "merkle_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
+            val header = BlockHeader(version.toLong, previousBlockHash, merkleRoot, time.toLong, bits.toLong, nonce.toLong)
+            BlockHeaderAt(height.toLong, header)
+          }))
+          .map(headers => LatestHeaders(currentBlockCount, headers.filter(_.blockCount >= currentBlockCount).toSet, name))
+      } yield headers
     }
-
-    /** blockstream.info returns chunks of 10 headers between ]startHeight-10; startHeight] */
-    private def getChunk(baseUri: Uri, startHeight: Long)(implicit ec: ExecutionContext): Future[Seq[BlockHeaderAt]] = for {
-      headers <- sttp.readTimeout(10 seconds).get(baseUri.path(baseUri.path :+ "blocks" :+ startHeight.toString))
-        .response(asJson[JArray])
-        .send()
-        .map(r => r.code match {
-          // HTTP 404 is a "normal" error: we're trying to lookup future blocks that haven't been mined.
-          case StatusCodes.NotFound => Seq.empty
-          case _ => r.unsafeBody.arr
-        })
-        .map(blocks => blocks.map(block => {
-          val JInt(height) = block \ "height"
-          val JInt(version) = block \ "version"
-          val JInt(time) = block \ "timestamp"
-          val JInt(bits) = block \ "bits"
-          val JInt(nonce) = block \ "nonce"
-          val previousBlockHash = (block \ "previousblockhash").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-          val merkleRoot = (block \ "merkle_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-          val header = BlockHeader(version.toLong, previousBlockHash, merkleRoot, time.toLong, bits.toLong, nonce.toLong)
-          BlockHeaderAt(height.toLong, header)
-        }))
-    } yield headers
   }
 
 }
