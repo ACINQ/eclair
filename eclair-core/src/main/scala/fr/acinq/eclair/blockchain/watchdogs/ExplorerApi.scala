@@ -151,17 +151,8 @@ object ExplorerApi {
     } yield header
   }
 
-  /**
-   * Query https://blockstream.info/ to fetch block headers.
-   * See https://github.com/Blockstream/esplora/blob/master/API.md.
-   */
-  case class BlockstreamExplorer() extends Explorer {
-    override val name = "blockstream.info"
-    override val baseUris = Map(
-      Block.TestnetGenesisBlock.hash -> uri"https://blockstream.info/testnet/api",
-      Block.LivenetGenesisBlock.hash -> uri"https://blockstream.info/api"
-    )
-
+  /** Explorer API based on Esplora: see https://github.com/Blockstream/esplora/blob/master/API.md. */
+  sealed trait Esplora extends Explorer {
     override def getLatestHeaders(baseUri: Uri, currentBlockCount: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
       implicit val ec: ExecutionContext = context.system.executionContext
       for {
@@ -187,6 +178,24 @@ object ExplorerApi {
           .map(headers => LatestHeaders(currentBlockCount, headers.filter(_.blockCount >= currentBlockCount).toSet, name))
       } yield headers
     }
+  }
+
+  /** Query https://blockstream.info/ to fetch block headers. */
+  case class BlockstreamExplorer() extends Esplora {
+    override val name = "blockstream.info"
+    override val baseUris = Map(
+      Block.TestnetGenesisBlock.hash -> uri"https://blockstream.info/testnet/api",
+      Block.LivenetGenesisBlock.hash -> uri"https://blockstream.info/api"
+    )
+  }
+
+  /** Query https://mempool.space/ to fetch block headers. */
+  case class MempoolSpaceExplorer() extends Esplora {
+    override val name = "mempool.space"
+    override val baseUris = Map(
+      Block.TestnetGenesisBlock.hash -> uri"https://mempool.space/testnet/api",
+      Block.LivenetGenesisBlock.hash -> uri"https://mempool.space/api"
+    )
   }
 
 }

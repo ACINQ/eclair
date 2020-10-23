@@ -69,6 +69,7 @@ object BlockchainWatchdog {
             context.spawn(HeadersOverDns(chainHash, blockCount), HeadersOverDns.Source) ! HeadersOverDns.CheckLatestHeaders(context.self)
             context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockstreamExplorer()), "blockstream") ! ExplorerApi.CheckLatestHeaders(context.self)
             context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockcypherExplorer()), "blockcypher") ! ExplorerApi.CheckLatestHeaders(context.self)
+            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.MempoolSpaceExplorer()), "mempool.space") ! ExplorerApi.CheckLatestHeaders(context.self)
             Behaviors.same
           case headers@LatestHeaders(blockCount, blockHeaders, source) =>
             val missingBlocks = blockHeaders match {

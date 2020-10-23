@@ -27,7 +27,7 @@ import scala.concurrent.duration.DurationInt
 
 class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  test("fetch block headers from three sources on mainnet") {
+  test("fetch block headers from four sources on mainnet") {
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val watchdog = testKit.spawn(BlockchainWatchdog(Block.LivenetGenesisBlock.hash, 1 second))
@@ -36,14 +36,15 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     val events = Seq(
       eventListener.expectMessageType[DangerousBlocksSkew],
       eventListener.expectMessageType[DangerousBlocksSkew],
+      eventListener.expectMessageType[DangerousBlocksSkew],
       eventListener.expectMessageType[DangerousBlocksSkew]
     )
     eventListener.expectNoMessage(100 millis)
-    assert(events.map(_.recentHeaders.source).toSet === Set("bitcoinheaders.net", "blockcypher.com", "blockstream.info"))
+    assert(events.map(_.recentHeaders.source).toSet === Set("bitcoinheaders.net", "blockcypher.com", "blockstream.info", "mempool.space"))
     testKit.stop(watchdog)
   }
 
-  test("fetch block headers from two sources on testnet") {
+  test("fetch block headers from three sources on testnet") {
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 1 second))
@@ -51,10 +52,11 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
 
     val events = Seq(
       eventListener.expectMessageType[DangerousBlocksSkew],
+      eventListener.expectMessageType[DangerousBlocksSkew],
       eventListener.expectMessageType[DangerousBlocksSkew]
     )
     eventListener.expectNoMessage(100 millis)
-    assert(events.map(_.recentHeaders.source).toSet === Set("blockcypher.com", "blockstream.info"))
+    assert(events.map(_.recentHeaders.source).toSet === Set("blockcypher.com", "blockstream.info", "mempool.space"))
     testKit.stop(watchdog)
   }
 

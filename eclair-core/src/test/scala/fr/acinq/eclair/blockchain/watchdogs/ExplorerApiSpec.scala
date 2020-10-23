@@ -20,12 +20,12 @@ import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.LatestHeaders
-import fr.acinq.eclair.blockchain.watchdogs.ExplorerApi.{BlockcypherExplorer, BlockstreamExplorer, CheckLatestHeaders}
+import fr.acinq.eclair.blockchain.watchdogs.ExplorerApi.{BlockcypherExplorer, BlockstreamExplorer, CheckLatestHeaders, MempoolSpaceExplorer}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  val explorers = Seq(BlockcypherExplorer(), BlockstreamExplorer())
+  val explorers = Seq(BlockcypherExplorer(), BlockstreamExplorer(), MempoolSpaceExplorer())
 
   test("fetch latest block headers") {
     for (explorer <- explorers) {
