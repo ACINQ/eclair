@@ -29,7 +29,7 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFa
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
+import fr.acinq.eclair.{HasAbstractCommitmentsPlugin, LongToBtcAmount, NodeParams}
 
 import scala.concurrent.Promise
 import scala.util.Try
@@ -60,8 +60,10 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   val brokenHtlcs = {
     val channels = listLocalChannels(nodeParams.db.channels)
-    cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey)
+    val pluginChannels = nodeParams.pluginParams.collect { case p: HasAbstractCommitmentsPlugin => p.channels }.flatten
+    val combinedChannels = channels ++ pluginChannels
+    cleanupRelayDb(combinedChannels, nodeParams.db.pendingRelay)
+    checkBrokenHtlcs(combinedChannels, nodeParams.db.payments, nodeParams.privateKey)
   }
 
   Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
