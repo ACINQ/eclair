@@ -250,14 +250,14 @@ sealed trait Data
 
 case object Nothing extends Data
 
-trait HasAbstractCommitments {
+trait HasAbstractCommitments extends Data {
   def commitments: AbstractCommitments
   def channelId: ByteVector32 = commitments.channelId
   /** HTLCs which can't be relayed to remote peer so need to be failed in origin channel */
   def htlcsToFailInOrigin(log: LoggingAdapter): Set[Long] = Set.empty
 }
 
-sealed trait HasCommitments extends Data with HasAbstractCommitments {
+sealed trait HasCommitments extends HasAbstractCommitments {
   def commitments: Commitments
 }
 
