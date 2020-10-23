@@ -131,7 +131,11 @@ object TestConstants {
     val mandatory = 50000
   }
 
-  val pluginParams: PluginParams = PluginParams(tags = Set(60003), TestFeature)
+  val pluginParams: MessageFeaturePluginParams = new MessageFeaturePluginParams {
+    def messageTags: Set[Int] = Set(60003)
+    def feature: Feature = TestFeature
+    def name: String = "plugin for testing"
+  }
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
