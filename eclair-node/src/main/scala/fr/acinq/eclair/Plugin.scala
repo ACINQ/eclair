@@ -23,7 +23,7 @@ import scala.util.{Failure, Success, Try}
 
 trait Plugin {
 
-  def params: Option[PluginParams]
+  def params: PluginParams
 
   def onSetup(setup: Setup): Unit
 
