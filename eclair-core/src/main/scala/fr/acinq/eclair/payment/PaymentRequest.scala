@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, LongToBtcAmount, MilliSatoshi, NodeParams, ShortChannelId, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -339,13 +339,14 @@ object PaymentRequest {
    */
   case class PaymentRequestFeatures(bitmask: BitVector) extends TaggedField {
     lazy val features: Features = Features(bitmask)
-    lazy val supported: Boolean = Features.areSupported(features)
     lazy val allowMultiPart: Boolean = features.hasFeature(Features.BasicMultiPartPayment)
     lazy val allowPaymentSecret: Boolean = features.hasFeature(Features.PaymentSecret)
     lazy val requirePaymentSecret: Boolean = features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory))
     lazy val allowTrampoline: Boolean = features.hasFeature(Features.TrampolinePayment)
 
     def toByteVector: ByteVector = features.toByteVector
+
+    def areSupported(nodeParams: NodeParams): Boolean = nodeParams.features.areSupported(features)
 
     override def toString: String = s"Features(${bitmask.toBin})"
   }
