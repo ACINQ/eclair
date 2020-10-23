@@ -103,7 +103,7 @@ name                         | description                                      
 
 Quotes are not required unless the value contains special characters. Full syntax guide [here](https://github.com/lightbend/config/blob/master/HOCON.md).
 
-&rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference. There are many more options!
+&rarr; see [here](./docs/Configure.md) for more configuration options.
 
 #### Configure Bitcoin Core wallet
 
