@@ -98,7 +98,7 @@ case class Commitments(channelVersion: ChannelVersion,
 
   require(channelVersion.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (version=$channelVersion)")
 
-  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
+  def hasNoPendingHtlcs: Boolean = htlcsLocalCommit.isEmpty && htlcsRemoteCommit.isEmpty && remoteNextCommitInfo.isRight
 
   def hasPendingOrProposedHtlcs: Boolean = !hasNoPendingHtlcs ||
     localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
@@ -107,8 +107,8 @@ case class Commitments(channelVersion: ChannelVersion,
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = {
     def expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong
 
-    localCommit.spec.htlcs.collect(outgoing).filter(expired) ++
-      remoteCommit.spec.htlcs.collect(incoming).filter(expired) ++
+    htlcsLocalCommit.collect(outgoing).filter(expired) ++
+      htlcsRemoteCommit.collect(incoming).filter(expired) ++
       remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(expired).toSet)
   }
 
@@ -153,7 +153,7 @@ case class Commitments(channelVersion: ChannelVersion,
   def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
     def nearlyExpired(add: UpdateAddHtlc) = blockheight >= (add.cltvExpiry - fulfillSafety).toLong
 
-    localCommit.spec.htlcs.collect(incoming).filter(nearlyExpired)
+    htlcsLocalCommit.collect(incoming).filter(nearlyExpired)
   }
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
@@ -662,7 +662,7 @@ object Commitments {
         // the outgoing following htlcs have been completed (fulfilled or failed) when we received this revocation
         // they have been removed from both local and remote commitment
         // (since fulfill/fail are sent by remote, they are (1) signed by them, (2) revoked by us, (3) signed by us, (4) revoked by them
-        val completedOutgoingHtlcs = commitments.remoteCommit.spec.htlcs.collect(incoming).map(_.id) -- theirNextCommit.spec.htlcs.collect(incoming).map(_.id)
+        val completedOutgoingHtlcs = commitments.htlcsRemoteCommit.collect(incoming).map(_.id) -- theirNextCommit.spec.htlcs.collect(incoming).map(_.id)
         // we remove the newly completed htlcs from the origin map
         val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
         val commitments1 = commitments.copy(
@@ -757,12 +757,12 @@ object Commitments {
        |  toLocal: ${commitments.localCommit.spec.toLocal}
        |  toRemote: ${commitments.localCommit.spec.toRemote}
        |  htlcs:
-       |${commitments.localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
+       |${commitments.htlcsLocalCommit.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
        |remotecommit:
        |  toLocal: ${commitments.remoteCommit.spec.toLocal}
        |  toRemote: ${commitments.remoteCommit.spec.toRemote}
        |  htlcs:
-       |${commitments.remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
+       |${commitments.htlcsRemoteCommit.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
        |next remotecommit:
        |  toLocal: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toLocal).getOrElse("N/A")}
        |  toRemote: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toRemote).getOrElse("N/A")}
