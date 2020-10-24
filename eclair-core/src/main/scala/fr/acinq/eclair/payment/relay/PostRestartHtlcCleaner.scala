@@ -305,7 +305,8 @@ object PostRestartHtlcCleaner {
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
     val htlcsIn = channels
-      .flatMap(_.commitments.getIncomingCrossSignedAndRelayedHtlcs)
+      .flatMap(_.commitments.htlcsRemoteCommit)
+      .collect(outgoing)
       .map(IncomingPacket.decrypt(_, privateKey))
       .collect {
         // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
@@ -369,7 +370,8 @@ object PostRestartHtlcCleaner {
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
     // the command from the pending relay db.
     val channel2Htlc: Seq[(ByteVector32, Long)] = channels
-      .flatMap(_.commitments.getIncomingCrossSignedAndRelayedHtlcs)
+      .flatMap(_.commitments.htlcsRemoteCommit)
+      .collect(outgoing)
       .map(add => (add.channelId, add.id))
 
     val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()
