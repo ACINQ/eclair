@@ -19,7 +19,7 @@ package fr.acinq.eclair
 import fr.acinq.eclair.channel.HasAbstractCommitments
 
 /** Custom plugin parameters. */
-sealed trait PluginParams {
+trait PluginParams {
   /** Plugin's friendly name. */
   def name: String
 }
@@ -37,6 +37,6 @@ trait MessageFeaturePluginParams extends PluginParams {
 }
 
 /** Parameters for a plugin that defined non-standard channels with custom commitment objects. */
-sealed trait HasAbstractCommitmentsPlugin extends PluginParams {
+trait HasAbstractCommitmentsPlugin extends PluginParams {
   def channels: Seq[HasAbstractCommitments]
 }
