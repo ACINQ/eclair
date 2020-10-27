@@ -179,7 +179,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! updates
       stay
 
-    case Event(Symbol("data"), d) =>
+    case Event(GetRouterData, d) =>
       sender ! d
       stay
 
@@ -465,6 +465,7 @@ object Router {
   case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
   case object GetRoutingStateStreaming
   case object RoutingStateStreamingUpToDate
+  case object GetRouterData
   // @formatter:on
 
   // @formatter:off

@@ -20,8 +20,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, RemoteFailure}
-import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.router.Router.{Data, PublicChannel}
+import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{LongToBtcAmount, NodeParams, randomBytes32, secureRandom}
 
@@ -38,16 +37,16 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
   import scala.concurrent.ExecutionContext.Implicits.global
 
   // refresh our map of channel_updates regularly from the router
-  context.system.scheduler.schedule(0 seconds, ROUTING_TABLE_REFRESH_INTERVAL, router, Symbol("data"))
+  context.system.scheduler.schedule(0 seconds, ROUTING_TABLE_REFRESH_INTERVAL, router, Router.GetRouterData)
 
   override def receive: Receive = {
-    case routingData: Data =>
+    case routingData: Router.Data =>
       scheduleProbe()
       context become main(routingData)
   }
 
-  def main(routingData: Data): Receive = {
-    case routingData: Data =>
+  def main(routingData: Router.Data): Receive = {
+    case routingData: Router.Data =>
       context become main(routingData)
 
     case TickProbe =>
@@ -87,11 +86,11 @@ object Autoprobe {
 
   object TickProbe
 
-  def pickPaymentDestination(nodeId: PublicKey, routingData: Data): Option[PublicKey] = {
+  def pickPaymentDestination(nodeId: PublicKey, routingData: Router.Data): Option[PublicKey] = {
     // we only pick direct peers with enabled public channels
     val peers = routingData.channels
       .collect {
-        case (shortChannelId, c@PublicChannel(ann, _, _, Some(u1), _, _))
+        case (shortChannelId, c@Router.PublicChannel(ann, _, _, Some(u1), _, _))
           if c.getNodeIdSameSideAs(u1) == nodeId && Announcements.isEnabled(u1.channelFlags) && routingData.channels.exists(_._1 == shortChannelId) => ann.nodeId2 // we only consider outgoing channels that are enabled and announced
       }
     if (peers.isEmpty) {
