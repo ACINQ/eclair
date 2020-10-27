@@ -90,7 +90,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     val qcr = pipe.expectMsgType[QueryChannelRange]
     pipe.send(tgt, PeerRoutingMessage(pipe.ref, srcId, qcr))
     // this allows us to know when the last reply_channel_range has been set
-    pipe.send(tgt, 'data)
+    pipe.send(tgt, Router.GetRouterData)
     // tgt answers with reply_channel_ranges
     val rcrs = pipe.receiveWhile() {
       case rcr: ReplyChannelRange => rcr
