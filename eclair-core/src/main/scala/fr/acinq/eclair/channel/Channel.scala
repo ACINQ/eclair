@@ -97,15 +97,11 @@ object Channel {
    */
   case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 
-  def failTimedout(adds: Set[UpdateAddHtlc], relayer: ActorRef, commits: AbstractCommitments, log: akka.event.LoggingAdapter): Unit =
+  def failHtlcs(adds: Set[UpdateAddHtlc], commits: AbstractCommitments, log: akka.event.LoggingAdapter)(onFound: (Origin, UpdateAddHtlc) => Unit): Unit =
     adds.foreach { add =>
       commits.originChannels.get(add.id) match {
-        case Some(origin) =>
-          log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
-          relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(commits.channelId, Set(add))))
-        case None =>
-          // same as for fulfilling the htlc (no big deal)
-          log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
+        case Some(origin) => onFound(origin, add)
+        case None => log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)") // same as for fulfilling the htlc (no big deal)
       }
     }
 }
@@ -1340,17 +1336,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Some(c: Closing.RemoteClose) => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
         case _ => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarii (future remote commit)
       }
-      failTimedout(timedoutHtlcs, relayer, d.commitments, log)
+      failHtlcs(timedoutHtlcs, d.commitments, log) { (origin, add) =>
+        log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
+        relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcsTimedoutDownstream(d.channelId, Set(add))))
+      }
       // we also need to fail outgoing htlcs that we know will never reach the blockchain
-      Closing.overriddenOutgoingHtlcs(d, tx).foreach { add =>
-        d.commitments.originChannels.get(add.id) match {
-          case Some(origin) =>
-            log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by local commit")
-            relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
-          case None =>
-            // same as for fulfilling the htlc (no big deal)
-            log.info(s"cannot fail overridden htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)")
-        }
+      failHtlcs(Closing.overriddenOutgoingHtlcs(d, tx), d.commitments, log) { (origin, add) =>
+        log.info(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: overridden by local commit")
+        relayer ! RES_ADD_SETTLED(origin, add, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(d.channelId, add)))
       }
       // for our outgoing payments, let's send events if we know that they will settle on chain
       Closing
