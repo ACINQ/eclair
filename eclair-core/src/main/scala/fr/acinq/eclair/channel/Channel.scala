@@ -101,7 +101,7 @@ object Channel {
     adds.foreach { add =>
       commits.originChannels.get(add.id) match {
         case Some(origin) => onFound(origin, add)
-        case None => log.info(s"cannot fail timedout htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)") // same as for fulfilling the htlc (no big deal)
+        case None => log.info(s"cannot fail htlc #${add.id} paymentHash=${add.paymentHash} (origin not found)") // same as for fulfilling the htlc (no big deal)
       }
     }
 }
