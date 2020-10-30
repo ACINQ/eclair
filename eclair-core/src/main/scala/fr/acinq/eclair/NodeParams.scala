@@ -25,17 +25,18 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
-import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.Noise.KeyPair
+import fr.acinq.eclair.crypto.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
+import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -44,7 +45,8 @@ import scala.jdk.CollectionConverters._
 /**
  * Created by PM on 26/02/2017.
  */
-case class NodeParams(keyManager: KeyManager,
+case class NodeParams(nodeKeyManager: NodeKeyManager,
+                      channelKeyManager: ChannelKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockCount: AtomicLong,
                       alias: String,
@@ -87,8 +89,8 @@ case class NodeParams(keyManager: KeyManager,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean) {
-  val privateKey = keyManager.nodeKey.privateKey
-  val nodeId = keyManager.nodeId
+  val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
+  val nodeId: PublicKey = nodeKeyManager.nodeId
   val keyPair = KeyPair(nodeId.value, privateKey.value)
 
   val pluginMessageTags: Set[Int] = pluginParams.flatMap(_.tags).toSet
@@ -98,7 +100,7 @@ case class NodeParams(keyManager: KeyManager,
   def featuresFor(nodeId: PublicKey) = overrideFeatures.getOrElse(nodeId, features)
 }
 
-object NodeParams {
+object NodeParams extends Logging {
 
   sealed trait WatcherType
 
@@ -118,16 +120,47 @@ object NodeParams {
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load())
 
-  def getSeed(datadir: File): ByteVector = {
-    val seedPath = new File(datadir, "seed.dat")
-    if (seedPath.exists()) {
-      ByteVector(Files.readAllBytes(seedPath.toPath))
-    } else {
-      datadir.mkdirs()
-      val seed = randomBytes32
-      Files.write(seedPath.toPath, seed.toArray)
-      seed
+  private def readSeedFromFile(seedPath: File): ByteVector = {
+    logger.info(s"use seed file: ${seedPath.getCanonicalPath}")
+    ByteVector(Files.readAllBytes(seedPath.toPath))
+  }
+
+  private def writeSeedToFile(path: File, seed: ByteVector): Unit = {
+    Files.write(path.toPath, seed.toArray)
+    logger.info(s"create new seed file: ${path.getCanonicalPath}")
+  }
+
+  private def migrateSeedFile(old: File, `new`: File): Unit = {
+    if (old.exists() && !`new`.exists()) {
+      Files.copy(old.toPath, `new`.toPath)
+      logger.info(s"migrate seed file: ${old.getCanonicalPath} → ${`new`.getCanonicalPath}")
     }
+  }
+
+  def getSeeds(datadir: File, nodeSeedFilename: String = "nodeSeed.dat", channelSeedFilename: String = "channelSeed.dat"): (ByteVector, ByteVector) = {
+    // Previously we used one seed file ("seed.dat") to generate the node and the channel private keys
+    // Now we use two separate files and thus we need to migrate the old seed file if necessary
+    val oldSeedPath = new File(datadir, "seed.dat")
+
+    def getSeed(filename: String): ByteVector = {
+      val seedPath = new File(datadir, filename)
+      if (seedPath.exists()) {
+        readSeedFromFile(seedPath)
+      }
+      else if (oldSeedPath.exists()) {
+        migrateSeedFile(oldSeedPath, seedPath)
+        readSeedFromFile(seedPath)
+      }
+      else {
+        val randomSeed = randomBytes32
+        writeSeedToFile(seedPath, randomSeed)
+        randomSeed.bytes
+      }
+    }
+
+    val nodeSeed = getSeed(nodeSeedFilename)
+    val channelSeed = getSeed(channelSeedFilename)
+    (nodeSeed, channelSeed)
   }
 
   private val chain2Hash: Map[String, ByteVector32] = Map(
@@ -140,8 +173,9 @@ object NodeParams {
 
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
-  def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases,
-                     blockCount: AtomicLong, feeEstimator: FeeEstimator, pluginParams: Seq[PluginParams] = Nil): NodeParams = {
+  def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator,
+                     pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
       // v0.3.2
@@ -263,7 +297,8 @@ object NodeParams {
     }
 
     NodeParams(
-      keyManager = keyManager,
+      nodeKeyManager = nodeKeyManager,
+      channelKeyManager = channelKeyManager,
       instanceId = instanceId,
       blockCount = blockCount,
       alias = nodeAlias,
