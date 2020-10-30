@@ -40,7 +40,7 @@ import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
-import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.crypto.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.{Databases, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Server, Switchboard}
@@ -65,13 +65,13 @@ import scala.util.{Failure, Success}
  *
  * Created by PM on 25/01/2016.
  *
- * @param datadir  directory where eclair-core will write/read its data.
- * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
- * @param db       optional databases to use, if not set eclair will create the necessary databases
+ * @param datadir   directory where eclair-core will write/read its data.
+ * @param seeds_opt optional seeds, if set eclair will use them instead of generating them and won't create a nodeSeed.dat and channelSeed.dat files.
+ * @param db        optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
             pluginParams: Seq[PluginParams],
-            seed_opt: Option[ByteVector] = None,
+            seeds_opt: Option[(ByteVector, ByteVector)] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
   implicit val timeout = Timeout(30 seconds)
@@ -88,10 +88,11 @@ class Setup(datadir: File,
 
   datadir.mkdirs()
   val config = system.settings.config.getConfig("eclair")
-  val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
+  val (nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
-  val keyManager = new LocalKeyManager(seed, NodeParams.hashFromChain(chain))
+  val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
+  val channelKeyManager = new LocalChannelKeyManager(channelSeed, NodeParams.hashFromChain(chain))
   val instanceId = UUID.randomUUID()
 
   logger.info(s"instanceid=$instanceId")
@@ -124,7 +125,7 @@ class Setup(datadir: File,
     // @formatter:on
   }
 
-  val nodeParams = NodeParams.makeNodeParams(config, instanceId, keyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
+  val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
   pluginParams.foreach(param => logger.info(param.toString))
 
   val serverBindingAddress = new InetSocketAddress(
@@ -279,7 +280,7 @@ class Setup(datadir: File,
         case Electrum(electrumClient) =>
           val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
           val walletDb = new SqliteWalletDb(sqlite)
-          val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
+          val electrumWallet = system.actorOf(ElectrumWallet.props(channelSeed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
           new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       }
       _ = wallet.getReceiveAddress.map(address => logger.info(s"initial wallet address=$address"))
