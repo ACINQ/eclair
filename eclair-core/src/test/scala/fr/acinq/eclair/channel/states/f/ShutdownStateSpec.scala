@@ -408,7 +408,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     crossSign(bob, alice, bob2alice, alice2bob)
     // actual test starts here
     assert(alice.stateName == SHUTDOWN)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.htlcsLocalCommit.size == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.size == 1)
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.htlcsRemoteCommit.size == 1)
   }
 
@@ -424,7 +424,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // actual test starts here
     bob2alice.forward(bob)
     assert(alice.stateName == SHUTDOWN)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.htlcsLocalCommit.isEmpty)
+    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.isEmpty)
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.htlcsRemoteCommit.size == 2)
   }
 

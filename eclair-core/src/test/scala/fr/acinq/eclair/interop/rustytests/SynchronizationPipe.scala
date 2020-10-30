@@ -132,8 +132,8 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       val l = List(
         "LOCAL COMMITS:",
         s" Commit ${d.commitments.localCommit.index}:",
-        s"  Offered htlcs: ${htlcsLocalCommit.collect { case OutgoingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
-        s"  Received htlcs: ${htlcsLocalCommit.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
+        s"  Offered htlcs: ${localCommit.spec.htlcs.collect { case OutgoingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
+        s"  Received htlcs: ${localCommit.spec.htlcs.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Balance us: ${localCommit.spec.toLocal}",
         s"  Balance them: ${localCommit.spec.toRemote}",
         s"  Fee rate: ${localCommit.spec.feeratePerKw.toLong}",

@@ -51,9 +51,6 @@ trait AbstractCommitments {
   /** Returns all HTLCs in the current remote commitment. */
   def htlcsRemoteCommit: Set[DirectedHtlc]
 
-  /** Returns all HTLCs in the current local commitment. */
-  def htlcsLocalCommit: Set[DirectedHtlc]
-
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
 
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
@@ -98,7 +95,7 @@ case class Commitments(channelVersion: ChannelVersion,
 
   require(channelVersion.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (version=$channelVersion)")
 
-  def hasNoPendingHtlcs: Boolean = htlcsLocalCommit.isEmpty && htlcsRemoteCommit.isEmpty && remoteNextCommitInfo.isRight
+  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && htlcsRemoteCommit.isEmpty && remoteNextCommitInfo.isRight
 
   def hasPendingOrProposedHtlcs: Boolean = !hasNoPendingHtlcs ||
     localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
@@ -107,14 +104,12 @@ case class Commitments(channelVersion: ChannelVersion,
   def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = {
     def expired(add: UpdateAddHtlc) = blockheight >= add.cltvExpiry.toLong
 
-    htlcsLocalCommit.collect(outgoing).filter(expired) ++
+    localCommit.spec.htlcs.collect(outgoing).filter(expired) ++
       htlcsRemoteCommit.collect(incoming).filter(expired) ++
       remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(expired).toSet)
   }
 
   def htlcsRemoteCommit: Set[DirectedHtlc] = remoteCommit.spec.htlcs
-
-  def htlcsLocalCommit: Set[DirectedHtlc] = localCommit.spec.htlcs
 
   /**
    * Return the outgoing HTLC with the given id if it is:
@@ -152,8 +147,7 @@ case class Commitments(channelVersion: ChannelVersion,
    */
   def almostTimedOutIncomingHtlcs(blockheight: Long, fulfillSafety: CltvExpiryDelta): Set[UpdateAddHtlc] = {
     def nearlyExpired(add: UpdateAddHtlc) = blockheight >= (add.cltvExpiry - fulfillSafety).toLong
-
-    htlcsLocalCommit.collect(incoming).filter(nearlyExpired)
+    localCommit.spec.htlcs.collect(incoming).filter(nearlyExpired)
   }
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
@@ -757,7 +751,7 @@ object Commitments {
        |  toLocal: ${commitments.localCommit.spec.toLocal}
        |  toRemote: ${commitments.localCommit.spec.toRemote}
        |  htlcs:
-       |${commitments.htlcsLocalCommit.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
+       |${commitments.localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.cltvExpiry}").mkString("\n")}
        |remotecommit:
        |  toLocal: ${commitments.remoteCommit.spec.toLocal}
        |  toRemote: ${commitments.remoteCommit.spec.toRemote}
