@@ -574,7 +574,7 @@ class RouterSpec extends BaseRouterSpec {
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
       // And the graph should be updated too.
-      sender.send(router, Symbol("data"))
+      sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graph
       val edge_ab = g.getEdge(ChannelDesc(channelId_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(channelId_ab, b, a)).get
@@ -586,7 +586,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // First we make sure we aren't in the "pending rebroadcast" state for this channel update.
       sender.send(router, TickBroadcast)
-      sender.send(router, Symbol("data"))
+      sender.send(router, Router.GetRouterData)
       assert(sender.expectMsgType[Data].rebroadcast.updates.isEmpty)
 
       // Then we update the balance without changing the contents of the channel update; the graph should still be updated.
@@ -597,7 +597,7 @@ class RouterSpec extends BaseRouterSpec {
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
       // And the graph should be updated too.
-      sender.send(router, Symbol("data"))
+      sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graph
       val edge_ab = g.getEdge(ChannelDesc(channelId_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(channelId_ab, b, a)).get
@@ -615,7 +615,7 @@ class RouterSpec extends BaseRouterSpec {
       val channel_ab = sender.expectMsgType[RoutingState].channels.find(_.ann == chan_ab).get
       assert(Set(channel_ab.meta_opt.map(_.balance1), channel_ab.meta_opt.map(_.balance2)) === balances)
       // And the graph should be updated too.
-      sender.send(router, Symbol("data"))
+      sender.send(router, Router.GetRouterData)
       val g = sender.expectMsgType[Data].graph
       val edge_ab = g.getEdge(ChannelDesc(channelId_ab, a, b)).get
       val edge_ba = g.getEdge(ChannelDesc(channelId_ab, b, a)).get
@@ -629,7 +629,7 @@ class RouterSpec extends BaseRouterSpec {
       val balances = Set(33000000 msat, 5000000 msat)
       val commitments = CommitmentsSpec.makeCommitments(33000000 msat, 5000000 msat, a, g, announceChannel = false)
       sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ag, commitments))
-      sender.send(router, Symbol("data"))
+      sender.send(router, Router.GetRouterData)
       val data = sender.expectMsgType[Data]
       val channel_ag = data.privateChannels(channelId_ag)
       assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) === balances)
