@@ -514,7 +514,7 @@ object PeerConnection {
     sealed trait Success extends ConnectionResult
     sealed trait Failure extends ConnectionResult
 
-    case object NoAddressFound extends ConnectionResult.Failure { override def toString: String = "no address found" }
+    case class NoAddressFound(remoteNodeId: PublicKey) extends ConnectionResult.Failure { override def toString: String = "no address found" }
     case class ConnectionFailed(address: InetSocketAddress) extends ConnectionResult.Failure { override def toString: String = s"connection failed to $address" }
     case class AuthenticationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
     case class InitializationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
