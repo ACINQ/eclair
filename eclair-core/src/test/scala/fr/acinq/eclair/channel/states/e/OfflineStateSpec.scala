@@ -86,11 +86,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(
-      TestConstants.Bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
+      TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.localParams, bobCommitments.channelVersion),
       bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(
-      TestConstants.Alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.channelKeyManager.commitmentPoint(
+      TestConstants.Alice.channelKeyManager.keyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
       aliceCommitments.localCommit.index)
 
     // a didn't receive any update or sig
@@ -173,11 +173,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(
-      TestConstants.Bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
+      TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.localParams, bobCommitments.channelVersion),
       bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(
-      TestConstants.Alice.keyManager.channelKeyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.channelKeyManager.commitmentPoint(
+      TestConstants.Alice.channelKeyManager.keyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
       aliceCommitments.localCommit.index)
 
     // a didn't receive the sig

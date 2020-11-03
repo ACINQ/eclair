@@ -25,12 +25,10 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
-import fr.acinq.eclair.payment.OutgoingPacket.buildCommand
+import fr.acinq.eclair.payment.OutgoingPacket.{Upstream, buildCommand}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
@@ -147,7 +145,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val preimage = randomBytes32
     val paymentHash = Crypto.sha256(preimage)
-    val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(500 msat), paymentHash, TestConstants.Bob.keyManager.nodeKey.privateKey, "Some invoice", CltvExpiryDelta(18))
+    val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(500 msat), paymentHash, TestConstants.Bob.nodeKeyManager.nodeKey.privateKey, "Some invoice", CltvExpiryDelta(18))
     nodeParams.db.payments.addIncomingPayment(invoice, preimage)
     nodeParams.db.payments.receiveIncomingPayment(paymentHash, 5000 msat)
 

@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
-import fr.acinq.eclair.crypto.{LocalKeyManager, TransportHandler}
+import fr.acinq.eclair.crypto.{LocalChannelKeyManager, LocalNodeKeyManager, TransportHandler}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelMeta, GossipDecision, PrivateChannel}
@@ -33,7 +33,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestKitBaseClass, randomKey, _}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import scodec.bits.{ByteVector, HexStringSyntax}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -52,9 +52,10 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   val htlcMaximum = 500000000 msat
 
   val seed = ByteVector32(ByteVector.fill(32)(2))
-  val testKeyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+  val testNodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
+  val testChannelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
-  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (testKeyManager.nodeKey.privateKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f, priv_g, priv_h) = (testNodeKeyManager.nodeKey.privateKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
   val (a, b, c, d, e, f, g, h) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey, priv_g.publicKey, priv_h.publicKey)
 
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f, priv_funding_g, priv_funding_h) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
@@ -123,7 +124,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       val watcher = TestProbe()
       import com.softwaremill.quicklens._
       val nodeParams = Alice.nodeParams
-        .modify(_.keyManager).setTo(testKeyManager)
+        .modify(_.nodeKeyManager).setTo(testNodeKeyManager)
         .modify(_.routerConf.routerBroadcastInterval).setTo(1 day) // "disable" auto rebroadcast
       val router = system.actorOf(Router.props(nodeParams, watcher.ref))
       // we announce channels

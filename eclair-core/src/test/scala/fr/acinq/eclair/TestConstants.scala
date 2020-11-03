@@ -26,8 +26,8 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND
-import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf, _}
+import fr.acinq.eclair.crypto.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.NoLock
 import fr.acinq.eclair.db.pg._
@@ -135,11 +135,13 @@ object TestConstants {
 
   object Alice {
     val seed = ByteVector32(ByteVector.fill(32)(1))
-    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
-      keyManager = keyManager,
+      nodeKeyManager,
+      channelKeyManager,
       blockCount = new AtomicLong(defaultBlockHeight),
       alias = "alice",
       color = Color(1, 2, 3),
@@ -237,10 +239,12 @@ object TestConstants {
 
   object Bob {
     val seed = ByteVector32(ByteVector.fill(32)(2))
-    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
+    val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def nodeParams = NodeParams(
-      keyManager = keyManager,
+      nodeKeyManager,
+      channelKeyManager,
       blockCount = new AtomicLong(defaultBlockHeight),
       alias = "bob",
       color = Color(4, 5, 6),

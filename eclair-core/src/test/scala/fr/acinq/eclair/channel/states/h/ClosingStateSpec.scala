@@ -1173,8 +1173,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
-    val bobCurrentPerCommitmentPoint = TestConstants.Bob.keyManager.commitmentPoint(
-      TestConstants.Bob.keyManager.channelKeyPath(bobCommitments.localParams, bobCommitments.channelVersion),
+    val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
+      TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.localParams, bobCommitments.channelVersion),
       bobCommitments.localCommit.index)
 
     val sender = TestProbe()
