@@ -19,6 +19,7 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.eclair.router.Announcements
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -50,4 +51,7 @@ class LocalNodeKeyManager(seed: ByteVector, chainHash: ByteVector32) extends Nod
     val recoveryId = if (nodeId == pub1) 0 else 1
     (signature, recoveryId)
   }
+
+  override def signChannelAnnouncement(witness: ByteVector): ByteVector64 =
+    Announcements.signChannelAnnouncement(witness, nodeKey.privateKey)
 }

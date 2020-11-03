@@ -21,10 +21,10 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
+import fr.acinq.bitcoin.{ByteVector64, Crypto, DeterministicWallet, Protocol}
 import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
-import fr.acinq.eclair.{Features, ShortChannelId}
+import scodec.bits.ByteVector
 
 trait ChannelKeyManager {
   def fundingPublicKey(keyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
@@ -96,17 +96,10 @@ trait ChannelKeyManager {
   /**
    * Sign a channel announcement message
    *
-   * @param localNodeSecret  node private key
-   * @param fundingKeyPath   BIP32 path of the funding public key
-   * @param chainHash        chain hash
-   * @param shortChannelId   short channel id
-   * @param remoteNodeId     remote node id
-   * @param remoteFundingKey remote funding pubkey
-   * @param features         channel features
-   * @return a (nodeSig, bitcoinSig) pair. nodeSig is the signature of the channel announcement with our node's
-   *         private key, bitcoinSig is the signature of the channel announcement with our funding private key
+   * @param witness channel announcement message
+   * @return the signature of the channel announcement with the channel's funding private key
    */
-  def signChannelAnnouncement(localNodeSecret: PrivateKey, fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: Features): (ByteVector64, ByteVector64)
+  def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: DeterministicWallet.KeyPath): ByteVector64
 }
 
 object ChannelKeyManager {

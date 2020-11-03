@@ -18,11 +18,20 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet}
+import scodec.bits.ByteVector
 
 trait NodeKeyManager {
   def nodeKey: DeterministicWallet.ExtendedPrivateKey
 
   def nodeId: PublicKey
+
+  /**
+   * Sign a channel announcement message
+   *
+   * @param witness channel announcement message
+   * @return the signature of the channel announcement with our node's private key
+   */
+  def signChannelAnnouncement(witness: ByteVector): ByteVector64
 
   /**
    * Sign a digest, primarily used to prove ownership of the current node

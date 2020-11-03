@@ -25,6 +25,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, F
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.{ChannelKeyManager, Generators}
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -215,7 +216,17 @@ object Helpers {
   def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: ShortChannelId): AnnouncementSignatures = {
     val features = Features.empty // empty features for now
     val fundingPubKey = nodeParams.channelKeyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
-    val (localNodeSig, localBitcoinSig) = nodeParams.channelKeyManager.signChannelAnnouncement(nodeParams.privateKey, fundingPubKey.path, nodeParams.chainHash, shortChannelId, commitments.remoteParams.nodeId, commitments.remoteParams.fundingPubKey, features)
+    val witness = Announcements.generateChannelAnnouncementWitness(
+      nodeParams.chainHash,
+      shortChannelId,
+      nodeParams.nodeKeyManager.nodeId,
+      commitments.remoteParams.nodeId,
+      fundingPubKey.publicKey,
+      commitments.remoteParams.fundingPubKey,
+      features
+    )
+    val localBitcoinSig = nodeParams.channelKeyManager.signChannelAnnouncement(witness, fundingPubKey.path)
+    val localNodeSig = nodeParams.nodeKeyManager.signChannelAnnouncement(witness)
     AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
