@@ -34,7 +34,7 @@ object Boot extends App with Logging {
       ConfigParseOptions.defaults().setSyntax(ConfigSyntax.PROPERTIES))
       .withFallback(ConfigFactory.load())
 
-    implicit val system: ActorSystem = ActorSystem("eclair-node", config)
+    implicit val system: ActorSystem = ActorSystem("eclair-front", config)
     implicit val ec: ExecutionContext = system.dispatcher
 
     val setup = new FrontSetup(datadir)
