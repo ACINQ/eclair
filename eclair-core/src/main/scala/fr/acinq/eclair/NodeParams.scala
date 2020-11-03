@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.{Channel, HasAbstractCommitments}
 import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.db._
@@ -92,6 +92,8 @@ case class NodeParams(keyManager: KeyManager,
   val keyPair = KeyPair(nodeId.value, privateKey.value)
 
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: MessageFeaturePluginParams => p.messageTags }.toSet.flatten
+
+  def pluginExtraChannels: Seq[HasAbstractCommitments] = pluginParams.collect { case p: HasAbstractCommitmentsPlugin => p.channels }.flatten
 
   def currentBlockHeight: Long = blockCount.get
 

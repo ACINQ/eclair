@@ -57,10 +57,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
-  val brokenHtlcs = {
-    val channels = listLocalChannels(nodeParams.db.channels)
-    val pluginChannels = nodeParams.pluginParams.collect { case p: HasAbstractCommitmentsPlugin => p.channels }.flatten
-    val combinedChannels = channels ++ pluginChannels
+  val brokenHtlcs: BrokenHtlcs = {
+    val combinedChannels = listLocalChannels(nodeParams.db.channels) ++ nodeParams.pluginExtraChannels
     cleanupRelayDb(combinedChannels, nodeParams.db.pendingRelay)
     checkBrokenHtlcs(combinedChannels, nodeParams.db.payments, nodeParams.privateKey)
   }
