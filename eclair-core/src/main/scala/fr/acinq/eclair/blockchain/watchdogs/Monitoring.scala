@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2020 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,23 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.blockchain
+package fr.acinq.eclair.blockchain.watchdogs
 
-import fr.acinq.bitcoin.{Block, Transaction}
-import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import kamon.Kamon
 
 /**
- * Created by PM on 24/08/2016.
+ * Created by t-bast on 29/09/2020.
  */
 
-sealed trait BlockchainEvent
+object Monitoring {
 
-case class NewBlock(block: Block) extends BlockchainEvent
+  object Metrics {
+    val BitcoinBlocksSkew = Kamon.gauge("bitcoin.watchdog.blocks.skew", "Number of blocks we're missing compared to other blockchain sources")
+    val WatchdogError = Kamon.counter("bitcoin.watchdog.error", "Number of watchdog errors")
+  }
 
-case class NewTransaction(tx: Transaction) extends BlockchainEvent
+  object Tags {
+    val Source = "source"
+  }
 
-case class CurrentBlockCount(blockCount: Long) extends BlockchainEvent
-
-case class CurrentFeerates(feeratesPerKw: FeeratesPerKw) extends BlockchainEvent
+}

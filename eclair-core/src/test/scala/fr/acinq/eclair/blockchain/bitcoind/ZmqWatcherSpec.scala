@@ -107,7 +107,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
   test("watch for confirmed transactions") {
     val probe = TestProbe()
     val blockCount = new AtomicLong()
-    val watcher = system.actorOf(ZmqWatcher.props(blockCount, new ExtendedBitcoinClient(bitcoinrpcclient)))
+    val watcher = system.actorOf(ZmqWatcher.props(randomBytes32, blockCount, new ExtendedBitcoinClient(bitcoinrpcclient)))
     val (address, _) = getNewAddress(bitcoincli)
     val tx = sendToAddress(bitcoincli, address, 1.0)
 
@@ -128,7 +128,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
   test("watch for spent transactions") {
     val probe = TestProbe()
     val blockCount = new AtomicLong()
-    val watcher = system.actorOf(ZmqWatcher.props(blockCount, new ExtendedBitcoinClient(bitcoinrpcclient)))
+    val watcher = system.actorOf(ZmqWatcher.props(randomBytes32, blockCount, new ExtendedBitcoinClient(bitcoinrpcclient)))
     val (address, priv) = getNewAddress(bitcoincli)
     val tx = sendToAddress(bitcoincli, address, 1.0)
     val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
@@ -169,7 +169,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     val blockCount = new AtomicLong()
     val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val client = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val watcher = system.actorOf(ZmqWatcher.props(blockCount, client))
+    val watcher = system.actorOf(ZmqWatcher.props(randomBytes32, blockCount, client))
 
     // create a chain of transactions that we don't broadcast yet
     val (_, priv) = getNewAddress(bitcoincli)
@@ -204,7 +204,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     val blockCount = new AtomicLong()
     val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val client = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val watcher = system.actorOf(ZmqWatcher.props(blockCount, client))
+    val watcher = system.actorOf(ZmqWatcher.props(randomBytes32, blockCount, client))
     awaitCond(blockCount.get > 0)
     val (_, priv) = getNewAddress(bitcoincli)
 
