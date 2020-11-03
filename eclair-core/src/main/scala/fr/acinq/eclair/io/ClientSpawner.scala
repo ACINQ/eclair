@@ -56,6 +56,8 @@ class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyP
       // in that case we want to be warned when connections are spawned by the backend
       log.warning("handling outgoing connection request locally")
       self forward req
+    case _: DeadLetter =>
+      // we don't care about other dead letters
   }
 }
 
