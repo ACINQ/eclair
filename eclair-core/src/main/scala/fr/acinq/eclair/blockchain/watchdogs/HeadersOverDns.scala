@@ -60,7 +60,7 @@ object HeadersOverDns {
             })
             collect(replyTo, currentBlockCount, Set.empty, 10)
           case _ =>
-            // Headers over DNS is only supported for mainnet.
+            context.log.debug("bitcoinheaders.net is only supported on mainnet - skipped")
             Behaviors.stopped
         }
         case _ => Behaviors.unhandled
