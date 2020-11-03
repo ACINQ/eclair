@@ -27,6 +27,7 @@ import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
+import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -137,21 +138,21 @@ object NodeParams extends Logging {
     }
   }
 
-  def getSeeds(datadir: File, nodeSeedFilename: String = "nodeSeed.dat", channelSeedFilename: String = "channelSeed.dat"): (ByteVector, ByteVector) = {
+  def getSeeds(datadir: File): Seeds = {
     // Previously we used one seed file ("seed.dat") to generate the node and the channel private keys
     // Now we use two separate files and thus we need to migrate the old seed file if necessary
     val oldSeedPath = new File(datadir, "seed.dat")
+    val nodeSeedFilename: String = "nodeSeed.dat"
+    val channelSeedFilename: String = "channelSeed.dat"
 
     def getSeed(filename: String): ByteVector = {
       val seedPath = new File(datadir, filename)
       if (seedPath.exists()) {
         readSeedFromFile(seedPath)
-      }
-      else if (oldSeedPath.exists()) {
+      } else if (oldSeedPath.exists()) {
         migrateSeedFile(oldSeedPath, seedPath)
         readSeedFromFile(seedPath)
-      }
-      else {
+      } else {
         val randomSeed = randomBytes32
         writeSeedToFile(seedPath, randomSeed)
         randomSeed.bytes
@@ -160,7 +161,7 @@ object NodeParams extends Logging {
 
     val nodeSeed = getSeed(nodeSeedFilename)
     val channelSeed = getSeed(channelSeedFilename)
-    (nodeSeed, channelSeed)
+    Seeds(nodeSeed, channelSeed)
   }
 
   private val chain2Hash: Map[String, ByteVector32] = Map(

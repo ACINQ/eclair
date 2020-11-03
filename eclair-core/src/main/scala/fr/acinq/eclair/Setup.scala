@@ -30,6 +30,7 @@ import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
+import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
@@ -71,7 +72,7 @@ import scala.util.{Failure, Success}
  */
 class Setup(datadir: File,
             pluginParams: Seq[PluginParams],
-            seeds_opt: Option[(ByteVector, ByteVector)] = None,
+            seeds_opt: Option[Seeds] = None,
             db: Option[Databases] = None)(implicit system: ActorSystem) extends Logging {
 
   implicit val timeout = Timeout(30 seconds)
@@ -88,7 +89,7 @@ class Setup(datadir: File,
 
   datadir.mkdirs()
   val config = system.settings.config.getConfig("eclair")
-  val (nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
+  val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
   val chain = config.getString("chain")
   val chaindir = new File(datadir, chain)
   val nodeKeyManager = new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain))
@@ -372,6 +373,10 @@ class Setup(datadir: File,
     }
   }
 
+}
+
+object Setup {
+  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector)
 }
 
 // @formatter:off
