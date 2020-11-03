@@ -22,6 +22,7 @@ import java.nio.file.Files
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.{NodeParams, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -52,7 +53,7 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
     val seedDatFile = TestUtils.createSeedFile("seed.dat", seed.toArray)
 
-    val (_, nodeSeed) = NodeParams.getSeeds(seedDatFile.getParentFile)
+    val Seeds(_, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
 
     val nodeSeedDatFile = new File(seedDatFile.getParentFile, "nodeSeed.dat")
     assert(nodeSeedDatFile.exists())

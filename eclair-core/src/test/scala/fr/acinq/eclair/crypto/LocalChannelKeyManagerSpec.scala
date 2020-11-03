@@ -22,6 +22,7 @@ import java.nio.file.Files
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
+import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.{NodeParams, TestConstants, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
@@ -132,7 +133,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
     val seedDatFile = TestUtils.createSeedFile("seed.dat", seed.toArray)
 
-    val (_, channelSeed) = NodeParams.getSeeds(seedDatFile.getParentFile)
+    val Seeds(_, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
 
     val channelSeedDatFile = new File(seedDatFile.getParentFile, "channelSeed.dat")
     assert(channelSeedDatFile.exists())
