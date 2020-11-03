@@ -131,10 +131,10 @@ object NodeParams extends Logging {
     logger.info(s"create new seed file: ${path.getCanonicalPath}")
   }
 
-  private def migrateSeedFile(old: File, `new`: File): Unit = {
-    if (old.exists() && !`new`.exists()) {
-      Files.copy(old.toPath, `new`.toPath)
-      logger.info(s"migrate seed file: ${old.getCanonicalPath} → ${`new`.getCanonicalPath}")
+  private def migrateSeedFile(source: File, destination: File): Unit = {
+    if (source.exists() && !destination.exists()) {
+      Files.copy(source.toPath, destination.toPath)
+      logger.info(s"migrate seed file: ${source.getCanonicalPath} → ${destination.getCanonicalPath}")
     }
   }
 
