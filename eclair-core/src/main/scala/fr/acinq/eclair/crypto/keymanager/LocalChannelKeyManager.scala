@@ -14,12 +14,13 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.crypto
+package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.secureRandom
 import fr.acinq.eclair.transactions.Transactions

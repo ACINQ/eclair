@@ -31,7 +31,7 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Noise.KeyPair
-import fr.acinq.eclair.crypto.{ChannelKeyManager, NodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.router.Router.RouterConf

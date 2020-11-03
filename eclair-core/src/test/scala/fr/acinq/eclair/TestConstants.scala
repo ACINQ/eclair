@@ -27,7 +27,7 @@ import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf, _}
-import fr.acinq.eclair.crypto.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.NoLock
 import fr.acinq.eclair.db.pg._

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.crypto
+package fr.acinq.eclair.crypto.keymanager
 
 import java.io.File
 import java.nio.file.Files
@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.channel.ChannelVersion
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.{NodeParams, TestConstants, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.crypto
+package fr.acinq.eclair.crypto.keymanager
 
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder

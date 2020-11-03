@@ -24,7 +24,8 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
-import fr.acinq.eclair.crypto.{LocalChannelKeyManager, LocalNodeKeyManager, TransportHandler}
+import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
