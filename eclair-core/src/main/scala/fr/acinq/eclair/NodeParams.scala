@@ -142,8 +142,8 @@ object NodeParams extends Logging {
     // Previously we used one seed file ("seed.dat") to generate the node and the channel private keys
     // Now we use two separate files and thus we need to migrate the old seed file if necessary
     val oldSeedPath = new File(datadir, "seed.dat")
-    val nodeSeedFilename: String = "nodeSeed.dat"
-    val channelSeedFilename: String = "channelSeed.dat"
+    val nodeSeedFilename: String = "node_seed.dat"
+    val channelSeedFilename: String = "channel_seed.dat"
 
     def getSeed(filename: String): ByteVector = {
       val seedPath = new File(datadir, filename)

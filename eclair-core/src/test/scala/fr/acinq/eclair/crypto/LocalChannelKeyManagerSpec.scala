@@ -135,7 +135,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
 
     val Seeds(_, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
 
-    val channelSeedDatFile = new File(seedDatFile.getParentFile, "channelSeed.dat")
+    val channelSeedDatFile = new File(seedDatFile.getParentFile, "channel_seed.dat")
     assert(channelSeedDatFile.exists())
 
     val channelSeedContent = ByteVector(Files.readAllBytes(channelSeedDatFile.toPath))

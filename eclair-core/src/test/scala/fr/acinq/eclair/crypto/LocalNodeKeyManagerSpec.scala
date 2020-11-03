@@ -55,7 +55,7 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
 
     val Seeds(_, _) = NodeParams.getSeeds(seedDatFile.getParentFile)
 
-    val nodeSeedDatFile = new File(seedDatFile.getParentFile, "nodeSeed.dat")
+    val nodeSeedDatFile = new File(seedDatFile.getParentFile, "node_seed.dat")
     assert(nodeSeedDatFile.exists())
 
     val nodeSeedContent = ByteVector(Files.readAllBytes(nodeSeedDatFile.toPath))
