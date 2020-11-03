@@ -21,7 +21,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
@@ -133,6 +133,7 @@ object TestConstants {
 
   val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
     def messageTags: Set[Int] = Set(60003)
+    def forceReconnect(nodeId: PublicKey) = false
     def feature: Feature = TestFeature
     def name: String = "plugin for testing"
   }
