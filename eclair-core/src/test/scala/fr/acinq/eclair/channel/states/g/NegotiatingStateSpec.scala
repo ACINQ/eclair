@@ -153,7 +153,6 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("recv ClosingSigned (invalid sig)") { f =>
     import f._
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
-    val sender = TestProbe()
     val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
     bob ! aliceCloseSig.copy(signature = ByteVector64.Zeroes)
     val error = bob2alice.expectMsgType[Error]
@@ -200,7 +199,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // at this point alice and bob have not yet converged on closing fees, but bob decides to publish a mutual close with one of the previous sigs
     val d = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
     implicit val log: LoggingAdapter = bob.underlyingActor.implicitLog
-    val Success(bobClosingTx) = Closing.checkClosingSignature(Bob.channelKeyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
+    val Right(bobClosingTx) = Closing.checkClosingSignature(Bob.channelKeyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
 
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
     alice2blockchain.expectMsgType[PublishAsap]
