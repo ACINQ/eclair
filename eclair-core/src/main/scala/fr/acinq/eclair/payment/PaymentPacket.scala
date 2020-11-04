@@ -31,7 +31,6 @@ import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
 import scala.reflect.ClassTag
-import scala.util.{Failure, Success, Try}
 
 /**
  * Created by t-bast on 08/10/2019.
@@ -62,7 +61,7 @@ object IncomingPacket {
     packetType.peel(privateKey, add.paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         OnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits) match {
-          case Attempt.Successful(DecodeResult(perHopPayload: T, remainder)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
+          case Attempt.Successful(DecodeResult(perHopPayload: T, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
           case Attempt.Failure(e: OnionCodecs.MissingRequiredTlv) => Left(e.failureMessage)
           // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
           // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
@@ -250,15 +249,15 @@ object OutgoingPacket {
     CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, Origin.Hot(replyTo, upstream), commit = true) -> onion.sharedSecrets
   }
 
-  def buildHtlcFailure(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Try[UpdateFailHtlc] = {
+  def buildHtlcFailure(nodeSecret: PrivateKey, cmd: CMD_FAIL_HTLC, add: UpdateAddHtlc): Either[CannotExtractSharedSecret, UpdateFailHtlc] = {
     Sphinx.PaymentPacket.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
         val reason = cmd.reason match {
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
           case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
         }
-        Success(UpdateFailHtlc(add.channelId, cmd.id, reason))
-      case Left(_) => Failure(CannotExtractSharedSecret(add.channelId, add))
+        Right(UpdateFailHtlc(add.channelId, cmd.id, reason))
+      case Left(_) => Left(CannotExtractSharedSecret(add.channelId, add))
     }
   }
 }

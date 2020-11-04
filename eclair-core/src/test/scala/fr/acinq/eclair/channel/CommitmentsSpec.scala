@@ -76,64 +76,64 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac1.availableBalanceForSend == a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val Success(bc1) = receiveAdd(bc0, add, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(bc1) = receiveAdd(bc0, add, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac2, commit1)) = sendCommit(ac1, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac2, commit1)) = sendCommit(ac1, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac2.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac2.availableBalanceForReceive == b)
 
-    val Success((bc2, revocation1)) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc2, revocation1)) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac3, _)) = receiveRevocation(ac2, revocation1)
+    val Right((ac3, _)) = receiveRevocation(ac2, revocation1)
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
-    val Success((bc3, commit2)) = sendCommit(bc2, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc3, commit2)) = sendCommit(bc2, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc3.availableBalanceForSend == b)
     assert(bc3.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac4, revocation2)) = receiveCommit(ac3, commit2, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac4, revocation2)) = receiveCommit(ac3, commit2, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac4.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b)
 
-    val Success((bc4, _)) = receiveRevocation(bc3, revocation2)
+    val Right((bc4, _)) = receiveRevocation(bc3, revocation2)
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
     val cmdFulfill = CMD_FULFILL_HTLC(0, payment_preimage)
-    val Success((bc5, fulfill)) = sendFulfill(bc4, cmdFulfill)
+    val Right((bc5, fulfill)) = sendFulfill(bc4, cmdFulfill)
     assert(bc5.availableBalanceForSend == b + p) // as soon as we have the fulfill, the balance increases
     assert(bc5.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac5, _, _)) = receiveFulfill(ac4, fulfill)
+    val Right((ac5, _, _)) = receiveFulfill(ac4, fulfill)
     assert(ac5.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b + p)
 
-    val Success((bc6, commit3)) = sendCommit(bc5, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc6, commit3)) = sendCommit(bc5, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc6.availableBalanceForSend == b + p)
     assert(bc6.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac6, revocation3)) = receiveCommit(ac5, commit3, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac6, revocation3)) = receiveCommit(ac5, commit3, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac6.availableBalanceForSend == a - p)
     assert(ac6.availableBalanceForReceive == b + p)
 
-    val Success((bc7, _)) = receiveRevocation(bc6, revocation3)
+    val Right((bc7, _)) = receiveRevocation(bc6, revocation3)
     assert(bc7.availableBalanceForSend == b + p)
     assert(bc7.availableBalanceForReceive == a - p)
 
-    val Success((ac7, commit4)) = sendCommit(ac6, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac7, commit4)) = sendCommit(ac6, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac7.availableBalanceForSend == a - p)
     assert(ac7.availableBalanceForReceive == b + p)
 
-    val Success((bc8, revocation4)) = receiveCommit(bc7, commit4, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc8, revocation4)) = receiveCommit(bc7, commit4, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc8.availableBalanceForSend == b + p)
     assert(bc8.availableBalanceForReceive == a - p)
 
-    val Success((ac8, _)) = receiveRevocation(ac7, revocation4)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation4)
     assert(ac8.availableBalanceForSend == a - p)
     assert(ac8.availableBalanceForReceive == b + p)
   }
@@ -160,64 +160,64 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac1.availableBalanceForSend == a - p - htlcOutputFee) // as soon as htlc is sent, alice sees its balance decrease (more than the payment amount because of the commitment fees)
     assert(ac1.availableBalanceForReceive == b)
 
-    val Success(bc1) = receiveAdd(bc0, add, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(bc1) = receiveAdd(bc0, add, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc1.availableBalanceForSend == b)
     assert(bc1.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac2, commit1)) = sendCommit(ac1, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac2, commit1)) = sendCommit(ac1, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac2.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac2.availableBalanceForReceive == b)
 
-    val Success((bc2, revocation1)) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc2, revocation1)) = receiveCommit(bc1, commit1, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac3, _)) = receiveRevocation(ac2, revocation1)
+    val Right((ac3, _)) = receiveRevocation(ac2, revocation1)
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
-    val Success((bc3, commit2)) = sendCommit(bc2, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc3, commit2)) = sendCommit(bc2, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc3.availableBalanceForSend == b)
     assert(bc3.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac4, revocation2)) = receiveCommit(ac3, commit2, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac4, revocation2)) = receiveCommit(ac3, commit2, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac4.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b)
 
-    val Success((bc4, _)) = receiveRevocation(bc3, revocation2)
+    val Right((bc4, _)) = receiveRevocation(bc3, revocation2)
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
     val cmdFail = CMD_FAIL_HTLC(0, Right(IncorrectOrUnknownPaymentDetails(p, 42)))
-    val Success((bc5, fail)) = sendFail(bc4, cmdFail, bob.underlyingActor.nodeParams.privateKey)
+    val Right((bc5, fail)) = sendFail(bc4, cmdFail, bob.underlyingActor.nodeParams.privateKey)
     assert(bc5.availableBalanceForSend == b)
     assert(bc5.availableBalanceForReceive == a - p - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
-    val Success((ac5, _, _)) = receiveFail(ac4, fail)
+    val Right((ac5, _, _)) = receiveFail(ac4, fail)
     assert(ac5.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b)
 
-    val Success((bc6, commit3)) = sendCommit(bc5, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc6, commit3)) = sendCommit(bc5, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc6.availableBalanceForSend == b)
     assert(bc6.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Success((ac6, revocation3)) = receiveCommit(ac5, commit3, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac6, revocation3)) = receiveCommit(ac5, commit3, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac6.availableBalanceForSend == a)
     assert(ac6.availableBalanceForReceive == b)
 
-    val Success((bc7, _)) = receiveRevocation(bc6, revocation3)
+    val Right((bc7, _)) = receiveRevocation(bc6, revocation3)
     assert(bc7.availableBalanceForSend == b)
     assert(bc7.availableBalanceForReceive == a)
 
-    val Success((ac7, commit4)) = sendCommit(ac6, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac7, commit4)) = sendCommit(ac6, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac7.availableBalanceForSend == a)
     assert(ac7.availableBalanceForReceive == b)
 
-    val Success((bc8, revocation4)) = receiveCommit(bc7, commit4, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc8, revocation4)) = receiveCommit(bc7, commit4, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc8.availableBalanceForSend == b)
     assert(bc8.availableBalanceForReceive == a)
 
-    val Success((ac8, _)) = receiveRevocation(ac7, revocation4)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation4)
     assert(ac8.availableBalanceForSend == a)
     assert(ac8.availableBalanceForReceive == b)
   }
@@ -257,114 +257,114 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc1.availableBalanceForSend == b - p3) // bob doesn't pay the fee
     assert(bc1.availableBalanceForReceive == a)
 
-    val Success(bc2) = receiveAdd(bc1, add1, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(bc2) = receiveAdd(bc1, add1, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc2.availableBalanceForSend == b - p3)
     assert(bc2.availableBalanceForReceive == a - p1 - htlcOutputFee)
 
-    val Success(bc3) = receiveAdd(bc2, add2, bob.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(bc3) = receiveAdd(bc2, add2, bob.underlyingActor.nodeParams.onChainFeeConf)
     assert(bc3.availableBalanceForSend == b - p3)
     assert(bc3.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Success(ac3) = receiveAdd(ac2, add3, alice.underlyingActor.nodeParams.onChainFeeConf)
+    val Right(ac3) = receiveAdd(ac2, add3, alice.underlyingActor.nodeParams.onChainFeeConf)
     assert(ac3.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b - p3)
 
-    val Success((ac4, commit1)) = sendCommit(ac3, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac4, commit1)) = sendCommit(ac3, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac4.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b - p3)
 
-    val Success((bc4, revocation1)) = receiveCommit(bc3, commit1, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc4, revocation1)) = receiveCommit(bc3, commit1, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc4.availableBalanceForSend == b - p3)
     assert(bc4.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Success((ac5, _)) = receiveRevocation(ac4, revocation1)
+    val Right((ac5, _)) = receiveRevocation(ac4, revocation1)
     assert(ac5.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b - p3)
 
-    val Success((bc5, commit2)) = sendCommit(bc4, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc5, commit2)) = sendCommit(bc4, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc5.availableBalanceForSend == b - p3)
     assert(bc5.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Success((ac6, revocation2)) = receiveCommit(ac5, commit2, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac6, revocation2)) = receiveCommit(ac5, commit2, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac6.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // alice has acknowledged b's hltc so it needs to pay the fee for it
     assert(ac6.availableBalanceForReceive == b - p3)
 
-    val Success((bc6, _)) = receiveRevocation(bc5, revocation2)
+    val Right((bc6, _)) = receiveRevocation(bc5, revocation2)
     assert(bc6.availableBalanceForSend == b - p3)
     assert(bc6.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-    val Success((ac7, commit3)) = sendCommit(ac6, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac7, commit3)) = sendCommit(ac6, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac7.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac7.availableBalanceForReceive == b - p3)
 
-    val Success((bc7, revocation3)) = receiveCommit(bc6, commit3, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc7, revocation3)) = receiveCommit(bc6, commit3, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc7.availableBalanceForSend == b - p3)
     assert(bc7.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-    val Success((ac8, _)) = receiveRevocation(ac7, revocation3)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation3)
     assert(ac8.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac8.availableBalanceForReceive == b - p3)
 
     val cmdFulfill1 = CMD_FULFILL_HTLC(0, payment_preimage1)
-    val Success((bc8, fulfill1)) = sendFulfill(bc7, cmdFulfill1)
+    val Right((bc8, fulfill1)) = sendFulfill(bc7, cmdFulfill1)
     assert(bc8.availableBalanceForSend == b + p1 - p3) // as soon as we have the fulfill, the balance increases
     assert(bc8.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
     val cmdFail2 = CMD_FAIL_HTLC(1, Right(IncorrectOrUnknownPaymentDetails(p2, 42)))
-    val Success((bc9, fail2)) = sendFail(bc8, cmdFail2, bob.underlyingActor.nodeParams.privateKey)
+    val Right((bc9, fail2)) = sendFail(bc8, cmdFail2, bob.underlyingActor.nodeParams.privateKey)
     assert(bc9.availableBalanceForSend == b + p1 - p3)
     assert(bc9.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
     val cmdFulfill3 = CMD_FULFILL_HTLC(0, payment_preimage3)
-    val Success((ac9, fulfill3)) = sendFulfill(ac8, cmdFulfill3)
+    val Right((ac9, fulfill3)) = sendFulfill(ac8, cmdFulfill3)
     assert(ac9.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // as soon as we have the fulfill, the balance increases
     assert(ac9.availableBalanceForReceive == b - p3)
 
-    val Success((ac10, _, _)) = receiveFulfill(ac9, fulfill1)
+    val Right((ac10, _, _)) = receiveFulfill(ac9, fulfill1)
     assert(ac10.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac10.availableBalanceForReceive == b + p1 - p3)
 
-    val Success((ac11, _, _)) = receiveFail(ac10, fail2)
+    val Right((ac11, _, _)) = receiveFail(ac10, fail2)
     assert(ac11.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac11.availableBalanceForReceive == b + p1 - p3)
 
-    val Success((bc10, _, _)) = receiveFulfill(bc9, fulfill3)
+    val Right((bc10, _, _)) = receiveFulfill(bc9, fulfill3)
     assert(bc10.availableBalanceForSend == b + p1 - p3)
     assert(bc10.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3) // the fee for p3 disappears
 
-    val Success((ac12, commit4)) = sendCommit(ac11, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac12, commit4)) = sendCommit(ac11, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac12.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac12.availableBalanceForReceive == b + p1 - p3)
 
-    val Success((bc11, revocation4)) = receiveCommit(bc10, commit4, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc11, revocation4)) = receiveCommit(bc10, commit4, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc11.availableBalanceForSend == b + p1 - p3)
     assert(bc11.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
-    val Success((ac13, _)) = receiveRevocation(ac12, revocation4)
+    val Right((ac13, _)) = receiveRevocation(ac12, revocation4)
     assert(ac13.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac13.availableBalanceForReceive == b + p1 - p3)
 
-    val Success((bc12, commit5)) = sendCommit(bc11, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc12, commit5)) = sendCommit(bc11, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc12.availableBalanceForSend == b + p1 - p3)
     assert(bc12.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
-    val Success((ac14, revocation5)) = receiveCommit(ac13, commit5, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac14, revocation5)) = receiveCommit(ac13, commit5, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac14.availableBalanceForSend == a - p1 + p3)
     assert(ac14.availableBalanceForReceive == b + p1 - p3)
 
-    val Success((bc13, _)) = receiveRevocation(bc12, revocation5)
+    val Right((bc13, _)) = receiveRevocation(bc12, revocation5)
     assert(bc13.availableBalanceForSend == b + p1 - p3)
     assert(bc13.availableBalanceForReceive == a - p1 + p3)
 
-    val Success((ac15, commit6)) = sendCommit(ac14, alice.underlyingActor.nodeParams.channelKeyManager)
+    val Right((ac15, commit6)) = sendCommit(ac14, alice.underlyingActor.nodeParams.channelKeyManager)
     assert(ac15.availableBalanceForSend == a - p1 + p3)
     assert(ac15.availableBalanceForReceive == b + p1 - p3)
 
-    val Success((bc14, revocation6)) = receiveCommit(bc13, commit6, bob.underlyingActor.nodeParams.channelKeyManager)
+    val Right((bc14, revocation6)) = receiveCommit(bc13, commit6, bob.underlyingActor.nodeParams.channelKeyManager)
     assert(bc14.availableBalanceForSend == b + p1 - p3)
     assert(bc14.availableBalanceForReceive == a - p1 + p3)
 
-    val Success((ac16, _)) = receiveRevocation(ac15, revocation6)
+    val Right((ac16, _)) = receiveRevocation(ac15, revocation6)
     assert(ac16.availableBalanceForSend == a - p1 + p3)
     assert(ac16.availableBalanceForReceive == b + p1 - p3)
   }
@@ -378,7 +378,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(c1.availableBalanceForSend === 0.msat)
 
     // We should be able to handle a fee increase.
-    val Success((c2, _)) = sendFee(c1, CMD_UPDATE_FEE(FeeratePerKw(3000 sat)))
+    val Right((c2, _)) = sendFee(c1, CMD_UPDATE_FEE(FeeratePerKw(3000 sat)))
 
     // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
     val (_, cmdAdd1) = makeCmdAdd(100 msat, randomKey.publicKey, f.currentBlockHeight)
@@ -448,14 +448,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
         val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, amount, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
         receiveAdd(c, add, feeConfNoMismatch) match {
-          case Success(cc) => c = cc
-          case Failure(e) => fail(s"$t -> could not setup initial htlcs: $e")
+          case Right(cc) => c = cc
+          case Left(e) => fail(s"$t -> could not setup initial htlcs: $e")
         }
       }
       val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
       receiveAdd(c, add, feeConfNoMismatch) match {
-        case Success(_) => ()
-        case Failure(e) => fail(s"$t -> $e")
+        case Right(_) => ()
+        case Left(e) => fail(s"$t -> $e")
       }
     }
   }

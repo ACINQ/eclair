@@ -1370,16 +1370,16 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   private def testCmdFailHtlc(f: FixtureParam): Unit = {
     import f._
-    val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure))
-    assert(OutgoingPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc).get.id === htlc.id)
+    val Right(fail) = OutgoingPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
+    assert(fail.id === htlc.id)
     bob ! cmd
-    val fail = bob2alice.expectMsgType[UpdateFailHtlc]
+    bob2alice.expectMsg(fail)
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
