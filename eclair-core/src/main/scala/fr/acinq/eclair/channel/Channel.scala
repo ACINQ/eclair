@@ -1727,7 +1727,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
       nextStateData match {
-        case hasCommitments: HasCommitments =>
+        case hasCommitments: HasCommitments if state != nextState =>
           context.system.eventStream.publish(ChannelStateChanged(self, hasCommitments.channelId, peer, remoteNodeId, state, nextState, hasCommitments.commitments))
         case _ => ()
       }
