@@ -94,7 +94,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   val nodeId: PublicKey = nodeKeyManager.nodeId
   val keyPair = KeyPair(nodeId.value, privateKey.value)
 
-  val pluginMessageTags: Set[Int] = pluginParams.collect { case p: MessageFeaturePluginParams => p.messageTags }.toSet.flatten
+  val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
   def currentBlockHeight: Long = blockCount.get
 
@@ -241,7 +241,7 @@ object NodeParams extends Logging {
       require(features.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
     }
 
-    val pluginMessageParams = pluginParams.collect { case p: MessageFeaturePluginParams => p }
+    val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
     val features = Features.fromConfiguration(config)
     validateFeatures(features)
 

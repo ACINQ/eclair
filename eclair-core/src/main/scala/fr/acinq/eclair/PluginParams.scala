@@ -23,7 +23,7 @@ sealed trait PluginParams {
 }
 
 /** Parameters for a plugin that adds support for an experimental or unofficial Bolt9 feature. */
-trait MessageFeaturePluginParams extends PluginParams {
+trait CustomFeaturePlugin extends PluginParams {
   /** A set of LightningMessage tags that the plugin wants to listen to. */
   def messageTags: Set[Int]
 
