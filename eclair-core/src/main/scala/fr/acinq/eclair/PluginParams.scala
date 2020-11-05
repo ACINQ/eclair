@@ -16,6 +16,10 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.channel.Origin
+import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
+
 /** Custom plugin parameters. */
 sealed trait PluginParams {
   /** Plugin's friendly name. */
@@ -32,4 +36,21 @@ trait CustomFeaturePlugin extends PluginParams {
 
   /** Plugin feature is always defined as unknown and optional. */
   def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
+}
+
+/** Parameters for a plugin that defines custom commitment transactions (or non-standard HTLCs). */
+trait CustomCommitmentsPlugin extends PluginParams {
+  /**
+   * If we do nothing after a restart, incoming HTLCs that were committed upstream but not relayed will eventually
+   * expire. If your plugin defines non-standard HTLCs, and they need to be automatically failed, they should be
+   * returned by this method.
+   */
+  def getIncomingHtlcs: Seq[IncomingHtlc]
+
+  /**
+   * Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
+   * result upstream to preserve channels. If you have non-standard HTLCs that may be in this situation, they should be
+   * returned by this method.
+   */
+  def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]]
 }
