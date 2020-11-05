@@ -62,7 +62,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
   //
   // Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
   // result upstream to preserve channels.
-  val brokenHtlcs = {
+  val brokenHtlcs: BrokenHtlcs = {
     val channels = listLocalChannels(nodeParams.db.channels)
     val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey) ++ nodeParams.nonStandardIncomingHtlcs
     // TODO: this part needs unit tests to verify maps are correctly merged
