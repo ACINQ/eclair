@@ -1026,7 +1026,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.index == 1)
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size == 7)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.htlcsRemoteCommit.size == 7)
   }
 
   test("recv RevokeAndAck (with reSignAsap=true)") { f =>

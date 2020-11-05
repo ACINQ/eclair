@@ -57,7 +57,7 @@ object Helpers {
     case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.channelId
-    case d: HasCommitments => d.channelId
+    case d: HasAbstractCommitments => d.channelId
   }
 
   /**
