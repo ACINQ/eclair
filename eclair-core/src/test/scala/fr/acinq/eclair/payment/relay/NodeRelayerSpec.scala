@@ -295,10 +295,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incoming.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
+    router.expectMessageType[RouteRequest]
     payFSM ! Status.Failure(BalanceTooLow)
 
     incoming.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]] // TODO: timing out?
       assert(fwd.channelId === p.add.channelId)
       assert(fwd.message === CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))
     }
@@ -313,6 +314,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
+    router.expectMessageType[RouteRequest]
 
     // If we're having a hard time finding routes, raising the fee/cltv will likely help.
     val failures = LocalFailure(Nil, RouteNotFound) :: RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(Nil, RouteNotFound) :: Nil
@@ -334,6 +336,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
+    router.expectMessageType[RouteRequest]
 
     val failures = RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(Nil) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
