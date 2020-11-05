@@ -29,7 +29,7 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFa
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.transactions.OutgoingHtlc
 import fr.acinq.eclair.wire.{TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
+import fr.acinq.eclair.{CustomCommitmentsPlugin, LongToBtcAmount, NodeParams}
 
 import scala.concurrent.Promise
 import scala.util.Try
@@ -58,10 +58,23 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
+  // If we do nothing after a restart, incoming HTLCs that were committed upstream but not relayed will eventually
+  // expire and we won't lose money, but the channel will get closed, which is a major inconvenience. We want to detect
+  // this and fast-fail those HTLCs and thus preserve channels.
+  //
+  // Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
+  // result upstream to preserve channels.
   val brokenHtlcs = {
     val channels = listLocalChannels(nodeParams.db.channels)
     cleanupRelayDb(channels, nodeParams.db.pendingRelay)
-    checkBrokenHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey)
+    val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey) ++ nodeParams.nonStandardIncomingHtlcs
+    // TODO: this part needs unit tests to verify maps are correctly merged
+    val relayedOut = getHtlcsRelayedOut(channels, htlcsIn) ++ nodeParams.nonStandardRelayedOutHtlcs(htlcsIn)
+    val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
+    log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
+    log.info("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
+    log.info("relayedOut={}", relayedOut)
+    BrokenHtlcs(notRelayed, relayedOut, Set.empty)
   }
 
   Metrics.PendingNotRelayed.update(brokenHtlcs.notRelayed.size)
@@ -74,7 +87,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
   def main(brokenHtlcs: BrokenHtlcs): Receive = {
     // When channels are restarted we immediately fail the incoming HTLCs that weren't relayed.
-    case e@ChannelStateChanged(channel, channelId, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, commitments) =>
+    case e@ChannelStateChanged(channel, channelId, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING | CLOSING, NORMAL | SHUTDOWN | CLOSING | CLOSED, commitments: AbstractCommitments) =>
       log.debug("channel {}: {} -> {}", channelId, e.previousState, e.currentState)
       val acked = brokenHtlcs.notRelayed
         .filter(_.add.channelId == channelId) // only consider htlcs coming from this channel
@@ -290,19 +303,12 @@ object PostRestartHtlcCleaner {
       case _ => None
     }
 
-  /**
-   * If we do nothing after a restart, incoming HTLCs that were committed upstream but not relayed will eventually
-   * expire and we won't lose money, but the channel will get closed, which is a major inconvenience. We want to detect
-   * this and fast-fail those HTLCs and thus preserve channels.
-   *
-   * Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
-   * result upstream to preserve channels.
-   */
-  private def checkBrokenHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey)(implicit log: LoggingAdapter): BrokenHtlcs = {
+  /** @return incoming HTLCs that have been *cross-signed* (that potentially have been relayed). */
+  private def getIncomingHtlcs(channels: Seq[HasCommitments], paymentsDb: IncomingPaymentsDb, privateKey: PrivateKey)(implicit log: LoggingAdapter): Seq[IncomingHtlc] = {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // They signed it first, so the HTLC will first appear in our commitment tx, and later on in their commitment when
     // we subsequently sign it. That's why we need to look in *their* commitment with direction=OUT.
-    val htlcsIn = channels
+    channels
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .collect(outgoing)
       .map(IncomingPacket.decrypt(_, privateKey))
@@ -313,12 +319,15 @@ object PostRestartHtlcCleaner {
         // When we're the final recipient, we want to know if we want to fulfill or fail.
         case Right(p@IncomingPacket.FinalPacket(add, _)) => IncomingHtlc(add, shouldFulfill(p, paymentsDb))
       }
+  }
 
-    def isPendingUpstream(channelId: ByteVector32, htlcId: Long): Boolean =
-      htlcsIn.exists(htlc => htlc.add.channelId == channelId && htlc.add.id == htlcId)
+  /** @return whether a given HTLC is a pending incoming HTLC. */
+  private def isPendingUpstream(channelId: ByteVector32, htlcId: Long, htlcsIn: Seq[IncomingHtlc]): Boolean =
+    htlcsIn.exists(htlc => htlc.add.channelId == channelId && htlc.add.id == htlcId)
 
-    // We group relayed outgoing HTLCs by their origin.
-    val relayedOut = channels
+  /** @return pending outgoing HTLCs, grouped by their upstream origin. */
+  private def getHtlcsRelayedOut(channels: Seq[HasCommitments], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = {
+    channels
       .flatMap { c =>
         // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
         val htlcsToIgnore: Set[Long] = c match {
@@ -356,16 +365,10 @@ object PostRestartHtlcCleaner {
       // instant whereas the uncooperative close of the downstream channel will take time.
       .filterKeys {
         case _: Origin.Local => true
-        case o: Origin.ChannelRelayed => isPendingUpstream(o.originChannelId, o.originHtlcId)
-        case o: Origin.TrampolineRelayed => o.htlcs.exists { case (channelId, htlcId) => isPendingUpstream(channelId, htlcId) }
+        case o: Origin.ChannelRelayed => isPendingUpstream(o.originChannelId, o.originHtlcId, htlcsIn)
+        case o: Origin.TrampolineRelayed => o.htlcs.exists { case (channelId, htlcId) => isPendingUpstream(channelId, htlcId, htlcsIn) }
       }
       .toMap
-
-    val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
-    log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
-    log.info("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
-    log.info("relayedOut={}", relayedOut)
-    BrokenHtlcs(notRelayed, relayedOut, Set.empty)
   }
 
   /**
