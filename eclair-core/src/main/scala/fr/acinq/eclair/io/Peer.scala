@@ -404,7 +404,7 @@ object Peer {
 
   def makeChannelParams(nodeParams: NodeParams, features: Features, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
     // we make sure that funder and fundee key path end differently
-    val fundingKeyPath = nodeParams.keyManager.newFundingKeyPath(isFunder)
+    val fundingKeyPath = nodeParams.channelKeyManager.newFundingKeyPath(isFunder)
     makeChannelParams(nodeParams, features, defaultFinalScriptPubkey, walletStaticPaymentBasepoint, isFunder, fundingAmount, fundingKeyPath)
   }
 

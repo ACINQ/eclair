@@ -18,6 +18,8 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.ServerSocket
+import java.nio.file.Files
+import java.util.UUID
 
 import akka.actor.ActorRef
 import akka.event.DiagnosticLoggingAdapter
@@ -48,6 +50,8 @@ object TestUtils {
     }
   }
 
+  def newIntegrationTmpDir(baseDir: String = TestUtils.BUILD_DIRECTORY) = new File(baseDir, s"integration-${UUID.randomUUID()}")
+
   object NoLoggingDiagnostics extends DiagnosticLoggingAdapter {
     override def isErrorEnabled: Boolean = false
     override def isWarningEnabled: Boolean = false
@@ -77,6 +81,14 @@ object TestUtils {
         case _ => TestActor.KeepRunning
       }
     })
+  }
+
+  def createSeedFile(name: String, seed: Array[Byte]): File = {
+    val seedDir = new File(newIntegrationTmpDir(), s"seed-migration")
+    seedDir.mkdirs()
+    val seedFile = new File(seedDir, name)
+    Files.write(seedFile.toPath, seed)
+    seedFile
   }
 
 }

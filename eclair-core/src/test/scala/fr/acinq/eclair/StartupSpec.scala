@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee.FeerateTolerance
-import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -38,10 +38,11 @@ class StartupSpec extends AnyFunSuite {
 
   def makeNodeParamsWithDefaults(conf: Config): NodeParams = {
     val blockCount = new AtomicLong(0)
-    val keyManager = new LocalKeyManager(seed = randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
+    val nodeKeyManager = new LocalNodeKeyManager(randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
+    val channelKeyManager = new LocalChannelKeyManager(randomBytes32, chainHash = Block.TestnetGenesisBlock.hash)
     val feeEstimator = new TestConstants.TestFeeEstimator
     val db = TestConstants.inMemoryDb()
-    NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), keyManager, None, db, blockCount, feeEstimator)
+    NodeParams.makeNodeParams(conf, UUID.fromString("01234567-0123-4567-89ab-0123456789ab"), nodeKeyManager, channelKeyManager, None, db, blockCount, feeEstimator)
   }
 
   test("check configuration") {

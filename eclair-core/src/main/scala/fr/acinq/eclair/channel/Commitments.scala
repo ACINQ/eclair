@@ -19,16 +19,17 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
-import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain}
+import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
+import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair._
 
 import scala.util.{Failure, Success, Try}
 
@@ -519,7 +520,7 @@ object Commitments {
 
   def revocationHash(seed: ByteVector32, index: Long): ByteVector32 = Crypto.sha256(revocationPreimage(seed, index))
 
-  def sendCommit(commitments: Commitments, keyManager: KeyManager)(implicit log: LoggingAdapter): Try[(Commitments, CommitSig)] = {
+  def sendCommit(commitments: Commitments, keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Try[(Commitments, CommitSig)] = {
     import commitments._
     commitments.remoteNextCommitInfo match {
       case Right(_) if !localHasChanges(commitments) =>
@@ -531,7 +532,7 @@ object Commitments {
         val sig = keyManager.sign(remoteCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Remote, commitmentFormat)
 
         val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
-        val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+        val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelVersion)
         val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), remoteNextPerCommitmentPoint, TxOwner.Remote, commitmentFormat))
 
         // NB: IN/OUT htlcs are inverted because this is the remote commit
@@ -553,7 +554,7 @@ object Commitments {
     }
   }
 
-  def receiveCommit(commitments: Commitments, commit: CommitSig, keyManager: KeyManager)(implicit log: LoggingAdapter): Try[(Commitments, RevokeAndAck)] = Try {
+  def receiveCommit(commitments: Commitments, commit: CommitSig, keyManager: ChannelKeyManager)(implicit log: LoggingAdapter): Try[(Commitments, RevokeAndAck)] = Try {
     import commitments._
     // they sent us a signature for *their* view of *our* next commit tx
     // so in terms of rev.hashes and indexes we have:
@@ -571,7 +572,7 @@ object Commitments {
     }
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val channelKeyPath = keyManager.channelKeyPath(commitments.localParams, commitments.channelVersion)
+    val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelVersion)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index + 1)
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
@@ -669,7 +670,7 @@ object Commitments {
     }
   }
 
-  def makeLocalTxs(keyManager: KeyManager,
+  def makeLocalTxs(keyManager: ChannelKeyManager,
                    channelVersion: ChannelVersion,
                    commitTxNumber: Long,
                    localParams: LocalParams,
@@ -677,7 +678,7 @@ object Commitments {
                    commitmentInput: InputInfo,
                    localPerCommitmentPoint: PublicKey,
                    spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
+    val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
     val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
     val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
@@ -691,7 +692,7 @@ object Commitments {
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 
-  def makeRemoteTxs(keyManager: KeyManager,
+  def makeRemoteTxs(keyManager: ChannelKeyManager,
                     channelVersion: ChannelVersion,
                     commitTxNumber: Long,
                     localParams: LocalParams,
@@ -699,7 +700,7 @@ object Commitments {
                     commitmentInput: InputInfo,
                     remotePerCommitmentPoint: PublicKey,
                     spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    val channelKeyPath = keyManager.channelKeyPath(localParams, channelVersion)
+    val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
     val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
     val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
     val localPaymentPubkey = if (channelVersion.hasStaticRemotekey) localPaymentBasepoint else Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)

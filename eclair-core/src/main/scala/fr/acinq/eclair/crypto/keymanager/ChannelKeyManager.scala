@@ -14,23 +14,19 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.crypto
+package fr.acinq.eclair.crypto.keymanager
 
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
+import fr.acinq.bitcoin.{ByteVector64, Crypto, DeterministicWallet, Protocol}
 import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
-import fr.acinq.eclair.{Features, ShortChannelId}
+import scodec.bits.ByteVector
 
-trait KeyManager {
-  def nodeKey: DeterministicWallet.ExtendedPrivateKey
-
-  def nodeId: PublicKey
-
+trait ChannelKeyManager {
   def fundingPublicKey(keyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
   def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
@@ -45,9 +41,9 @@ trait KeyManager {
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
 
-  def channelKeyPath(localParams: LocalParams, channelVersion: ChannelVersion): DeterministicWallet.KeyPath = if (channelVersion.hasPubkeyKeyPath) {
+  def keyPath(localParams: LocalParams, channelVersion: ChannelVersion): DeterministicWallet.KeyPath = if (channelVersion.hasPubkeyKeyPath) {
     // deterministic mode: use the funding pubkey to compute the channel key path
-    KeyManager.channelKeyPath(fundingPublicKey(localParams.fundingKeyPath))
+    ChannelKeyManager.keyPath(fundingPublicKey(localParams.fundingKeyPath))
   } else {
     // legacy mode:  we reuse the funding key path as our channel key path
     localParams.fundingKeyPath
@@ -100,32 +96,13 @@ trait KeyManager {
   /**
    * Sign a channel announcement message
    *
-   * @param fundingKeyPath   BIP32 path of the funding public key
-   * @param chainHash        chain hash
-   * @param shortChannelId   short channel id
-   * @param remoteNodeId     remote node id
-   * @param remoteFundingKey remote funding pubkey
-   * @param features         channel features
-   * @return a (nodeSig, bitcoinSig) pair. nodeSig is the signature of the channel announcement with our node's
-   *         private key, bitcoinSig is the signature of the channel announcement with our funding private key
+   * @param witness channel announcement message
+   * @return the signature of the channel announcement with the channel's funding private key
    */
-  def signChannelAnnouncement(fundingKeyPath: DeterministicWallet.KeyPath, chainHash: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: Features): (ByteVector64, ByteVector64)
-
-  /**
-   * Sign a digest, primarily used to prove ownership of the current node
-   *
-   * When recovering a public key from an ECDSA signature for secp256k1, there are 4 possible matching curve points
-   * that can be found. The recoveryId identifies which of these points is the correct.
-   *
-   * @param digest     SHA256 digest
-   * @param privateKey private key to sign with, default the one from the current node
-   * @return a (signature, recoveryId) pair. signature is a signature of the digest parameter generated with the
-   *         private key given in parameter. recoveryId is the corresponding recoveryId of the signature
-   */
-  def signDigest(digest: ByteVector32, privateKey: PrivateKey = nodeKey.privateKey): (ByteVector64, Int)
+  def signChannelAnnouncement(witness: ByteVector, fundingKeyPath: DeterministicWallet.KeyPath): ByteVector64
 }
 
-object KeyManager {
+object ChannelKeyManager {
   /**
    * Create a BIP32 path from a public key. This path will be used to derive channel keys.
    * Having channel keys derived from the funding public keys makes it very easy to retrieve your funds when've you've lost your data:
@@ -136,7 +113,7 @@ object KeyManager {
    * @param fundingPubKey funding public key
    * @return a BIP32 path
    */
-  def channelKeyPath(fundingPubKey: PublicKey): DeterministicWallet.KeyPath = {
+  def keyPath(fundingPubKey: PublicKey): DeterministicWallet.KeyPath = {
     val buffer = Crypto.sha256(fundingPubKey.value)
     val bis = new ByteArrayInputStream(buffer.toArray)
 
@@ -145,5 +122,5 @@ object KeyManager {
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next()))
   }
 
-  def channelKeyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): DeterministicWallet.KeyPath = channelKeyPath(fundingPubKey.publicKey)
+  def keyPath(fundingPubKey: DeterministicWallet.ExtendedPublicKey): DeterministicWallet.KeyPath = keyPath(fundingPubKey.publicKey)
 }

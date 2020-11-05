@@ -200,7 +200,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // at this point alice and bob have not yet converged on closing fees, but bob decides to publish a mutual close with one of the previous sigs
     val d = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
     implicit val log: LoggingAdapter = bob.underlyingActor.implicitLog
-    val Success(bobClosingTx) = Closing.checkClosingSignature(Bob.keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
+    val Success(bobClosingTx) = Closing.checkClosingSignature(Bob.channelKeyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
 
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
     alice2blockchain.expectMsgType[PublishAsap]

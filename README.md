@@ -144,10 +144,10 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile
 
 The files that you need to backup are located in your data directory. You must backup:
 
-* your seed (`seed.dat`)
+* your seeds (`node_seed.dat` and `channel_seed.dat`)
 * your channel database (`eclair.sqlite.bak` under directory `mainnet`, `testnet` or `regtest` depending on which chain you're running on)
 
-Your seed never changes once it has been created, but your channels will change whenever you receive or send payments. Eclair will
+Your seeds never change once they have been created, but your channels will change whenever you receive or send payments. Eclair will
 create and maintain a snapshot of its database, named `eclair.sqlite.bak`, in your data directory, and update it when needed. This file is
 always consistent and safe to use even when Eclair is running, and this is what you should backup regularly.
 

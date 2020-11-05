@@ -413,7 +413,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def signMessage(message: ByteVector): SignedMessage = {
     val bytesToSign = SignedMessage.signedBytes(message)
-    val (signature, recoveryId) = appKit.nodeParams.keyManager.signDigest(bytesToSign)
+    val (signature, recoveryId) = appKit.nodeParams.nodeKeyManager.signDigest(bytesToSign)
     SignedMessage(appKit.nodeParams.nodeId, message.toBase64, (recoveryId + 31).toByte +: signature)
   }
 
