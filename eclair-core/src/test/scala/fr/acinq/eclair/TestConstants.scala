@@ -131,7 +131,7 @@ object TestConstants {
     val mandatory = 50000
   }
 
-  val pluginParams: MessageFeaturePluginParams = new MessageFeaturePluginParams {
+  val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
     def messageTags: Set[Int] = Set(60003)
     def feature: Feature = TestFeature
     def name: String = "plugin for testing"

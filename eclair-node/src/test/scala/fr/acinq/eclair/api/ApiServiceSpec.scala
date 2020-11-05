@@ -540,7 +540,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(chcr)
         wsClient.expectMessage(expectedSerializedChcr)
 
-        val chsc = ChannelStateChanged(system.deadLetters, system.deadLetters, bobNodeId, OFFLINE, NORMAL, null)
+        val chsc = ChannelStateChanged(system.deadLetters, null, system.deadLetters, bobNodeId, OFFLINE, NORMAL, null)
         val expectedSerializedChsc = """{"type":"channel-state-changed","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","previousState":"OFFLINE","currentState":"NORMAL"}"""
         assert(serialization.write(chsc) === expectedSerializedChsc)
         system.eventStream.publish(chsc)
