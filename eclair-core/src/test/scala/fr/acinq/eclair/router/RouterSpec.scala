@@ -456,7 +456,7 @@ class RouterSpec extends BaseRouterSpec {
     val peerConnection = TestProbe()
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update_ga))
     val sender = TestProbe()
-    sender.send(router, Symbol("localChannels"))
+    sender.send(router, GetLocalChannels)
     val localChannels = sender.expectMsgType[Seq[LocalChannel]]
     assert(localChannels.size === 2)
     assert(localChannels.map(_.getRemoteNodeId(a)).toSet === Set(b, g))

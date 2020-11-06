@@ -168,7 +168,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     {
       val fRes = eclair.nodes()
-      router.expectMsg(Symbol("nodes"))
+      router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
       awaitCond(fRes.value match {
         case Some(Success(nodes)) =>
@@ -179,7 +179,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     }
     {
       val fRes = eclair.nodes(Some(Set(remoteNodeAnn1.nodeId, remoteNodeAnn2.nodeId)))
-      router.expectMsg(Symbol("nodes"))
+      router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
       awaitCond(fRes.value match {
         case Some(Success(nodes)) =>
@@ -190,7 +190,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     }
     {
       val fRes = eclair.nodes(Some(Set(randomKey.publicKey)))
-      router.expectMsg(Symbol("nodes"))
+      router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
       awaitCond(fRes.value match {
         case Some(Success(nodes)) =>

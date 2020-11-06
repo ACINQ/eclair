@@ -162,25 +162,25 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
       stay using d.copy(excludedChannels = d.excludedChannels - desc)
 
-    case Event(Symbol("nodes"), d) =>
+    case Event(GetNodes, d) =>
       sender ! d.nodes.values
       stay
 
-    case Event(Symbol("localChannels"), d) =>
+    case Event(GetLocalChannels, d) =>
       val scids = d.graph.getIncomingEdgesOf(nodeParams.nodeId).map(_.desc.shortChannelId)
       val localChannels = scids.flatMap(scid => d.channels.get(scid).map(c => LocalChannel(Right(c))).orElse(d.privateChannels.get(scid).map(c => LocalChannel(Left(c)))))
       sender ! localChannels
       stay
 
-    case Event(Symbol("channels"), d) =>
+    case Event(GetChannels, d) =>
       sender ! d.channels.values.map(_.ann)
       stay
 
-    case Event(Symbol("channelsMap"), d) =>
+    case Event(GetChannelsMap, d) =>
       sender ! d.channels
       stay
 
-    case Event(Symbol("updates"), d) =>
+    case Event(GetChannelUpdates, d) =>
       val updates: Iterable[ChannelUpdate] = d.channels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt) ++ d.privateChannels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt)
       sender ! updates
       stay
@@ -493,6 +493,11 @@ object Router {
   case object GetRoutingStateStreaming
   case object RoutingStateStreamingUpToDate
   case object GetRouterData
+  case object GetNodes
+  case object GetLocalChannels
+  case object GetChannels
+  case object GetChannelsMap
+  case object GetChannelUpdates
   // @formatter:on
 
   // @formatter:off
