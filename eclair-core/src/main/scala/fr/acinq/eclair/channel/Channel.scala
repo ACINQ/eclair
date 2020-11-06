@@ -1722,10 +1722,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         cancelTimer(RevocationTimeout.toString)
       }
 
-      nextStateData match {
-        case hasCommitments: HasCommitments if state != nextState =>
-          context.system.eventStream.publish(ChannelStateChanged(self, hasCommitments.channelId, peer, remoteNodeId, state, nextState, hasCommitments.commitments))
-        case _ => ()
+      if (state != nextState) {
+        val commitments_opt = nextStateData match {
+          case hasCommitments: HasCommitments => Some(hasCommitments.commitments)
+          case _ => None
+        }
+        context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
       }
 
       // if channel is private, we send the channel_update directly to remote
