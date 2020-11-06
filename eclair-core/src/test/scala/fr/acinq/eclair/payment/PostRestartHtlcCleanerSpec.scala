@@ -561,7 +561,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     }
 
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedhtlc1Out), Map(0L -> trampolineRelayed))
+    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedhtlc1Out), Map(50L -> trampolineRelayed))
     nodeParams1.db.channels.addOrUpdateChannel(c)
 
     val channel = TestProbe()
@@ -570,7 +570,11 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
     val cs = new AbstractCommitments {
       def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = None
-      def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = Some(relayedHtlc1In.add)
+      def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = {
+        if (htlcId == 0L) Some(relayedHtlc1In.add)
+        else if (htlcId == 1L) Some(relayedHtlc1In.add)
+        else None
+      }
       def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = Set.empty
       def localNodeId: PublicKey = randomExtendedPrivateKey.publicKey
       def remoteNodeId: PublicKey = randomExtendedPrivateKey.publicKey
@@ -600,7 +604,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val pluginParams = new CustomCommitmentsPlugin {
       def name = "test with outgoing HTLC to remote"
       def getIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = List.empty
-      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_2, 0L)))
+      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
     }
 
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
@@ -629,12 +633,14 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
     }
 
-    val cmd = CMD_FAIL_HTLC(id = 0L, reason = Left(ByteVector.empty), replyTo_opt = None)
+    val cmd1 = CMD_FAIL_HTLC(id = 0L, reason = Left(ByteVector.empty), replyTo_opt = None)
+    val cmd2 = CMD_FAIL_HTLC(id = 1L, reason = Left(ByteVector.empty), replyTo_opt = None)
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    nodeParams1.db.pendingRelay.addPendingRelay(channelId_ab_1, cmd)
+    nodeParams1.db.pendingRelay.addPendingRelay(channelId_ab_1, cmd1)
+    nodeParams1.db.pendingRelay.addPendingRelay(channelId_ab_1, cmd2)
     f.createRelayer(nodeParams1)
     register.expectNoMsg(100 millis)
-    assert(nodeParams1.db.pendingRelay.listPendingRelay(channelId_ab_1).head == cmd)
+    awaitCond(Seq(cmd1) == nodeParams1.db.pendingRelay.listPendingRelay(channelId_ab_1))
   }
 
 }
