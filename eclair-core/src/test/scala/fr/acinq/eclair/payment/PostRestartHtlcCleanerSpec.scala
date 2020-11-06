@@ -572,7 +572,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = None
       def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = {
         if (htlcId == 0L) Some(relayedHtlc1In.add)
-        else if (htlcId == 1L) Some(relayedHtlc1In.add)
+        else if (htlcId == 1L) Some(nonRelayedHtlc2In.add)
         else None
       }
       def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = Set.empty
