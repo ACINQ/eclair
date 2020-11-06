@@ -582,7 +582,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       def announceChannel: Boolean = false
     }
 
-    // channel 1 goes to NORMAL state:
+    // Non-standard channel goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channelId_ab_1, system.deadLetters, a, OFFLINE, NORMAL, Some(cs)))
     channel.expectMsg(CMD_FAIL_HTLC(1L, Right(TemporaryNodeFailure), commit = true))
     channel.expectNoMsg(100 millis)
@@ -611,7 +611,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     f.createRelayer(nodeParams1)
     register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
-    // channel 1 goes to NORMAL state:
+    // Standard channel goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, c.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(c.commitments)))
     channel.expectMsg(CMD_FAIL_HTLC(1L, Right(TemporaryNodeFailure), commit = true))
     channel.expectNoMsg(100 millis)
