@@ -57,7 +57,7 @@ object NodeRelayer {
                   handler.unsafeUpcast[NodeRelay.Command] // we know that all children are of type NodeRelay
                 case None =>
                   val relayId = UUID.randomUUID()
-                  context.log.debug(s"spawning a new handler with relayId=$relayId")
+                  context.log.info(s"spawning a new handler with relayId=$relayId")
                   // we index children by paymentHash, not relayId, because there is no concept of individual payment on LN
                   context.spawn(NodeRelay.apply(nodeParams, router, register, relayId, paymentHash), name = paymentHash.toString)
               }
