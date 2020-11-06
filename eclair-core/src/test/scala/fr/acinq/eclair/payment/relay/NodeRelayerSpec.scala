@@ -299,7 +299,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     payFSM ! Status.Failure(BalanceTooLow)
 
     incoming.foreach { p =>
-      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]] // TODO: timing out?
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
       assert(fwd.message === CMD_FAIL_HTLC(p.add.id, Right(TemporaryNodeFailure), commit = true))
     }
