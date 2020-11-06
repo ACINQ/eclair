@@ -166,6 +166,12 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       sender ! d.nodes.values
       stay
 
+    case Event(Symbol("localChannels"), d) =>
+      val scids = d.graph.getIncomingEdgesOf(nodeParams.nodeId).map(_.desc.shortChannelId)
+      val localChannels = scids.flatMap(scid => d.channels.get(scid).map(c => LocalChannel(Right(c))).orElse(d.privateChannels.get(scid).map(c => LocalChannel(Left(c)))))
+      sender ! localChannels
+      stay
+
     case Event(Symbol("channels"), d) =>
       sender ! d.channels.values.map(_.ann)
       stay
@@ -321,6 +327,27 @@ object Router {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
+  }
+  case class LocalChannel(channel: Either[PrivateChannel, PublicChannel]) {
+    val isPrivate: Boolean = channel.isLeft
+    val capacity: Satoshi = channel.fold(_.capacity, _.capacity)
+
+    /** Get our remote peer's nodeId. */
+    def getRemoteNodeId(localNodeId: PublicKey): PublicKey = channel.fold(
+      c => c.remoteNodeId,
+      c => if (localNodeId == c.ann.nodeId1) c.ann.nodeId2 else c.ann.nodeId1
+    )
+
+    /** Get our remote peer's channel_update: this is what must be used in invoice routing hints. */
+    def getRemoteUpdate(localNodeId: PublicKey): Option[ChannelUpdate] = channel.fold(
+      c => if (localNodeId == c.nodeId1) c.update_2_opt else c.update_1_opt,
+      c => if (localNodeId == c.ann.nodeId1) c.update_2_opt else c.update_1_opt
+    )
+
+    /** Create an invoice routing hint from that channel. Note that if the channel is private, the invoice will leak its existence. */
+    def toExtraHop(localNodeId: PublicKey): Option[ExtraHop] = getRemoteUpdate(localNodeId).map(remoteUpdate =>
+      ExtraHop(getRemoteNodeId(localNodeId), remoteUpdate.shortChannelId, remoteUpdate.feeBaseMsat, remoteUpdate.feeProportionalMillionths, remoteUpdate.cltvExpiryDelta)
+    )
   }
   // @formatter:on
 
@@ -508,7 +535,7 @@ object Router {
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[RemoteGossip]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                  privateChannels: Map[ShortChannelId, PrivateChannel], // short_channel_id -> node_id
+                  privateChannels: Map[ShortChannelId, PrivateChannel],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedGraph,
                   sync: Map[PublicKey, Syncing] // keep tracks of channel range queries sent to each peer. If there is an entry in the map, it means that there is an ongoing query for which we have not yet received an 'end' message
