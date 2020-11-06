@@ -1713,6 +1713,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   onTransition {
     case WAIT_FOR_INIT_INTERNAL -> WAIT_FOR_INIT_INTERNAL => () // called at channel initialization
     case state -> nextState =>
+      if (state != nextState) {
+        val commitments_opt = nextStateData match {
+          case hasCommitments: HasCommitments => Some(hasCommitments.commitments)
+          case _ => None
+        }
+        context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
+      }
+
       if (nextState == CLOSED) {
         // channel is closed, scheduling this actor for self destruction
         context.system.scheduler.scheduleOnce(10 seconds, self, Symbol("shutdown"))
@@ -1720,14 +1728,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       if (nextState == OFFLINE) {
         // we can cancel the timer, we are not expecting anything when disconnected
         cancelTimer(RevocationTimeout.toString)
-      }
-
-      if (state != nextState) {
-        val commitments_opt = nextStateData match {
-          case hasCommitments: HasCommitments => Some(hasCommitments.commitments)
-          case _ => None
-        }
-        context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
       }
 
       // if channel is private, we send the channel_update directly to remote

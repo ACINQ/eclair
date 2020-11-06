@@ -245,13 +245,15 @@ object ChannelOpenResponse {
  */
 
 sealed trait Data {
-  def channelId: ByteVector32 = ByteVector32.Zeroes
+  def channelId: ByteVector32
 }
 
-case object Nothing extends Data
+case object Nothing extends Data {
+  val channelId: ByteVector32 = ByteVector32.Zeroes
+}
 
 sealed trait HasCommitments extends Data {
-  override val channelId: ByteVector32 = commitments.channelId
+  val channelId: ByteVector32 = commitments.channelId
   def commitments: Commitments
 }
 
@@ -262,18 +264,18 @@ case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Optio
 case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32])
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data {
-  override val channelId: ByteVector32 = initFundee.temporaryChannelId
+  val channelId: ByteVector32 = initFundee.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data {
-  override val channelId: ByteVector32 = initFunder.temporaryChannelId
+  val channelId: ByteVector32 = initFunder.temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, remoteFirstPerCommitmentPoint: PublicKey, channelVersion: ChannelVersion, lastSent: OpenChannel) extends Data {
-  override val channelId: ByteVector32 = temporaryChannelId
+  val channelId: ByteVector32 = temporaryChannelId
 }
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingAmount: Satoshi, pushAmount: MilliSatoshi, initialFeeratePerKw: FeeratePerKw, remoteFirstPerCommitmentPoint: PublicKey, channelFlags: Byte, channelVersion: ChannelVersion, lastSent: AcceptChannel) extends Data {
-  override val channelId: ByteVector32 = temporaryChannelId
+  val channelId: ByteVector32 = temporaryChannelId
 }
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(override val channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, channelVersion: ChannelVersion, lastSent: FundingCreated) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, fundingTxFee: Satoshi, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, channelVersion: ChannelVersion, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
                                                  waitingSince: Long, // how long have we been waiting for the funding tx to confirm
