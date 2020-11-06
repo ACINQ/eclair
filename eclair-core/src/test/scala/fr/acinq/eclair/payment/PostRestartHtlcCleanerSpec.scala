@@ -551,7 +551,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val trampolineRelayedPaymentHash = randomBytes32
     val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_1, 0L) :: Nil)
     val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
-    val relayedhtlc1Out = buildHtlcOut(0L, channelId_ab_2, trampolineRelayedPaymentHash)
+    val relayedhtlc1Out = buildHtlcOut(50L, channelId_ab_2, trampolineRelayedPaymentHash)
     val nonRelayedHtlc2In = buildHtlcIn(1L, channelId_ab_1, relayedPaymentHash)
 
     val pluginParams = new CustomCommitmentsPlugin {
