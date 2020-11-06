@@ -617,6 +617,27 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMsg(100 millis)
   }
 
+  test("Non-standard HTLC CMD_FAIL in relayDb is retained") { f =>
+    import f._
+
+    val relayedPaymentHash = randomBytes32
+    val trampolineRelayedPaymentHash = randomBytes32
+    val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
+
+    val pluginParams = new CustomCommitmentsPlugin {
+      def name="test with incoming HTLC from remote"
+      def getIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None))
+      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
+    }
+
+    val cmd = CMD_FAIL_HTLC(id = 0L, reason = Left(ByteVector.empty), replyTo_opt = None)
+    val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
+    nodeParams1.db.pendingRelay.addPendingRelay(channelId_ab_1, cmd)
+    f.createRelayer(nodeParams1)
+    register.expectNoMsg(100 millis)
+    assert(nodeParams1.db.pendingRelay.listPendingRelay(channelId_ab_1).head == cmd)
+  }
+
 }
 
 object PostRestartHtlcCleanerSpec {
