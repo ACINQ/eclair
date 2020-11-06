@@ -29,12 +29,11 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
-import fr.acinq.eclair.channel.{Channel, Origin}
+import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
-import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
@@ -98,10 +97,6 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   val keyPair: KeyPair = KeyPair(nodeId.value, privateKey.value)
 
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
-
-  def nonStandardIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs }.flatten
-
-  def nonStandardRelayedOutHtlcs(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn) }.flatten.toMap
 
   def currentBlockHeight: Long = blockCount.get
 

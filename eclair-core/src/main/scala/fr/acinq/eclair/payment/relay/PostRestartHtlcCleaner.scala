@@ -28,7 +28,8 @@ import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.wire.{FailureMessage, TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{LongToBtcAmount, NodeParams}
+import fr.acinq.eclair.{CustomCommitmentsPlugin, LongToBtcAmount, NodeParams}
+
 import scala.concurrent.Promise
 import scala.util.Try
 
@@ -64,11 +65,15 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
   // result upstream to preserve channels.
   val brokenHtlcs: BrokenHtlcs = {
     val channels = listLocalChannels(nodeParams.db.channels)
-    val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey) ++ nodeParams.nonStandardIncomingHtlcs
+    val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs }.flatten
+    val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey) ++ nonStandardIncomingHtlcs
     // TODO: this part needs unit tests to verify maps are correctly merged
-    val relayedOut = getHtlcsRelayedOut(channels, htlcsIn) ++ nodeParams.nonStandardRelayedOutHtlcs(htlcsIn)
+    val nonStandardRelayedOutHtlcs: Map[Origin, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn) }.flatten.toMap
+    val relayedOut = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
+
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
     cleanupRelayDb(htlcsIn, nodeParams.db.pendingRelay)
+
     log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
     log.info("notRelayed={}", notRelayed.map(htlc => (htlc.add.channelId, htlc.add.id)))
     log.info("relayedOut={}", relayedOut)
@@ -301,7 +306,7 @@ object PostRestartHtlcCleaner {
       case _ => None
     }
 
-  def remoteOutgoingToLocalIncoming(paymentsDb: IncomingPaymentsDb): PartialFunction[Either[FailureMessage, IncomingPacket], IncomingHtlc] = {
+  def decryptedIncomingHtlcs(paymentsDb: IncomingPaymentsDb): PartialFunction[Either[FailureMessage, IncomingPacket], IncomingHtlc] = {
     // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
     case Right(IncomingPacket.ChannelRelayPacket(add, _, _)) => IncomingHtlc(add, None)
     case Right(IncomingPacket.NodeRelayPacket(add, _, _, _)) => IncomingHtlc(add, None)
@@ -318,7 +323,7 @@ object PostRestartHtlcCleaner {
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .collect(outgoing)
       .map(IncomingPacket.decrypt(_, privateKey))
-      .collect(remoteOutgoingToLocalIncoming(paymentsDb))
+      .collect(decryptedIncomingHtlcs(paymentsDb))
   }
 
   /** @return whether a given HTLC is a pending incoming HTLC. */
