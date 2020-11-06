@@ -288,7 +288,7 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     getRemoteCommitPublished(s.stateData.asInstanceOf[DATA_CLOSING]).get
   }
 
-  def channelId(a: TestFSMRef[State, Data, Channel]): ByteVector32 = Helpers.getChannelId(a.stateData)
+  def channelId(a: TestFSMRef[State, Data, Channel]): ByteVector32 = a.stateData.channelId
 
   // @formatter:off
   implicit class ChannelWithTestFeeConf(a: TestFSMRef[State, Data, Channel]) {
