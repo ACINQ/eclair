@@ -98,6 +98,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
+  def forceReconnect(nodeId: PublicKey): Boolean = pluginParams.collectFirst { case p: CustomFeaturePlugin => p.forceReconnect(nodeId) }.isDefined
+
   def currentBlockHeight: Long = blockCount.get
 
   def featuresFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features)
