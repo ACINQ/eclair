@@ -98,7 +98,10 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
-  def forceReconnect(nodeId: PublicKey): Boolean = pluginParams.collectFirst { case p: CustomFeaturePlugin => p.forceReconnect(nodeId) }.isDefined
+  def forceReconnect(nodeId: PublicKey): Boolean = pluginParams.exists {
+    case p: CustomFeaturePlugin => p.forceReconnect(nodeId)
+    case _ => false
+  }
 
   def currentBlockHeight: Long = blockCount.get
 
