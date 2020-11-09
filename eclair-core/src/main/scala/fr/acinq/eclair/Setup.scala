@@ -66,9 +66,10 @@ import scala.util.{Failure, Success}
  *
  * Created by PM on 25/01/2016.
  *
- * @param datadir   directory where eclair-core will write/read its data.
- * @param seeds_opt optional seeds, if set eclair will use them instead of generating them and won't create a node_seed.dat and channel_seed.dat files.
- * @param db        optional databases to use, if not set eclair will create the necessary databases
+ * @param datadir       directory where eclair-core will write/read its data.
+ * @param pluginParams  parameters for all configured plugins.
+ * @param seeds_opt     optional seeds, if set eclair will use them instead of generating them and won't create a node_seed.dat and channel_seed.dat files.
+ * @param db            optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
             pluginParams: Seq[PluginParams],
@@ -127,7 +128,7 @@ class Setup(datadir: File,
   }
 
   val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
-  pluginParams.foreach(param => logger.info(param.toString))
+  pluginParams.foreach(param => logger.info(s"Using plugin: ${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),

@@ -80,11 +80,11 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: ChannelStateChanged =>
       // NB: order matters!
       e match {
-        case ChannelStateChanged(_, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, d: DATA_NORMAL) =>
+        case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, Some(commitments: Commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
-          db.add(ChannelLifecycleEvent(d.channelId, remoteNodeId, d.commitments.commitInput.txOut.amount, d.commitments.localParams.isFunder, !d.commitments.announceChannel, "created"))
-        case ChannelStateChanged(_, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
-        case ChannelStateChanged(_, _, _, _, CLOSING, _) =>
+          db.add(ChannelLifecycleEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isFunder, !commitments.announceChannel, "created"))
+        case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
+        case ChannelStateChanged(_, _, _, _, _, CLOSING, _) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closing).increment()
         case _ => ()
       }

@@ -91,14 +91,16 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
-  val nodeId: PublicKey = nodeKeyManager.nodeId
-  val keyPair = KeyPair(nodeId.value, privateKey.value)
 
-  val pluginMessageTags: Set[Int] = pluginParams.flatMap(_.tags).toSet
+  val nodeId: PublicKey = nodeKeyManager.nodeId
+
+  val keyPair: KeyPair = KeyPair(nodeId.value, privateKey.value)
+
+  val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
   def currentBlockHeight: Long = blockCount.get
 
-  def featuresFor(nodeId: PublicKey) = overrideFeatures.getOrElse(nodeId, features)
+  def featuresFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features)
 }
 
 object NodeParams extends Logging {
@@ -241,23 +243,24 @@ object NodeParams extends Logging {
       require(features.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
     }
 
+    val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
     val features = Features.fromConfiguration(config)
     validateFeatures(features)
 
-    require(pluginParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
-    require(pluginParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
-    require(pluginParams.flatMap(_.tags).forall(_ > 32768), "Plugin messages tags must be > 32768")
-    val pluginFeatureSet = pluginParams.map(_.feature.mandatory).toSet
+    require(pluginMessageParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
+    require(pluginMessageParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
+    require(pluginMessageParams.flatMap(_.messageTags).forall(_ > 32768), "Plugin messages tags must be > 32768")
+    val pluginFeatureSet = pluginMessageParams.map(_.feature.mandatory).toSet
     require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
-    require(pluginFeatureSet.size == pluginParams.size, "Duplicate plugin feature bits found")
+    require(pluginFeatureSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
 
-    val coreAndPluginFeatures = features.copy(unknown = features.unknown ++ pluginParams.map(_.pluginFeature))
+    val coreAndPluginFeatures = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
 
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = Features.fromConfiguration(e)
       validateFeatures(f)
-      p -> f.copy(unknown = f.unknown ++ pluginParams.map(_.pluginFeature))
+      p -> f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature))
     }.toMap
 
     val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
@@ -381,14 +384,4 @@ object NodeParams extends Logging {
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
     )
   }
-}
-
-/**
- * @param tags    a set of LightningMessage tags that plugin is interested in
- * @param feature a Feature bit that plugin advertises through Init message
- */
-case class PluginParams(tags: Set[Int], feature: Feature) {
-  def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
-
-  override def toString: String = s"Messaging enabled plugin=${feature.rfcName} with feature bit=${feature.optional} and LN message tags=${tags.mkString(",")}"
 }

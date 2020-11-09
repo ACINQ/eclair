@@ -279,9 +279,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(c: CloseCommand, d) =>
-      val channelId = Helpers.getChannelId(d)
-      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(channelId)))
-      handleFastClose(c, channelId)
+      channelOpenReplyToUser(Right(ChannelOpenResponse.ChannelClosed(d.channelId)))
+      handleFastClose(c, d.channelId)
 
     case Event(TickChannelOpenTimeout, _) =>
       channelOpenReplyToUser(Left(LocalError(new RuntimeException("open channel cancelled, took too long"))))
@@ -334,9 +333,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.firstPerCommitmentPoint, open.channelFlags, channelVersion, accept) sending accept
       }
 
-    case Event(c: CloseCommand, d) =>
-      val channelId = Helpers.getChannelId(d)
-      handleFastClose(c, channelId)
+    case Event(c: CloseCommand, d) => handleFastClose(c, d.channelId)
 
     case Event(e: Error, d: DATA_WAIT_FOR_OPEN_CHANNEL) => handleRemoteError(e, d)
 
@@ -1666,8 +1663,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CMD_GETINFO, _) =>
       val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-      val channelId = Helpers.getChannelId(stateData)
-      replyTo ! RES_GETINFO(remoteNodeId, channelId, stateName, stateData)
+      replyTo ! RES_GETINFO(remoteNodeId, stateData.channelId, stateName, stateData)
       stay
 
     case Event(c: CMD_ADD_HTLC, d: HasCommitments) =>
@@ -1675,7 +1671,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val error = ChannelUnavailable(d.channelId)
       handleAddHtlcCommandError(c, error, None) // we don't provide a channel_update: this will be a permanent channel failure
 
-    case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "close", stateName), c)
+    case Event(c: CMD_CLOSE, d) => handleCommandError(CommandUnavailableInThisState(d.channelId, "close", stateName), c)
 
     case Event(c: CMD_FORCECLOSE, d) =>
       d match {
@@ -1683,10 +1679,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
           replyTo ! RES_SUCCESS(c, data.channelId)
           handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c))
-        case _ => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "forceclose", stateName), c)
+        case _ => handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
       }
 
-    case Event(c: CMD_UPDATE_RELAY_FEE, d) => handleCommandError(CommandUnavailableInThisState(Helpers.getChannelId(d), "updaterelayfee", stateName), c)
+    case Event(c: CMD_UPDATE_RELAY_FEE, d) => handleCommandError(CommandUnavailableInThisState(d.channelId, "updaterelayfee", stateName), c)
 
     // we only care about this event in NORMAL and SHUTDOWN state, and there may be cases where the task is not cancelled
     case Event(_: RevocationTimeout, _) => stay
@@ -1718,8 +1714,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case WAIT_FOR_INIT_INTERNAL -> WAIT_FOR_INIT_INTERNAL => () // called at channel initialization
     case state -> nextState =>
       if (state != nextState) {
-        context.system.eventStream.publish(ChannelStateChanged(self, peer, remoteNodeId, state, nextState, nextStateData))
+        val commitments_opt = nextStateData match {
+          case hasCommitments: HasCommitments => Some(hasCommitments.commitments)
+          case _ => None
+        }
+        context.system.eventStream.publish(ChannelStateChanged(self, nextStateData.channelId, peer, remoteNodeId, state, nextState, commitments_opt))
       }
+
       if (nextState == CLOSED) {
         // channel is closed, scheduling this actor for self destruction
         context.system.scheduler.scheduleOnce(10 seconds, self, Symbol("shutdown"))
@@ -1876,8 +1877,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender) else Some(hasReplyTo.replyTo)
     }
     replyTo_opt.foreach { replyTo =>
-      val channelId = Helpers.getChannelId(newData)
-      replyTo ! RES_SUCCESS(c, channelId)
+      replyTo ! RES_SUCCESS(c, newData.channelId)
     }
     stay using newData
   }
@@ -1886,7 +1886,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
     val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
     replyTo ! RES_ADD_FAILED(c, cause, channelUpdate)
-    context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = false))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = false))
     stay
   }
 
@@ -1903,7 +1903,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     replyTo_opt.foreach { replyTo =>
       replyTo ! RES_FAILURE(c, cause)
     }
-    context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = false))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = false))
     stay
   }
 
@@ -1956,7 +1956,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val error = Error(d.channelId, exc.getMessage)
     // NB: we don't use the handleLocalError handler because it would result in the commit tx being published, which we don't want:
     // implementation *guarantees* that in case of BITCOIN_FUNDING_PUBLISH_FAILED, the funding tx hasn't and will never be published, so we can close the channel right away
-    context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(exc), isFatal = true))
     goto(CLOSED) sending error
   }
 
@@ -1964,7 +1964,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.warning(s"funding tx hasn't been confirmed in time, cancelling channel delay=$FUNDING_TIMEOUT_FUNDEE")
     val exc = FundingTxTimedout(d.channelId)
     val error = Error(d.channelId, exc.getMessage)
-    context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(exc), isFatal = true))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(exc), isFatal = true))
     goto(CLOSED) sending error
   }
 
@@ -2035,8 +2035,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _: ChannelException => ()
       case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData ")
     }
-    val error = Error(Helpers.getChannelId(d), cause.getMessage)
-    context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, LocalError(cause), isFatal = true))
+    val error = Error(d.channelId, cause.getMessage)
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = true))
 
     d match {
       case dd: HasCommitments if Closing.nothingAtStake(dd) => goto(CLOSED)
@@ -2052,7 +2052,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   def handleRemoteError(e: Error, d: Data) = {
     // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
     log.error(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}")
-    context.system.eventStream.publish(ChannelErrorOccurred(self, Helpers.getChannelId(stateData), remoteNodeId, stateData, RemoteError(e), isFatal = true))
+    context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, RemoteError(e), isFatal = true))
 
     d match {
       case _: DATA_CLOSING => stay // nothing to do, there is already a spending tx published
@@ -2402,7 +2402,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val category_opt = LogCategory(currentMessage)
     val id = currentMessage match {
       case INPUT_RESTORED(data) => data.channelId
-      case _ => Helpers.getChannelId(stateData)
+      case _ => stateData.channelId
     }
     Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(id))
   }

@@ -32,7 +32,7 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{NodeParams, ShortChannelId, addressToPublicKeyScript, _}
+import fr.acinq.eclair._
 import scodec.bits.ByteVector
 
 import scala.concurrent.Await
@@ -44,22 +44,6 @@ import scala.util.{Failure, Success, Try}
  */
 
 object Helpers {
-
-  /**
-   * Depending on the state, returns the current temporaryChannelId or channelId
-   *
-   * @return the long identifier of the channel
-   */
-  def getChannelId(stateData: Data): ByteVector32 = stateData match {
-    case Nothing => ByteVector32.Zeroes
-    case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.temporaryChannelId
-    case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.temporaryChannelId
-    case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.temporaryChannelId
-    case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
-    case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.channelId
-    case d: HasCommitments => d.channelId
-  }
-
   /**
    * We update local/global features at reconnection
    */

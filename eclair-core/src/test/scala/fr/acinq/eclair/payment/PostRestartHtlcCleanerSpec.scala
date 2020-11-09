@@ -21,7 +21,8 @@ import java.util.UUID
 import akka.Done
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -33,7 +34,7 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, NodeParams, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -50,8 +51,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
   import PostRestartHtlcCleanerSpec._
 
   case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
-    def createRelayer(): ActorRef = {
-      system.actorOf(Relayer.props(nodeParams, TestProbe().ref, register.ref, TestProbe().ref))
+    def createRelayer(nodeParams1: NodeParams): ActorRef = {
+      system.actorOf(Relayer.props(nodeParams1, TestProbe().ref, register.ref, TestProbe().ref))
     }
   }
 
@@ -109,34 +110,34 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channels.foreach(c => nodeParams.db.channels.addOrUpdateChannel(c))
 
     val channel = TestProbe()
-    f.createRelayer()
+    f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
     // channel 1 goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels.head))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val fails_ab_1 = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
     assert(fails_ab_1.toSet === Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
     channel.expectNoMsg(100 millis)
 
     // channel 2 goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels(1)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
     val fails_ab_2 = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
     assert(fails_ab_2.toSet === Set(CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
     channel.expectNoMsg(100 millis)
 
     // let's assume that channel 1 was disconnected before having signed the fails, and gets connected again:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels.head))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val fails_ab_1_bis = channel.expectMsgType[CMD_FAIL_HTLC] :: channel.expectMsgType[CMD_FAIL_HTLC] :: Nil
     assert(fails_ab_1_bis.toSet === Set(CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure), commit = true), CMD_FAIL_HTLC(4, Right(TemporaryNodeFailure), commit = true)))
     channel.expectNoMsg(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to fail the htlcs:
     val data1 = channels.head.copy(commitments = channels.head.commitments.copy(localCommit = channels.head.commitments.localCommit.copy(spec = channels.head.commitments.localCommit.spec.copy(htlcs = Set.empty))))
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, data1))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.commitments)))
     channel.expectNoMsg(100 millis)
 
     // post-restart cleaner has cleaned up the htlcs, so next time it won't fail them anymore, even if we artificially submit the former state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels.head))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     channel.expectNoMsg(100 millis)
   }
 
@@ -171,11 +172,11 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channels.foreach(c => nodeParams.db.channels.addOrUpdateChannel(c))
 
     val channel = TestProbe()
-    f.createRelayer()
+    f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
     // channel 1 goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels.head))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val expected1 = Set(
       CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure), commit = true),
       CMD_FULFILL_HTLC(3, preimage, commit = true),
@@ -187,7 +188,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMsg(100 millis)
 
     // channel 2 goes to NORMAL state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels(1)))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels(1).channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels(1).commitments)))
     val expected2 = Set(
       CMD_FAIL_HTLC(1, Right(TemporaryNodeFailure), commit = true),
       CMD_FAIL_HTLC(3, Right(TemporaryNodeFailure), commit = true),
@@ -199,18 +200,18 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMsg(100 millis)
 
     // let's assume that channel 1 was disconnected before having signed the updates, and gets connected again:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels.head))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     val received3 = expected1.map(_ => channel.expectMsgType[Command])
     assert(received3 === expected1)
     channel.expectNoMsg(100 millis)
 
     // let's now assume that channel 1 gets reconnected, and it had the time to sign the htlcs:
     val data1 = channels.head.copy(commitments = channels.head.commitments.copy(localCommit = channels.head.commitments.localCommit.copy(spec = channels.head.commitments.localCommit.spec.copy(htlcs = Set.empty))))
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, data1))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, data1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data1.commitments)))
     channel.expectNoMsg(100 millis)
 
     // post-restart cleaner has cleaned up the htlcs, so next time it won't fail them anymore, even if we artificially submit the former state:
-    system.eventStream.publish(ChannelStateChanged(channel.ref, system.deadLetters, a, OFFLINE, NORMAL, channels.head))
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channels.head.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(channels.head.commitments)))
     channel.expectNoMsg(100 millis)
   }
 
@@ -218,7 +219,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupLocalPayments(nodeParams)
-    val relayer = createRelayer()
+    val relayer = createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     sender.send(relayer, testCase.fails(1))
@@ -247,7 +248,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupLocalPayments(nodeParams)
-    val relayer = f.createRelayer()
+    val relayer = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     sender.send(relayer, testCase.fulfills(1))
@@ -388,13 +389,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     nodeParams.db.channels.addOrUpdateChannel(data_upstream_3)
     nodeParams.db.channels.addOrUpdateChannel(data_downstream)
 
-    val relayer = f.createRelayer()
+    val relayer = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
     val (channel_upstream_1, channel_upstream_2, channel_upstream_3) = (TestProbe(), TestProbe(), TestProbe())
-    system.eventStream.publish(ChannelStateChanged(channel_upstream_1.ref, system.deadLetters, a, OFFLINE, NORMAL, data_upstream_1))
-    system.eventStream.publish(ChannelStateChanged(channel_upstream_2.ref, system.deadLetters, a, OFFLINE, NORMAL, data_upstream_2))
-    system.eventStream.publish(ChannelStateChanged(channel_upstream_3.ref, system.deadLetters, a, OFFLINE, NORMAL, data_upstream_3))
+    system.eventStream.publish(ChannelStateChanged(channel_upstream_1.ref, data_upstream_1.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_1.commitments)))
+    system.eventStream.publish(ChannelStateChanged(channel_upstream_2.ref, data_upstream_2.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_2.commitments)))
+    system.eventStream.publish(ChannelStateChanged(channel_upstream_3.ref, data_upstream_3.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(data_upstream_3.commitments)))
 
     // Payment 1 should fail instantly.
     channel_upstream_1.expectMsg(CMD_FAIL_HTLC(0, Right(TemporaryNodeFailure), commit = true))
@@ -422,7 +423,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupChannelRelayedPayments(nodeParams)
-    val relayer = f.createRelayer()
+    val relayer = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     sender.send(relayer, buildForwardFail(testCase.downstream, testCase.origin))
@@ -437,7 +438,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupChannelRelayedPayments(nodeParams)
-    val relayer = f.createRelayer()
+    val relayer = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     // we need a reference to the post-htlc-restart child actor
@@ -457,7 +458,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
-    val relayer = f.createRelayer()
+    val relayer = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     // we need a reference to the post-htlc-restart child actor
@@ -491,7 +492,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
-    val relayer = f.createRelayer()
+    val relayer = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     // we need a reference to the post-htlc-restart child actor
@@ -524,7 +525,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
-    val relayer = f.createRelayer()
+    val relayer = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     // we need a reference to the post-htlc-restart child actor
@@ -541,6 +542,105 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     sender.send(relayer, buildForwardFail(testCase.downstream_2_3, testCase.origin_2))
     register.expectNoMsg(100 millis) // the payment has already been fulfilled upstream
     eventListener.expectNoMsg(100 millis)
+  }
+
+  test("Relayed nonstandard->standard HTLC is retained") { f =>
+    import f._
+
+    val relayedPaymentHash = randomBytes32
+    val trampolineRelayedPaymentHash = randomBytes32
+    val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_1, 0L) :: Nil)
+    val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
+    val relayedhtlc1Out = buildHtlcOut(50L, channelId_ab_2, trampolineRelayedPaymentHash)
+    val nonRelayedHtlc2In = buildHtlcIn(1L, channelId_ab_1, relayedPaymentHash)
+
+    val pluginParams = new CustomCommitmentsPlugin {
+      def name = "test with incoming HTLC from remote"
+      def getIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None), PostRestartHtlcCleaner.IncomingHtlc(nonRelayedHtlc2In.add, None))
+      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
+    }
+
+    val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
+    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedhtlc1Out), Map(50L -> trampolineRelayed))
+    nodeParams1.db.channels.addOrUpdateChannel(c)
+
+    val channel = TestProbe()
+    f.createRelayer(nodeParams1)
+    register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
+
+    val cs = new AbstractCommitments {
+      def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = None
+      def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = {
+        if (htlcId == 0L) Some(relayedHtlc1In.add)
+        else if (htlcId == 1L) Some(nonRelayedHtlc2In.add)
+        else None
+      }
+      def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = Set.empty
+      def localNodeId: PublicKey = randomExtendedPrivateKey.publicKey
+      def remoteNodeId: PublicKey = randomExtendedPrivateKey.publicKey
+      def capacity: Satoshi = Long.MaxValue.sat
+      def availableBalanceForReceive: MilliSatoshi = Long.MaxValue.msat
+      def availableBalanceForSend: MilliSatoshi = 0.msat
+      def originChannels: Map[Long, Origin] = Map.empty
+      def channelId: ByteVector32 = channelId_ab_1
+      def announceChannel: Boolean = false
+    }
+
+    // Non-standard channel goes to NORMAL state:
+    system.eventStream.publish(ChannelStateChanged(channel.ref, channelId_ab_1, system.deadLetters, a, OFFLINE, NORMAL, Some(cs)))
+    channel.expectMsg(CMD_FAIL_HTLC(1L, Right(TemporaryNodeFailure), commit = true))
+    channel.expectNoMsg(100 millis)
+  }
+
+  test("Relayed standard->nonstandard HTLC is retained") { f =>
+    import f._
+
+    val relayedPaymentHash = randomBytes32
+    val trampolineRelayedPaymentHash = randomBytes32
+    val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_2, 0L) :: Nil)
+    val relayedHtlcIn = buildHtlcIn(0L, channelId_ab_2, trampolineRelayedPaymentHash)
+    val nonRelayedHtlcIn = buildHtlcIn(1L, channelId_ab_2, relayedPaymentHash)
+
+    val pluginParams = new CustomCommitmentsPlugin {
+      def name = "test with outgoing HTLC to remote"
+      def getIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = List.empty
+      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
+    }
+
+    val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
+    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedHtlcIn, nonRelayedHtlcIn), Map.empty)
+    nodeParams1.db.channels.addOrUpdateChannel(c)
+
+    val channel = TestProbe()
+    f.createRelayer(nodeParams1)
+    register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
+
+    // Standard channel goes to NORMAL state:
+    system.eventStream.publish(ChannelStateChanged(channel.ref, c.commitments.channelId, system.deadLetters, a, OFFLINE, NORMAL, Some(c.commitments)))
+    channel.expectMsg(CMD_FAIL_HTLC(1L, Right(TemporaryNodeFailure), commit = true))
+    channel.expectNoMsg(100 millis)
+  }
+
+  test("Non-standard HTLC CMD_FAIL in relayDb is retained") { f =>
+    import f._
+
+    val trampolineRelayedPaymentHash = randomBytes32
+    val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
+
+    val pluginParams = new CustomCommitmentsPlugin {
+      def name = "test with incoming HTLC from remote"
+      def getIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None))
+      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
+    }
+
+    val cmd1 = CMD_FAIL_HTLC(id = 0L, reason = Left(ByteVector.empty), replyTo_opt = None)
+    val cmd2 = CMD_FAIL_HTLC(id = 1L, reason = Left(ByteVector.empty), replyTo_opt = None)
+    val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
+    nodeParams1.db.pendingRelay.addPendingRelay(channelId_ab_1, cmd1)
+    nodeParams1.db.pendingRelay.addPendingRelay(channelId_ab_1, cmd2)
+    f.createRelayer(nodeParams1)
+    register.expectNoMsg(100 millis)
+    awaitCond(Seq(cmd1) == nodeParams1.db.pendingRelay.listPendingRelay(channelId_ab_1))
   }
 
 }
