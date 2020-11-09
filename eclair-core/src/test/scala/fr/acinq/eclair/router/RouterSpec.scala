@@ -459,10 +459,10 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, GetLocalChannels)
     val localChannels = sender.expectMsgType[Seq[LocalChannel]]
     assert(localChannels.size === 2)
-    assert(localChannels.map(_.getRemoteNodeId(a)).toSet === Set(b, g))
+    assert(localChannels.map(_.remoteNodeId).toSet === Set(b, g))
     assert(localChannels.exists(_.isPrivate)) // a ---> g
     assert(localChannels.exists(!_.isPrivate)) // a ---> b
-    assert(localChannels.flatMap(_.toExtraHop(a)).toSet === Set(
+    assert(localChannels.flatMap(_.toExtraHop).toSet === Set(
       ExtraHop(b, channelId_ab, update_ba.feeBaseMsat, update_ba.feeProportionalMillionths, update_ba.cltvExpiryDelta),
       ExtraHop(g, channelId_ag, update_ga.feeBaseMsat, update_ga.feeProportionalMillionths, update_ga.cltvExpiryDelta)
     ))
