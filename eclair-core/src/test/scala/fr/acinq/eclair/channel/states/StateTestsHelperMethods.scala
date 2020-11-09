@@ -95,6 +95,7 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
       if (tags.contains("zero_reserve")) ChannelVersion.ZERO_RESERVE else ChannelVersion.ZEROES
     ).reduce(_ | _)
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
+    val fundingSatoshis = if (tags.contains("small_channel")) 500000.sat else TestConstants.fundingSatoshis
     val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
     val aliceParams = Alice.channelParams
       .modify(_.channelReserve).setToIf(channelVersion.hasZeroReserve)(0.sat)
@@ -105,7 +106,7 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
       .modify(_.staticPaymentBasepoint).setToIf(channelVersion.hasStaticRemotekey)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)

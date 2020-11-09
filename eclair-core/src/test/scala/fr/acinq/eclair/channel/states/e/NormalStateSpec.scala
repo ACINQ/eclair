@@ -2166,6 +2166,19 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
   }
 
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different, with HTLCs, small channel)", Tag("small_channel"), Tag("no_push_msat")) { f =>
+    import f._
+
+    addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    val sender = TestProbe()
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(14000))
+    val event = CurrentFeerates(FeeratesPerKw.single(14000))
+    sender.send(bob, event)
+    bob2alice.expectNoMsg(500 millis)
+  }
+
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different, without HTLCs)") { f =>
     import f._
 
@@ -2182,6 +2195,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different, without HTLCs, small channel)", Tag("small_channel"), Tag("no_push_msat")) { f =>
+    import f._
+
+    val sender = TestProbe()
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(1000))
+    val event = CurrentFeerates(FeeratesPerKw.single(1000))
+    sender.send(bob, event)
+    bob2alice.expectNoMsg(250 millis)
+
+    // when we try to add an HTLC, it works even if the feerate is very different because this is a small channel
+    alice2bob.send(bob, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
+    bob2alice.expectNoMsg(250 millis)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (their commit w/ htlc)") { f =>
