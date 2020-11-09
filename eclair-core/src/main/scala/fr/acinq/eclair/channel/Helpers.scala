@@ -142,7 +142,7 @@ object Helpers {
     }
 
     val localFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-    if (isFeeDiffTooHigh(localFeeratePerKw, open.feeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
+    if (isFeeDiffTooHigh(localFeeratePerKw, open.feeratePerKw, nodeParams.onChainFeeConf.maxFeerateMismatch, open.fundingSatoshis)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
@@ -216,10 +216,18 @@ object Helpers {
    * @param referenceFeePerKw  reference fee rate per kiloweight
    * @param currentFeePerKw    current fee rate per kiloweight
    * @param maxFeerateMismatch maximum fee rate mismatch tolerated
+   * @param channelCapacity    capacity of the channel
    * @return true if the difference between proposed and reference fee rates is too high.
    */
-  def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatch: FeerateTolerance): Boolean =
-    currentFeePerKw < referenceFeePerKw * maxFeerateMismatch.ratioLow || referenceFeePerKw * maxFeerateMismatch.ratioHigh < currentFeePerKw
+  def isFeeDiffTooHigh(referenceFeePerKw: Long, currentFeePerKw: Long, maxFeerateMismatch: FeerateTolerance, channelCapacity: Satoshi): Boolean = {
+    if (channelCapacity < Satoshi(1000000)) {
+      // TODO: for small channels we blindly accept feerate from funder.
+      // This is a temporary fix to allow making payment in high fes environments and will be removed when "anchor outputs" is deployed
+      false
+    } else {
+      currentFeePerKw < referenceFeePerKw * maxFeerateMismatch.ratioLow || referenceFeePerKw * maxFeerateMismatch.ratioHigh < currentFeePerKw
+    }
+  }
 
   /**
    * @param remoteFeeratePerKw remote fee rate per kiloweight
