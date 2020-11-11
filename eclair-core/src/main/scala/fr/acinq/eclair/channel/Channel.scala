@@ -696,13 +696,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
       Commitments.receiveFail(d.commitments, fail) match {
-        case Success((commitments1, _, _)) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
       }
 
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_NORMAL) =>
       Commitments.receiveFailMalformed(d.commitments, fail) match {
-        case Success((commitments1, _, _)) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
       }
 
@@ -1048,14 +1048,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(fail: UpdateFailHtlc, d: DATA_SHUTDOWN) =>
       Commitments.receiveFail(d.commitments, fail) match {
-        case Success((commitments1, _, _)) =>
-          stay using d.copy(commitments = commitments1)
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
       }
 
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_SHUTDOWN) =>
       Commitments.receiveFailMalformed(d.commitments, fail) match {
-        case Success((commitments1, _, _)) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
       }
 

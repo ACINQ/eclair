@@ -434,19 +434,19 @@ object Commitments {
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] =
+  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Try[Commitments] =
     commitments.getOutgoingHtlcCrossSigned(fail.id) match {
-      case Some(htlc) => Try((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
+      case Some(_) => Try(addRemoteProposal(commitments, fail))
       case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
     }
 
-  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Try[(Commitments, Origin, UpdateAddHtlc)] = {
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Try[Commitments] = {
     // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
     if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
       Failure(InvalidFailureCode(commitments.channelId))
     } else {
       commitments.getOutgoingHtlcCrossSigned(fail.id) match {
-        case Some(htlc) => Try((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
+        case Some(_) => Try(addRemoteProposal(commitments, fail))
         case None => Failure(UnknownHtlcId(commitments.channelId, fail.id))
       }
     }

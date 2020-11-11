@@ -193,7 +193,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc5.availableBalanceForSend == b)
     assert(bc5.availableBalanceForReceive == a - p - htlcOutputFee) // a's balance won't return to previous before she acknowledges the fail
 
-    val Success((ac5, _, _)) = receiveFail(ac4, fail)
+    val Success(ac5) = receiveFail(ac4, fail)
     assert(ac5.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b)
 
@@ -324,7 +324,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac10.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac10.availableBalanceForReceive == b + p1 - p3)
 
-    val Success((ac11, _, _)) = receiveFail(ac10, fail2)
+    val Success(ac11) = receiveFail(ac10, fail2)
     assert(ac11.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac11.availableBalanceForReceive == b + p1 - p3)
 
