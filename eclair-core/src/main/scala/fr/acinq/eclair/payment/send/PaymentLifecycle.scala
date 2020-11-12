@@ -75,7 +75,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       span.tag(Tags.Amount, c.finalPayload.amount.toLong)
       span.tag(Tags.TotalAmount, c.finalPayload.totalAmount.toLong)
       span.tag(Tags.Expiry, c.finalPayload.expiry.toLong)
-      log.debug("sending {} to route {}", c.finalPayload.amount, c.printRoute())
+      log.info("sending {} to route {}", c.finalPayload.amount, c.printRoute())
       val send = SendPayment(c.targetNodeId, c.finalPayload, maxAttempts = 1, assistedRoutes = c.assistedRoutes)
       c.route.fold(
         hops => router ! FinalizeRoute(c.finalPayload.amount, hops, c.assistedRoutes, paymentContext = Some(cfg.paymentContext)),
@@ -91,7 +91,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       span.tag(Tags.Amount, c.finalPayload.amount.toLong)
       span.tag(Tags.TotalAmount, c.finalPayload.totalAmount.toLong)
       span.tag(Tags.Expiry, c.finalPayload.expiry.toLong)
-      log.debug("sending {} to {}", c.finalPayload.amount, c.targetNodeId)
+      log.info("sending {} to {}", c.finalPayload.amount, c.targetNodeId)
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), c.assistedRoutes, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))

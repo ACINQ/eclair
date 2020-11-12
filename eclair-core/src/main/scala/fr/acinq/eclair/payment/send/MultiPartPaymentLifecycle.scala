@@ -70,7 +70,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(r: SendMultiPartPayment, _) =>
       val routeParams = r.getRouteParams(nodeParams, randomize = false) // we don't randomize the first attempt, regardless of configuration choices
       val maxFee = routeParams.getMaxFee(r.totalAmount)
-      log.debug("sending {} with maximum fee {}", r.totalAmount, maxFee)
+      log.info("sending {} with maximum fee {}", r.totalAmount, maxFee)
       val d = PaymentProgress(sender, r, r.maxAttempts, Map.empty, Ignore.empty, Nil)
       router ! createRouteRequest(nodeParams, r.totalAmount, maxFee, routeParams, d, cfg)
       goto(WAIT_FOR_ROUTES) using d
@@ -106,7 +106,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         // the payment. When we're retrying an MPP split, it may make sense to retry those ignored channels because with
         // a different split, they may have enough balance to forward the payment.
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, d.pending.values)
-        log.debug("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignore.channels.map(_.shortChannelId).mkString(","))
+        log.info("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignore.channels.map(_.shortChannelId).mkString(","))
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d, cfg).copy(ignore = d.ignore.emptyChannels())
         retriedFailedChannels = true
@@ -152,7 +152,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         val stillPending = d.pending - pf.id
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, stillPending.values)
-        log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
+        log.info("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
         val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures)
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d1, cfg)

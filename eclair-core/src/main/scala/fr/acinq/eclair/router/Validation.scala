@@ -267,7 +267,9 @@ object Validation {
   def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val (uOriginal: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
-      case Left(lcu) => (lcu.channelUpdate, Set(LocalGossip))
+      case Left(lcu) =>
+        log.info("received local channel update for shortChannelId={}, balance={}", lcu.shortChannelId, lcu.commitments.availableBalanceForSend)
+        (lcu.channelUpdate, Set(LocalGossip))
       case Right(rcu) =>
         rcu.origins.collect {
           case RemoteGossip(peerConnection, _) if !wasStashed => // stashed changes have already been acknowledged
@@ -350,11 +352,11 @@ object Validation {
       val pc = d.privateChannels(u.shortChannelId)
       val desc = getDesc(u, pc)
       if (StaleChannels.isStale(u)) {
-        log.debug("ignoring {} (stale)", u)
+        log.info("ignoring {} (stale)", u)
         sendDecision(origins, GossipDecision.Stale(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).exists(_.timestamp >= u.timestamp)) {
-        log.debug("ignoring {} (already know same or newer)", u)
+        log.info("ignoring {} (already know same or newer)", u)
         sendDecision(origins, GossipDecision.Duplicate(u))
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
@@ -362,7 +364,7 @@ object Validation {
         sendDecision(origins, GossipDecision.InvalidSignature(u))
         d
       } else if (pc.getChannelUpdateSameSideAs(u).isDefined) {
-        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
+        log.info("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
@@ -375,7 +377,7 @@ object Validation {
         }
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
       } else {
-        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
+        log.info("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
@@ -444,7 +446,7 @@ object Validation {
           case None =>
             // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
             // let's create a corresponding private channel and process the channel_update
-            log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
+            log.info("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
             val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
             val d1 = d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
@@ -461,7 +463,7 @@ object Validation {
       d
     } else if (d.privateChannels.contains(shortChannelId)) {
       // the channel was private or public-but-not-yet-announced, let's do the clean up
-      log.debug("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
+      log.info("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
       val desc1 = ChannelDesc(shortChannelId, localNodeId, remoteNodeId)
       val desc2 = ChannelDesc(shortChannelId, remoteNodeId, localNodeId)
       // we remove the corresponding updates from the graph
@@ -480,7 +482,7 @@ object Validation {
     val (publicChannels1, graph1) = d.channels.get(e.shortChannelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
-        log.debug("public channel balance updated: {}", pc1)
+        log.info("public channel balance updated: {} -> {}", pc1.ann.shortChannelId, pc1.meta_opt)
         val update_opt = if (e.commitments.localParams.nodeId == pc1.ann.nodeId1) pc1.update_1_opt else pc1.update_2_opt
         val graph1 = update_opt.map(u => d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(d.graph)
         (d.channels + (e.shortChannelId -> pc1), graph1)
@@ -490,7 +492,7 @@ object Validation {
     val (privateChannels1, graph2) = d.privateChannels.get(e.shortChannelId) match {
       case Some(pc) =>
         val pc1 = pc.updateBalances(e.commitments)
-        log.debug("private channel balance updated: {}", pc1)
+        log.info("private channel balance updated: {} -> {}", pc1.update_1_opt.orElse(pc1.update_2_opt).map(_.shortChannelId), pc1.meta)
         val update_opt = if (e.commitments.localParams.nodeId == pc1.nodeId1) pc1.update_1_opt else pc1.update_2_opt
         val graph2 = update_opt.map(u => graph1.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))).getOrElse(graph1)
         (d.privateChannels + (e.shortChannelId -> pc1), graph2)
