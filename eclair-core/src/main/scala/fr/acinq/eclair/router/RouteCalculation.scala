@@ -327,11 +327,10 @@ object RouteCalculation {
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
     val routeParams1 = {
       case class DirectChannel(balance: MilliSatoshi, isEmpty: Boolean)
-      val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).map(e => {
-        val balance = e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)
-        val isEmpty = balance < e.update.htlcMinimumMsat
-        DirectChannel(balance, isEmpty)
-      })
+      val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).collect {
+        // We should always have balance information available for local channels.
+        case GraphEdge(_, update, _, Some(balance)) => DirectChannel(balance, balance < update.htlcMinimumMsat)
+      }
       // If we have direct channels to the target, we can use them all.
       val numRoutes = routeParams.mpp.maxParts.max(directChannels.length)
       // If we have direct channels to the target, we can use them all, even if they have only a small balance left.
