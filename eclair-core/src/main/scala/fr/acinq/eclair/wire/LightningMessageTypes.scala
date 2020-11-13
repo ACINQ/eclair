@@ -19,12 +19,12 @@ package fr.acinq.eclair.wire
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
-import fr.acinq.eclair._
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64, _}
 import scodec.bits.ByteVector
 
 import scala.util.Try
@@ -307,7 +307,14 @@ case class PayToOpenRequest(chainHash: ByteVector32,
                             expireAt: Long,
                             htlc_opt: Option[UpdateAddHtlc]
                            ) extends LightningMessage with HasChainHash {
-  def denied: PayToOpenResponse = PayToOpenResponse(chainHash, paymentHash, ByteVector32.Zeroes) // preimage all-zero means user says no to the pay-to-open request
+  def denied(nodeSecret: PrivateKey, failure_opt: Option[FailureMessage]): PayToOpenResponse = {
+    // if we have the necessary information, we include a properly onion-encrypted failure reason
+    val encryptedFailure_opt = (failure_opt, htlc_opt) match {
+      case (Some(failure), Some(htlc)) => OutgoingPacket.buildHtlcFailure(nodeSecret, Right(failure), htlc).toOption
+      case _ => None
+    }
+    PayToOpenResponse(chainHash, paymentHash, ByteVector32.Zeroes, encryptedFailure_opt) // preimage all-zero means user says no to the pay-to-open request
+  }
 }
 
 object PayToOpenRequest {
@@ -349,7 +356,8 @@ object PayToOpenRequest {
 
 case class PayToOpenResponse(chainHash: ByteVector32,
                              paymentHash: ByteVector32,
-                             paymentPreimage: ByteVector32
+                             paymentPreimage: ByteVector32,
+                             failureReason_opt: Option[ByteVector] // contains the onion-encrypted failure if applicable
                             ) extends LightningMessage with HasChainHash
 
 //

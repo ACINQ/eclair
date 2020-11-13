@@ -20,7 +20,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.Features.VariableLengthOnion
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Upstream}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CannotExtractSharedSecret, Upstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire._
@@ -29,6 +29,8 @@ import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
 import scala.reflect.ClassTag
+import scala.util.{Failure, Success, Try}
+
 
 /**
  * Created by t-bast on 08/10/2019.
@@ -242,4 +244,15 @@ object OutgoingPacket {
     CMD_ADD_HTLC(firstAmount, paymentHash, firstExpiry, onion.packet, upstream, commit = true) -> onion.sharedSecrets
   }
 
+  def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Try[ByteVector] = {
+    Sphinx.PaymentPacket.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
+      case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
+        val encryptedReason = reason match {
+          case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
+          case Right(failure) => Sphinx.FailurePacket.create(sharedSecret, failure)
+        }
+        Success(encryptedReason)
+      case Left(_) => Failure(CannotExtractSharedSecret(add.channelId, add))
+    }
+  }
 }

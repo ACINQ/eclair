@@ -308,7 +308,8 @@ object LightningMessageCodecs {
   val payToOpenResponseCodec: Codec[PayToOpenResponse] = (
     ("chainHash" | bytes32) ::
       ("paymentHash" | bytes32) ::
-      ("paymentPreimage" | bytes32)).as[PayToOpenResponse]
+      ("paymentPreimage" | bytes32) ::
+      ("failureReason_opt" | optional(bitsRemaining, varsizebinarydata))).as[PayToOpenResponse]
   //
   val swapInRequestCodec: Codec[SwapInRequest] =
     ("channelId" | bytes32).as[SwapInRequest]

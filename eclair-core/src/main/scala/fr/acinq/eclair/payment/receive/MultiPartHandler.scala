@@ -25,7 +25,6 @@ import fr.acinq.eclair.db.{IncomingPayment, IncomingPaymentStatus, IncomingPayme
 import fr.acinq.eclair.io.PayToOpenRequestEvent
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.PayToOpenPart
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, randomBytes32, _}
@@ -117,7 +116,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           case None => p.amountMsat // in all failure cases we assume it is a single part payment
         }
         db.getIncomingPayment(p.paymentHash) match {
-          case Some(record) => validatePayToOpen(p, totalAmount, record) match {
+          case Some(record) => validatePayToOpen(nodeParams, p, totalAmount, record) match {
             case Some(payToOpenResponseDenied) =>
               ctx.sender() ! payToOpenResponseDenied
             case None =>
@@ -131,7 +130,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                   pendingPayments = pendingPayments + (p.paymentHash -> (record.paymentPreimage, handler))
               }
           }
-          case None => ctx.sender() ! p.denied
+          case None => ctx.sender() ! p.denied(nodeParams.privateKey, Some(IncorrectOrUnknownPaymentDetails(p.amountMsat, nodeParams.currentBlockHeight)))
         }
       }
 
@@ -144,7 +143,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           case p: MultiPartPaymentFSM.HtlcPart => PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
         }
         parts.collectFirst {
-          case p: PayToOpenPart => p.peer ! p.payToOpen.denied
+          case p: MultiPartPaymentFSM.PayToOpenPart => p.peer ! p.payToOpen.denied(nodeParams.privateKey, Some(failure))
         }
         pendingPayments = pendingPayments - paymentHash
       }
@@ -156,7 +155,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           case (preimage: ByteVector32, handler: ActorRef) =>
             handler ! PoisonPill
             parts
-              .collect { case p: PayToOpenPart => p }
+              .collect { case p: MultiPartPaymentFSM.PayToOpenPart => p }
               .toList match {
               case Nil =>
                 // regular mpp payment, we just fulfill the upstream htlcs
@@ -167,7 +166,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 // first we combine all pay-to-open requests into one
                 val summarizedPayToOpenRequest = PayToOpenRequest.combine(payToOpenParts.map(_.payToOpen))
                 // and we do as if we had received only that pay-to-open request (this is what will be written to db)
-                val parts1 = parts.collect { case h: MultiPartPaymentFSM.HtlcPart => h } :+ PayToOpenPart(parts.head.totalAmount, summarizedPayToOpenRequest, payToOpenParts.head.peer)
+                val parts1 = parts.collect { case h: MultiPartPaymentFSM.HtlcPart => h } :+ MultiPartPaymentFSM.PayToOpenPart(parts.head.totalAmount, summarizedPayToOpenRequest, payToOpenParts.head.peer)
                 log.info(s"received pay-to-open payment for amount=${summarizedPayToOpenRequest.amountMsat}")
                 if (summarizedPayToOpenRequest.feeSatoshis == 0.sat) {
                   // we always say ok when fee is zero, without asking the user
@@ -203,7 +202,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         failure match {
           case Some(failure) => p match {
             case p: MultiPartPaymentFSM.HtlcPart => PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FAIL_HTLC(p.htlc.id, Right(failure), commit = true))
-            case p: PayToOpenPart => p.peer ! p.payToOpen.denied
+            case p: MultiPartPaymentFSM.PayToOpenPart => p.peer ! p.payToOpen.denied(nodeParams.privateKey, Some(failure))
           }
           case None => p match {
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
@@ -214,7 +213,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)
               ctx.system.eventStream.publish(received)
             })
-            case _: PayToOpenPart => // we don't do anything here because we have already previously either accepted or rejected which has settled the pay-to-open
+            case _: MultiPartPaymentFSM.PayToOpenPart => // we don't do anything here because we have already previously either accepted or rejected which has settled the pay-to-open
           }
         }
       }
@@ -224,16 +223,19 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         log.info("fulfilling payment for amount={}", parts.map(_.amount).sum)
         val received = PaymentReceived(paymentHash, parts.map {
           case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
-          case p: PayToOpenPart => PaymentReceived.PartialPayment(p.amount - p.payToOpen.feeSatoshis, ByteVector32.Zeroes)
+          case p: MultiPartPaymentFSM.PayToOpenPart => PaymentReceived.PartialPayment(p.amount - p.payToOpen.feeSatoshis, ByteVector32.Zeroes)
         })
+        // The first thing we do is store the payment. This allows us to reconcile pending HTLCs after a restart.
         db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
         parts.collect {
           case p: MultiPartPaymentFSM.HtlcPart => PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
         }
-        parts.collectFirst { case p: PayToOpenPart => p.peer ! PayToOpenResponse(
+        parts.collectFirst {
+          case p: MultiPartPaymentFSM.PayToOpenPart => p.peer ! PayToOpenResponse(
           chainHash = p.payToOpen.chainHash,
           paymentHash = p.paymentHash,
-          paymentPreimage = preimage)
+          paymentPreimage = preimage,
+            failureReason_opt = None)
         }
         postFulfill(received)
         ctx.system.eventStream.publish(received)
@@ -336,9 +338,9 @@ object MultiPartHandler {
     if (paymentAmountOk && paymentCltvOk && paymentStatusOk && paymentFeaturesOk) None else Some(cmdFail)
   }
 
-  private def validatePayToOpen(p: PayToOpenRequest, totalAmount: MilliSatoshi, record: IncomingPayment)(implicit log: LoggingAdapter): Option[PayToOpenResponse] = {
+  private def validatePayToOpen(nodeParams: NodeParams, p: PayToOpenRequest, totalAmount: MilliSatoshi, record: IncomingPayment)(implicit log: LoggingAdapter): Option[PayToOpenResponse] = {
     val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(p.amountMsat, totalAmount, a))
     val paymentStatusOk = validatePaymentStatus(p.amountMsat, totalAmount, record)
-    if (paymentAmountOk && paymentStatusOk) None else Some(p.denied)
+    if (paymentAmountOk && paymentStatusOk) None else Some(p.denied(nodeParams.privateKey, Some(IncorrectOrUnknownPaymentDetails(totalAmount, nodeParams.currentBlockHeight))))
   }
 }
