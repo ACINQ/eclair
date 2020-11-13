@@ -334,8 +334,8 @@ object RouteCalculation {
       // If we have direct channels to the target, we can use them all.
       val numRoutes = routeParams.mpp.maxParts.max(directChannels.length)
       // If we have direct channels to the target, we can use them all, even if they have only a small balance left.
-      val routeAmount = (amount +: routeParams.mpp.minPartAmount +: directChannels.filter(!_.isEmpty).map(_.balance)).min
-      routeParams.copy(mpp = MultiPartParams(routeAmount, numRoutes))
+      val minPartAmount = (amount +: routeParams.mpp.minPartAmount +: directChannels.filter(!_.isEmpty).map(_.balance)).min
+      routeParams.copy(mpp = MultiPartParams(minPartAmount, numRoutes))
     }
     findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight) match {
       case Right(routes) =>
