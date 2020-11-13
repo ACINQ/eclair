@@ -324,15 +324,23 @@ object RouteCalculation {
                                          routeParams: RouteParams,
                                          currentBlockHeight: Long): Either[RouterException, Seq[Route]] = {
     // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
-    val numRoutes = {
-      val directChannelsCount = g.getEdgesBetween(localNodeId, targetNodeId).length
-      routeParams.mpp.maxParts.max(directChannelsCount) // if we have direct channels to the target, we can use them all
+    // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
+    val routeParams1 = {
+      case class DirectChannel(balance: MilliSatoshi, isEmpty: Boolean)
+      val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).collect {
+        // We should always have balance information available for local channels.
+        case GraphEdge(_, update, _, Some(balance)) => DirectChannel(balance, balance < update.htlcMinimumMsat)
+      }
+      // If we have direct channels to the target, we can use them all.
+      val numRoutes = routeParams.mpp.maxParts.max(directChannels.length)
+      // If we have direct channels to the target, we can use them all, even if they have only a small balance left.
+      val minPartAmount = (amount +: routeParams.mpp.minPartAmount +: directChannels.filter(!_.isEmpty).map(_.balance)).min
+      routeParams.copy(mpp = MultiPartParams(minPartAmount, numRoutes))
     }
-    val routeAmount = routeParams.mpp.minPartAmount.min(amount)
-    findRouteInternal(g, localNodeId, targetNodeId, routeAmount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
+    findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight) match {
       case Right(routes) =>
         // We use these shortest paths to find a set of non-conflicting HTLCs that send the total amount.
-        split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams) match {
+        split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams1) match {
           case Right(routes) if validateMultiPartRoute(amount, maxFee, routes) => Right(routes)
           case _ => Left(RouteNotFound)
         }
