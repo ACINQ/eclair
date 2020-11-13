@@ -98,6 +98,11 @@ object Channel {
    */
   case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 
+  def replyToCommand(sender: ActorRef, reply: CommandResponse[Command], cmd: Command): Unit = cmd match {
+    case cmd1: HasOptionalReplyToCommand => cmd1.replyTo_opt.foreach(_ ! reply)
+    case cmd1: HasReplyToCommand if cmd1.replyTo == ActorRef.noSender => sender ! reply
+    case cmd1: HasReplyToCommand => cmd1.replyTo ! reply
+  }
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -108,7 +113,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: akka.event.DiagnosticLoggingAdapter = diagLog
-
   // we assume that the peer is the channel's parent
   private val peer = context.parent
   // the last active connection we are aware of; note that the peer manages connections and asynchronously notifies
@@ -945,8 +949,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
       log.info("updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
-      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-      replyTo ! RES_SUCCESS(c, d.channelId)
+      replyToCommand(sender, RES_SUCCESS(c, d.channelId), c)
       // we use GOTO instead of stay because we want to fire transitions
       goto(NORMAL) using d.copy(channelUpdate = channelUpdate) storing()
 
@@ -1446,8 +1449,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
       log.info(s"updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
-      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-      replyTo ! RES_SUCCESS(c, d.channelId)
+      replyToCommand(sender, RES_SUCCESS(c, d.channelId), c)
       // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
       stay using d.copy(channelUpdate = channelUpdate) storing()
 
@@ -1652,18 +1654,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(WatchEventLost(BITCOIN_FUNDING_LOST), _) => goto(ERR_FUNDING_LOST)
 
     case Event(c: CMD_GETSTATE, _) =>
-      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-      replyTo ! RES_GETSTATE(stateName)
+      replyToCommand(sender, RES_GETSTATE(stateName), c)
       stay
 
     case Event(c: CMD_GETSTATEDATA, _) =>
-      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-      replyTo ! RES_GETSTATEDATA(stateData)
+      replyToCommand(sender, RES_GETSTATEDATA(stateData), c)
       stay
 
     case Event(c: CMD_GETINFO, _) =>
-      val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-      replyTo ! RES_GETINFO(remoteNodeId, stateData.channelId, stateName, stateData)
+      replyToCommand(sender, RES_GETINFO(remoteNodeId, stateData.channelId, stateName, stateData), c)
       stay
 
     case Event(c: CMD_ADD_HTLC, d: HasCommitments) =>
@@ -1676,8 +1675,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_FORCECLOSE, d) =>
       d match {
         case data: HasCommitments =>
-          val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-          replyTo ! RES_SUCCESS(c, data.channelId)
+          replyToCommand(sender, RES_SUCCESS(c, data.channelId), c)
           handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c))
         case _ => handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
       }
@@ -1866,26 +1864,18 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   def handleFastClose(c: CloseCommand, channelId: ByteVector32) = {
-    val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-    replyTo ! RES_SUCCESS(c, channelId)
+    replyToCommand(sender, RES_SUCCESS(c, channelId), c)
     goto(CLOSED)
   }
 
   def handleCommandSuccess(c: Command, newData: Data) = {
-    val replyTo_opt = c match {
-      case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
-      case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender) else Some(hasReplyTo.replyTo)
-    }
-    replyTo_opt.foreach { replyTo =>
-      replyTo ! RES_SUCCESS(c, newData.channelId)
-    }
+    replyToCommand(sender, RES_SUCCESS(c, newData.channelId), c)
     stay using newData
   }
 
   def handleAddHtlcCommandError(c: CMD_ADD_HTLC, cause: ChannelException, channelUpdate: Option[ChannelUpdate]) = {
     log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
-    val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
-    replyTo ! RES_ADD_FAILED(c, cause, channelUpdate)
+    replyToCommand(sender, RES_ADD_FAILED(c, cause, channelUpdate), c)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = false))
     stay
   }
@@ -1896,13 +1886,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       case _: ChannelException => ()
       case _ => log.error(cause, s"msg=$c stateData=$stateData ")
     }
-    val replyTo_opt = c match {
-      case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
-      case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender) else Some(hasReplyTo.replyTo)
-    }
-    replyTo_opt.foreach { replyTo =>
-      replyTo ! RES_FAILURE(c, cause)
-    }
+    replyToCommand(sender, RES_FAILURE(c, cause), c)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = false))
     stay
   }
