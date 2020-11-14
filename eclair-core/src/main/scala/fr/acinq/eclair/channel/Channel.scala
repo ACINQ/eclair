@@ -18,6 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
+import akka.event.LoggingAdapter
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
@@ -98,6 +99,16 @@ object Channel {
    */
   case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 
+  def replayPendingFailsAndFulfills(sendTo: ActorRef, pendingRelay: PendingRelayDb, channelId: ByteVector32, sendSignCmd: Boolean)(log: LoggingAdapter): Unit = {
+    PendingRelayDb.getPendingFailsAndFulfills(pendingRelay, channelId)(log) match {
+      case Nil =>
+        log.debug("nothing to replay")
+      case cmds =>
+        log.info("replaying {} unacked fulfills/fails", cmds.size)
+        cmds.foreach(sendTo ! _) // they all have commit = false
+        if (sendSignCmd) sendTo ! CMD_SIGN()
+    }
+  }
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -1778,22 +1789,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   onTransition {
-    case _ -> CLOSING =>
-      PendingRelayDb.getPendingFailsAndFulfills(nodeParams.db.pendingRelay, nextStateData.asInstanceOf[HasCommitments].channelId) match {
-        case Nil =>
-          log.debug("nothing to replay")
-        case cmds =>
-          log.info("replaying {} unacked fulfills/fails", cmds.size)
-          cmds.foreach(self ! _) // they all have commit = false
-      }
-    case SYNCING -> (NORMAL | SHUTDOWN) =>
-      PendingRelayDb.getPendingFailsAndFulfills(nodeParams.db.pendingRelay, nextStateData.asInstanceOf[HasCommitments].channelId) match {
-        case Nil =>
-          log.debug("nothing to replay")
-        case cmds =>
-          log.info("replaying {} unacked fulfills/fails", cmds.size)
-          cmds.foreach(self ! _) // they all have commit = false
-          self ! CMD_SIGN() // so we can sign all of them at once
+    case state -> nextState =>
+      (state, nextState, nextStateData) match {
+        case (_, CLOSING, data: HasCommitments) if data.commitments.hasPendingOrProposedHtlcs =>
+          replayPendingFailsAndFulfills(self, nodeParams.db.pendingRelay, data.channelId, sendSignCmd = false)(log)
+        case (SYNCING, NORMAL | SHUTDOWN, data: HasCommitments) if data.commitments.hasPendingOrProposedHtlcs =>
+          replayPendingFailsAndFulfills(self, nodeParams.db.pendingRelay, data.channelId, sendSignCmd = true)(log)
+        case _ =>
       }
   }
 
