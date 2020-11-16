@@ -112,26 +112,31 @@ object HeadersOverDns {
 
   private def parseBlockHeader(response: DnsProtocol.Resolved)(implicit log: Logger): Option[BlockHeader] = {
     val addresses = response.records.collect { case record: AAAARecord => record.ip.getAddress }
-    val countOk = addresses.length == 6
-    // addresses must be prefixed with 0x2001
-    val prefixOk = addresses.forall(_.startsWith(Array(0x20.toByte, 0x01.toByte)))
-    // the first nibble after the prefix encodes the order since nameservers often reorder responses
-    val orderOk = addresses.map(a => a(2) & 0xf0).toSet == Set(0x00, 0x10, 0x20, 0x30, 0x40, 0x50)
-    if (countOk && prefixOk && orderOk) {
-      val header = addresses.sortBy(a => a(2)).foldLeft(BitVector.empty) {
-        case (current, address) =>
-          // The first address contains an additional 0x00 prefix
-          val toDrop = if (current.isEmpty) 28 else 20
-          current ++ BitVector(address).drop(toDrop)
-      }.bytes
-      header.length match {
-        case 80 => Some(BlockHeader.read(header.toArray))
-        case _ =>
-          log.error("bitcoinheaders.net response did not contain block header (invalid length): {}", response)
-          None
+    if (addresses.nonEmpty) {
+      val countOk = addresses.length == 6
+      // addresses must be prefixed with 0x2001
+      val prefixOk = addresses.forall(_.startsWith(Array(0x20.toByte, 0x01.toByte)))
+      // the first nibble after the prefix encodes the order since nameservers often reorder responses
+      val orderOk = addresses.map(a => a(2) & 0xf0).toSet == Set(0x00, 0x10, 0x20, 0x30, 0x40, 0x50)
+      if (countOk && prefixOk && orderOk) {
+        val header = addresses.sortBy(a => a(2)).foldLeft(BitVector.empty) {
+          case (current, address) =>
+            // The first address contains an additional 0x00 prefix
+            val toDrop = if (current.isEmpty) 28 else 20
+            current ++ BitVector(address).drop(toDrop)
+        }.bytes
+        header.length match {
+          case 80 => Some(BlockHeader.read(header.toArray))
+          case _ =>
+            log.error("bitcoinheaders.net response did not contain block header (invalid length): {}", response)
+            None
+        }
+      } else {
+        log.error("invalid response from bitcoinheaders.net: {}", response)
+        None
       }
     } else {
-      log.error("invalid response from bitcoinheaders.net: {}", response)
+      // Instead of not resolving the DNS request when block height is unknown, bitcoinheaders sometimes returns an empty response.
       None
     }
   }
