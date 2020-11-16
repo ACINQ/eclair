@@ -53,8 +53,6 @@ trait AbstractCommitments {
 
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
 
-  def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc]
-
   def localNodeId: PublicKey
 
   def remoteNodeId: PublicKey
