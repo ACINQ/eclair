@@ -299,6 +299,7 @@ class ChannelEventSerializer extends CustomSerializer[ChannelEvent](_ => ( {
   )
   case e: ChannelStateChanged => JObject(
     JField("type", JString("channel-state-changed")),
+    JField("channelId", JString(e.channelId.toHex)),
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
     JField("previousState", JString(e.previousState.toString)),
     JField("currentState", JString(e.currentState.toString))
