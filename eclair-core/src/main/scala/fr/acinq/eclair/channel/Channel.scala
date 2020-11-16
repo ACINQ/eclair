@@ -99,9 +99,8 @@ object Channel {
   case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 
   def replyToCommand(sender: ActorRef, reply: CommandResponse[Command], cmd: Command): Unit = cmd match {
+    case cmd1: HasReplyToCommand => if (cmd1.replyTo == ActorRef.noSender) sender ! reply else cmd1.replyTo ! reply
     case cmd1: HasOptionalReplyToCommand => cmd1.replyTo_opt.foreach(_ ! reply)
-    case cmd1: HasReplyToCommand if cmd1.replyTo == ActorRef.noSender => sender ! reply
-    case cmd1: HasReplyToCommand => cmd1.replyTo ! reply
   }
 }
 
