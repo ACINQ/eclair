@@ -35,11 +35,13 @@ trait CustomFeaturePlugin extends PluginParams {
   /** Feature bit that the plugin wants to advertise through Init message. */
   def feature: Feature
 
-  /** Once disconnect happens, should Eclair attempt periodic reconnects to a given remote node even if there is no normal channels left */
-  def forceReconnect(nodeId: PublicKey): Boolean
-
   /** Plugin feature is always defined as unknown and optional. */
   def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
+}
+
+trait ConnectionControlPlugin extends PluginParams {
+  /** Once disconnect happens, should Eclair attempt periodic reconnects to a given remote node even if there is no normal channels left */
+  def forceReconnect(nodeId: PublicKey): Boolean
 }
 
 /** Parameters for a plugin that defines custom commitment transactions (or non-standard HTLCs). */

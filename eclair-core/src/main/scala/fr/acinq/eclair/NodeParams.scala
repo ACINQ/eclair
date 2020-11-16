@@ -99,7 +99,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
   def forceReconnect(nodeId: PublicKey): Boolean = pluginParams.exists {
-    case p: CustomFeaturePlugin => p.forceReconnect(nodeId)
+    case p: ConnectionControlPlugin => p.forceReconnect(nodeId)
     case _ => false
   }
 

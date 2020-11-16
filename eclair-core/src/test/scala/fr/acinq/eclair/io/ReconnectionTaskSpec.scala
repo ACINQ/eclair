@@ -50,12 +50,10 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
-      .modify(_.pluginParams).setToIf(test.tags.contains("plugin_force_reconnect"))(List(new CustomFeaturePlugin {
-        def name = "plugin with force-reconnect"
-        def messageTags: Set[Int] = Set(60000)
-        def feature: Feature = null
-        def forceReconnect(nodeId: PublicKey): Boolean = true
-      }))
+      .modify(_.pluginParams).setToIf(test.tags.contains("plugin_force_reconnect"))(List(new ConnectionControlPlugin {
+      override def forceReconnect(nodeId: PublicKey): Boolean = true
+      override def name = "plugin with force-reconnect"
+    }))
 
     if (test.tags.contains("with_node_announcements")) {
       val bobAnnouncement = NodeAnnouncement(randomBytes64, Features.empty, 1, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)

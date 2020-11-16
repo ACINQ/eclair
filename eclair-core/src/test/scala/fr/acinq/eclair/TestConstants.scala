@@ -131,11 +131,10 @@ object TestConstants {
     val mandatory = 50000
   }
 
-  val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
-    def messageTags: Set[Int] = Set(60003)
-    def forceReconnect(nodeId: PublicKey) = false
-    def feature: Feature = TestFeature
-    def name: String = "plugin for testing"
+  val pluginParams = new CustomFeaturePlugin {
+    override def messageTags: Set[Int] = Set(60003)
+    override def feature: Feature = TestFeature
+    override def name: String = "plugin for testing"
   }
 
   object Alice {
