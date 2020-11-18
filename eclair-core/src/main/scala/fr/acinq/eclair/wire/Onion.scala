@@ -87,27 +87,27 @@ Notes:
 
 TRAMPOLINE PAYMENT TO LEGACY RECIPIENT (the last trampoline node converts to a standard payment to the final recipient):
 
-    a -------------> b ---------------------------> t1 -----------------------------> t2 ------------------------------ -> e ---------------------------> f
-         +----------------------+     +---------------------------+     +---------------------------------+     +-----------------------+     +-------------------------+
-         | amount_fwd: 950 msat |     | amount_fwd: 950 msat      |     | amount_fwd: 750 msat            |     | amount_fwd: 1000 msat |     | amount_fwd: 1000 msat   |
-         | expiry: 600112       |     | expiry: 600112            |     | expiry: 600042                  |     | expiry: 600000        |     | expiry: 600000          |
-         | channel_id: 42       |     | secret: yyyyy             |     | secret: zzzzz                   |     | channel_id: 42        |     | secret: xyz             | <- invoice secret (omitted if not supported by invoice)
-         |----------------------|     | total_amount: 1750 msat   |     | total_amount: 1600 msat         |     |-----------------------|     | total_amount: 2500 msat | <- t2 is using multi-part to pay 1500 msat to f, for a total payment
-         |     (encrypted)      |     | trampoline_onion:         |     | trampoline_onion:               |     |     (encrypted)       |     +-------------------------+    of 2500 msat split between multiple trampoline routes (omitted if
-         +----------------------+     | +-----------------------+ |     | +-----------------------------+ |     +-----------------------+     |           EOF           |    MPP not supported by invoice)
-                                      | | amount_fwd: 1600 msat | |     | | amount_fwd: 1500 msat       | |                                   +-------------------------+
-                                      | | expiry: 600042        | |     | | expiry: 600000              | |
-                                      | | node_id: t2           | |     | | total_amount: 2500 msat     | |
-                                      | +-----------------------+ |     | | secret: xyz                 | |
-                                      | |      (encrypted)      | |     | | node_id: f                  | |
-                                      | +-----------------------+ |     | | invoice_features: 0x0a      | |
-                                      +---------------------------+     | | invoice_routing_info: ..... | |
-                                      |             EOF           |     | +-----------------------------+ |
-                                      +---------------------------+     | |      (encrypted)            | |
-                                                                        | +-----------------------------+ |
-                                                                        +---------------------------------+
-                                                                        |             EOF                 |
-                                                                        +---------------------------------+
+    a -------------> b ----------------------------> t1 -----------------------------> t2 ---------------------------------- -> e ---------------------------> f
+         +-----------------------+     +---------------------------+     +---------------------------------+        +-----------------------+     +-------------------------+
+         | amount_fwd: 1750 msat |     | amount_fwd: 1750 msat     |     | amount_fwd: 1600 msat           |        | amount_fwd: 1000 msat |     | amount_fwd: 1000 msat   |
+         | expiry: 600112        |     | expiry: 600112            |     | expiry: 600042                  |        | expiry: 600000        |     | expiry: 600000          |
+         | channel_id: 42        |     | secret: yyyyy             |     | secret: zzzzz                   |  +---->| channel_id: 42        |---->| secret: xyz             | <- invoice secret (omitted if not supported by invoice)
+         +-----------------------+     | total_amount: 1750 msat   |     | total_amount: 1600 msat         |  |     +-----------------------+     | total_amount: 2500 msat | <- t2 is using multi-part to pay 1500 msat to f, for a total payment
+         |     (encrypted)       |     | trampoline_onion:         |     | trampoline_onion:               |  |     |     (encrypted)       |     +-------------------------+    of 2500 msat split between multiple trampoline routes (omitted if
+         +-----------------------+     | +-----------------------+ |     | +-----------------------------+ |  |     +-----------------------+     |           EOF           |    MPP not supported by invoice).
+                                       | | amount_fwd: 1600 msat | |     | | amount_fwd: 1500 msat       | |  |                                   +-------------------------+    The remaining 1000 msat needed to reach the total 2500 msat have
+                                       | | expiry: 600042        | |     | | expiry: 600000              | |--+                                                                  been sent by a via a completely separate trampoline route (not
+                                       | | node_id: t2           | |     | | total_amount: 2500 msat     | |  |     +-----------------------+     +-------------------------+    included in this diagram).
+                                       | +-----------------------+ |     | | secret: xyz                 | |  |     | amount_fwd: 500 msat  |     | amount_fwd: 500 msat    |
+                                       | |      (encrypted)      | |     | | node_id: f                  | |  |     | expiry: 600000        |     | expiry: 600000          |
+                                       | +-----------------------+ |     | | invoice_features: 0x0a      | |  +---->| channel_id: 43        |---->| secret: xyz             |
+                                       +---------------------------+     | | invoice_routing_info: ..... | |        +-----------------------+     | total_amount: 2500 msat |
+                                       |             EOF           |     | +-----------------------------+ |        |     (encrypted)       |     +-------------------------+
+                                       +---------------------------+     | |      (encrypted)            | |        +-----------------------+     |           EOF           |
+                                                                         | +-----------------------------+ |                                      +-------------------------+
+                                                                         +---------------------------------+
+                                                                         |             EOF                 |
+                                                                         +---------------------------------+
 
 Notes:
   - the last trampoline node learns the payment details (who the recipient is, the payment amount and secret)
