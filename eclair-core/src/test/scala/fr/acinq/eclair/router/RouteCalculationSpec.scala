@@ -981,6 +981,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       assert(routes.forall(_.length == 1), routes)
       checkRouteAmounts(routes, amount, 0 msat)
     }
+    {
+      // We set min-part-amount to a value that would exclude channels 1 and 4, but it should be ignored when sending to a direct neighbor.
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = routeParams.copy(mpp = MultiPartParams(20000 msat, 3)), currentBlockHeight = 400000)
+      assert(routes.length === 4, routes)
+      assert(routes.forall(_.length == 1), routes)
+      checkRouteAmounts(routes, amount, 0 msat)
+    }
   }
 
   test("calculate multipart route to neighbor (single channel, known balance)") {
