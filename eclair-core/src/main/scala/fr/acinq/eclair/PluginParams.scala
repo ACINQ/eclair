@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
 
@@ -36,6 +37,11 @@ trait CustomFeaturePlugin extends PluginParams {
 
   /** Plugin feature is always defined as unknown and optional. */
   def pluginFeature: UnknownFeature = UnknownFeature(feature.optional)
+}
+
+trait ConnectionControlPlugin extends PluginParams {
+  /** Once disconnect happens, should Eclair attempt periodic reconnects to a given remote node even if there is no normal channels left */
+  def forceReconnect(nodeId: PublicKey): Boolean
 }
 
 /** Parameters for a plugin that defines custom commitment transactions (or non-standard HTLCs). */
