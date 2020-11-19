@@ -32,7 +32,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
-import org.json4s.JsonAST.JDecimal
+import org.json4s.JsonAST.{JArray, JBool, JDecimal, JInt}
 import scodec.bits.ByteVector
 
 import scala.collection.immutable.SortedMap
@@ -100,9 +100,28 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
           blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
-      client.rpcClient.invoke("getbalance").collect {
-        // We track our balance in mBTC because a rounding issue in BTC would be too impactful.
-        case JDecimal(balance) => Metrics.BitcoinBalance.withoutTags().update(balance.doubleValue * 1000)
+      // TODO: move to a separate actor that listens to CurrentBlockCount
+      client.rpcClient.invoke("listunspent").collect {
+        case JArray(values) =>
+          val utxos = values.map(utxo => {
+            val JInt(confirmations) = utxo \ "confirmations"
+            val JBool(safe) = utxo \ "safe"
+            val JDecimal(amount) = utxo \ "amount"
+            (amount.doubleValue * 1000, confirmations.toLong, safe)
+          })
+          val filteredByStatus = Seq(
+            (Monitoring.Tags.UtxoStatuses.Confirmed, utxos.filter(_._2 > 0)),
+            (Monitoring.Tags.UtxoStatuses.Unconfirmed, utxos.filter(_._2 == 0)),
+            (Monitoring.Tags.UtxoStatuses.Safe, utxos.filter(_._3)),
+            (Monitoring.Tags.UtxoStatuses.Unsafe, utxos.filter(!_._3)),
+          )
+          filteredByStatus.foreach {
+            case (status, filteredUtxos) =>
+              val amount = filteredUtxos.map(_._1).sum
+              log.info(s"we have ${filteredUtxos.length} $status utxos ($amount mBTC)")
+              Monitoring.Metrics.UtxoCount.withTag(Monitoring.Tags.UtxoStatus, status).update(filteredUtxos.length)
+              Monitoring.Metrics.BitcoinBalance.withTag(Monitoring.Tags.UtxoStatus, status).update(amount)
+          }
       }
       // TODO: beware of the herd effect
       KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {

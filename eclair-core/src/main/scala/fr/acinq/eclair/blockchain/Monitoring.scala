@@ -28,10 +28,20 @@ object Monitoring {
     val BitcoinBalance = Kamon.gauge("bitcoin.balance", "Bitcoin balance (mBTC)")
     val MempoolMinFeeratePerKw = Kamon.gauge("bitcoin.mempool.min-feerate-per-kw", "Minimum feerate (sat/kw) for a tx to be accepted in our mempool")
     val CannotRetrieveFeeratesCount = Kamon.counter("bitcoin.rpc.feerates.error", "Number of failures to retrieve on-chain feerates")
+    val UtxoCount = Kamon.gauge("bitcoin.utxo.count", "Number of unspent outputs available")
   }
 
   object Tags {
     val Method = "method"
+    val UtxoStatus = "status"
+
+    object UtxoStatuses {
+      val Confirmed = "confirmed"
+      val Safe = "safe"
+      val Unsafe = "unsafe"
+      val Unconfirmed = "unconfirmed"
+    }
+
   }
 
 }
