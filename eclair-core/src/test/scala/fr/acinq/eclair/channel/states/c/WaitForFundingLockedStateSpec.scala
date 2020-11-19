@@ -23,17 +23,19 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestKitBaseClass}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 05/07/2016.
-  */
+ * Created by PM on 05/07/2016.
+ */
 
 class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+
+  val initialRelayFees = (1000 msat, 100)
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, router: TestProbe)
 
@@ -43,7 +45,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Some(initialRelayFees), Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, ChannelVersion.STANDARD)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -75,6 +77,9 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == NORMAL)
+    val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
+    assert(initialChannelUpdate.feeBaseMsat === initialRelayFees._1)
+    assert(initialChannelUpdate.feeProportionalMillionths === initialRelayFees._2)
     bob2alice.expectNoMsg(200 millis)
   }
 

@@ -19,8 +19,8 @@ package fr.acinq.eclair.io
 import java.net.{InetAddress, ServerSocket, Socket}
 import java.util.concurrent.Executors
 
+import akka.actor.FSM
 import akka.actor.Status.Failure
-import akka.actor.{ActorRef, FSM}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -30,8 +30,8 @@ import fr.acinq.eclair.Features.{StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.wire._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -249,7 +249,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     connect(remoteNodeId, peer, peerConnection)
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
   }
@@ -263,7 +263,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     connect(remoteNodeId, peer, peerConnection) // Bob doesn't support wumbo, Alice does
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
   }
@@ -277,7 +277,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Set(ActivatedFeature(Wumbo, Optional))))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
   }
@@ -288,14 +288,23 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection)
-
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, None, None))
+
+    val relayFees = Some(100 msat, 1000)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, relayFees, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
 
     val channelCreated = probe.expectMsgType[ChannelCreated]
     assert(channelCreated.initialFeeratePerKw == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.commitmentBlockTarget))
     assert(channelCreated.fundingTxFeeratePerKw.get == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.fundingBlockTarget))
+
+    peer.stateData.channels.foreach { case (_, channelRef) =>
+      probe.send(channelRef, CMD_GETINFO(probe.ref))
+      val info = probe.expectMsgType[RES_GETINFO]
+      assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
+      val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
+      assert(inputInit.initialRelayFees_opt === relayFees)
+    }
   }
 
   test("use correct final script if option_static_remotekey is negotiated", Tag("static_remotekey")) { f =>
@@ -303,7 +312,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
 
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))))) // Bob supports option_static_remotekey
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
     peer.stateData.channels.foreach { case (_, channelRef) =>
       probe.send(channelRef, CMD_GETINFO(probe.ref))
