@@ -27,7 +27,7 @@ import scala.concurrent.duration._
 
 class DbFeeProviderSpec extends AnyFunSuite {
 
-  val feerates1: FeeratesPerKB = FeeratesPerKB(FeeratePerKB(100 sat), FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat))
+  val feerates1: FeeratesPerKB = FeeratesPerKB(FeeratePerKB(800 sat), FeeratePerKB(100 sat), FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat))
 
   test("db fee provider saves feerates in database") {
     val sqlite = TestConstants.sqliteInMemory()

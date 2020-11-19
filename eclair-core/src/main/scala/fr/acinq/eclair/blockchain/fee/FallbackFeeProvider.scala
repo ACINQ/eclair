@@ -44,6 +44,7 @@ class FallbackFeeProvider(providers: Seq[FeeProvider], minFeeratePerByte: Feerat
 object FallbackFeeProvider {
 
   private def enforceMinimumFeerate(feeratesPerKB: FeeratesPerKB, minFeeratePerKB: FeeratePerKB): FeeratesPerKB = feeratesPerKB.copy(
+    mempoolMinFee = feeratesPerKB.mempoolMinFee.max(minFeeratePerKB),
     block_1 = feeratesPerKB.block_1.max(minFeeratePerKB),
     blocks_2 = feeratesPerKB.blocks_2.max(minFeeratePerKB),
     blocks_6 = feeratesPerKB.blocks_6.max(minFeeratePerKB),

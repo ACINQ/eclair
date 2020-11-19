@@ -60,6 +60,7 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
     val ref = FeeratesPerKB(
+      mempoolMinFee = FeeratePerKB(5070 sat),
       block_1 = FeeratePerKB(149453 sat),
       blocks_2 = FeeratePerKB(136797 sat),
       blocks_6 = FeeratePerKB(105566 sat),

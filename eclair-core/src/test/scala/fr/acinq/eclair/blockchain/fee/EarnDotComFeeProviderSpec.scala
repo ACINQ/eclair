@@ -59,6 +59,7 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
     val ref = FeeratesPerKB(
+      mempoolMinFee = FeeratePerKB(10 * 1000 sat),
       block_1 = FeeratePerKB(400 * 1000 sat),
       blocks_2 = FeeratePerKB(350 * 1000 sat),
       blocks_6 = FeeratePerKB(230 * 1000 sat),
