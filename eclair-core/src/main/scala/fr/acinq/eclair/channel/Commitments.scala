@@ -68,6 +68,8 @@ trait AbstractCommitments {
   def channelId: ByteVector32
 
   def announceChannel: Boolean
+
+  def hasBaseChainFunding: Boolean
 }
 
 /**
@@ -156,6 +158,8 @@ case class Commitments(channelVersion: ChannelVersion,
   val remoteNodeId: PublicKey = remoteParams.nodeId
 
   val announceChannel: Boolean = (channelFlags & 0x01) != 0
+
+  val hasBaseChainFunding: Boolean = true
 
   val capacity: Satoshi = commitInput.txOut.amount
 

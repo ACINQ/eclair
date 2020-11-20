@@ -569,21 +569,21 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
     val cs = new AbstractCommitments {
-      def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = None
-      def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = {
+      override def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = None
+      override def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = {
         if (htlcId == 0L) Some(relayedHtlc1In.add)
         else if (htlcId == 1L) Some(nonRelayedHtlc2In.add)
         else None
       }
-      def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = Set.empty
-      def localNodeId: PublicKey = randomExtendedPrivateKey.publicKey
-      def remoteNodeId: PublicKey = randomExtendedPrivateKey.publicKey
-      def capacity: Satoshi = Long.MaxValue.sat
-      def availableBalanceForReceive: MilliSatoshi = Long.MaxValue.msat
-      def availableBalanceForSend: MilliSatoshi = 0.msat
-      def originChannels: Map[Long, Origin] = Map.empty
-      def channelId: ByteVector32 = channelId_ab_1
-      def announceChannel: Boolean = false
+      override def localNodeId: PublicKey = randomExtendedPrivateKey.publicKey
+      override def remoteNodeId: PublicKey = randomExtendedPrivateKey.publicKey
+      override def capacity: Satoshi = Long.MaxValue.sat
+      override def availableBalanceForReceive: MilliSatoshi = Long.MaxValue.msat
+      override def availableBalanceForSend: MilliSatoshi = 0.msat
+      override def originChannels: Map[Long, Origin] = Map.empty
+      override def channelId: ByteVector32 = channelId_ab_1
+      override def announceChannel: Boolean = false
+      override def hasBaseChainFunding: Boolean = true
     }
 
     // Non-standard channel goes to NORMAL state:

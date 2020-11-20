@@ -216,13 +216,13 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
       stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
-    case Event(lcu: LocalChannelUpdate, d: Data) =>
+    case Event(lcu: LocalChannelUpdate, d: Data) if lcu.commitments.hasBaseChainFunding =>
       stay using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
 
     case Event(lcd: LocalChannelDown, d: Data) =>
       stay using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
 
-    case Event(e: AvailableBalanceChanged, d: Data) =>
+    case Event(e: AvailableBalanceChanged, d: Data) if e.commitments.hasBaseChainFunding =>
       stay using Validation.handleAvailableBalanceChanged(d, e)
 
     case Event(s: SendChannelQuery, d) =>
