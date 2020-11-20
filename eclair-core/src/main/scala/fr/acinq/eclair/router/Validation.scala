@@ -412,7 +412,7 @@ object Validation {
     } else {
       log.debug("ignoring announcement {} (unknown channel)", u)
       sendDecision(origins, GossipDecision.NoRelatedChannel(u))
-      d
+      d.copy(privateChannels = d.privateChannels - u.shortChannelId)
     }
   }
 
