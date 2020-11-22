@@ -20,6 +20,7 @@ import java.util.UUID
 
 import akka.Done
 import akka.actor.ActorRef
+import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
@@ -555,9 +556,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val nonRelayedHtlc2In = buildHtlcIn(1L, channelId_ab_1, relayedPaymentHash)
 
     val pluginParams = new CustomCommitmentsPlugin {
-      def name = "test with incoming HTLC from remote"
-      def getIncomingHtlcs(np: NodeParams): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None), PostRestartHtlcCleaner.IncomingHtlc(nonRelayedHtlc2In.add, None))
-      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
+      override def name = "test with incoming HTLC from remote"
+      override def getIncomingHtlcs(np: NodeParams)(implicit log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None), PostRestartHtlcCleaner.IncomingHtlc(nonRelayedHtlc2In.add, None))
+      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
     }
 
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
@@ -602,9 +603,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val nonRelayedHtlcIn = buildHtlcIn(1L, channelId_ab_2, relayedPaymentHash)
 
     val pluginParams = new CustomCommitmentsPlugin {
-      def name = "test with outgoing HTLC to remote"
-      def getIncomingHtlcs(np: NodeParams): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List.empty
-      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
+      override def name = "test with outgoing HTLC to remote"
+      override def getIncomingHtlcs(np: NodeParams)(implicit log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List.empty
+      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
     }
 
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
@@ -628,9 +629,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
 
     val pluginParams = new CustomCommitmentsPlugin {
-      def name = "test with incoming HTLC from remote"
-      def getIncomingHtlcs(np: NodeParams): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None))
-      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
+      override def name = "test with incoming HTLC from remote"
+      override def getIncomingHtlcs(np: NodeParams)(implicit log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None))
+      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
     }
 
     val cmd1 = CMD_FAIL_HTLC(id = 0L, reason = Left(ByteVector.empty), replyTo_opt = None)
