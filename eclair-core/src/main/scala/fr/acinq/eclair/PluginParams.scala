@@ -51,7 +51,7 @@ trait CustomCommitmentsPlugin extends PluginParams {
    * expire. If your plugin defines non-standard HTLCs, and they need to be automatically failed, they should be
    * returned by this method.
    */
-  def getIncomingHtlcs: Seq[IncomingHtlc]
+  def getIncomingHtlcs(nodeParams: NodeParams): Seq[IncomingHtlc]
 
   /**
    * Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
