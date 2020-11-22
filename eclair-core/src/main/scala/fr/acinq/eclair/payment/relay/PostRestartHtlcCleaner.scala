@@ -67,8 +67,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
     val channels = listLocalChannels(nodeParams.db.channels)
     val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs(nodeParams) }.flatten
     val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey) ++ nonStandardIncomingHtlcs
-    val nonStandardRelayedOutHtlcs: Map[Origin, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn) }.flatten.toMap
-    val relayedOut: Map[Origin, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
+    val nonStandardRelayedOutHtlcs: Map[Origin, Set[ChannelIdAndHtlcId]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn) }.flatten.toMap
+    val relayedOut: Map[Origin, Set[ChannelIdAndHtlcId]] = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
 
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
     cleanupRelayDb(htlcsIn, nodeParams.db.pendingRelay)
@@ -251,6 +251,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
 
 object PostRestartHtlcCleaner {
 
+  type ChannelIdAndHtlcId = (ByteVector32, Long)
+
   def props(nodeParams: NodeParams, register: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new PostRestartHtlcCleaner(nodeParams, register, initialized))
 
   case object GetBrokenHtlcs
@@ -283,7 +285,7 @@ object PostRestartHtlcCleaner {
    * @param relayedOut      outgoing HTLC sets that may have been incompletely sent and need to be watched.
    * @param settledUpstream upstream payments that have already been settled (failed or fulfilled) by this actor.
    */
-  case class BrokenHtlcs(notRelayed: Seq[IncomingHtlc], relayedOut: Map[Origin, Set[(ByteVector32, Long)]], settledUpstream: Set[Origin])
+  case class BrokenHtlcs(notRelayed: Seq[IncomingHtlc], relayedOut: Map[Origin, Set[ChannelIdAndHtlcId]], settledUpstream: Set[Origin])
 
   /** Returns true if the given HTLC matches the given origin. */
   private def matchesOrigin(htlcIn: UpdateAddHtlc, origin: Origin): Boolean = origin match {
@@ -329,7 +331,7 @@ object PostRestartHtlcCleaner {
   private def isPendingUpstream(channelId: ByteVector32, htlcId: Long, htlcsIn: Seq[IncomingHtlc]): Boolean =
     htlcsIn.exists(htlc => htlc.add.channelId == channelId && htlc.add.id == htlcId)
 
-  def groupByOrigin(htlcsOut: Seq[(Origin, ByteVector32, Long)], htlcsIn: Seq[IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] =
+  def groupByOrigin(htlcsOut: Seq[(Origin, ByteVector32, Long)], htlcsIn: Seq[IncomingHtlc]): Map[Origin, Set[ChannelIdAndHtlcId]] =
     htlcsOut
       .groupBy { case (origin, _, _) => origin }
       .view
@@ -346,7 +348,7 @@ object PostRestartHtlcCleaner {
       .toMap
 
   /** @return pending outgoing HTLCs, grouped by their upstream origin. */
-  private def getHtlcsRelayedOut(channels: Seq[HasCommitments], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = {
+  private def getHtlcsRelayedOut(channels: Seq[HasCommitments], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin, Set[ChannelIdAndHtlcId]] = {
     val htlcsOut = channels
       .flatMap { c =>
         // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
@@ -403,8 +405,8 @@ object PostRestartHtlcCleaner {
     // We are interested in incoming HTLCs, that have been *cross-signed* (otherwise they wouldn't have been relayed).
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
     // the command from the pending relay db.
-    val channel2Htlc: Seq[(ByteVector32, Long)] = htlcsIn.map { case IncomingHtlc(add, _) => (add.channelId, add.id) }
-    val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listPendingRelay()
+    val channel2Htlc: Seq[ChannelIdAndHtlcId] = htlcsIn.map { case IncomingHtlc(add, _) => (add.channelId, add.id) }
+    val pendingRelay: Set[ChannelIdAndHtlcId] = relayDb.listPendingRelay()
     val toClean = pendingRelay -- channel2Htlc
     toClean.foreach {
       case (channelId, htlcId) =>
