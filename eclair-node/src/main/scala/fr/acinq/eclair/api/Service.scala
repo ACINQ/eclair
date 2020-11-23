@@ -48,15 +48,13 @@ import scala.concurrent.duration._
 
 case class ErrorResponse(error: String)
 
-trait Service extends ExtraDirectives with Logging {
+// important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
 
-  // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
+import JsonSupport.{formats, marshaller, serialization}
 
-  import JsonSupport.{formats, marshaller, serialization}
+trait AbstractService extends ExtraDirectives with Logging {
 
   def password: String
-
-  val eclairApi: Eclair
 
   implicit val actorSystem: ActorSystem
   implicit val mat: Materializer
@@ -76,12 +74,26 @@ trait Service extends ExtraDirectives with Logging {
   // map all the rejections to a JSON error object ErrorResponse
   val apiRejectionHandler = RejectionHandler.default.mapRejectionResponse {
     case res@HttpResponse(_, _, ent: HttpEntity.Strict, _) =>
-      res.copy(entity = HttpEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse(ent.data.utf8String))))
+      res.withEntity(HttpEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse(ent.data.utf8String))))
   }
 
   val customHeaders = `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
     `Access-Control-Allow-Methods`(POST) ::
     `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
+
+  val timeoutResponse: HttpRequest => HttpResponse = { _ =>
+    HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("request timed out")))
+  }
+
+  def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
+    case p@Credentials.Provided(id) if p.verify(password) => Future.successful(Some(id))
+    case _ => akka.pattern.after(1 second, using = actorSystem.scheduler)(Future.successful(None))(actorSystem.dispatcher) // force a 1 sec pause to deter brute force
+  }
+}
+
+trait Service extends AbstractService {
+
+  val eclairApi: Eclair
 
   lazy val makeSocketHandler: Flow[Message, TextMessage.Strict, NotUsed] = {
 
@@ -114,15 +126,6 @@ trait Service extends ExtraDirectives with Logging {
       .mapConcat(_ => Nil) // Ignore heartbeats and other data from the client
       .merge(flowOutput) // Stream the data we want to the client
       .map(TextMessage.apply)
-  }
-
-  val timeoutResponse: HttpRequest => HttpResponse = { _ =>
-    HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("request timed out")))
-  }
-
-  def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
-    case p@Credentials.Provided(id) if p.verify(password) => Future.successful(Some(id))
-    case _ => akka.pattern.after(1 second, using = actorSystem.scheduler)(Future.successful(None))(actorSystem.dispatcher) // force a 1 sec pause to deter brute force
   }
 
   val route: Route = {
