@@ -28,7 +28,7 @@ import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.server._
 import akka.http.scaladsl.server.directives.Credentials
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
-import akka.stream.{Materializer, OverflowStrategy}
+import akka.stream.OverflowStrategy
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -57,7 +57,6 @@ trait AbstractService extends ExtraDirectives with Logging {
   def password: String
 
   implicit val actorSystem: ActorSystem
-  implicit val mat: Materializer
 
   // timeout for reading request parameters from the underlying stream
   val paramParsingTimeout = 5 seconds

@@ -24,7 +24,6 @@ import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
-import akka.stream.Materializer
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -71,7 +70,6 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     override def password: String = "mock"
 
     override implicit val actorSystem: ActorSystem = system
-    override implicit val mat: Materializer = materializer
   }
 
   test("API service should handle failures correctly") {
