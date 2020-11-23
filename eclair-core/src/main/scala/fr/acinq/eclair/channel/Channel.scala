@@ -657,8 +657,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Failure(cause) =>
           // we acknowledge the command right away in case of failure
-          PendingRelayDb.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
-          handleCommandError(cause, c)
+          handleCommandError(cause, c) acking(d.channelId, c)
       }
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_NORMAL) =>
@@ -678,8 +677,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
           // we acknowledge the command right away in case of failure
-          PendingRelayDb.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
-          handleCommandError(cause, c)
+          handleCommandError(cause, c) acking(d.channelId, c)
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_NORMAL) =>
@@ -690,8 +688,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
           // we acknowledge the command right away in case of failure
-          PendingRelayDb.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
-          handleCommandError(cause, c)
+          handleCommandError(cause, c) acking(d.channelId, c)
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
@@ -730,7 +727,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           Commitments.sendCommit(d.commitments, keyManager) match {
             case Success((commitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", Commitments.specs2String(commitments1))
-              PendingRelayDb.ackPendingFailsAndFulfills(nodeParams.db.pendingRelay, commitments1.localChanges.signed)
               val nextRemoteCommit = commitments1.remoteNextCommitInfo.left.get.nextRemoteCommit
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
@@ -749,7 +745,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), timeout = nodeParams.revocationTimeout, repeat = false)
-              handleCommandSuccess(c, d.copy(commitments = commitments1)) storing() sending commit
+              handleCommandSuccess(c, d.copy(commitments = commitments1)) storing() sending commit acking(commitments1.localChanges.signed)
             case Failure(cause) => handleCommandError(cause, c)
           }
         case Left(waitForRevocation) =>
@@ -1011,8 +1007,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Failure(cause) =>
           // we acknowledge the command right away in case of failure
-          PendingRelayDb.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
-          handleCommandError(cause, c)
+          handleCommandError(cause, c) acking(d.channelId, c)
       }
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_SHUTDOWN) =>
@@ -1031,8 +1026,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
           // we acknowledge the command right away in case of failure
-          PendingRelayDb.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
-          handleCommandError(cause, c)
+          handleCommandError(cause, c) acking(d.channelId, c)
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_SHUTDOWN) =>
@@ -1042,8 +1036,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Failure(cause) =>
           // we acknowledge the command right away in case of failure
-          PendingRelayDb.ackCommand(nodeParams.db.pendingRelay, d.channelId, c)
-          handleCommandError(cause, c)
+          handleCommandError(cause, c) acking(d.channelId, c)
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_SHUTDOWN) =>
@@ -1082,11 +1075,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           Commitments.sendCommit(d.commitments, keyManager) match {
             case Success((commitments1, commit)) =>
               log.debug("sending a new sig, spec:\n{}", Commitments.specs2String(commitments1))
-              PendingRelayDb.ackPendingFailsAndFulfills(nodeParams.db.pendingRelay, commitments1.localChanges.signed)
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), timeout = nodeParams.revocationTimeout, repeat = false)
-              handleCommandSuccess(c, d.copy(commitments = commitments1)) storing() sending commit
+              handleCommandSuccess(c, d.copy(commitments = commitments1)) storing() sending commit acking(commitments1.localChanges.signed)
             case Failure(cause) => handleCommandError(cause, c)
           }
         case Left(waitForRevocation) =>
@@ -2387,6 +2379,23 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
      */
     def calling(f: => Unit): FSM.State[fr.acinq.eclair.channel.State, Data] = {
       f
+      state
+    }
+
+    /**
+     * We don't acknowledge htlc commands immediately, because we send them to the channel as soon as possible, and they
+     * may not yet have been written to the database.
+     * @param cmd fail/fulfill command that has been processed
+     */
+    def acking(channelId: ByteVector32, cmd: HtlcSettlementCommand): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+      log.debug("scheduling acknowledgement of cmd id={}", cmd.id)
+      context.system.scheduler.scheduleOnce(10 seconds)(PendingRelayDb.ackCommand(nodeParams.db.pendingRelay, channelId, cmd))(context.system.dispatcher)
+      state
+    }
+
+    def acking(updates: List[UpdateMessage]): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+      log.debug("scheduling acknowledgement of cmds ids={}", updates.collect { case s: HtlcSettlementMessage => s.id }.mkString(","))
+      context.system.scheduler.scheduleOnce(10 seconds)(PendingRelayDb.ackPendingFailsAndFulfills(nodeParams.db.pendingRelay, updates))(context.system.dispatcher)
       state
     }
 
