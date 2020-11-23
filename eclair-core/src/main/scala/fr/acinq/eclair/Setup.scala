@@ -16,13 +16,6 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-import java.net.InetSocketAddress
-import java.sql.DriverManager
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-
 import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.pattern.after
@@ -57,8 +50,15 @@ import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
 
+import java.io.File
+import java.net.InetSocketAddress
+import java.sql.DriverManager
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent._
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success}
 
 /**
@@ -360,6 +360,7 @@ class Setup(datadir: File,
         authentication = auth,
         privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).toPath,
         virtualPort = config.getInt("server.port"),
+        targets = config.getStringList("tor.targets").asScala.toSeq,
         onionAdded = Some(promiseTorAddress))
 
       val controller = system.actorOf(SimpleSupervisor.props(Controller.props(
