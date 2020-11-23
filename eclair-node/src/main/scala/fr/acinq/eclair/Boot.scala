@@ -77,7 +77,7 @@ object Boot extends App with Logging {
         override val actorSystem = system
         override val password = apiPassword
         override val eclairApi: Eclair = new EclairImpl(kit)
-      }.route
+      }.finalRoute
       Http().newServerAt(config.getString("api.binding-ip"), config.getInt("api.port")).bindFlow(apiRoute).recover {
         case _: BindFailedException => onError(TCPBindException(config.getInt("api.port")))
       }
