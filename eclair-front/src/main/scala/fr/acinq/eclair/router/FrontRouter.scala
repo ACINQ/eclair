@@ -43,7 +43,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
 
   remoteRouter ! GetRoutingStateStreaming
 
-  startWith(SYNCING, Data(Map.empty, SortedMap.empty, Map.empty, rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty)))
+  startWith(SYNCING, Data(Map.empty, SortedMap.empty, Map.empty, Map.empty, rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty)))
 
   when(SYNCING) {
     case Event(networkEvent: NetworkEvent, d) =>
@@ -82,7 +82,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
           origin.peerConnection ! TransportHandler.ReadAck(ann)
           d
         case Some(origins) =>
-          log.debug("message is already in processing={}", ann)
+          log.debug("message is already in processing={} origins.size={}", ann, origins.size)
           Metrics.gossipStashed(ann).increment()
           // we have already forwarded that message to the router
           // we could just acknowledge the message now, but then we would lose the information that we did receive this
@@ -91,36 +91,47 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
           val origins1 = origins + origin
           d.copy(processing = d.processing + (ann -> origins1))
         case None =>
-          ann match {
-            case n: NodeAnnouncement if d.nodes.contains(n.nodeId) =>
+          d.accepted.get(ann) match {
+            case Some(origins) if origins.contains(origin) =>
+              log.warning("acking duplicate msg={}", ann)
               origin.peerConnection ! TransportHandler.ReadAck(ann)
-              Metrics.gossipDropped(ann).increment()
               d
-            case c: ChannelAnnouncement if d.channels.contains(c.shortChannelId) =>
-              origin.peerConnection ! TransportHandler.ReadAck(ann)
-              Metrics.gossipDropped(ann).increment()
-              d
-            case u: ChannelUpdate if d.channels.contains(u.shortChannelId) && d.channels(u.shortChannelId).getChannelUpdateSameSideAs(u).contains(u) =>
-              origin.peerConnection ! TransportHandler.ReadAck(ann)
-              Metrics.gossipDropped(ann).increment()
-              d
-            case n: NodeAnnouncement if d.rebroadcast.nodes.contains(n) =>
-              origin.peerConnection ! TransportHandler.ReadAck(ann)
-              Metrics.gossipStashedRebroadcast(ann).increment()
-              d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> (d.rebroadcast.nodes(n) + origin))))
-            case c: ChannelAnnouncement if d.rebroadcast.channels.contains(c) =>
-              origin.peerConnection ! TransportHandler.ReadAck(ann)
-              Metrics.gossipStashedRebroadcast(ann).increment()
-              d.copy(rebroadcast = d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> (d.rebroadcast.channels(c) + origin))))
-            case u: ChannelUpdate if d.rebroadcast.updates.contains(u) =>
-              origin.peerConnection ! TransportHandler.ReadAck(ann)
-              Metrics.gossipStashedRebroadcast(ann).increment()
-              d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> (d.rebroadcast.updates(u) + origin))))
-            case _ =>
-              Metrics.gossipForwarded(ann).increment()
-              log.info("sending announcement class={} to master router", ann.getClass.getSimpleName)
-              remoteRouter ! PeerRoutingMessage(self, remoteNodeId, ann) // nb: we set ourselves as the origin
-              d.copy(processing = d.processing + (ann -> Set(origin)))
+            case Some(origins) =>
+              log.debug("message is already in accepted={} origins.size={}", ann, origins.size)
+              val origins1 = origins + origin
+              d.copy(accepted = d.accepted + (ann -> origins1))
+            case None =>
+              ann match {
+                case n: NodeAnnouncement if d.nodes.contains(n.nodeId) =>
+                  origin.peerConnection ! TransportHandler.ReadAck(ann)
+                  Metrics.gossipDropped(ann).increment()
+                  d
+                case c: ChannelAnnouncement if d.channels.contains(c.shortChannelId) =>
+                  origin.peerConnection ! TransportHandler.ReadAck(ann)
+                  Metrics.gossipDropped(ann).increment()
+                  d
+                case u: ChannelUpdate if d.channels.contains(u.shortChannelId) && d.channels(u.shortChannelId).getChannelUpdateSameSideAs(u).contains(u) =>
+                  origin.peerConnection ! TransportHandler.ReadAck(ann)
+                  Metrics.gossipDropped(ann).increment()
+                  d
+                case n: NodeAnnouncement if d.rebroadcast.nodes.contains(n) =>
+                  origin.peerConnection ! TransportHandler.ReadAck(ann)
+                  Metrics.gossipStashedRebroadcast(ann).increment()
+                  d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> (d.rebroadcast.nodes(n) + origin))))
+                case c: ChannelAnnouncement if d.rebroadcast.channels.contains(c) =>
+                  origin.peerConnection ! TransportHandler.ReadAck(ann)
+                  Metrics.gossipStashedRebroadcast(ann).increment()
+                  d.copy(rebroadcast = d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> (d.rebroadcast.channels(c) + origin))))
+                case u: ChannelUpdate if d.rebroadcast.updates.contains(u) =>
+                  origin.peerConnection ! TransportHandler.ReadAck(ann)
+                  Metrics.gossipStashedRebroadcast(ann).increment()
+                  d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> (d.rebroadcast.updates(u) + origin))))
+                case _ =>
+                  Metrics.gossipForwarded(ann).increment()
+                  log.info("sending announcement class={} to master router", ann.getClass.getSimpleName)
+                  remoteRouter ! PeerRoutingMessage(self, remoteNodeId, ann) // nb: we set ourselves as the origin
+                  d.copy(processing = d.processing + (ann -> Set(origin)))
+              }
           }
       }
       stay using d1
@@ -136,17 +147,15 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
         }
         case None => ()
       }
-      // NB:
-      // - the rebroadcast method takes care of cleaning up the processing map
-      // - we will also shortly receive a NetworkEvent from the router for this announcement
-      // - as a consequence we will call the rebroadcast method twice for this announcement
-      // - this opens way to a race between the NetworkEvent and TickBroadcast; if TickBroadcast wins, we will send
-      // the announcement twice to our peers (and once to those that sent us the announcement in the first place)
-      // - if we don't call the rebroadcast method here, then we have a bigger problem, because we have a different race
-      // between other peers that send us that same announcement, and the NetworkEvent. If the other peers win the race,
-      // we will defer acknowledging their message (because the announcement is still in the processing map) and we will
+      // NB: we will also shortly receive a NetworkEvent from the router for this announcement, where we put it in the
+      // rebroadcast map. We keep the origin peers in the accepted map, so we don't send back the same announcement to
+      // the peers that sent us in the first place.
+      // Why do we not just leave the announcement in the processing map? Because we would have a race between other
+      // peers that send us that same announcement, and the NetworkEvent. If the other peers win the race, we will defer
+      // acknowledging their message (because the announcement is still in the processing map) and we will
       // wait forever for the very gossip decision that we are processing now, resulting in a stuck connection
-      stay using rebroadcast(d, accepted.ann)
+      val origins1 = d.processing.getOrElse(accepted.ann, Set.empty[RemoteGossip])
+      stay using d.copy(processing = d.processing - accepted.ann, accepted = d.accepted + (accepted.ann -> origins1))
 
     case Event(rejected: GossipDecision.Rejected, d) =>
       log.debug("message has been rejected by router: {}", rejected)
@@ -206,6 +215,7 @@ object FrontRouter {
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: SortedMap[ShortChannelId, PublicChannel],
                   processing: Map[AnnouncementMessage, Set[RemoteGossip]],
+                  accepted: Map[AnnouncementMessage, Set[RemoteGossip]],
                   rebroadcast: Rebroadcast)
 
   object Metrics {
@@ -292,25 +302,19 @@ object FrontRouter {
    * Schedule accepted announcements for rebroadcasting to our peers.
    */
   def rebroadcast(d: Data, ann: AnnouncementMessage)(implicit log: LoggingAdapter): Data = {
+    // We don't want to send back the announcement to the peer(s) that sent it to us in the first place. Announcements
+    // that came from our peers are in the [[d.accepted]] map.
+    val origins = d.accepted.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
     val rebroadcast1 = ann match {
-      case n: NodeAnnouncement =>
-        // We don't want to send back the announcement to the peer(s) that sent it to us in the first place. Announcements
-        // that came from our peers are in the [[d.processing]] map. For the same reason, we also don't want to overwrite
-        // existing entries in the [[d.rebroadcast]] map.
-        val origins = d.rebroadcast.nodes.getOrElse(n, Set.empty[GossipOrigin]) ++ d.processing.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
-        d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins))
-      case c: ChannelAnnouncement =>
-        val origins = d.rebroadcast.channels.getOrElse(c, Set.empty[GossipOrigin]) ++ d.processing.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
-        d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> origins))
+      case n: NodeAnnouncement => d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins))
+      case c: ChannelAnnouncement => d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> origins))
       case u: ChannelUpdate =>
         if (d.channels.contains(u.shortChannelId)) {
-          val origins = d.rebroadcast.updates.getOrElse(u, Set.empty[GossipOrigin]) ++ d.processing.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
           d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins))
         } else {
           d.rebroadcast // private channel, we don't rebroadcast the channel_update
         }
     }
-    // we clean up the processing map here
-    d.copy(processing = d.processing - ann, rebroadcast = rebroadcast1)
+    d.copy(accepted = d.accepted - ann, rebroadcast = rebroadcast1)
   }
 }
