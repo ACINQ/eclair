@@ -151,6 +151,8 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
       stay using d.copy(processing = d.processing - rejected.ann)
 
     case Event(networkEvent: NetworkEvent, d) =>
+      log.debug("received event={}", networkEvent)
+      Metrics.routerEvent(networkEvent).increment()
       stay using FrontRouter.updateTable(d, networkEvent, doRebroadcast = true)
 
     case Event(TickBroadcast, d) =>
@@ -198,6 +200,7 @@ object FrontRouter {
   object Metrics {
     private val Gossip = Kamon.counter("front.router.gossip")
     private val GossipResult = Kamon.counter("front.router.gossip.result")
+    private val RouterEvent = Kamon.counter("front.router.event")
 
     // @formatter:off
     def gossipDropped(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "dropped").withTag("type", getSimpleClassName(ann))
@@ -205,8 +208,10 @@ object FrontRouter {
     def gossipStashedRebroadcast(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "stashed-rebroadcast").withTag("type", getSimpleClassName(ann))
     def gossipForwarded(ann: AnnouncementMessage): Counter = Gossip.withTag("status", "forwarded").withTag("type", getSimpleClassName(ann))
 
-    def gossipAccepted(ann: AnnouncementMessage): Counter = GossipResult.withTag("result", "accepted")
-    def gossipRejected(ann: AnnouncementMessage, reason: GossipDecision.Rejected): Counter = GossipResult.withTag("result", "rejected").withTag("reason", getSimpleClassName(reason))
+    def gossipAccepted(ann: AnnouncementMessage): Counter = GossipResult.withTag("result", "accepted").withTag("type", getSimpleClassName(ann))
+    def gossipRejected(ann: AnnouncementMessage, reason: GossipDecision.Rejected): Counter = GossipResult.withTag("result", "rejected").withTag("reason", getSimpleClassName(reason)).withTag("type", getSimpleClassName(ann))
+
+    def routerEvent(event: NetworkEvent): Counter = RouterEvent.withTag("type", getSimpleClassName(event))
     // @formatter:on
   }
 
