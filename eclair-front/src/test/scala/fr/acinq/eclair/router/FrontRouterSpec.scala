@@ -278,6 +278,38 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection1.expectMsg(GossipDecision.Accepted(chan_ab))
   }
 
+  ignore("do not rebroadcast channel_update for private channels") {
+    val nodeParams = Alice.nodeParams
+    val router = TestProbe()
+    val system1 = ActorSystem("front-system-1")
+    val front1 = system1.actorOf(FrontRouter.props(nodeParams.routerConf, router.ref))
+    router.expectMsg(GetRoutingStateStreaming)
+    router.send(front1, RoutingStateStreamingUpToDate)
+
+    val peerConnection1 = TestProbe()
+    system1.eventStream.subscribe(peerConnection1.ref, classOf[Rebroadcast])
+
+    val origin1 = RemoteGossip(peerConnection1.ref, randomKey.publicKey)
+
+    // channel_update arrives and is forwarded to router (there is no associated channel, because it is private)
+    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, channelUpdate_ab))
+    router.expectMsg(PeerRoutingMessage(front1, origin1.nodeId, channelUpdate_ab))
+    peerConnection1.expectNoMessage()
+    // router acknowledges the message
+    router.send(front1, TransportHandler.ReadAck(channelUpdate_ab))
+    // but we still wait for the decision before acking the original message
+    peerConnection1.expectNoMessage()
+    // decision arrives, message is acknowledged
+    router.send(front1, GossipDecision.Accepted(channelUpdate_ab))
+    peerConnection1.expectMsg(TransportHandler.ReadAck(channelUpdate_ab))
+    peerConnection1.expectMsg(GossipDecision.Accepted(channelUpdate_ab))
+    // then the event arrives
+    front1 ! ChannelUpdatesReceived(channelUpdate_ab :: Nil)
+    // rebroadcast
+    router.send(front1, TickBroadcast)
+    peerConnection1.expectMsg(Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
+  }
+
 
 }
 
