@@ -85,6 +85,9 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
           log.debug("message is already in processing={}", ann)
           Metrics.gossipStashed(ann).increment()
           // we have already forwarded that message to the router
+          // we could just acknowledge the message now, but then we would lose the information that we did receive this
+          // announcement from that peer, and would send it back to that same peer if our master router accepts it
+          // in the general case, we should fairly often receive the same gossip from several peers almost at the same time
           val origins1 = origins + origin
           d.copy(processing = d.processing + (ann -> origins1))
         case None =>
@@ -133,9 +136,17 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
         }
         case None => ()
       }
-      // NB: we don't clean up the processing map now, it will be handled when we receive the network event from the router
-      // implementation guarantees that we receive Gossip.Accepted before the corresponding network event
-      stay
+      // NB:
+      // - the rebroadcast method takes care of cleaning up the processing map
+      // - we will also shortly receive a NetworkEvent from the router for this announcement
+      // - as a consequence we will call the rebroadcast method twice for this announcement
+      // - this opens way to a race between the NetworkEvent and TickBroadcast; if TickBroadcast wins, we will send
+      // the announcement twice to our peers (and once to those that sent us the announcement in the first place)
+      // - if we don't call the rebroadcast method here, then we have a bigger problem, because we have a different race
+      // between other peers that send us that same announcement, and the NetworkEvent. If the other peers win the race,
+      // we will defer acknowledging their message (because the announcement is still in the processing map) and we will
+      // wait forever for the very gossip decision that we are processing now, resulting in a stuck connection
+      stay using rebroadcast(d, accepted.ann)
 
     case Event(rejected: GossipDecision.Rejected, d) =>
       log.debug("message has been rejected by router: {}", rejected)
@@ -277,14 +288,29 @@ object FrontRouter {
     }
   }
 
-
+  /**
+   * Schedule accepted announcements for rebroadcasting to our peers.
+   */
   def rebroadcast(d: Data, ann: AnnouncementMessage)(implicit log: LoggingAdapter): Data = {
-    val origins = d.processing.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
     val rebroadcast1 = ann match {
-      case n: NodeAnnouncement => d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins))
-      case c: ChannelAnnouncement => d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> origins))
-      case u: ChannelUpdate => d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins))
+      case n: NodeAnnouncement =>
+        // We don't want to send back the announcement to the peer(s) that sent it to us in the first place. Announcements
+        // that came from our peers are in the [[d.processing]] map. For the same reason, we also don't want to overwrite
+        // existing entries in the [[d.rebroadcast]] map.
+        val origins = d.rebroadcast.nodes.getOrElse(n, Set.empty[GossipOrigin]) ++ d.processing.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
+        d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins))
+      case c: ChannelAnnouncement =>
+        val origins = d.rebroadcast.channels.getOrElse(c, Set.empty[GossipOrigin]) ++ d.processing.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
+        d.rebroadcast.copy(channels = d.rebroadcast.channels + (c -> origins))
+      case u: ChannelUpdate =>
+        if (d.channels.contains(u.shortChannelId)) {
+          val origins = d.rebroadcast.updates.getOrElse(u, Set.empty[GossipOrigin]) ++ d.processing.getOrElse(ann, Set.empty[RemoteGossip]).map(o => o: GossipOrigin)
+          d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins))
+        } else {
+          d.rebroadcast // private channel, we don't rebroadcast the channel_update
+        }
     }
+    // we clean up the processing map here
     d.copy(processing = d.processing - ann, rebroadcast = rebroadcast1)
   }
 }

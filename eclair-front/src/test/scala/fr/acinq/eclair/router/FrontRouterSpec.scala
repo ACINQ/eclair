@@ -278,7 +278,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection1.expectMsg(GossipDecision.Accepted(chan_ab))
   }
 
-  ignore("do not rebroadcast channel_update for private channels") {
+  test("do not rebroadcast channel_update for private channels") {
     val nodeParams = Alice.nodeParams
     val router = TestProbe()
     val system1 = ActorSystem("front-system-1")
@@ -306,8 +306,8 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     // then the event arrives
     front1 ! ChannelUpdatesReceived(channelUpdate_ab :: Nil)
     // rebroadcast
-    router.send(front1, TickBroadcast)
-    peerConnection1.expectMsg(Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
+    front1 ! TickBroadcast
+    peerConnection1.expectNoMessage()
   }
 
 
