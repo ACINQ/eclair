@@ -148,7 +148,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         context.watch(listener)
         override def receive: Receive = {
           case Terminated(actor) if actor == listener=>
-            log.info(s"unsubscribing listener=$listener to network events")
+            log.warning(s"unsubscribing listener=$listener to network events")
             context.system.eventStream.unsubscribe(listener)
             context stop self
         }

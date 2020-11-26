@@ -79,13 +79,15 @@ class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
 
   def bootstrap: Future[Unit] = {
 
+    val frontJoinedCluster = Promise[Done]()
     val backendAddressFound = Promise[Address]()
     val tcpBound = Promise[Done]()
 
     for {
       _ <- Future.successful(0)
 
-      _ = system.actorOf(Props(new ClusterListener(backendAddressFound)), name = "cluster-listener")
+      _ = system.actorOf(Props(new ClusterListener(frontJoinedCluster, backendAddressFound)), name = "cluster-listener")
+      _ <- frontJoinedCluster.future
       backendAddress <- backendAddressFound.future
 
       switchBoardSelection = system.actorSelection(RootActorPath(backendAddress) / "user" / "*" / "switchboard")

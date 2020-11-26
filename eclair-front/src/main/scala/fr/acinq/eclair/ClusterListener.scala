@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair
 
+import akka.Done
 import akka.actor.{Actor, ActorLogging, Address}
 import akka.cluster.ClusterEvent.{InitialStateAsEvents, MemberDowned, MemberLeft, MemberUp, UnreachableMember}
 import akka.cluster.{Cluster, Member}
 
 import scala.concurrent.Promise
 
-class ClusterListener(backendAddressFound: Promise[Address]) extends Actor with ActorLogging {
+class ClusterListener(frontJoinedCluster: Promise[Done], backendAddressFound: Promise[Address]) extends Actor with ActorLogging {
 
   val cluster = Cluster(context.system)
   cluster.subscribe(self, initialStateMode = InitialStateAsEvents, classOf[MemberUp], classOf[MemberLeft], classOf[MemberDowned], classOf[UnreachableMember])
@@ -33,6 +34,9 @@ class ClusterListener(backendAddressFound: Promise[Address]) extends Actor with 
       if (member.roles.contains(BackendRole)) {
         log.info(s"found backend=$member")
         backendAddressFound.success(member.address)
+      } else if (member == cluster.selfMember) {
+        log.info("we have joined the cluster")
+        frontJoinedCluster.success(Done)
       }
     case MemberLeft(member) => maybeShutdown(member)
     case MemberDowned(member) => maybeShutdown(member)
