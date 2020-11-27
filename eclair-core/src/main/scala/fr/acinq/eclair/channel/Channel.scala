@@ -194,12 +194,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
 
     case Event(INPUT_RESTORED(data), _) =>
-      log.info(s"restoring channel channelId=${data.channelId}")
+      log.info("restoring channel")
       context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data.commitments.localParams.isFunder, data.commitments))
       data match {
         //NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
-          log.info(s"we have nothing at stake, going straight to CLOSED")
+          log.info("we have nothing at stake, going straight to CLOSED")
           goto(CLOSED) using closing
         case closing: DATA_CLOSING =>
           // we don't put back the WatchSpent if the commitment tx has already been published and the spending tx already reached mindepth
@@ -739,7 +739,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               }
               if (!Helpers.aboveReserve(d.commitments) && Helpers.aboveReserve(commitments1)) {
                 // we just went above reserve (can't go below), let's refresh our channel_update to enable/disable it accordingly
-                log.info(s"updating channel_update aboveReserve=${Helpers.aboveReserve(commitments1)}")
+                log.info("updating channel_update aboveReserve={}", Helpers.aboveReserve(commitments1))
                 self ! BroadcastChannelUpdate(AboveReserve)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
@@ -971,7 +971,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       cancelTimer(Reconnected.toString)
       // if we have pending unsigned htlcs, then we cancel them and advertise the fact that the channel is now disabled
       val d1 = if (d.commitments.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
-        log.info(s"updating channel_update announcement (reason=disabled)")
+        log.info("updating channel_update announcement (reason=disabled)")
         val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
         d.commitments.localChanges.proposed.collect {
           case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.Disconnected(channelUpdate))
@@ -1742,7 +1742,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         // ORDER MATTERS!
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
           Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-            log.info(s"re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
+            log.debug("re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           }
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
@@ -1750,10 +1750,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           ()
         case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
           // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
-          log.info(s"emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
+          log.info("emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
-          // in any other case (e.g. WAIT_FOR_INIT_INTERNAL->OFFLINE) we do nothing
+          // in any other case (e.g. OFFLINE->SYNCING) we do nothing
           ()
         case (_, _, normal: DATA_NORMAL, _) =>
           // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to go to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
@@ -1976,7 +1976,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // we will only emit a new channel_update with the disable flag set if someone tries to use that channel
     if (Announcements.isEnabled(d.channelUpdate.channelFlags)) {
       // if the channel isn't disabled we generate a new channel_update
-      log.info(s"updating channel_update announcement (reason=disabled)")
+      log.info("updating channel_update announcement (reason=disabled)")
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
       // then we update the state and replay the request
       self forward c
