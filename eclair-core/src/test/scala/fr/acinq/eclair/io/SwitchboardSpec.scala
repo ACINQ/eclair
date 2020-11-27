@@ -67,19 +67,4 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     sendFeatures(remoteNodeId, Alice.nodeParams.features, Set(randomKey.publicKey, randomKey.publicKey, randomKey.publicKey), Alice.nodeParams.features, expectedSync = false)
   }
 
-  test("on peer authentication, mask off MPP and PaymentSecret features") {
-    val testCases = Seq(
-      (bin"                00000010", bin"                00000010"), // option_data_loss_protect
-      (bin"        0000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex
-      (bin"        1000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
-      (bin"        0100101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
-      (bin"000000101000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp
-      (bin"000010101000101010001010", bin"000010000000101010001010") // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp and large_channel_support (optional)
-    )
-
-    for ((configuredFeatures, sentFeatures) <- testCases) {
-      sendFeatures(randomKey.publicKey, Features(configuredFeatures), Set.empty, Features(sentFeatures), expectedSync = true)
-    }
-  }
-
 }
