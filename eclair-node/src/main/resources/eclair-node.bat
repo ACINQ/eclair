@@ -48,7 +48,7 @@ rem "-J" is stripped, "-D" is left as is, and everything is appended to JAVA_OPT
 set _JAVA_PARAMS=
 set _APP_ARGS=
 
-for /f %%i in ('dir /b %APP_LIB_DIR%\eclair-node*') do set APP_ENTRYPOINT=%%i
+for /f %%i in ('dir /b /OD %APP_LIB_DIR%\eclair-node*') do set APP_ENTRYPOINT=%%i
 set CUSTOM_MAIN_CLASS="fr.acinq.eclair.Boot"
 set APP_CLASSPATH="%APP_LIB_DIR%;%APP_LIB_DIR%/%APP_ENTRYPOINT%"
 
