@@ -21,7 +21,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
@@ -35,6 +35,7 @@ import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
+import org.scalatest.Tag
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -132,9 +133,11 @@ object TestConstants {
   }
 
   val pluginParams = new CustomFeaturePlugin {
+    // @formatter:off
     override def messageTags: Set[Int] = Set(60003)
     override def feature: Feature = TestFeature
     override def name: String = "plugin for testing"
+    // @formatter:on
   }
 
   object Alice {
@@ -336,5 +339,12 @@ object TestConstants {
       channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
     )
   }
+
+}
+
+object TestTags {
+
+  // Tests that call an external API (which may start failing independently of our code).
+  object ExternalApi extends Tag("external-api")
 
 }

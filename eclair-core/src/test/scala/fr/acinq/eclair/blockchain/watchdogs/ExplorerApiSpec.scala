@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain.watchdogs
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
+import fr.acinq.eclair.TestTags
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.LatestHeaders
 import fr.acinq.eclair.blockchain.watchdogs.ExplorerApi.{BlockcypherExplorer, BlockstreamExplorer, CheckLatestHeaders, MempoolSpaceExplorer}
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -27,7 +28,7 @@ class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
   val explorers = Seq(BlockcypherExplorer(), BlockstreamExplorer(), MempoolSpaceExplorer())
 
-  test("fetch latest block headers") {
+  test("fetch latest block headers", TestTags.ExternalApi) {
     for (explorer <- explorers) {
       val api = testKit.spawn(ExplorerApi(Block.LivenetGenesisBlock.hash, 630450, explorer))
       val sender = testKit.createTestProbe[LatestHeaders]()
@@ -40,7 +41,7 @@ class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     }
   }
 
-  test("fetch future block headers") {
+  test("fetch future block headers", TestTags.ExternalApi) {
     for (explorer <- explorers) {
       val api = testKit.spawn(ExplorerApi(Block.LivenetGenesisBlock.hash, 60000000, explorer))
       val sender = testKit.createTestProbe[LatestHeaders]()

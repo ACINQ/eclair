@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain.watchdogs
 import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{Block, BlockHeader}
+import fr.acinq.eclair.TestTags
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{BlockHeaderAt, LatestHeaders}
 import fr.acinq.eclair.blockchain.watchdogs.HeadersOverDns.CheckLatestHeaders
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -28,7 +29,7 @@ import scala.concurrent.duration.DurationInt
 
 class HeadersOverDnsSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  test("fetch latest block headers") {
+  test("fetch latest block headers", TestTags.ExternalApi) {
     val headersOverDns = testKit.spawn(HeadersOverDns(Block.LivenetGenesisBlock.hash, 630450))
     val sender = testKit.createTestProbe[LatestHeaders]()
     headersOverDns ! CheckLatestHeaders(sender.ref)
@@ -47,14 +48,14 @@ class HeadersOverDnsSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     sender.expectMessage(LatestHeaders(630450, expectedHeaders, HeadersOverDns.Source))
   }
 
-  test("fetch future block headers") {
+  test("fetch future block headers", TestTags.ExternalApi) {
     val headersOverDns = testKit.spawn(HeadersOverDns(Block.LivenetGenesisBlock.hash, 60000000))
     val sender = testKit.createTestProbe[LatestHeaders]()
     headersOverDns ! CheckLatestHeaders(sender.ref)
     sender.expectMessage(LatestHeaders(60000000, Set.empty, HeadersOverDns.Source))
   }
 
-  test("ignore testnet requests") {
+  test("ignore testnet requests", TestTags.ExternalApi) {
     val headersOverDns = testKit.spawn(HeadersOverDns(Block.TestnetGenesisBlock.hash, 500000))
     val sender = testKit.createTestProbe[LatestHeaders]()
     headersOverDns ! CheckLatestHeaders(sender.ref)

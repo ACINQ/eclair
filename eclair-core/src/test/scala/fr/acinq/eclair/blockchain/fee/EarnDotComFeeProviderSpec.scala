@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.eclair.{LongToBtcAmount, TestTags}
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.scalatest.funsuite.AnyFunSuite
@@ -70,7 +70,7 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
     assert(feerates === ref)
   }
 
-  test("make sure API hasn't changed") {
+  test("make sure API hasn't changed", TestTags.ExternalApi) {
     import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
     implicit val sttpBackend = OkHttpFutureBackend()
@@ -79,7 +79,7 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
     logger.info("earn.com livenet fees: " + Await.result(provider.getFeerates, 10 seconds))
   }
 
-  test("check that read timeout is enforced") {
+  test("check that read timeout is enforced", TestTags.ExternalApi) {
     import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
     implicit val sttpBackend = OkHttpFutureBackend()
