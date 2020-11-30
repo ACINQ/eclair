@@ -128,7 +128,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
                   d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> (d.rebroadcast.updates(u) + origin))))
                 case _ =>
                   Metrics.gossipForwarded(ann).increment()
-                  log.info("sending announcement class={} to master router", ann.getClass.getSimpleName)
+                  log.debug("sending announcement class={} to master router", ann.getClass.getSimpleName)
                   remoteRouter ! PeerRoutingMessage(self, remoteNodeId, ann) // nb: we set ourselves as the origin
                   d.copy(processing = d.processing + (ann -> Set(origin)))
               }
@@ -186,7 +186,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
       }
 
     case Event(msg: PeerRoutingMessage, _) =>
-      log.info("forwarding peer routing message class={}", msg.message.getClass.getSimpleName)
+      log.debug("forwarding peer routing message class={}", msg.message.getClass.getSimpleName)
       remoteRouter forward msg
       stay
 

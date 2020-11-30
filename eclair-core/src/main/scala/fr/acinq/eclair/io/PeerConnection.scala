@@ -272,7 +272,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         val nodesSent = sendAndCount(rebroadcast.nodes)
 
         if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
-          log.info(s"sent announcements: channels={} updates={} nodes={}", channelsSent, updatesSent, nodesSent)
+          log.debug("sent announcements: channels={} updates={} nodes={}", channelsSent, updatesSent, nodesSent)
         }
         stay
 

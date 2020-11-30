@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
+import java.nio.ByteOrder
 import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, PoisonPill, Props, Terminated}
 import akka.event.Logging.MDC
 import akka.event._
@@ -29,6 +30,8 @@ import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.{AnnouncementSignatures, RoutingMessage}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, getSimpleClassName}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -256,7 +259,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         stop(FSM.Normal)
 
       case Event(Terminated(actor), _) if actor == connection =>
-        log.info(s"connection terminated, stopping the transport")
+        log.info("connection actor died")
         // this can be the connection or the listener, either way it is a cause of death
         stop(FSM.Normal)
 
@@ -273,9 +276,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
     case _: StopEvent =>
       connection ! Tcp.Close // attempts to gracefully close the connection when dying
       stateData match {
-        case normal: NormalData[_] if normal.unackedSent.nonEmpty || normal.unackedReceived.nonEmpty =>
-          log.warning("final state unackedReceived={} unackedSent={}", normal.unackedReceived, normal.unackedSent)
-        case _ => ()
+        case normal: NormalData[_] =>
+          // NB: we deduplicate on the class name: each class will appear once but there may be many instances (less verbose and gives debug hints)
+          log.info("stopping (unackedReceived={} unackedSent={})", normal.unackedReceived.keys.map(getSimpleClassName).toSet.mkString(","), normal.unackedSent.map(getSimpleClassName))
+        case _ =>
+          log.info("stopping")
       }
   }
 

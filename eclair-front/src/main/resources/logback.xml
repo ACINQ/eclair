@@ -18,6 +18,18 @@
 <configuration>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <!-- this filters out AWS ELB probes -->
+            <evaluator>
+                <expression>
+                    return formattedMessage.contains("connected to /10.") ||
+                    (formattedMessage.contains("connection closed") &amp;&amp; !mdc.containsKey("nodeId")) ||
+                    (formattedMessage.contains("transport died") &amp;&amp; !mdc.containsKey("nodeId"));
+                </expression>
+            </evaluator>
+            <OnMismatch>NEUTRAL</OnMismatch>
+            <OnMatch>DENY</OnMatch>
+        </filter>
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
