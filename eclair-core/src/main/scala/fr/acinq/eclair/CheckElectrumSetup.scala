@@ -152,6 +152,7 @@ class BasicWatcher(client: ActorRef, channels: Seq[HasCommitments], pWatchResult
   // we know those transactions are ok
   val okTxes = channels.flatMap {
     case d: DATA_CLOSING => WatchListener.okTransactions(d.commitments) ++ d.mutualCloseProposed.map(_.txid)
+    case d: DATA_NEGOTIATING => WatchListener.okTransactions(d.commitments) ++ d.closingTxProposed.flatten.map(_.unsignedTx.txid)
     case d: HasCommitments => WatchListener.okTransactions(d.commitments)
   }.toSet
 
