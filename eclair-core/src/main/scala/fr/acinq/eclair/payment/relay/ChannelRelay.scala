@@ -213,7 +213,7 @@ class ChannelRelay private(nodeParams: NodeParams,
               channelInfo.channelUpdate,
               relayResult match {
                 case _: RelaySuccess => "success"
-                case RelayFailure(CMD_FAIL_HTLC(_, Right(failure), _, _)) => failure
+                case RelayFailure(CMD_FAIL_HTLC(_, Right(failureReason), _, _)) => failureReason
                 case other => other
               })
             (shortChannelId, channelInfo, relayResult)
