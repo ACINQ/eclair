@@ -145,6 +145,22 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(initialState == bob.stateData)
   }
 
+  test("recv CMD_FULFILL_HTLC (acknowledge in case of success)") { f =>
+    import f._
+    val sender = TestProbe()
+    
+    // actual test begins
+    val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+    val c = CMD_FULFILL_HTLC(0, r1, replyTo_opt = Some(sender.ref))
+    // this would be done automatically when the relayer calls safeSend
+    bob.underlyingActor.nodeParams.db.pendingRelay.addPendingRelay(initialState.channelId, c)
+    bob ! c
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
+    bob2alice.expectMsgType[CommitSig]
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
+  }
+
   test("recv CMD_FULFILL_HTLC (acknowledge in case of failure)") { f =>
     import f._
     val sender = TestProbe()

@@ -45,6 +45,7 @@ sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChann
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32 } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
+sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 // @formatter:on
 
 case class Init(features: Features, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
@@ -132,16 +133,16 @@ case class UpdateAddHtlc(channelId: ByteVector32,
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
-                             paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId
+                             paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class UpdateFailHtlc(channelId: ByteVector32,
                           id: Long,
-                          reason: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId
+                          reason: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class UpdateFailMalformedHtlc(channelId: ByteVector32,
                                    id: Long,
                                    onionHash: ByteVector32,
-                                   failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId
+                                   failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,

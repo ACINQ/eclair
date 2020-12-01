@@ -30,6 +30,7 @@ import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, _}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.relay.Relayer._
@@ -1251,6 +1252,24 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! c
     sender.expectMsg(RES_FAILURE(c, InvalidHtlcPreimage(channelId(bob), 0)))
     assert(initialState == bob.stateData)
+  }
+
+  test("recv CMD_FULFILL_HTLC (acknowledge in case of success)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // actual test begins
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val c = CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(sender.ref))
+    // this would be done automatically when the relayer calls safeSend
+    bob.underlyingActor.nodeParams.db.pendingRelay.addPendingRelay(initialState.channelId, c)
+    bob ! c
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
+    bob2alice.expectMsgType[CommitSig]
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
   }
 
   test("recv CMD_FULFILL_HTLC (acknowledge in case of failure)") { f =>
