@@ -272,6 +272,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   onTermination {
     case _: StopEvent =>
       connection ! Tcp.Close // attempts to gracefully close the connection when dying
+      stateData match {
+        case normal: NormalData[_] if normal.unackedSent.nonEmpty || normal.unackedReceived.nonEmpty =>
+          log.warning("final state unackedReceived={} unackedSent={}", normal.unackedReceived, normal.unackedSent)
+        case _ => ()
+      }
   }
 
   initialize()
