@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Origin
@@ -51,12 +52,12 @@ trait CustomCommitmentsPlugin extends PluginParams {
    * expire. If your plugin defines non-standard HTLCs, and they need to be automatically failed, they should be
    * returned by this method.
    */
-  def getIncomingHtlcs: Seq[IncomingHtlc]
+  def getIncomingHtlcs(nodeParams: NodeParams, log: LoggingAdapter): Seq[IncomingHtlc]
 
   /**
    * Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
    * result upstream to preserve channels. If you have non-standard HTLCs that may be in this situation, they should be
    * returned by this method.
    */
-  def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]]
+  def getHtlcsRelayedOut(htlcsIn: Seq[IncomingHtlc], nodeParams: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]]
 }

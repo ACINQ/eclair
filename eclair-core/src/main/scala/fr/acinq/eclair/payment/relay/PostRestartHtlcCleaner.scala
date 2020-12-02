@@ -65,9 +65,9 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
   // result upstream to preserve channels.
   val brokenHtlcs: BrokenHtlcs = {
     val channels = listLocalChannels(nodeParams.db.channels)
-    val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs }.flatten
+    val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs(nodeParams, log) }.flatten
     val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey) ++ nonStandardIncomingHtlcs
-    val nonStandardRelayedOutHtlcs: Map[Origin, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn) }.flatten.toMap
+    val nonStandardRelayedOutHtlcs: Map[Origin, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn, nodeParams, log) }.flatten.toMap
     val relayedOut: Map[Origin, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
 
     val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
@@ -329,9 +329,24 @@ object PostRestartHtlcCleaner {
   private def isPendingUpstream(channelId: ByteVector32, htlcId: Long, htlcsIn: Seq[IncomingHtlc]): Boolean =
     htlcsIn.exists(htlc => htlc.add.channelId == channelId && htlc.add.id == htlcId)
 
+  def groupByOrigin(htlcsOut: Seq[(Origin, ByteVector32, Long)], htlcsIn: Seq[IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] =
+    htlcsOut
+      .groupBy { case (origin, _, _) => origin }
+      .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) }.toSet)
+      // We are only interested in HTLCs that are pending upstream (not fulfilled nor failed yet).
+      // It may be the case that we have unresolved HTLCs downstream that have been resolved upstream when the downstream
+      // channel is closing (e.g. due to an HTLC timeout) because cooperatively failing the HTLC downstream will be
+      // instant whereas the uncooperative close of the downstream channel will take time.
+      .filterKeys {
+        case _: Origin.Local => true
+        case o: Origin.ChannelRelayed => isPendingUpstream(o.originChannelId, o.originHtlcId, htlcsIn)
+        case o: Origin.TrampolineRelayed => o.htlcs.exists { case (channelId, htlcId) => isPendingUpstream(channelId, htlcId, htlcsIn) }
+      }
+      .toMap
+
   /** @return pending outgoing HTLCs, grouped by their upstream origin. */
   private def getHtlcsRelayedOut(channels: Seq[HasCommitments], htlcsIn: Seq[IncomingHtlc])(implicit log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = {
-    channels
+    val htlcsOut = channels
       .flatMap { c =>
         // Filter out HTLCs that will never reach the blockchain or have already been timed-out on-chain.
         val htlcsToIgnore: Set[Long] = c match {
@@ -361,18 +376,7 @@ object PostRestartHtlcCleaner {
         }
         c.commitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
       }
-      .groupBy { case (origin, _, _) => origin }
-      .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) }.toSet)
-      // We are only interested in HTLCs that are pending upstream (not fulfilled nor failed yet).
-      // It may be the case that we have unresolved HTLCs downstream that have been resolved upstream when the downstream
-      // channel is closing (e.g. due to an HTLC timeout) because cooperatively failing the HTLC downstream will be
-      // instant whereas the uncooperative close of the downstream channel will take time.
-      .filterKeys {
-        case _: Origin.Local => true
-        case o: Origin.ChannelRelayed => isPendingUpstream(o.originChannelId, o.originHtlcId, htlcsIn)
-        case o: Origin.TrampolineRelayed => o.htlcs.exists { case (channelId, htlcId) => isPendingUpstream(channelId, htlcId, htlcsIn) }
-      }
-      .toMap
+    groupByOrigin(htlcsOut, htlcsIn)
   }
 
   /**
