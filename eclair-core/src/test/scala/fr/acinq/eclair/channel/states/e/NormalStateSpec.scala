@@ -1711,7 +1711,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
 
-    bob.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(1000 sat), FeeratePerKw(2000 sat), FeeratePerKw(6000 sat), FeeratePerKw(12000 sat), FeeratePerKw(36000 sat), FeeratePerKw(72000 sat), FeeratePerKw(140000 sat), FeeratePerKw(160000 sat)))
+    bob.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(500 sat), FeeratePerKw(1000 sat), FeeratePerKw(2000 sat), FeeratePerKw(6000 sat), FeeratePerKw(12000 sat), FeeratePerKw(36000 sat), FeeratePerKw(72000 sat), FeeratePerKw(140000 sat), FeeratePerKw(160000 sat)))
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val sender = TestProbe()
     val localFeerate = bob.feeEstimator.getFeeratePerKw(bob.feeTargets.commitmentBlockTarget)
@@ -2140,7 +2140,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val event = CurrentFeerates(FeeratesPerKw(FeeratePerKw(100 sat), FeeratePerKw(200 sat), FeeratePerKw(600 sat), FeeratePerKw(1200 sat), FeeratePerKw(3600 sat), FeeratePerKw(7200 sat), FeeratePerKw(14400 sat), FeeratePerKw(100800 sat)))
+    val event = CurrentFeerates(FeeratesPerKw(FeeratePerKw(50 sat), FeeratePerKw(100 sat), FeeratePerKw(200 sat), FeeratePerKw(600 sat), FeeratePerKw(1200 sat), FeeratePerKw(3600 sat), FeeratePerKw(7200 sat), FeeratePerKw(14400 sat), FeeratePerKw(100800 sat)))
     alice ! event
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(Alice.nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)))
   }

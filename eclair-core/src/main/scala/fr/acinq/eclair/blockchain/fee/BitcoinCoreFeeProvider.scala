@@ -39,7 +39,15 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
   def estimateSmartFee(nBlocks: Int): Future[FeeratePerKB] =
     rpcClient.invoke("estimatesmartfee", nBlocks).map(BitcoinCoreFeeProvider.parseFeeEstimate)
 
+  def mempoolMinFee(): Future[FeeratePerKB] =
+    rpcClient.invoke("getmempoolinfo").map(json => json \ "mempoolminfee" match {
+      case JDecimal(feerate) => FeeratePerKB(Btc(feerate).toSatoshi)
+      case JInt(feerate) => FeeratePerKB(Btc(feerate.toLong).toSatoshi)
+      case other => throw new RuntimeException(s"mempoolminfee failed: $other")
+    })
+
   override def getFeerates: Future[FeeratesPerKB] = for {
+    mempoolMinFee <- mempoolMinFee()
     block_1 <- estimateSmartFee(1)
     blocks_2 <- estimateSmartFee(2)
     blocks_6 <- estimateSmartFee(6)
@@ -49,6 +57,7 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     blocks_144 <- estimateSmartFee(144)
     blocks_1008 <- estimateSmartFee(1008)
   } yield FeeratesPerKB(
+    mempoolMinFee = if (mempoolMinFee.feerate > 0.sat) mempoolMinFee else defaultFeerates.mempoolMinFee,
     block_1 = if (block_1.feerate > 0.sat) block_1 else defaultFeerates.block_1,
     blocks_2 = if (blocks_2.feerate > 0.sat) blocks_2 else defaultFeerates.blocks_2,
     blocks_6 = if (blocks_6.feerate > 0.sat) blocks_6 else defaultFeerates.blocks_6,

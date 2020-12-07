@@ -25,6 +25,7 @@ import org.scalatest.funsuite.AnyFunSuite
 class SqliteFeeratesDbSpec extends AnyFunSuite {
 
   val feerate = FeeratesPerKB(
+    mempoolMinFee = FeeratePerKB(10000 sat),
     block_1 = FeeratePerKB(150000 sat),
     blocks_2 = FeeratePerKB(120000 sat),
     blocks_6 = FeeratePerKB(100000 sat),
@@ -83,7 +84,7 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
     }
 
     // When migrating, we simply copy the estimate for blocks 144 to blocks 1008.
-    assert(migratedDb.getFeerates() === Some(feerate.copy(blocks_1008 = feerate.blocks_144)))
+    assert(migratedDb.getFeerates() === Some(feerate.copy(blocks_1008 = feerate.blocks_144, mempoolMinFee = feerate.blocks_144)))
     migratedDb.addOrUpdateFeerates(feerate)
     assert(migratedDb.getFeerates() === Some(feerate))
   }
