@@ -28,7 +28,7 @@ import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelAnnouncement, ChannelUpdate, NodeAnnouncement, ReplyShortChannelIdsEnd, RoutingMessage}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
@@ -211,9 +211,8 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         } else if (d.unackedSent.isDefined) {
           log.debug("buffering send data={}", t)
           val sendBuffer1 = t match {
-            case _: ChannelAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
-            case _: NodeAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
-            case _: ChannelUpdate => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
+            case _: AnnouncementSignatures => d.sendBuffer.copy(normalPriority = d.sendBuffer.normalPriority :+ t)
+            case _: RoutingMessage => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
             case _ => d.sendBuffer.copy(normalPriority = d.sendBuffer.normalPriority :+ t)
           }
           stay using d.copy(sendBuffer = sendBuffer1)
