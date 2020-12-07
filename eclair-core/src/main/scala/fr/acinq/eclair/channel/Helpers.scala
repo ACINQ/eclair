@@ -169,7 +169,7 @@ object Helpers {
     val age = System.currentTimeMillis.milliseconds - currentUpdateTimestamp.seconds
     val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
     Logs.withMdc(log)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
-      log.info("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
+      log.debug("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
     }
     delay
   }
