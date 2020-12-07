@@ -101,7 +101,11 @@ object FeeratePerKw {
   // @formatter:on
 }
 
-/** Fee rates in satoshi-per-kilo-bytes (1 kb = 1000 bytes). */
+/**
+ * Fee rates in satoshi-per-kilo-bytes (1 kb = 1000 bytes).
+ * The mempoolMinFee is the minimal fee required for a tx to enter the mempool (and then be relayed to other nodes and eventually get confirmed).
+ * If our fee provider doesn't expose this data, using its biggest block target should be a good enough estimation.
+ */
 case class FeeratesPerKB(mempoolMinFee: FeeratePerKB, block_1: FeeratePerKB, blocks_2: FeeratePerKB, blocks_6: FeeratePerKB, blocks_12: FeeratePerKB, blocks_36: FeeratePerKB, blocks_72: FeeratePerKB, blocks_144: FeeratePerKB, blocks_1008: FeeratePerKB) {
   require(mempoolMinFee.feerate > 0.sat && block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")
 
@@ -117,7 +121,7 @@ case class FeeratesPerKB(mempoolMinFee: FeeratePerKB, block_1: FeeratePerKB, blo
   }
 }
 
-// stores fee rate in satoshi/kw (1 kw = 1000 weight units)
+/** Fee rates in satoshi-per-kilo-weight (1 kw = 1000 weight units). */
 case class FeeratesPerKw(mempoolMinFee: FeeratePerKw, block_1: FeeratePerKw, blocks_2: FeeratePerKw, blocks_6: FeeratePerKw, blocks_12: FeeratePerKw, blocks_36: FeeratePerKw, blocks_72: FeeratePerKw, blocks_144: FeeratePerKw, blocks_1008: FeeratePerKw) {
   require(mempoolMinFee.feerate > 0.sat && block_1.feerate > 0.sat && blocks_2.feerate > 0.sat && blocks_6.feerate > 0.sat && blocks_12.feerate > 0.sat && blocks_36.feerate > 0.sat && blocks_72.feerate > 0.sat && blocks_144.feerate > 0.sat && blocks_1008.feerate > 0.sat, "all feerates must be strictly greater than 0")
 
