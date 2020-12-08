@@ -197,20 +197,16 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     val peerConnection1 = peerConnection
     val peerConnection2 = TestProbe()
     val peerConnection3 = TestProbe()
-
-    val deathWatch = TestProbe()
-    deathWatch.watch(peerConnection1.ref)
-    deathWatch.watch(peerConnection2.ref)
-    deathWatch.watch(peerConnection3.ref)
+    peerConnection1.expectMsgType[ChannelReestablish]
 
     peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
-    deathWatch.expectTerminated(peerConnection1.ref)
+    peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection2.ref)
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
-    deathWatch.expectTerminated(peerConnection2.ref)
+    peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
   }
 

@@ -16,9 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
-
-import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PoisonPill, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
@@ -31,10 +29,13 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
+import fr.acinq.eclair.io.PeerConnection.KillReason
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
 import scodec.bits.ByteVector
+
+import java.net.InetSocketAddress
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -99,7 +100,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
       case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
         log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
         d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-        d.peerConnection ! PoisonPill
+        d.peerConnection ! PeerConnection.Kill(KillReason.AllChannelsFail)
         stay
 
       case Event(err: wire.Error, d: ConnectedData) =>
@@ -170,7 +171,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
       case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
         log.info("disconnecting")
         sender ! "disconnecting"
-        d.peerConnection ! PoisonPill
+        d.peerConnection ! PeerConnection.Kill(KillReason.UserRequest)
         stay
 
       case Event(ConnectionDown(peerConnection), d: ConnectedData) if peerConnection == d.peerConnection =>
@@ -191,13 +192,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
         if (d.channels.values.toSet - actor == Set.empty) {
           log.info(s"that was the last open channel, closing the connection")
-          d.peerConnection ! PoisonPill
+          d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
         }
         stay using d.copy(channels = d.channels -- channelIds)
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
         log.info(s"got new connection, killing current one and switching")
-        d.peerConnection ! PoisonPill
+        d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
 

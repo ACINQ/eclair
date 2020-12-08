@@ -383,6 +383,12 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       }
       stop(FSM.Normal)
 
+    case Event(Kill(reason), _) =>
+      Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+        log.info(s"stopping with reason=$reason")
+        stop(FSM.Normal)
+      }
+
     case Event(_: GossipDecision.Accepted, _) => stay // for now we don't do anything with those events
 
     case Event(_: GossipDecision.Rejected, _) => stay // we got disconnected while syncing
@@ -527,6 +533,19 @@ object PeerConnection {
 
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
+  /**
+   * Kill the actor and the underlying connection. We can't use a [[PoisonPill]] because it would be dropped when using
+   * akka cluster with unstrusted mode enabled.
+   */
+  case class Kill(reason: KillReason) extends RemoteTypes
+
+  sealed trait KillReason
+  object KillReason {
+    case object UserRequest extends KillReason
+    case object NoRemainingChannel extends KillReason
+    case object AllChannelsFail extends KillReason
+    case object ConnectionReplaced extends KillReason
+  }
   // @formatter:on
 
   /**

@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.remote
 
-import java.net.{InetAddress, InetSocketAddress}
-
 import akka.actor.{ActorRef, ExtendedActorSystem}
 import akka.serialization.Serialization
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -30,11 +28,12 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.queryFlagsCodec
-import fr.acinq.eclair.wire.{AnnouncementMessage, ChannelAnnouncement, ChannelUpdate, EncodingType, Init, LightningMessage, NodeAnnouncement, QueryChannelRangeTlv, RoutingMessage}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Features}
 import scodec._
 import scodec.codecs._
 
+import java.net.{InetAddress, InetSocketAddress}
 import scala.concurrent.duration._
 
 class EclairInternalsSerializer(val system: ExtendedActorSystem) extends ScodecSerializer(43, EclairInternalsSerializer.codec(system))
@@ -78,6 +77,14 @@ object EclairInternalsSerializer {
       ("pingTimeout" | finiteDurationCodec) ::
       ("pingDisconnect" | bool(8)) ::
       ("maxRebroadcastDelay" | finiteDurationCodec)).as[PeerConnection.Conf]
+
+  val peerConnectionKillReasonCodec: Codec[PeerConnection.KillReason] = discriminated[PeerConnection.KillReason].by(uint16)
+    .typecase(0, provide(PeerConnection.KillReason.UserRequest))
+    .typecase(1, provide(PeerConnection.KillReason.NoRemainingChannel))
+    .typecase(2, provide(PeerConnection.KillReason.AllChannelsFail))
+    .typecase(3, provide(PeerConnection.KillReason.ConnectionReplaced))
+
+  val peerConnectionKillCodec: Codec[PeerConnection.Kill] = peerConnectionKillReasonCodec.as[PeerConnection.Kill]
 
   val lengthPrefixedInitCodec: Codec[Init] = variableSizeBytes(uint16, initCodec)
   val lengthPrefixedNodeAnnouncementCodec: Codec[NodeAnnouncement] = variableSizeBytes(uint16, nodeAnnouncementCodec)
@@ -170,5 +177,6 @@ object EclairInternalsSerializer {
     .typecase(49, lengthPrefixedChannelUpdateCodec.as[GossipDecision.NoRelatedChannel])
     .typecase(50, lengthPrefixedChannelUpdateCodec.as[GossipDecision.RelatedChannelPruned])
     .typecase(51, lengthPrefixedChannelAnnouncementCodec.as[GossipDecision.ChannelClosed])
+    .typecase(52, peerConnectionKillCodec)
 
 }
