@@ -139,7 +139,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
         .map(hostAndPort2InetSocketAddress)
         .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
         case Some(address) => connect(address, origin = sender)
-        case None => sender ! PeerConnection.ConnectionResult.NoAddressFound(remoteNodeId)
+        case None => sender ! PeerConnection.ConnectionResult.NoAddressFound
       }
       stay
   }

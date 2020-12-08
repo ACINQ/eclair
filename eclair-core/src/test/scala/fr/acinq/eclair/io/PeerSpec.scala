@@ -94,7 +94,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
     probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None))
-    probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound(remoteNodeId))
+    probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
   test("successfully connect to peer at user request") { f =>
