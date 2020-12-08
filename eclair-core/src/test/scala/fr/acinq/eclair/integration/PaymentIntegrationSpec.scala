@@ -116,15 +116,15 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     subset.foreach {
       case (_, setup) =>
         awaitCond({
-          sender.send(setup.router, Symbol("nodes"))
+          sender.send(setup.router, Router.GetNodes)
           sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-          sender.send(setup.router, Symbol("channels"))
+          sender.send(setup.router, Router.GetChannels)
           sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
-          sender.send(setup.router, Symbol("updates"))
+          sender.send(setup.router, Router.GetChannelUpdates)
           sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
         }, max = 60 seconds, interval = 1 second)
     }
@@ -168,7 +168,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     // to simulate this, we will update B's relay params
     // first we find out the short channel id for channel B-C
-    sender.send(nodes("B").router, Symbol("channels"))
+    sender.send(nodes("B").router, Router.GetChannels)
     val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.nodeId, nodes("C").nodeParams.nodeId)).get.shortChannelId
     // we also need the full commitment
     nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO(ActorRef.noSender))
@@ -193,7 +193,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     awaitCond({
       // in the meantime, the router will have updated its state
-      sender.send(nodes("A").router, Symbol("channelsMap"))
+      sender.send(nodes("A").router, Router.GetChannelsMap)
       // we then put everything back like before by asking B to refresh its channel update (this will override the one we created)
       val u_opt = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]](10 seconds).apply(channelUpdateBC.shortChannelId))
       u_opt.contains(channelUpdateBC)
@@ -209,7 +209,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(channelUpdateBC_new.timestamp > channelUpdateBC.timestamp)
     assert(channelUpdateBC_new.cltvExpiryDelta == nodes("B").nodeParams.expiryDelta)
     awaitCond({
-      sender.send(nodes("A").router, Symbol("channelsMap"))
+      sender.send(nodes("A").router, Router.GetChannelsMap)
       val u = updateFor(nodes("B").nodeParams.nodeId, sender.expectMsgType[Map[ShortChannelId, PublicChannel]].apply(channelUpdateBC.shortChannelId)).get
       u.cltvExpiryDelta == nodes("B").nodeParams.expiryDelta
     }, max = 30 seconds, interval = 1 second)
@@ -660,7 +660,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       sender.expectMsg(GossipDecision.Accepted(ann))
     }
     awaitCond({
-      sender.send(nodes("D").router, Symbol("channels"))
+      sender.send(nodes("D").router, Router.GetChannels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels.size + 8 // 8 original channels (A -> B is private)
     }, max = 120 seconds, interval = 1 second)
   }

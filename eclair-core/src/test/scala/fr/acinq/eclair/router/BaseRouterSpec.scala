@@ -29,7 +29,7 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
-import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelMeta, GossipDecision, PrivateChannel}
+import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestKitBaseClass, randomKey, _}
@@ -194,11 +194,11 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         GossipDecision.Accepted(node_h))
       peerConnection.expectNoMsg()
       awaitCond({
-        sender.send(router, Symbol("nodes"))
+        sender.send(router, GetNodes)
         val nodes = sender.expectMsgType[Iterable[NodeAnnouncement]]
-        sender.send(router, Symbol("channels"))
+        sender.send(router, GetChannels)
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
-        sender.send(router, Symbol("updates"))
+        sender.send(router, GetChannelUpdates)
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
         nodes.size === 8 && channels.size === 5 && updates.size === 11
       }, max = 10 seconds, interval = 1 second)
