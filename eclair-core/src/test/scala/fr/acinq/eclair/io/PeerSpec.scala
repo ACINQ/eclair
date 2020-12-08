@@ -190,24 +190,26 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
   test("handle new connection in state CONNECTED") { f =>
     import f._
 
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
-    // this is just to extract inits
-    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
-
     val peerConnection1 = peerConnection
     val peerConnection2 = TestProbe()
     val peerConnection3 = TestProbe()
+
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
     peerConnection1.expectMsgType[ChannelReestablish]
+    // this is just to extract inits
+    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
 
     peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection2.ref)
+    peerConnection2.expectMsgType[ChannelReestablish]
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
+    peerConnection3.expectMsgType[ChannelReestablish]
   }
 
   test("send state transitions to child reconnection actor", Tag("auto_reconnect"), Tag("with_node_announcement")) { f =>
