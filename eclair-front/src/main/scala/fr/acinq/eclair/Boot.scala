@@ -34,6 +34,7 @@ object Boot extends App with Logging {
       ConfigParseOptions.defaults().setSyntax(ConfigSyntax.PROPERTIES))
       .withFallback(ConfigFactory.load())
 
+    // the actor system name needs to be the same for all members of the cluster
     implicit val system: ActorSystem = ActorSystem("eclair-node", config)
     implicit val ec: ExecutionContext = system.dispatcher
 
