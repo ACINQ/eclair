@@ -41,7 +41,6 @@ class ThroughputSpec extends AnyFunSuite {
     val blockCount = new AtomicLong()
     val blockchain = system.actorOf(ZmqWatcher.props(randomBytes32, blockCount, new TestBitcoinClient()), "blockchain")
     val paymentHandler = system.actorOf(Props(new Actor() {
-      val random = new Random()
 
       context.become(run(Map()))
 
@@ -71,7 +70,7 @@ class ThroughputSpec extends AnyFunSuite {
     val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.nodeParams.nodeId, blockchain, relayerB, None), "b")
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelVersion.STANDARD)
 
     val latch = new CountDownLatch(2)
@@ -85,7 +84,6 @@ class ThroughputSpec extends AnyFunSuite {
     pipe ! (alice, bob)
     latch.await()
 
-    var i = new AtomicLong(0)
     val random = new Random()
 
     def msg = random.nextInt(100) % 5 match {

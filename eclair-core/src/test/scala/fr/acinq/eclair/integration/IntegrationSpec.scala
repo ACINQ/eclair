@@ -161,6 +161,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       fundingSatoshis = fundingSatoshis,
       pushMsat = pushMsat,
       fundingTxFeeratePerKw_opt = None,
+      initialRelayFees_opt = None,
       channelFlags = None,
       timeout_opt = None))
     sender.expectMsgType[ChannelOpenResponse.ChannelOpened](10 seconds)
