@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{InetAddress, ServerSocket, Socket}
-import java.util.concurrent.Executors
-
 import akka.actor.FSM
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
@@ -38,6 +35,8 @@ import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
+import java.net.{InetAddress, ServerSocket, Socket}
+import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -95,7 +94,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
     probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None))
-    probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound(remoteNodeId))
+    probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
   test("successfully connect to peer at user request") { f =>
@@ -191,28 +190,26 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
   test("handle new connection in state CONNECTED") { f =>
     import f._
 
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
-    // this is just to extract inits
-    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
-
     val peerConnection1 = peerConnection
     val peerConnection2 = TestProbe()
     val peerConnection3 = TestProbe()
 
-    val deathWatch = TestProbe()
-    deathWatch.watch(peerConnection1.ref)
-    deathWatch.watch(peerConnection2.ref)
-    deathWatch.watch(peerConnection3.ref)
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    peerConnection1.expectMsgType[ChannelReestablish]
+    // this is just to extract inits
+    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
 
     peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
-    deathWatch.expectTerminated(peerConnection1.ref)
+    peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection2.ref)
+    peerConnection2.expectMsgType[ChannelReestablish]
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
-    deathWatch.expectTerminated(peerConnection2.ref)
+    peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
+    peerConnection3.expectMsgType[ChannelReestablish]
   }
 
   test("send state transitions to child reconnection actor", Tag("auto_reconnect"), Tag("with_node_announcement")) { f =>
