@@ -238,9 +238,9 @@ class Setup(datadir: File,
         feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
       }
-      minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("min-feerate")))
-      smoothFeerateWindow = config.getInt("smooth-feerate-window")
-      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
+      minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
+      smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
+      readTimeout = FiniteDuration(config.getDuration("on-chain-fees.provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) =>
           new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
