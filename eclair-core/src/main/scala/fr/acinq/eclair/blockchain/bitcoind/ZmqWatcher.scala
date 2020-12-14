@@ -99,7 +99,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
           blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
-      checkUtxos().recoverWith { case ex => log.warning(s"could not check utxos: $ex") }
+      checkUtxos()
       // TODO: beware of the herd effect
       KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
         Future.sequence(watches.collect { case w: WatchConfirmed => checkConfirmed(w) })
@@ -285,10 +285,12 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
       }
     }
 
-    for {
+    (for {
       utxos <- listUnspent()
       ancestorCount <- getUnconfirmedAncestorCountMap(utxos)
-    } yield recordUtxos(utxos, ancestorCount)
+    } yield recordUtxos(utxos, ancestorCount)).recover {
+      case ex => log.warning(s"could not check utxos: $ex")
+    }
   }
 
 }
