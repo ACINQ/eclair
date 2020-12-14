@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.channel.states
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -35,6 +33,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{FeatureSupport, Features, NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.{FixtureTestSuite, ParallelTestExecution}
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 /**
@@ -152,11 +151,18 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     htlc
   }
 
-  def fulfillHtlc(id: Long, R: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
-    s ! CMD_FULFILL_HTLC(id, R)
+  def fulfillHtlc(id: Long, preimage: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+    s ! CMD_FULFILL_HTLC(id, preimage)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
+  }
+
+  def failHtlc(id: Long, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+    s ! CMD_FAIL_HTLC(id, Right(TemporaryNodeFailure))
+    val fail = s2r.expectMsgType[UpdateFailHtlc]
+    s2r.forward(r)
+    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fail))
   }
 
   def crossSign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {

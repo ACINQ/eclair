@@ -20,6 +20,7 @@ import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw, FeerateTolerance}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
@@ -32,7 +33,6 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair._
 import scodec.bits.ByteVector
 
 import scala.concurrent.Await
@@ -376,27 +376,14 @@ object Helpers {
      * @return the channel closing type, if applicable
      */
     def isClosingTypeAlreadyKnown(closing: DATA_CLOSING): Option[ClosingType] = {
-      // NB: if multiple transactions end up in the same block, the first confirmation we receive may not be the commit tx.
-      // However if the confirmed tx spends from the commit tx, we know that the commit tx is already confirmed and we know
-      // the type of closing.
-      def isLocalCommitConfirmed(lcp: LocalCommitPublished): Boolean = {
-        val confirmedTxs = lcp.irrevocablySpent.values.toSet
-        (lcp.commitTx :: lcp.claimMainDelayedOutputTx.toList ::: lcp.htlcSuccessTxs ::: lcp.htlcTimeoutTxs ::: lcp.claimHtlcDelayedTxs).exists(tx => confirmedTxs.contains(tx.txid))
-      }
-
-      def isRemoteCommitConfirmed(rcp: RemoteCommitPublished): Boolean = {
-        val confirmedTxs = rcp.irrevocablySpent.values.toSet
-        (rcp.commitTx :: rcp.claimMainOutputTx.toList ::: rcp.claimHtlcSuccessTxs ::: rcp.claimHtlcTimeoutTxs).exists(tx => confirmedTxs.contains(tx.txid))
-      }
-
       closing match {
-        case _ if closing.localCommitPublished.exists(isLocalCommitConfirmed) =>
+        case _ if closing.localCommitPublished.exists(_.isConfirmed) =>
           Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
-        case _ if closing.remoteCommitPublished.exists(isRemoteCommitConfirmed) =>
+        case _ if closing.remoteCommitPublished.exists(_.isConfirmed) =>
           Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
-        case _ if closing.nextRemoteCommitPublished.exists(isRemoteCommitConfirmed) =>
+        case _ if closing.nextRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
-        case _ if closing.futureRemoteCommitPublished.exists(isRemoteCommitConfirmed) =>
+        case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
         case _ if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)) =>
           Some(RevokedClose(closing.revokedCommitPublished.find(rcp => rcp.irrevocablySpent.values.toSet.contains(rcp.commitTx.txid)).get))
@@ -949,7 +936,7 @@ object Helpers {
      *
      * @param tx a transaction that is sufficiently buried in the blockchain
      */
-    def onchainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
+    def onChainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         localCommit.spec.htlcs.collect(outgoing)
       } else if (remoteCommit.txid == tx.txid) {
@@ -962,10 +949,8 @@ object Helpers {
     }
 
     /**
-     * If a local commitment tx reaches min_depth, we need to fail the outgoing htlcs that only us had signed, because
-     * they will never reach the blockchain.
-     *
-     * Those are only present in the remote's commitment.
+     * If a commitment tx reaches min_depth, we need to fail the outgoing htlcs that will never reach the blockchain.
+     * It could be because only us had signed them, or because a revoked commitment got confirmed.
      */
     def overriddenOutgoingHtlcs(d: DATA_CLOSING, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val localCommit = d.commitments.localCommit
@@ -990,6 +975,9 @@ object Helpers {
       } else if (nextRemoteCommit_opt.map(_.txid).contains(tx.txid)) {
         // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
         Set.empty
+      } else if (d.revokedCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
+        // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment
+        nextRemoteCommit_opt.getOrElse(remoteCommit).spec.htlcs.collect(incoming)
       } else {
         Set.empty
       }
@@ -1057,17 +1045,19 @@ object Helpers {
      * @param tx a transaction that has been irrevocably confirmed
      */
     def updateRevokedCommitPublished(revokedCommitPublished: RevokedCommitPublished, tx: Transaction): RevokedCommitPublished = {
-      // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+      // even if our txs only have one input, maybe our counterparty uses a different scheme so we need to iterate
       // over all of them to check if they are relevant
       val relevantOutpoints = tx.txIn.map(_.outPoint).filter { outPoint =>
         // is this the commit tx itself ? (we could do this outside of the loop...)
         val isCommitTx = revokedCommitPublished.commitTx.txid == tx.txid
         // does the tx spend an output of the remote commitment tx?
         val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid
-        // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
+        // is the tx one of our 3rd stage delayed txs? (a 3rd stage tx is a tx spending the output of an htlc tx, which
         // is itself spending the output of the commitment tx)
         val is3rdStageDelayedTx = revokedCommitPublished.claimHtlcDelayedPenaltyTxs.map(_.txid).contains(tx.txid)
-        isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+        // does the tx spend an output of an htlc tx? (in which case it may invalidate one of our claim-htlc-delayed-penalty)
+        val spendsHtlcOutput = revokedCommitPublished.claimHtlcDelayedPenaltyTxs.flatMap(_.txIn).map(_.outPoint).contains(outPoint)
+        isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx || spendsHtlcOutput
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
       revokedCommitPublished.copy(irrevocablySpent = revokedCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => o -> tx.txid).toMap)
@@ -1115,11 +1105,13 @@ object Helpers {
       // are there remaining spendable outputs from the commitment tx?
       val commitOutputsSpendableByUs = (revokedCommitPublished.claimMainOutputTx.toSeq ++ revokedCommitPublished.mainPenaltyTx ++ revokedCommitPublished.htlcPenaltyTxs)
         .flatMap(_.txIn.map(_.outPoint)).toSet -- revokedCommitPublished.irrevocablySpent.keys
-      // which htlc delayed txes can we expect to be confirmed?
-      val unconfirmedHtlcDelayedTxes = revokedCommitPublished.claimHtlcDelayedPenaltyTxs
-        .filter(tx => (tx.txIn.map(_.outPoint.txid).toSet -- revokedCommitPublished.irrevocablySpent.values).isEmpty) // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
-        .filterNot(tx => revokedCommitPublished.irrevocablySpent.values.toSet.contains(tx.txid)) // has the tx already been confirmed?
-      isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty && unconfirmedHtlcDelayedTxes.isEmpty
+      // which htlc delayed txs can we expect to be confirmed?
+      val unconfirmedHtlcDelayedTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs
+        // only the txs which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
+        .filter(tx => (tx.txIn.map(_.outPoint.txid).toSet -- revokedCommitPublished.irrevocablySpent.values).isEmpty)
+        // if one of the tx inputs has been spent, the tx has already been confirmed or a competing tx has been confirmed
+        .filterNot(tx => tx.txIn.exists(txIn => revokedCommitPublished.irrevocablySpent.contains(txIn.outPoint)))
+      isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty && unconfirmedHtlcDelayedTxs.isEmpty
     }
 
     /**
