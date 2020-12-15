@@ -151,11 +151,18 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     htlc
   }
 
-  def fulfillHtlc(id: Long, R: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
-    s ! CMD_FULFILL_HTLC(id, R)
+  def fulfillHtlc(id: Long, preimage: ByteVector32, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+    s ! CMD_FULFILL_HTLC(id, preimage)
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
+  }
+
+  def failHtlc(id: Long, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+    s ! CMD_FAIL_HTLC(id, Right(TemporaryNodeFailure))
+    val fail = s2r.expectMsgType[UpdateFailHtlc]
+    s2r.forward(r)
+    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fail))
   }
 
   def crossSign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
