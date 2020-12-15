@@ -16,17 +16,18 @@
 
 package fr.acinq.eclair.api
 
-import java.net.InetAddress
-import java.util.UUID
-
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire._
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._
+
+import java.net.InetAddress
+import java.util.UUID
 
 class JsonSerializersSpec extends AnyFunSuite with Matchers {
 
@@ -80,6 +81,20 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
 
     JsonSupport.serialization.write(IncomingHtlc(add))(org.json4s.DefaultFormats + new DirectedHtlcSerializer) shouldBe expectedIn
     JsonSupport.serialization.write(OutgoingHtlc(add))(org.json4s.DefaultFormats + new DirectedHtlcSerializer) shouldBe expectedIn.replace("IN", "OUT")
+  }
+
+  test("HTLC origin serialization") {
+    val localOrigin = Origin.LocalCold(UUID.fromString("11111111-1111-1111-1111-111111111111"))
+    val expectedLocalOrigin = """{"paymentId":"11111111-1111-1111-1111-111111111111"}"""
+    JsonSupport.serialization.write(localOrigin)(org.json4s.DefaultFormats + new OriginSerializer) shouldBe expectedLocalOrigin
+
+    val channelOrigin = Origin.ChannelRelayedCold(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 7, 500 msat, 400 msat)
+    val expectedChannelOrigin = """{"channelId":"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f","htlcId":7}"""
+    JsonSupport.serialization.write(channelOrigin)(org.json4s.DefaultFormats + new OriginSerializer) shouldBe expectedChannelOrigin
+
+    val trampolineOrigin = Origin.TrampolineRelayedCold((ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3L) :: (ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7L) :: Nil)
+    val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","htlcId":3},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7}]"""
+    JsonSupport.serialization.write(trampolineOrigin)(org.json4s.DefaultFormats + new OriginSerializer) shouldBe expectedTrampolineOrigin
   }
 
   test("Payment Request") {
