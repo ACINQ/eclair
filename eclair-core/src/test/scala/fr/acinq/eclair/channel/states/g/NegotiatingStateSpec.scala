@@ -143,10 +143,14 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice2bob.forward(bob)
     val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
     assert(aliceCloseFee === bobCloseFee)
-    val mutualCloseTx = bob2blockchain.expectMsgType[PublishAsap].tx
-    assert(bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTx))
-    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTx))
-    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
+    bob2alice.forward(alice)
+    val mutualCloseTxAlice = alice2blockchain.expectMsgType[PublishAsap].tx
+    val mutualCloseTxBob = bob2blockchain.expectMsgType[PublishAsap].tx
+    assert(mutualCloseTxAlice === mutualCloseTxBob)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTxAlice))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTxBob))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTxAlice))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTxBob))
   }
 
   test("recv ClosingSigned (fee too high)") { f =>
