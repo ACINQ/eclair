@@ -976,7 +976,10 @@ object Helpers {
         // their last commitment got confirmed, so no htlcs will be overridden, they will timeout or be fulfilled on chain
         Set.empty
       } else if (d.revokedCommitPublished.map(_.commitTx.txid).contains(tx.txid)) {
-        // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment
+        // a revoked commitment got confirmed: we will claim its outputs, but we also need to fail htlcs that are pending in the latest commitment:
+        //  - outgoing htlcs that are in the local commitment but not in remote/nextRemote have already been fulfilled/failed so we don't care about them
+        //  - outgoing htlcs that are in the remote/nextRemote commitment may not really be overridden, but since we are going to claim their output as a
+        //    punishment we will never get the preimage and may as well consider them failed in the context of relaying htlcs
         nextRemoteCommit_opt.getOrElse(remoteCommit).spec.htlcs.collect(incoming)
       } else {
         Set.empty
