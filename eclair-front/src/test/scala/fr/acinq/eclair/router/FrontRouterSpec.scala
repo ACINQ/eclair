@@ -20,12 +20,12 @@ import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
-import fr.acinq.eclair.router.Announcements.{makeChannelAnnouncement, makeChannelUpdate, makeNodeAnnouncement, signChannelAnnouncement}
+import fr.acinq.eclair.router.Announcements.{makeChannelAnnouncement, makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Color

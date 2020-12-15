@@ -22,7 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, RemoteFailure}
 import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.IncorrectOrUnknownPaymentDetails
-import fr.acinq.eclair.{LongToBtcAmount, NodeParams, randomBytes32, secureRandom}
+import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, secureRandom}
 
 import scala.concurrent.duration._
 

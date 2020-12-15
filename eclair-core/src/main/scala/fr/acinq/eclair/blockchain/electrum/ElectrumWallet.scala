@@ -19,8 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import akka.actor.{ActorRef, FSM, PoisonPill, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
-import fr.acinq.bitcoin.{Base58, Base58Check, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.bitcoin.{Base58, Base58Check, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.db.{HeaderDb, WalletDb}
@@ -33,7 +32,8 @@ import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
 
 /**
- * Simple electrum wallet
+ * Simple electrum wallet.
+ * See the documentation at https://electrumx-spesmilo.readthedocs.io/en/latest/
  *
  * Typical workflow:
  *
@@ -43,10 +43,6 @@ import scala.util.{Failure, Success, Try}
  * client ---- history       ----> wallet
  * client <--- ask tx        ----- wallet
  * client ---- tx            ----> wallet
- *
- * @param seed
- * @param client
- * @param params
  */
 class ElectrumWallet(seed: ByteVector, client: ActorRef, params: ElectrumWallet.WalletParameters) extends FSM[ElectrumWallet.State, ElectrumWallet.Data] {
 
@@ -894,7 +890,7 @@ object ElectrumWallet {
      * @param tx input transaction
      * @return an option:
      *         - Some(received, sent, fee) where sent if what the tx spends from us, received is what the tx sends to us,
-     *         and fee is the fee for the tx) tuple where sent if what the tx spends from us, and received is what the tx sends to us
+     *           and fee is the fee for the tx) tuple where sent if what the tx spends from us, and received is what the tx sends to us
      *         - None if we are missing one or more parent txs
      */
     def computeTransactionDelta(tx: Transaction): Option[(Satoshi, Satoshi, Option[Satoshi])] = {

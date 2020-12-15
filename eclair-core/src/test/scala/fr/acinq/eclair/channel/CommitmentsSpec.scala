@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{DeterministicWallet, Satoshi, Transaction}
+import fr.acinq.bitcoin.{DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Commitments._
@@ -33,7 +33,7 @@ import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
-import scala.util.{Failure, Random, Success}
+import scala.util.Random
 
 class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 

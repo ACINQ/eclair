@@ -21,7 +21,7 @@ import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
@@ -32,8 +32,8 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Color, NodeAnnouncement, QueryShortChannelIds}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, randomKey}
+import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, randomKey}
 import scodec.bits._
 
 import scala.concurrent.duration._

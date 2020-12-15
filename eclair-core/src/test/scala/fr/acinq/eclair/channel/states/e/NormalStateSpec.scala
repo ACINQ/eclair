@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.e
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
@@ -30,7 +30,6 @@ import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, _}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.relay.Relayer._

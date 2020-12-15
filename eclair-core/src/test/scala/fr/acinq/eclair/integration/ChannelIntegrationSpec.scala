@@ -16,15 +16,13 @@
 
 package fr.acinq.eclair.integration
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.google.common.net.HostAndPort
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BtcDouble, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel._
@@ -37,10 +35,11 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, PermanentChannelFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
 
+import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._

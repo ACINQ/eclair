@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.db
 
-import java.util.UUID
-
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
@@ -26,9 +24,10 @@ import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.{ChannelUpdate, UnknownNextPeer}
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 class SqlitePaymentsDbSpec extends AnyFunSuite {

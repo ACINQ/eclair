@@ -19,8 +19,8 @@ package fr.acinq.eclair.blockchain.fee
 import akka.actor.ActorSystem
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.{LongToBtcAmount, TestTags}
+import fr.acinq.bitcoin.{Block, SatoshiLong}
+import fr.acinq.eclair.TestTags
 import org.json4s.DefaultFormats
 import org.scalatest.funsuite.AnyFunSuite
 

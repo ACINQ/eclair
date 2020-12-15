@@ -16,11 +16,9 @@
 
 package fr.acinq.eclair.transactions
 
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, SatoshiLong, Script, Transaction, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
@@ -33,6 +31,7 @@ import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
+import java.nio.ByteOrder
 import scala.io.Source
 import scala.util.Random
 
@@ -186,7 +185,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("generate valid commitment with some outputs that don't materialize (default commitment format)") {
-    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.mbtc.toMilliSatoshi, toRemote = 300.mbtc.toMilliSatoshi)
+    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
     val commitFee = commitTxFee(localDustLimit, spec, DefaultCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
     val belowDustWithFee = (localDustLimit + commitFee * 0.9).toMilliSatoshi
@@ -249,8 +248,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         IncomingHtlc(htlc6)
       ),
       feeratePerKw = feeratePerKw,
-      toLocal = 400.mbtc.toMilliSatoshi,
-      toRemote = 300.mbtc.toMilliSatoshi)
+      toLocal = 400.millibtc.toMilliSatoshi,
+      toRemote = 300.millibtc.toMilliSatoshi)
 
     val outputs = makeCommitTxOutputs(localIsFunder = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, DefaultCommitmentFormat)
 
@@ -398,7 +397,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("generate valid commitment with some outputs that don't materialize (anchor outputs)") {
-    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.mbtc.toMilliSatoshi, toRemote = 300.mbtc.toMilliSatoshi)
+    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
     val commitFee = commitTxFee(localDustLimit, spec, AnchorOutputsCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
     val belowDustWithFeeAndAnchors = (localDustLimit + commitFee * 0.9).toMilliSatoshi
@@ -475,8 +474,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         IncomingHtlc(htlc6)
       ),
       feeratePerKw = feeratePerKw,
-      toLocal = 400.mbtc.toMilliSatoshi,
-      toRemote = 300.mbtc.toMilliSatoshi)
+      toLocal = 400.millibtc.toMilliSatoshi,
+      toRemote = 300.millibtc.toMilliSatoshi)
 
     val (commitTx, commitTxOutputs, htlcTimeoutTxs, htlcSuccessTxs) = {
       val commitTxNumber = 0x404142434445L

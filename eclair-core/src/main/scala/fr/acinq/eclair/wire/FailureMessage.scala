@@ -21,7 +21,7 @@ import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, meteredLightningMessageCodec}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, UInt64}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, UInt64}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 

@@ -18,7 +18,7 @@ package fr.acinq.eclair.gui.controllers
 
 import fr.acinq.eclair.gui.utils._
 import fr.acinq.eclair.gui.{FxApp, Handlers}
-import fr.acinq.eclair.{CoinUtils, LongToBtcAmount, MilliSatoshi}
+import fr.acinq.eclair.{CoinUtils, MilliSatoshi, MilliSatoshiLong}
 import grizzled.slf4j.Logging
 import javafx.application.Platform
 import javafx.event.ActionEvent

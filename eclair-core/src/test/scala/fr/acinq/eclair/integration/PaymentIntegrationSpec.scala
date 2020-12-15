@@ -16,13 +16,11 @@
 
 package fr.acinq.eclair.integration
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
@@ -42,10 +40,11 @@ import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, MilliSatoshiLong, ShortChannelId, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
 
+import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._

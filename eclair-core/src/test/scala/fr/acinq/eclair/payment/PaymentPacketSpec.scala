@@ -16,12 +16,10 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, TxOut}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, TxOut}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -33,11 +31,13 @@ import fr.acinq.eclair.transactions.Transactions.InputInfo
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, UInt64, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, UInt64, nodeFee, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Attempt
 import scodec.bits.{ByteVector, HexStringSyntax}
+
+import java.util.UUID
 
 /**
  * Created by PM on 31/05/2016.

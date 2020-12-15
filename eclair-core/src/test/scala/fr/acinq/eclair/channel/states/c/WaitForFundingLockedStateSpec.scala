@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 

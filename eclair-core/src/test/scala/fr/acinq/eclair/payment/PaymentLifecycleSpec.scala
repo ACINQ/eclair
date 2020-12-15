@@ -16,14 +16,12 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.ForwardShortId
@@ -45,6 +43,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 /**

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.TestConstants.{TestDatabases, TestPgDatabases, TestSqliteDatabases}
@@ -25,7 +25,7 @@ import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, ShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.collection.{SortedMap, mutable}
@@ -48,38 +48,38 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
       case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
 
-      using(dbs.connection.createStatement()) { statement =>
-        dbs.getVersion(statement, "network", 1) // this will set version to 1
-        statement.execute("PRAGMA foreign_keys = ON")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
-        statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
-      }
+        using(dbs.connection.createStatement()) { statement =>
+          dbs.getVersion(statement, "network", 1) // this will set version to 1
+          statement.execute("PRAGMA foreign_keys = ON")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+        }
 
-      using(dbs.connection.createStatement()) { statement =>
-        assert(dbs.getVersion(statement, "network", 2) == 1)
-      }
+        using(dbs.connection.createStatement()) { statement =>
+          assert(dbs.getVersion(statement, "network", 2) == 1)
+        }
 
-      // first round: this will trigger a migration
-      simpleTest(dbs)
+        // first round: this will trigger a migration
+        simpleTest(dbs)
 
-      using(dbs.connection.createStatement()) { statement =>
-        assert(dbs.getVersion(statement, "network", 2) == 2)
-      }
+        using(dbs.connection.createStatement()) { statement =>
+          assert(dbs.getVersion(statement, "network", 2) == 2)
+        }
 
-      using(dbs.connection.createStatement()) { statement =>
-        statement.executeUpdate("DELETE FROM nodes")
-        statement.executeUpdate("DELETE FROM channels")
-      }
+        using(dbs.connection.createStatement()) { statement =>
+          statement.executeUpdate("DELETE FROM nodes")
+          statement.executeUpdate("DELETE FROM channels")
+        }
 
-      // second round: no migration
-      simpleTest(dbs)
+        // second round: no migration
+        simpleTest(dbs)
 
-      using(dbs.connection.createStatement()) { statement =>
-        assert(dbs.getVersion(statement, "network", 2) == 2)
-      }
+        using(dbs.connection.createStatement()) { statement =>
+          assert(dbs.getVersion(statement, "network", 2) == 2)
+        }
     }
   }
 
