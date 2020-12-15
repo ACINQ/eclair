@@ -152,13 +152,18 @@ object TestConstants {
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
-      features = Features(Set(
-        ActivatedFeature(InitialRoutingSync, Optional),
-        ActivatedFeature(OptionDataLossProtect, Optional),
-        ActivatedFeature(ChannelRangeQueries, Optional),
-        ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-        ActivatedFeature(VariableLengthOnion, Optional)),
-        Set(UnknownFeature(TestFeature.optional))),
+      features = Features(
+        Set(
+          ActivatedFeature(InitialRoutingSync, Optional),
+          ActivatedFeature(OptionDataLossProtect, Optional),
+          ActivatedFeature(ChannelRangeQueries, Optional),
+          ActivatedFeature(ChannelRangeQueriesExtended, Optional),
+          ActivatedFeature(VariableLengthOnion, Optional),
+          ActivatedFeature(PaymentSecret, Optional),
+          ActivatedFeature(BasicMultiPartPayment, Optional)
+        ),
+        Set(UnknownFeature(TestFeature.optional))
+      ),
       pluginParams = List(pluginParams),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
@@ -255,7 +260,15 @@ object TestConstants {
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
-      features = Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+      features = Features(Set(
+        ActivatedFeature(InitialRoutingSync, Optional),
+        ActivatedFeature(OptionDataLossProtect, Optional),
+        ActivatedFeature(ChannelRangeQueries, Optional),
+        ActivatedFeature(ChannelRangeQueriesExtended, Optional),
+        ActivatedFeature(VariableLengthOnion, Optional),
+        ActivatedFeature(PaymentSecret, Optional),
+        ActivatedFeature(BasicMultiPartPayment, Optional)
+      )),
       pluginParams = Nil,
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,

@@ -1138,15 +1138,22 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.commitTx === bobRevokedTxs.commitTx.tx)
-    assert(rvk.claimMainOutputTx.nonEmpty)
+    if (channelVersion.paysDirectlyToWallet) {
+      assert(rvk.claimMainOutputTx.isEmpty)
+    } else {
+      assert(rvk.claimMainOutputTx.nonEmpty)
+    }
     assert(rvk.mainPenaltyTx.nonEmpty)
     assert(rvk.htlcPenaltyTxs.size === 4)
     assert(rvk.claimHtlcDelayedPenaltyTxs.isEmpty)
 
     // alice publishes the penalty txs and watches outputs
-    (1 to 6).foreach(_ => alice2blockchain.expectMsgType[PublishAsap]) // 2 main outputs and 4 htlcs
+    val claimTxsCount = if (channelVersion.paysDirectlyToWallet) 5 else 6 // 2 main outputs and 4 htlcs
+    (1 to claimTxsCount).foreach(_ => alice2blockchain.expectMsgType[PublishAsap])
     assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === rvk.commitTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === rvk.claimMainOutputTx.get.txid)
+    if (!channelVersion.paysDirectlyToWallet) {
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === rvk.claimMainOutputTx.get.txid)
+    }
     (1 to 5).foreach(_ => alice2blockchain.expectMsgType[WatchSpent]) // main output penalty and 4 htlc penalties
     alice2blockchain.expectNoMsg(1 second)
 
@@ -1197,7 +1204,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(remainingHtlcPenaltyTxs.size === 2)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(rvk.commitTx), 100, 3, rvk.commitTx)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(rvk.mainPenaltyTx.get), 110, 0, rvk.mainPenaltyTx.get)
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(rvk.claimMainOutputTx.get), 110, 1, rvk.claimMainOutputTx.get)
+    if (!channelVersion.paysDirectlyToWallet) {
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(rvk.claimMainOutputTx.get), 110, 1, rvk.claimMainOutputTx.get)
+    }
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(remainingHtlcPenaltyTxs.head), 110, 2, remainingHtlcPenaltyTxs.head)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(remainingHtlcPenaltyTxs.last), 115, 2, remainingHtlcPenaltyTxs.last)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobHtlcTimeoutTx.txinfo.tx), 115, 0, bobHtlcTimeoutTx.txinfo.tx)
@@ -1211,6 +1220,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx)") { f =>
     testOutputSpentRevokedTx(f, ChannelVersion.STANDARD)
+  }
+
+  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, option_static_remotekey)", Tag("static_remotekey")) { f =>
+    testOutputSpentRevokedTx(f, ChannelVersion.STATIC_REMOTEKEY)
   }
 
   test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag("anchor_outputs")) { f =>
