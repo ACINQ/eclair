@@ -114,7 +114,7 @@ package object eclair {
     override def toFloat(x: MilliSatoshi): Float = x.toLong
     override def toDouble(x: MilliSatoshi): Double = x.toLong
     override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
-    override def parseString(str: String): Option[MilliSatoshi] = None
+    override def parseString(str: String): Option[MilliSatoshi] = ???
     // @formatter:on
   }
 
