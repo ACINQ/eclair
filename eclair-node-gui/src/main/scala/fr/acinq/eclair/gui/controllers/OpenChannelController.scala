@@ -31,6 +31,7 @@ import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.stage.Stage
 
+import java.lang.Boolean
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
