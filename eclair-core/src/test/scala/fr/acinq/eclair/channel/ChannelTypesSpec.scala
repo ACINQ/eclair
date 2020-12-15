@@ -1,9 +1,9 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{OutPoint, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.{LongToBtcAmount, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
