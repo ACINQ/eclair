@@ -16,16 +16,15 @@
 
 package fr.acinq.eclair.channel.states.c
 
-import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Script, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 

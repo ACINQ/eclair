@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.RoutingHeuristics
 import fr.acinq.eclair.router.RouteCalculationSpec._
 import fr.acinq.eclair.router.Router.{ChannelDesc, PublicChannel}
-import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId}
+import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 

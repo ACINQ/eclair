@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM._
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, wire}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, wire}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 

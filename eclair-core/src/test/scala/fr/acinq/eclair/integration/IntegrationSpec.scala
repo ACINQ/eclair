@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.integration
 
-import java.io.File
-import java.util.Properties
-
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
@@ -32,13 +29,15 @@ import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, NORMAL => _, State => _}
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, LongToBtcAmount, MilliSatoshi, Setup, TestKitBaseClass}
+import fr.acinq.eclair.{CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
+import java.io.File
+import java.util.Properties
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._

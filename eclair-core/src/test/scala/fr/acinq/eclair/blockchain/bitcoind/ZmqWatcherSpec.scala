@@ -16,13 +16,11 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import java.util.concurrent.atomic.AtomicLong
-
 import akka.Done
 import akka.actor.{ActorRef, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{OutPoint, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{OutPoint, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
@@ -32,12 +30,13 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
-import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Promise
 import scala.concurrent.duration._

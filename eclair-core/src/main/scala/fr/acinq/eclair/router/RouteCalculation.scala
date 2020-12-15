@@ -19,8 +19,9 @@ package fr.acinq.eclair.router
 import akka.actor.{ActorContext, ActorRef, Status}
 import akka.event.DiagnosticLoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -28,7 +29,6 @@ import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.ChannelUpdate
-import fr.acinq.eclair.{ShortChannelId, _}
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec

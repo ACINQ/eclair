@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
 import org.scalatest.funsuite.AnyFunSuite
 
 /**

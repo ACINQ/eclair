@@ -16,13 +16,12 @@
 
 package fr.acinq
 
-import java.security.SecureRandom
-
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
+import java.security.SecureRandom
 import scala.util.{Failure, Success, Try}
 
 package object eclair {
@@ -98,13 +97,8 @@ package object eclair {
     }
   }
 
-  implicit class LongToBtcAmount(l: Long) {
-    // @formatter:off
-    def msat: MilliSatoshi = MilliSatoshi(l)
-    def sat: Satoshi = Satoshi(l)
-    def mbtc: MilliBtc = MilliBtc(l)
-    def btc: Btc = Btc(l)
-    // @formatter:on
+  implicit class MilliSatoshiLong(private val n: Long) extends AnyVal {
+    def msat = MilliSatoshi(n)
   }
 
   // We implement Numeric to take advantage of operations such as sum, sort or min/max on iterables.
@@ -120,7 +114,7 @@ package object eclair {
     override def toFloat(x: MilliSatoshi): Float = x.toLong
     override def toDouble(x: MilliSatoshi): Double = x.toLong
     override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
-    override def parseString(str: String): Option[MilliSatoshi] = ???
+    override def parseString(str: String): Option[MilliSatoshi] = None
     // @formatter:on
   }
 

@@ -16,18 +16,17 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{Connection, Statement}
-import java.util.UUID
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 import grizzled.slf4j.Logging
 
+import java.sql.{Connection, Statement}
+import java.util.UUID
 import scala.collection.immutable.Queue
 
 class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {

@@ -17,8 +17,9 @@
 package fr.acinq.eclair.blockchain.fee
 
 import akka.util.Timeout
+import fr.acinq.bitcoin.SatoshiLong
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
-import fr.acinq.eclair.{LongToBtcAmount, TestConstants}
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.Await

@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.api
 
-import java.util.UUID
-
 import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
@@ -28,7 +26,7 @@ import akka.stream.Materializer
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
@@ -51,6 +49,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._
 
+import java.util.UUID
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source

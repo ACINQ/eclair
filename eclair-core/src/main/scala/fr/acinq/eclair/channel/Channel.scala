@@ -20,7 +20,7 @@ import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorSt
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -751,7 +751,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), timeout = nodeParams.revocationTimeout, repeat = false)
-              handleCommandSuccess(c, d.copy(commitments = commitments1)) storing() sending commit acking(commitments1.localChanges.signed)
+              handleCommandSuccess(c, d.copy(commitments = commitments1)) storing() sending commit acking (commitments1.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
         case Left(waitForRevocation) =>
@@ -1084,7 +1084,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               // we expect a quick response from our peer
               setTimer(RevocationTimeout.toString, RevocationTimeout(commitments1.remoteCommit.index, peer), timeout = nodeParams.revocationTimeout, repeat = false)
-              handleCommandSuccess(c, d.copy(commitments = commitments1)) storing() sending commit acking(commitments1.localChanges.signed)
+              handleCommandSuccess(c, d.copy(commitments = commitments1)) storing() sending commit acking (commitments1.localChanges.signed)
             case Left(cause) => handleCommandError(cause, c)
           }
         case Left(waitForRevocation) =>
@@ -2385,6 +2385,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     /**
      * We don't acknowledge htlc commands immediately, because we send them to the channel as soon as possible, and they
      * may not yet have been written to the database.
+     *
      * @param cmd fail/fulfill command that has been processed
      */
     def acking(channelId: ByteVector32, cmd: HtlcSettlementCommand): FSM.State[fr.acinq.eclair.channel.State, Data] = {

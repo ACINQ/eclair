@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
 import fr.acinq.eclair.channel.Monitoring.Metrics
@@ -46,27 +46,20 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, r
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
 
+// @formatter:off
 trait AbstractCommitments {
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
-
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc]
-
   def localNodeId: PublicKey
-
   def remoteNodeId: PublicKey
-
   def capacity: Satoshi
-
   def availableBalanceForReceive: MilliSatoshi
-
   def availableBalanceForSend: MilliSatoshi
-
   def originChannels: Map[Long, Origin]
-
   def channelId: ByteVector32
-
   def announceChannel: Boolean
 }
+// @formatter:on
 
 /**
  * about remoteNextCommitInfo:

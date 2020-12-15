@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 
 class CommitmentSpecSpec extends AnyFunSuite {

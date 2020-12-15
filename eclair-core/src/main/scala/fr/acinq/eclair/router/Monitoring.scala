@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.router
 
+import fr.acinq.bitcoin.{BtcDouble, MilliBtcDouble, SatoshiLong}
 import fr.acinq.eclair.router.Router.GossipDecision
 import fr.acinq.eclair.wire.ChannelUpdate
-import fr.acinq.eclair.{LongToBtcAmount, MilliSatoshi, getSimpleClassName}
+import fr.acinq.eclair.{MilliSatoshi, getSimpleClassName}
 import kamon.Kamon
 import kamon.metric.{Counter, MeasurementUnit}
 
@@ -92,8 +93,8 @@ object Monitoring {
       val reckless = "1 BTC < ???"
       amount match {
         case amount if amount < 1000.sat => tiny
-        case amount if amount < 1.mbtc => small
-        case amount if amount < 100.mbtc => medium
+        case amount if amount < 1.millibtc => small
+        case amount if amount < 100.millibtc => medium
         case amount if amount < 1.btc => big
         case _ => reckless
       }

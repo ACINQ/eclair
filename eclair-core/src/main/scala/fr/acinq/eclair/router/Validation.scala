@@ -28,7 +28,7 @@ import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Logs, LongToBtcAmount, NodeParams, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, ShortChannelId, TxCoordinates}
 import kamon.Kamon
 
 object Validation {

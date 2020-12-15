@@ -16,14 +16,11 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.net.InetSocketAddress
-import java.sql.DriverManager
-import java.util.concurrent.atomic.AtomicLong
-
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.whisk.docker.DockerReadyChecker
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Block, Btc, BtcDouble, ByteVector32, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -33,7 +30,6 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddr
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
-import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass}
 import fr.acinq.{bitcoin, eclair}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDecimal, JString, JValue}
@@ -41,6 +37,9 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
+import java.net.InetSocketAddress
+import java.sql.DriverManager
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.Await
 import scala.concurrent.duration._
 

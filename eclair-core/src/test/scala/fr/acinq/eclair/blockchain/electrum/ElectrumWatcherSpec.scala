@@ -16,12 +16,9 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.net.InetSocketAddress
-import java.util.concurrent.atomic.AtomicLong
-
 import akka.actor.Props
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Transaction, TxIn}
+import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction, TxIn}
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -30,13 +27,15 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
-import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
+import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 
 class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with BitcoindService with ElectrumxService with BeforeAndAfterAll with Logging {

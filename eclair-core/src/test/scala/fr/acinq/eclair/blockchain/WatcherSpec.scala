@@ -19,8 +19,7 @@ package fr.acinq.eclair.blockchain
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Base58, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.bitcoin.{Base58, OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import org.json4s.JsonAST.{JString, JValue}
 import org.scalatest.funsuite.AnyFunSuiteLike

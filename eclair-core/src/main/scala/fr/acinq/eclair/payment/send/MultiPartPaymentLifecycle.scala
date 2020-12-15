@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.payment.send
 
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-
 import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
@@ -34,9 +31,12 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, LongToBtcAmount, MilliSatoshi, NodeParams}
+import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams}
 import kamon.Kamon
 import kamon.context.Context
+
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * Created by t-bast on 18/07/2019.

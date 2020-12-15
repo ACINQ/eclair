@@ -16,10 +16,11 @@
 
 package fr.acinq.eclair.db
 
+import fr.acinq.bitcoin.SatoshiLong
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
+import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import org.scalatest.funsuite.AnyFunSuite
 
 class SqliteFeeratesDbSpec extends AnyFunSuite {

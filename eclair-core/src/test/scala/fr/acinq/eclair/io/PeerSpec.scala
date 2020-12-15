@@ -21,7 +21,7 @@ import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Btc, Script}
+import fr.acinq.bitcoin.{Btc, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._

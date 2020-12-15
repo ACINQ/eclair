@@ -17,8 +17,7 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, Satoshi, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits._
 

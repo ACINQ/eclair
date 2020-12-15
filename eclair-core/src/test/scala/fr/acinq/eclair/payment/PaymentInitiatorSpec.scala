@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Block
@@ -38,11 +36,12 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
 import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient, _}
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 /**
