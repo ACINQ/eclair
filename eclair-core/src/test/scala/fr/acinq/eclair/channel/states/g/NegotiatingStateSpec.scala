@@ -50,7 +50,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(setup)
+      reachNormal(setup, test.tags)
       val sender = TestProbe()
       // alice initiates a closing
       if (test.tags.contains("fee2")) {
@@ -129,6 +129,22 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv ClosingSigned (theirCloseFee == ourCloseFee) (fee 2)", Tag("fee2")) { f =>
     testFeeConverge(f)
+  }
+
+  test("recv ClosingSigned (nothing at stake)", Tag("no_push_msat")) { f =>
+    import f._
+    val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
+    alice2bob.forward(bob)
+    val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
+    assert(aliceCloseFee === bobCloseFee)
+    bob2alice.forward(alice)
+    val mutualCloseTxAlice = alice2blockchain.expectMsgType[PublishAsap].tx
+    val mutualCloseTxBob = bob2blockchain.expectMsgType[PublishAsap].tx
+    assert(mutualCloseTxAlice === mutualCloseTxBob)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTxAlice))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTxBob))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTxAlice))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTxBob))
   }
 
   test("recv ClosingSigned (fee too high)") { f =>
