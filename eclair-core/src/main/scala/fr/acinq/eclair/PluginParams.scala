@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.payment.relay.PostRestartHtlcCleaner.IncomingHtlc
 
 /** Custom plugin parameters. */
-sealed trait PluginParams {
+trait PluginParams {
   /** Plugin's friendly name. */
   def name: String
 }
