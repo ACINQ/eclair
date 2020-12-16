@@ -56,11 +56,6 @@
                     <descriptors>
                         <descriptor>modules/assembly.xml</descriptor>
                     </descriptors>
-                    <archive>
-                        <manifest>
-                            <mainClass>fr.acinq.eclair.JavafxBoot</mainClass>
-                        </manifest>
-                    </archive>
                 </configuration>
                 <executions>
                     <execution>

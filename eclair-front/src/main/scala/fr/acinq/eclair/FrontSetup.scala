@@ -18,7 +18,6 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
-
 import akka.Done
 import akka.actor.{ActorSystem, Address, Props, RootActorPath, SupervisorStrategy}
 import akka.pattern.ask
@@ -27,12 +26,14 @@ import com.amazonaws.services.secretsmanager.AWSSecretsManagerClient
 import com.amazonaws.services.secretsmanager.model.GetSecretValueRequest
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Noise.KeyPair
+import fr.acinq.eclair.crypto.keymanager.LocalNodeKeyManager
 import fr.acinq.eclair.io.Switchboard.{GetRouterPeerConf, RouterPeerConf}
 import fr.acinq.eclair.io.{ClientSpawner, Server}
 import fr.acinq.eclair.router.FrontRouter
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
+import java.nio.file.Files
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 
@@ -65,6 +66,13 @@ class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
           sm.shutdown()
         }
       case "env" => ByteVector.fromValidHex(config.getString("front.priv-key"))
+      case "seed" =>
+        // demo in single-server setup
+        val chain = config.getString("chain")
+        val nodeSeedFilename: String = "node_seed.dat"
+        val seedPath = new File(datadir, nodeSeedFilename)
+        val nodeSeed = ByteVector(Files.readAllBytes(seedPath.toPath))
+        new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain)).nodeKey.privateKey.value.bytes
     }
     val keyPair = KeyPair(pub, priv)
     require(PrivateKey(priv).publicKey == PublicKey(pub), "priv/pub keys mismatch")
