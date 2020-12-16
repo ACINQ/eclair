@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.bitcoin.SatoshiLong
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.duration._
@@ -42,7 +42,7 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
 
   def dummyFeerate = FeeratePerKB(1000.sat + Random.nextInt(10000).sat)
 
-  def dummyFeerates = FeeratesPerKB(dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate)
+  def dummyFeerates = FeeratesPerKB(dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate)
 
   def await[T](f: Future[T]): T = Await.result(f, 3 seconds)
 
@@ -71,11 +71,11 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
   }
 
   test("ensure minimum feerate") {
-    val feeratePerKB = FeeratePerKB(1000 sat)
-    val constantFeeProvider = new ConstantFeeProvider(FeeratesPerKB(feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB, feeratePerKB))
-    val fallbackFeeProvider = new FallbackFeeProvider(constantFeeProvider :: Nil, FeeratePerByte(2 sat))
-    val expectedFeeratePerKB = FeeratePerKB(2000 sat)
-    assert(await(fallbackFeeProvider.getFeerates) === FeeratesPerKB(expectedFeeratePerKB, expectedFeeratePerKB, expectedFeeratePerKB, expectedFeeratePerKB, expectedFeeratePerKB, expectedFeeratePerKB, feeratePerKB, feeratePerKB))
+    val constantFeeProvider = new ConstantFeeProvider(FeeratesPerKB(FeeratePerKB(64000 sat), FeeratePerKB(32000 sat), FeeratePerKB(16000 sat), FeeratePerKB(8000 sat), FeeratePerKB(4000 sat), FeeratePerKB(2000 sat), FeeratePerKB(1500 sat), FeeratePerKB(1000 sat), FeeratePerKB(1000 sat)))
+    val minFeeratePerByte = FeeratePerByte(2 sat)
+    val minFeeratePerKB = FeeratePerKB(minFeeratePerByte)
+    val fallbackFeeProvider = new FallbackFeeProvider(constantFeeProvider :: Nil, minFeeratePerByte)
+    assert(await(fallbackFeeProvider.getFeerates) === FeeratesPerKB(FeeratePerKB(64000 sat), FeeratePerKB(32000 sat), FeeratePerKB(16000 sat), FeeratePerKB(8000 sat), FeeratePerKB(4000 sat), minFeeratePerKB, minFeeratePerKB, minFeeratePerKB, minFeeratePerKB))
   }
 
 }

@@ -20,6 +20,7 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
+import fr.acinq.eclair.TestTags
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{DangerousBlocksSkew, WrappedCurrentBlockCount}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -27,7 +28,7 @@ import scala.concurrent.duration.DurationInt
 
 class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  test("fetch block headers from four sources on mainnet") {
+  test("fetch block headers from four sources on mainnet", TestTags.ExternalApi) {
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val watchdog = testKit.spawn(BlockchainWatchdog(Block.LivenetGenesisBlock.hash, 1 second))
@@ -44,7 +45,7 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     testKit.stop(watchdog)
   }
 
-  test("fetch block headers from three sources on testnet") {
+  test("fetch block headers from three sources on testnet", TestTags.ExternalApi) {
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 1 second))

@@ -16,13 +16,6 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-import java.net.InetSocketAddress
-import java.sql.DriverManager
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
-
 import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.pattern.after
@@ -57,8 +50,15 @@ import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JArray
 import scodec.bits.ByteVector
 
+import java.io.File
+import java.net.InetSocketAddress
+import java.sql.DriverManager
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent._
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success}
 
 /**
@@ -128,7 +128,7 @@ class Setup(datadir: File,
   }
 
   val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
-  pluginParams.foreach(param => logger.info(s"Using plugin: ${param.name}"))
+  pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
   val serverBindingAddress = new InetSocketAddress(
     config.getString("server.binding-ip"),
@@ -224,6 +224,7 @@ class Setup(datadir: File,
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
+          mempoolMinFee = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
           block_1 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1"))),
           blocks_2 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.2"))),
           blocks_6 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.6"))),
@@ -237,14 +238,14 @@ class Setup(datadir: File,
         feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
       }
-      minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("min-feerate")))
-      smoothFeerateWindow = config.getInt("smooth-feerate-window")
-      readTimeout = FiniteDuration(config.getDuration("feerate-provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
+      minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
+      smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
+      readTimeout = FiniteDuration(config.getDuration("on-chain-fees.provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
       feeProvider = (nodeParams.chainHash, bitcoin) match {
         case (Block.RegtestGenesisBlock.hash, _) =>
           new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
         case (_, Bitcoind(bitcoinClient)) =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: Nil, minFeeratePerByte) // order matters!
       }
@@ -253,11 +254,13 @@ class Setup(datadir: File,
           feeratesPerKB.set(feerates)
           feeratesPerKw.set(FeeratesPerKw(feerates))
           channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong)
+          blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.mempoolMinFee.toLong)
           system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
           logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
           feeratesRetrieved.trySuccess(Done)
         case Failure(exception) =>
           logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
+          blockchain.Monitoring.Metrics.CannotRetrieveFeeratesCount.withoutTags().increment()
           feeratesRetrieved.tryFailure(CannotRetrieveFeerates)
       })
       _ <- feeratesRetrieved.future
@@ -360,6 +363,7 @@ class Setup(datadir: File,
         authentication = auth,
         privateKeyPath = new File(datadir, config.getString("tor.private-key-file")).toPath,
         virtualPort = config.getInt("server.port"),
+        targets = config.getStringList("tor.targets").asScala.toSeq,
         onionAdded = Some(promiseTorAddress))
 
       val controller = system.actorOf(SimpleSupervisor.props(Controller.props(

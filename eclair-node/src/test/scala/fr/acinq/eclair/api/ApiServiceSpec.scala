@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.api
 
-import java.util.UUID
-
 import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
@@ -28,12 +26,13 @@ import akka.stream.Materializer
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelOpenResponse.ChannelOpened
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
@@ -50,6 +49,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._
 
+import java.util.UUID
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -197,6 +197,37 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(resp.contains(aliceNodeId.toString))
         eclair.getInfo()(any[Timeout]).wasCalled(once)
         matchTestJson("getinfo", resp)
+      }
+  }
+
+  test("'open' channels") {
+    val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+
+    val eclair = mock[Eclair]
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    val mockService = new MockService(eclair)
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100000").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
+        eclair.open(nodeId, 100000 sat, None, None, None, None, None)(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "50000", "feeBaseMsat" -> "100", "feeProportionalMillionths" -> "10").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockService.password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
+        eclair.open(nodeId, 50000 sat, None, None, Some(100 msat, 10), None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -540,8 +571,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         system.eventStream.publish(chcr)
         wsClient.expectMessage(expectedSerializedChcr)
 
-        val chsc = ChannelStateChanged(system.deadLetters, null, system.deadLetters, bobNodeId, OFFLINE, NORMAL, null)
-        val expectedSerializedChsc = """{"type":"channel-state-changed","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","previousState":"OFFLINE","currentState":"NORMAL"}"""
+        val chsc = ChannelStateChanged(system.deadLetters, ByteVector32.One, system.deadLetters, bobNodeId, OFFLINE, NORMAL, null)
+        val expectedSerializedChsc = """{"type":"channel-state-changed","channelId":"0100000000000000000000000000000000000000000000000000000000000000","remoteNodeId":"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585","previousState":"OFFLINE","currentState":"NORMAL"}"""
         assert(serialization.write(chsc) === expectedSerializedChsc)
         system.eventStream.publish(chsc)
         wsClient.expectMessage(expectedSerializedChsc)

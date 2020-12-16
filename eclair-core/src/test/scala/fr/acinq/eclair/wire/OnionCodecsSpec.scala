@@ -23,7 +23,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.Onion._
 import fr.acinq.eclair.wire.OnionCodecs._
 import fr.acinq.eclair.wire.OnionTlv._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Attempt
 import scodec.bits.HexStringSyntax

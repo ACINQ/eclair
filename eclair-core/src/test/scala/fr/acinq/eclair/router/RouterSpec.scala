@@ -21,7 +21,7 @@ import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
@@ -32,8 +32,8 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.RouteCalculationSpec.{DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{Color, QueryShortChannelIds}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, TestConstants, randomKey}
+import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, randomKey}
 import scodec.bits._
 
 import scala.concurrent.duration._
@@ -450,6 +450,24 @@ class RouterSpec extends BaseRouterSpec {
     state.channels.foreach(c => assert(c.capacity === publicChannelCapacity))
   }
 
+  test("send local channels") { fixture =>
+    import fixture._
+    // We need a channel update from our private remote peer, otherwise we can't create invoice routing information.
+    val peerConnection = TestProbe()
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update_ga))
+    val sender = TestProbe()
+    sender.send(router, GetLocalChannels)
+    val localChannels = sender.expectMsgType[Seq[LocalChannel]]
+    assert(localChannels.size === 2)
+    assert(localChannels.map(_.remoteNodeId).toSet === Set(b, g))
+    assert(localChannels.exists(_.isPrivate)) // a ---> g
+    assert(localChannels.exists(!_.isPrivate)) // a ---> b
+    assert(localChannels.flatMap(_.toExtraHop).toSet === Set(
+      ExtraHop(b, channelId_ab, update_ba.feeBaseMsat, update_ba.feeProportionalMillionths, update_ba.cltvExpiryDelta),
+      ExtraHop(g, channelId_ag, update_ga.feeBaseMsat, update_ga.feeProportionalMillionths, update_ga.cltvExpiryDelta)
+    ))
+  }
+
   test("send network statistics") { fixture =>
     import fixture._
     val sender = TestProbe()
@@ -639,6 +657,35 @@ class RouterSpec extends BaseRouterSpec {
       assert(edge_ag.capacity == channel_ag.capacity)
       assert(edge_ag.balance_opt === Some(33000000 msat))
     }
+  }
+
+  test("stream updates to front") { fixture =>
+    import fixture._
+
+    val sender = TestProbe()
+    sender.send(router, GetRoutingStateStreaming)
+
+    // initial sync
+    var nodes = Set.empty[NodeAnnouncement]
+    var channels = Set.empty[ChannelAnnouncement]
+    var updates = Set.empty[ChannelUpdate]
+    sender.fishForMessage() {
+      case nd: NodesDiscovered =>
+        nodes = nodes ++ nd.ann
+        false
+      case cd: ChannelsDiscovered =>
+        channels = channels ++ cd.c.map(_.ann)
+        updates = updates ++ cd.c.flatMap(sc => sc.u1_opt.toSeq ++ sc.u2_opt.toSeq)
+        false
+      case RoutingStateStreamingUpToDate => true
+    }
+    assert(nodes.size === 8 && channels.size === 5 && updates.size === 10) // public channels only
+
+    // new announcements
+    val update_ab_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum, timestamp = update_ab.timestamp + 1)
+    val peerConnection = TestProbe()
+    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab_2)
+    sender.expectMsg(ChannelUpdatesReceived(List(update_ab_2)))
   }
 
 }

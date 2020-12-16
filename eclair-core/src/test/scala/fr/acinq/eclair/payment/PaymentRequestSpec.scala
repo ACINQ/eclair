@@ -16,17 +16,17 @@
 
 package fr.acinq.eclair.payment
 
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
+import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, Protocol, SatoshiLong}
 import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features, LongToBtcAmount, ShortChannelId, TestConstants, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
 import scodec.codecs.bits
+
+import java.nio.ByteOrder
 
 /**
  * Created by fabrice on 15/05/17.
@@ -48,8 +48,8 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert('u' === Amount.unit((100 sat).toMilliSatoshi))
     assert('n' === Amount.unit((101 sat).toMilliSatoshi))
     assert('u' === Amount.unit((1155400 sat).toMilliSatoshi))
-    assert('m' === Amount.unit((1 mbtc).toMilliSatoshi))
-    assert('m' === Amount.unit((10 mbtc).toMilliSatoshi))
+    assert('m' === Amount.unit((1 millibtc).toMilliSatoshi))
+    assert('m' === Amount.unit((10 millibtc).toMilliSatoshi))
     assert('m' === Amount.unit((1 btc).toMilliSatoshi))
   }
 

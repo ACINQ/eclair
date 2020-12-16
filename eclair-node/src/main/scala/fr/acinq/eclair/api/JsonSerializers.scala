@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.api
 
-import java.net.InetSocketAddress
-import java.util.UUID
-
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -38,6 +35,9 @@ import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, Sho
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, TypeHints, jackson}
 import scodec.bits.ByteVector
+
+import java.net.InetSocketAddress
+import java.util.UUID
 
 /**
  * JSON Serializers.
@@ -299,6 +299,7 @@ class ChannelEventSerializer extends CustomSerializer[ChannelEvent](_ => ( {
   )
   case e: ChannelStateChanged => JObject(
     JField("type", JString("channel-state-changed")),
+    JField("channelId", JString(e.channelId.toHex)),
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
     JField("previousState", JString(e.previousState.toString)),
     JField("currentState", JString(e.currentState.toString))
@@ -308,6 +309,22 @@ class ChannelEventSerializer extends CustomSerializer[ChannelEvent](_ => ( {
     JField("channelId", JString(e.channelId.toHex)),
     JField("closingType", JString(e.closingType.getClass.getSimpleName))
   )
+}))
+
+class OriginSerializer extends CustomSerializer[Origin](_ => ( {
+  null
+}, {
+  case o: Origin.Local => JObject(JField("paymentId", JString(o.id.toString)))
+  case o: Origin.ChannelRelayed => JObject(
+    JField("channelId", JString(o.originChannelId.toHex)),
+    JField("htlcId", JLong(o.originHtlcId)),
+  )
+  case o: Origin.TrampolineRelayed => JArray(o.htlcs.map {
+    case (channelId, htlcId) => JObject(
+      JField("channelId", JString(channelId.toHex)),
+      JField("htlcId", JLong(htlcId)),
+    )
+  })
 }))
 
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
@@ -385,6 +402,7 @@ object JsonSupport extends Json4sSupport {
     new PaymentRequestSerializer +
     new JavaUUIDSerializer +
     new FeaturesSerializer +
+    new OriginSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent).withTypeHintFieldName("type")

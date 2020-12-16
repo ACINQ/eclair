@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel.states.e
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
@@ -571,7 +571,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_SIGN") { f =>
     import f._
-    val sender = TestProbe()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN()
     val commitSig = alice2bob.expectMsgType[CommitSig]
@@ -749,7 +748,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_SIGN (after CMD_UPDATE_FEE)") { f =>
     import f._
-    val sender = TestProbe()
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[AvailableBalanceChanged])
     alice ! CMD_UPDATE_FEE(FeeratePerKw(654564 sat))
@@ -760,9 +758,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CommitSig (one htlc received)") { f =>
     import f._
-    val sender = TestProbe()
 
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     alice ! CMD_SIGN()
@@ -784,9 +781,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CommitSig (one htlc sent)") { f =>
     import f._
-    val sender = TestProbe()
 
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     alice ! CMD_SIGN()
@@ -806,21 +802,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CommitSig (multiple htlcs in both directions)") { f =>
     import f._
-    val sender = TestProbe()
 
-    val (r1, htlc1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
-
-    val (r2, htlc2) = addHtlc(8000000 msat, alice, bob, alice2bob, bob2alice) //  a->b (regular)
-
-    val (r3, htlc3) = addHtlc(300000 msat, bob, alice, bob2alice, alice2bob) //   b->a (dust)
-
-    val (r4, htlc4) = addHtlc(1000000 msat, alice, bob, alice2bob, bob2alice) //  a->b (regular)
-
-    val (r5, htlc5) = addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
-
-    val (r6, htlc6) = addHtlc(500000 msat, alice, bob, alice2bob, bob2alice) //   a->b (dust)
-
-    val (r7, htlc7) = addHtlc(4000000 msat, bob, alice, bob2alice, alice2bob) //  b->a (regular)
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(8000000 msat, alice, bob, alice2bob, bob2alice) //  a->b (regular)
+    addHtlc(300000 msat, bob, alice, bob2alice, alice2bob) //   b->a (dust)
+    addHtlc(1000000 msat, alice, bob, alice2bob, bob2alice) //  a->b (regular)
+    addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
+    addHtlc(500000 msat, alice, bob, alice2bob, bob2alice) //   a->b (dust)
+    addHtlc(4000000 msat, bob, alice, bob2alice, alice2bob) //  b->a (regular)
 
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
@@ -911,7 +900,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CommitSig (bad htlc sig count)") { f =>
     import f._
-    val sender = TestProbe()
 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -931,7 +919,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CommitSig (invalid htlc sig)") { f =>
     import f._
-    val sender = TestProbe()
 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -951,7 +938,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv RevokeAndAck (one htlc sent)") { f =>
     import f._
-    val sender = TestProbe()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
 
     alice ! CMD_SIGN()
@@ -968,7 +954,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv RevokeAndAck (one htlc received)") { f =>
     import f._
-    val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
 
     alice ! CMD_SIGN()
@@ -995,20 +980,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv RevokeAndAck (multiple htlcs in both directions)") { f =>
     import f._
-    val sender = TestProbe()
-    val (r1, htlc1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
 
-    val (r2, htlc2) = addHtlc(8000000 msat, alice, bob, alice2bob, bob2alice) //  a->b (regular)
-
-    val (r3, htlc3) = addHtlc(300000 msat, bob, alice, bob2alice, alice2bob) //   b->a (dust)
-
-    val (r4, htlc4) = addHtlc(1000000 msat, alice, bob, alice2bob, bob2alice) //  a->b (regular)
-
-    val (r5, htlc5) = addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
-
-    val (r6, htlc6) = addHtlc(500000 msat, alice, bob, alice2bob, bob2alice) //   a->b (dust)
-
-    val (r7, htlc7) = addHtlc(4000000 msat, bob, alice, bob2alice, alice2bob) //  b->a (regular)
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice) // a->b (regular)
+    addHtlc(8000000 msat, alice, bob, alice2bob, bob2alice) //  a->b (regular)
+    addHtlc(300000 msat, bob, alice, bob2alice, alice2bob) //   b->a (dust)
+    addHtlc(1000000 msat, alice, bob, alice2bob, bob2alice) //  a->b (regular)
+    addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob) // b->a (regular)
+    addHtlc(500000 msat, alice, bob, alice2bob, bob2alice) //   a->b (dust)
+    addHtlc(4000000 msat, bob, alice, bob2alice, alice2bob) //  b->a (regular)
 
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
@@ -1032,12 +1011,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv RevokeAndAck (with reSignAsap=true)") { f =>
     import f._
     val sender = TestProbe()
-    val (r1, htlc1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
-    val (r2, htlc2) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN()
     sender.expectNoMsg(300 millis)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.left.toOption.get.reSignAsap === true)
@@ -1051,8 +1030,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv RevokeAndAck (invalid preimage)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
 
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
@@ -1073,7 +1051,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv RevokeAndAck (unexpectedly)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
     alice ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey)
     alice2bob.expectMsgType[Error]
@@ -1087,7 +1064,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv RevokeAndAck (forward UpdateFailHtlc)") { f =>
     import f._
-    val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     bob ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure))
@@ -1114,7 +1090,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv RevokeAndAck (forward UpdateFailMalformedHtlc)") { f =>
     import f._
-    val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.PaymentPacket.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
@@ -1141,7 +1116,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   def testRevokeAndAckHtlcStaticRemoteKey(f: FixtureParam): Unit = {
     import f._
-    val sender = TestProbe()
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features.hasFeature(StaticRemoteKey))
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features.hasFeature(StaticRemoteKey))
@@ -1185,8 +1159,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv RevocationTimeout") { f =>
     import f._
-    val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
 
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
@@ -1202,7 +1175,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   private def testReceiveCmdFulfillHtlc(f: FixtureParam): Unit = {
     import f._
 
-    val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -1253,6 +1225,24 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(initialState == bob.stateData)
   }
 
+  test("recv CMD_FULFILL_HTLC (acknowledge in case of success)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // actual test begins
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val c = CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(sender.ref))
+    // this would be done automatically when the relayer calls safeSend
+    bob.underlyingActor.nodeParams.db.pendingRelay.addPendingRelay(initialState.channelId, c)
+    bob ! c
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob ! CMD_SIGN(replyTo_opt = Some(sender.ref))
+    bob2alice.expectMsgType[CommitSig]
+    awaitCond(bob.underlyingActor.nodeParams.db.pendingRelay.listPendingRelay(initialState.channelId).isEmpty)
+  }
+
   test("recv CMD_FULFILL_HTLC (acknowledge in case of failure)") { f =>
     import f._
     val sender = TestProbe()
@@ -1266,7 +1256,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   private def testUpdateFulfillHtlc(f: FixtureParam): Unit = {
     import f._
-    val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     bob ! CMD_FULFILL_HTLC(htlc.id, r)
@@ -1297,7 +1286,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateFulfillHtlc (sender has not signed htlc)") { f =>
     import f._
-    val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
@@ -1317,7 +1305,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFulfillHtlc (unknown htlc id)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
     alice ! UpdateFulfillHtlc(ByteVector32.Zeroes, 42, ByteVector32.Zeroes)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
@@ -1330,8 +1317,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateFulfillHtlc (invalid preimage)") { f =>
     import f._
-    val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     relayerB.expectMsgType[RelayForward]
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -1351,16 +1337,16 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   private def testCmdFailHtlc(f: FixtureParam): Unit = {
     import f._
-    val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure))
-    assert(OutgoingPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc).get.id === htlc.id)
+    val Right(fail) = OutgoingPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
+    assert(fail.id === htlc.id)
     bob ! cmd
-    val fail = bob2alice.expectMsgType[UpdateFailHtlc]
+    bob2alice.expectMsg(fail)
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
         localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
@@ -1402,8 +1388,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_FAIL_MALFORMED_HTLC") { f =>
     import f._
-    val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1449,7 +1434,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   private def testUpdateFailHtlc(f: FixtureParam): Unit = {
     import f._
-    val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     bob ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure))
@@ -1478,7 +1462,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateFailMalformedHtlc") { f =>
     import f._
-    val sender = TestProbe()
 
     // Alice sends an HTLC to Bob, which they both sign
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -1506,8 +1489,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateFailMalformedHtlc (invalid failure_code)") { f =>
     import f._
-    val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
@@ -1526,8 +1508,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateFailHtlc (sender has not signed htlc)") { f =>
     import f._
-    val sender = TestProbe()
-    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
 
@@ -1546,7 +1527,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFailHtlc (unknown htlc id)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
     alice ! UpdateFailHtlc(ByteVector32.Zeroes, 42, ByteVector.fill(152)(0))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
@@ -1559,7 +1539,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv UpdateFailHtlc (invalid onion error length)") { f =>
     import f._
-    val sender = TestProbe()
     val (_, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     // Bob receives a failure with a completely invalid onion error (missing mac)
@@ -1572,7 +1551,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   private def testCmdUpdateFee(f: FixtureParam): Unit = {
     import f._
-    val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat))
     val fee = alice2bob.expectMsgType[UpdateFee]
@@ -1591,10 +1569,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CMD_UPDATE_FEE (two in a row)") { f =>
     import f._
-    val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat))
-    val fee1 = alice2bob.expectMsgType[UpdateFee]
+    alice2bob.expectMsgType[UpdateFee]
     alice ! CMD_UPDATE_FEE(FeeratePerKw(30000 sat))
     val fee2 = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
@@ -1641,7 +1618,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (when sender is not funder)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
     alice ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
@@ -1655,7 +1631,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (sender can't afford it)") { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(100000000 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
@@ -1673,7 +1648,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (sender can't afford it) (anchor outputs)", Tag("anchor_outputs")) { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
     // This feerate is just above the threshold: (800000 (alice balance) - 20000 (reserve) - 660 (anchors)) / 1124 (commit tx weight) = 693363
     val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(693364 sat))
     // we first update the feerates so that we don't trigger a 'fee too different' error
@@ -1692,9 +1666,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
 
-    bob.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(1000 sat), FeeratePerKw(2000 sat), FeeratePerKw(6000 sat), FeeratePerKw(12000 sat), FeeratePerKw(36000 sat), FeeratePerKw(72000 sat), FeeratePerKw(140000 sat), FeeratePerKw(160000 sat)))
+    bob.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(500 sat), FeeratePerKw(1000 sat), FeeratePerKw(2000 sat), FeeratePerKw(6000 sat), FeeratePerKw(12000 sat), FeeratePerKw(36000 sat), FeeratePerKw(72000 sat), FeeratePerKw(140000 sat), FeeratePerKw(160000 sat)))
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
     val localFeerate = bob.feeEstimator.getFeeratePerKw(bob.feeTargets.commitmentBlockTarget)
     assert(localFeerate === FeeratePerKw(2000 sat))
     val remoteFeerate = FeeratePerKw(4000 sat)
@@ -1717,7 +1690,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
     val tx = bobCommitments.localCommit.publishableTxs.commitTx.tx
-    val sender = TestProbe()
     val expectedFeeratePerKw = bob.feeEstimator.getFeeratePerKw(bob.feeTargets.commitmentBlockTarget)
     assert(bobCommitments.localCommit.spec.feeratePerKw == expectedFeeratePerKw)
     bob ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(252 sat))
@@ -2046,7 +2018,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CurrentBlockCount (fulfilled proposed htlc ignored by upstream peer)") { f =>
     import f._
-    val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -2080,7 +2051,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CurrentBlockCount (fulfilled proposed htlc acked but not committed by upstream peer)") { f =>
     import f._
-    val sender = TestProbe()
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
@@ -2119,16 +2089,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee)") { f =>
     import f._
-    val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val event = CurrentFeerates(FeeratesPerKw(FeeratePerKw(100 sat), FeeratePerKw(200 sat), FeeratePerKw(600 sat), FeeratePerKw(1200 sat), FeeratePerKw(3600 sat), FeeratePerKw(7200 sat), FeeratePerKw(14400 sat), FeeratePerKw(100800 sat)))
+    val event = CurrentFeerates(FeeratesPerKw(FeeratePerKw(50 sat), FeeratePerKw(100 sat), FeeratePerKw(200 sat), FeeratePerKw(600 sat), FeeratePerKw(1200 sat), FeeratePerKw(3600 sat), FeeratePerKw(7200 sat), FeeratePerKw(14400 sat), FeeratePerKw(100800 sat)))
     alice ! event
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(Alice.nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)))
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
     import f._
-    val sender = TestProbe()
     val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
     alice ! event
     alice2bob.expectNoMsg(500 millis)
@@ -2136,7 +2104,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { f =>
     import f._
-    val sender = TestProbe()
     val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(11000 sat)))
     bob ! event
     bob2alice.expectNoMsg(500 millis)
@@ -2148,7 +2115,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
 
-    val sender = TestProbe()
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
     val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
     bob ! event
@@ -2162,7 +2128,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different, without HTLCs)") { f =>
     import f._
 
-    val sender = TestProbe()
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(1000 sat)))
     val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(1000 sat)))
     bob ! event
@@ -2179,7 +2144,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv BITCOIN_FUNDING_SPENT (their commit w/ htlc)") { f =>
     import f._
-    val sender = TestProbe()
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(100000000 msat, alice, bob, alice2bob, bob2alice)
@@ -2207,7 +2171,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
     // in response to that, alice publishes its claim txes
-    val claimTxes = for (i <- 0 until 4) yield alice2blockchain.expectMsgType[PublishAsap].tx
+    val claimTxes = for (_ <- 0 until 4) yield alice2blockchain.expectMsgType[PublishAsap].tx
     val claimMain = claimTxes(0)
     // in addition to its main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val amountClaimed = (for (claimHtlcTx <- claimTxes) yield {
@@ -2240,7 +2204,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv BITCOIN_FUNDING_SPENT (their *next* commit w/ htlc)") { f =>
     import f._
-    val sender = TestProbe()
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
     val (ra2, htlca2) = addHtlc(100000000 msat, alice, bob, alice2bob, bob2alice)
@@ -2305,13 +2268,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //   bob = 200 000
     def send(): Transaction = {
       // alice sends 8 000 sat
-      val (r, htlc) = addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice)
+      addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
 
       bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     }
 
-    val txs = for (i <- 0 until 10) yield send()
+    val txs = for (_ <- 0 until 10) yield send()
     // bob now has 10 spendable tx, 9 of them being revoked
 
     // let's say that bob published this tx
@@ -2336,7 +2299,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
     // let's make sure that htlc-penalty txs each spend a different output
     assert(htlcPenaltyTxs.map(_.txIn.head.outPoint.index).toSet.size === htlcPenaltyTxs.size)
-    htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
+    htlcPenaltyTxs.foreach(_ => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
     alice2blockchain.expectNoMsg(1 second)
 
     Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -2395,13 +2358,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
     val mainPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
-    val htlcPenaltyTxs = for (i <- 0 until 2) yield alice2blockchain.expectMsgType[PublishAsap].tx
+    val htlcPenaltyTxs = for (_ <- 0 until 2) yield alice2blockchain.expectMsgType[PublishAsap].tx
     // let's make sure that htlc-penalty txs each spend a different output
     assert(htlcPenaltyTxs.map(_.txIn.head.outPoint.index).toSet.size === htlcPenaltyTxs.size)
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
     assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
-    htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
+    htlcPenaltyTxs.foreach(_ => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
     alice2blockchain.expectNoMsg(1 second)
 
     Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -2442,7 +2405,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // - 1 tx to claim the main delayed output
     // - 3 txes for each htlc
     // - 3 txes for each delayed output of the claimed htlc
-    val claimTxs = for (i <- 0 until 7) yield alice2blockchain.expectMsgType[PublishAsap].tx
+    val claimTxs = for (_ <- 0 until 7) yield alice2blockchain.expectMsgType[PublishAsap].tx
 
     // the main delayed output spends the commitment transaction
     Transaction.correctlySpends(claimTxs(0), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -2497,46 +2460,42 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv BITCOIN_FUNDING_DEEPLYBURIED", Tag("channels_public")) { f =>
     import f._
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMsg(1 second)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // we don't re-publish the same channel_update if there was no change
     channelUpdateListener.expectNoMsg(1 second)
   }
 
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (short channel id changed)", Tag("channels_public")) { f =>
     import f._
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22, null)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMsg(1 second)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
     channelUpdateListener.expectNoMsg(1 second)
   }
 
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel)") { f =>
     import f._
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     // private channel: we send the channel_update directly to the peer
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // we don't re-publish the same channel_update if there was no change
     channelUpdateListener.expectNoMsg(1 second)
   }
 
   test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel, short channel id changed)") { f =>
     import f._
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400001, 22, null)
     // private channel: we send the channel_update directly to the peer
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried == true)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // LocalChannelUpdate should not be published
     assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
     channelUpdateListener.expectNoMsg(1 second)
@@ -2545,7 +2504,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv AnnouncementSignatures", Tag("channels_public")) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
     bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
@@ -2564,7 +2522,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv AnnouncementSignatures (re-send)", Tag("channels_public")) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10, null)
     val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
     bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10, null)
@@ -2584,7 +2541,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv AnnouncementSignatures (invalid)", Tag("channels_public")) { f =>
     import f._
     val channelId = alice.stateData.asInstanceOf[DATA_NORMAL].channelId
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     alice2bob.expectMsgType[AnnouncementSignatures]
     bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
@@ -2600,7 +2556,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv BroadcastChannelUpdate", Tag("channels_public")) { f =>
     import f._
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
@@ -2616,7 +2571,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv BroadcastChannelUpdate (no changes)", Tag("channels_public")) { f =>
     import f._
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
@@ -2631,7 +2585,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv INPUT_DISCONNECTED") { f =>
     import f._
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
     assert(Announcements.isEnabled(update1a.channelFlags))
@@ -2667,13 +2620,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   test("recv INPUT_DISCONNECTED (public channel)", Tag("channels_public")) { f =>
     import f._
-    val sender = TestProbe()
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(Announcements.isEnabled(update1.channelUpdate.channelFlags) == true)
+    assert(Announcements.isEnabled(update1.channelUpdate.channelFlags))
 
     // actual test starts here
     alice ! INPUT_DISCONNECTED

@@ -16,13 +16,12 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import akka.Done
 import akka.actor.ActorRef
+import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -34,11 +33,12 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
 
+import java.util.UUID
 import scala.concurrent.Promise
 import scala.concurrent.duration._
 
@@ -551,31 +551,33 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val trampolineRelayedPaymentHash = randomBytes32
     val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_1, 0L) :: Nil)
     val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
-    val relayedhtlc1Out = buildHtlcOut(50L, channelId_ab_2, trampolineRelayedPaymentHash)
+    val relayedHtlc1Out = buildHtlcOut(50L, channelId_ab_2, trampolineRelayedPaymentHash)
     val nonRelayedHtlc2In = buildHtlcIn(1L, channelId_ab_1, relayedPaymentHash)
 
+    // @formatter:off
     val pluginParams = new CustomCommitmentsPlugin {
-      def name = "test with incoming HTLC from remote"
-      def getIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None), PostRestartHtlcCleaner.IncomingHtlc(nonRelayedHtlc2In.add, None))
-      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
+      override def name = "test with incoming HTLC from remote"
+      override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None), PostRestartHtlcCleaner.IncomingHtlc(nonRelayedHtlc2In.add, None))
+      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
     }
+    // @formatter:on
 
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedhtlc1Out), Map(50L -> trampolineRelayed))
+    val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedHtlc1Out), Map(50L -> trampolineRelayed))
     nodeParams1.db.channels.addOrUpdateChannel(c)
 
     val channel = TestProbe()
     f.createRelayer(nodeParams1)
     register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
-    val cs = new AbstractCommitments {
+    // @formatter:off
+    val cs: AbstractCommitments = new AbstractCommitments {
       def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = None
       def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = {
         if (htlcId == 0L) Some(relayedHtlc1In.add)
         else if (htlcId == 1L) Some(nonRelayedHtlc2In.add)
         else None
       }
-      def timedOutOutgoingHtlcs(blockheight: Long): Set[UpdateAddHtlc] = Set.empty
       def localNodeId: PublicKey = randomExtendedPrivateKey.publicKey
       def remoteNodeId: PublicKey = randomExtendedPrivateKey.publicKey
       def capacity: Satoshi = Long.MaxValue.sat
@@ -585,6 +587,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       def channelId: ByteVector32 = channelId_ab_1
       def announceChannel: Boolean = false
     }
+    // @formatter:on
 
     // Non-standard channel goes to NORMAL state:
     system.eventStream.publish(ChannelStateChanged(channel.ref, channelId_ab_1, system.deadLetters, a, OFFLINE, NORMAL, Some(cs)))
@@ -601,11 +604,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val relayedHtlcIn = buildHtlcIn(0L, channelId_ab_2, trampolineRelayedPaymentHash)
     val nonRelayedHtlcIn = buildHtlcIn(1L, channelId_ab_2, relayedPaymentHash)
 
+    // @formatter:off
     val pluginParams = new CustomCommitmentsPlugin {
-      def name = "test with outgoing HTLC to remote"
-      def getIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = List.empty
-      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
+      override def name = "test with outgoing HTLC to remote"
+      override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List.empty
+      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map(trampolineRelayed -> Set((channelId_ab_1, 10L)))
     }
+    // @formatter:on
 
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
     val c = ChannelCodecsSpec.makeChannelDataNormal(List(relayedHtlcIn, nonRelayedHtlcIn), Map.empty)
@@ -627,11 +632,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val trampolineRelayedPaymentHash = randomBytes32
     val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
 
+    // @formatter:off
     val pluginParams = new CustomCommitmentsPlugin {
-      def name = "test with incoming HTLC from remote"
-      def getIncomingHtlcs: Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None))
-      def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
+      override def name = "test with incoming HTLC from remote"
+      override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None))
+      override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
     }
+    // @formatter:on
 
     val cmd1 = CMD_FAIL_HTLC(id = 0L, reason = Left(ByteVector.empty), replyTo_opt = None)
     val cmd2 = CMD_FAIL_HTLC(id = 1L, reason = Left(ByteVector.empty), replyTo_opt = None)
@@ -713,9 +720,7 @@ object PostRestartHtlcCleanerSpec {
     LocalPaymentTest(parentId, Seq(id1, id2, id3), fails, fulfills)
   }
 
-  case class ChannelRelayedPaymentTest(origin: Origin.ChannelRelayedCold,
-                                   downstream: UpdateAddHtlc,
-                                   notRelayed: Set[(Long, ByteVector32)])
+  case class ChannelRelayedPaymentTest(origin: Origin.ChannelRelayedCold, downstream: UpdateAddHtlc, notRelayed: Set[(Long, ByteVector32)])
 
   def setupChannelRelayedPayments(nodeParams: NodeParams): ChannelRelayedPaymentTest = {
     // Upstream HTLCs.

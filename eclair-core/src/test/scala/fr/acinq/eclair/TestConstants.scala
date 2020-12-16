@@ -16,13 +16,9 @@
 
 package fr.acinq.eclair
 
-import java.sql.{Connection, DriverManager, Statement}
-import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
-
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND
@@ -35,8 +31,12 @@ import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
+import org.scalatest.Tag
 import scodec.bits.ByteVector
 
+import java.sql.{Connection, DriverManager, Statement}
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 
 /**
@@ -131,10 +131,12 @@ object TestConstants {
     val mandatory = 50000
   }
 
-  val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
-    def messageTags: Set[Int] = Set(60003)
-    def feature: Feature = TestFeature
-    def name: String = "plugin for testing"
+  val pluginParams = new CustomFeaturePlugin {
+    // @formatter:off
+    override def messageTags: Set[Int] = Set(60003)
+    override def feature: Feature = TestFeature
+    override def name: String = "plugin for testing"
+    // @formatter:on
   }
 
   object Alice {
@@ -150,13 +152,18 @@ object TestConstants {
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
-      features = Features(Set(
-        ActivatedFeature(InitialRoutingSync, Optional),
-        ActivatedFeature(OptionDataLossProtect, Optional),
-        ActivatedFeature(ChannelRangeQueries, Optional),
-        ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-        ActivatedFeature(VariableLengthOnion, Optional)),
-        Set(UnknownFeature(TestFeature.optional))),
+      features = Features(
+        Set(
+          ActivatedFeature(InitialRoutingSync, Optional),
+          ActivatedFeature(OptionDataLossProtect, Optional),
+          ActivatedFeature(ChannelRangeQueries, Optional),
+          ActivatedFeature(ChannelRangeQueriesExtended, Optional),
+          ActivatedFeature(VariableLengthOnion, Optional),
+          ActivatedFeature(PaymentSecret, Optional),
+          ActivatedFeature(BasicMultiPartPayment, Optional)
+        ),
+        Set(UnknownFeature(TestFeature.optional))
+      ),
       pluginParams = List(pluginParams),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
@@ -253,7 +260,15 @@ object TestConstants {
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
-      features = Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+      features = Features(Set(
+        ActivatedFeature(InitialRoutingSync, Optional),
+        ActivatedFeature(OptionDataLossProtect, Optional),
+        ActivatedFeature(ChannelRangeQueries, Optional),
+        ActivatedFeature(ChannelRangeQueriesExtended, Optional),
+        ActivatedFeature(VariableLengthOnion, Optional),
+        ActivatedFeature(PaymentSecret, Optional),
+        ActivatedFeature(BasicMultiPartPayment, Optional)
+      )),
       pluginParams = Nil,
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
@@ -336,5 +351,12 @@ object TestConstants {
       channelReserve = 20000 sat // Alice will need to keep that much satoshis as direct payment
     )
   }
+
+}
+
+object TestTags {
+
+  // Tests that call an external API (which may start failing independently of our code).
+  object ExternalApi extends Tag("external-api")
 
 }

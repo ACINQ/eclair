@@ -21,14 +21,14 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, MilliBtc, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Block, Btc, BtcDouble, ByteVector32, MilliBtc, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse, WalletTransaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass, addressToPublicKeyScript, randomKey}
+import fr.acinq.eclair.{TestKitBaseClass, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, _}
 import org.json4s.{DefaultFormats, Formats}
@@ -358,7 +358,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     assert(initialBalance.confirmed > 50.btc.toSatoshi)
 
     val address = "n2YKngjUp139nkjKvZGnfLRN6HzzYxJsje"
-    val amount = 150.mbtc.toSatoshi
+    val amount = 150.millibtc.toSatoshi
     wallet.sendToAddress(address, amount, 3).pipeTo(sender.ref)
     val txid = sender.expectMsgType[ByteVector32]
 

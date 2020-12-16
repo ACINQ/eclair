@@ -27,6 +27,7 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.io.Peer.CHANNELID_ZERO
+import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{wire, _}
@@ -271,7 +272,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         val nodesSent = sendAndCount(rebroadcast.nodes)
 
         if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
-          log.info(s"sent announcements: channels={} updates={} nodes={}", channelsSent, updatesSent, nodesSent)
+          log.debug("sent announcements: channels={} updates={} nodes={}", channelsSent, updatesSent, nodesSent)
         }
         stay
 
@@ -381,6 +382,12 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         case _ => ()
       }
       stop(FSM.Normal)
+
+    case Event(Kill(reason), _) =>
+      Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
+        log.info(s"stopping with reason=$reason")
+        stop(FSM.Normal)
+      }
 
     case Event(_: GossipDecision.Accepted, _) => stay // for now we don't do anything with those events
 
@@ -505,11 +512,11 @@ object PeerConnection {
   case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
-  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey)
-  case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features, doSync: Boolean)
-  case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init)
+  case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey) extends RemoteTypes
+  case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features, doSync: Boolean) extends RemoteTypes
+  case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: wire.Init, remoteInit: wire.Init) extends RemoteTypes
 
-  sealed trait ConnectionResult
+  sealed trait ConnectionResult extends RemoteTypes
   object ConnectionResult {
     sealed trait Success extends ConnectionResult
     sealed trait Failure extends ConnectionResult
@@ -526,6 +533,19 @@ object PeerConnection {
 
   case class Behavior(fundingTxAlreadySpentCount: Int = 0, ignoreNetworkAnnouncement: Boolean = false)
 
+  /**
+   * Kill the actor and the underlying connection. We can't use a [[PoisonPill]] because it would be dropped when using
+   * akka cluster with unstrusted mode enabled.
+   */
+  case class Kill(reason: KillReason) extends RemoteTypes
+
+  sealed trait KillReason
+  object KillReason {
+    case object UserRequest extends KillReason
+    case object NoRemainingChannel extends KillReason
+    case object AllChannelsFail extends KillReason
+    case object ConnectionReplaced extends KillReason
+  }
   // @formatter:on
 
   /**

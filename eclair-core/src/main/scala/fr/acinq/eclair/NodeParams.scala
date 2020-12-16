@@ -98,6 +98,11 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
 
+  def forceReconnect(nodeId: PublicKey): Boolean = pluginParams.exists {
+    case p: ConnectionControlPlugin => p.forceReconnect(nodeId)
+    case _ => false
+  }
+
   def currentBlockHeight: Long = blockCount.get
 
   def featuresFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features)
@@ -189,7 +194,11 @@ object NodeParams extends Logging {
       "global-features" -> "features",
       "local-features" -> "features",
       // v0.4.1
-      "on-chain-fees.max-feerate-mismatch" -> "on-chain-fees.feerate-tolerance.ratio-low / on-chain-fees.feerate-tolerance.ratio-high"
+      "on-chain-fees.max-feerate-mismatch" -> "on-chain-fees.feerate-tolerance.ratio-low / on-chain-fees.feerate-tolerance.ratio-high",
+      // v0.4.3
+      "min-feerate" -> "on-chain-fees.min-feerate",
+      "smooth-feerate-window" -> "on-chain-fees.smoothing-window",
+      "feerate-provider-timeout" -> "on-chain-fees.provider-timeout"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")

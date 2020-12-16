@@ -17,7 +17,6 @@
 package fr.acinq.eclair.crypto
 
 import java.nio.ByteOrder
-
 import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, PoisonPill, Props, Terminated}
 import akka.event.Logging.MDC
 import akka.event._
@@ -28,11 +27,15 @@ import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
+import fr.acinq.eclair.wire.{AnnouncementSignatures, RoutingMessage}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, getSimpleClassName}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
+import java.nio.ByteOrder
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
 import scala.reflect.ClassTag
@@ -211,9 +214,8 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         } else if (d.unackedSent.isDefined) {
           log.debug("buffering send data={}", t)
           val sendBuffer1 = t match {
-            case _: ChannelAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
-            case _: NodeAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
-            case _: ChannelUpdate => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
+            case _: AnnouncementSignatures => d.sendBuffer.copy(normalPriority = d.sendBuffer.normalPriority :+ t)
+            case _: RoutingMessage => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
             case _ => d.sendBuffer.copy(normalPriority = d.sendBuffer.normalPriority :+ t)
           }
           stay using d.copy(sendBuffer = sendBuffer1)
@@ -257,7 +259,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         stop(FSM.Normal)
 
       case Event(Terminated(actor), _) if actor == connection =>
-        log.info(s"connection terminated, stopping the transport")
+        log.info("connection actor died")
         // this can be the connection or the listener, either way it is a cause of death
         stop(FSM.Normal)
 
@@ -273,6 +275,13 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   onTermination {
     case _: StopEvent =>
       connection ! Tcp.Close // attempts to gracefully close the connection when dying
+      stateData match {
+        case normal: NormalData[_] =>
+          // NB: we deduplicate on the class name: each class will appear once but there may be many instances (less verbose and gives debug hints)
+          log.info("stopping (unackedReceived={} unackedSent={})", normal.unackedReceived.keys.map(getSimpleClassName).toSet.mkString(","), normal.unackedSent.map(getSimpleClassName))
+        case _ =>
+          log.info("stopping")
+      }
   }
 
   initialize()
@@ -444,7 +453,7 @@ object TransportHandler {
 
   case class HandshakeCompleted(remoteNodeId: PublicKey)
 
-  case class ReadAck(msg: Any)
+  case class ReadAck(msg: Any) extends RemoteTypes
   case object WriteAck extends Tcp.Event
   // @formatter:on
 

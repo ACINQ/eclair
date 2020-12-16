@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.g
 
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
@@ -26,13 +26,12 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
-import scala.util.Success
 
 /**
  * Created by PM on 05/07/2016.
@@ -137,6 +136,22 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     testFeeConverge(f)
   }
 
+  test("recv ClosingSigned (nothing at stake)", Tag("no_push_msat")) { f =>
+    import f._
+    val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
+    alice2bob.forward(bob)
+    val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
+    assert(aliceCloseFee === bobCloseFee)
+    bob2alice.forward(alice)
+    val mutualCloseTxAlice = alice2blockchain.expectMsgType[PublishAsap].tx
+    val mutualCloseTxBob = bob2blockchain.expectMsgType[PublishAsap].tx
+    assert(mutualCloseTxAlice === mutualCloseTxBob)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTxAlice))
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTxBob))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTxAlice))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTxBob))
+  }
+
   test("recv ClosingSigned (fee too high)") { f =>
     import f._
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
@@ -153,7 +168,6 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("recv ClosingSigned (invalid sig)") { f =>
     import f._
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
-    val sender = TestProbe()
     val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
     bob ! aliceCloseSig.copy(signature = ByteVector64.Zeroes)
     val error = bob2alice.expectMsgType[Error]
@@ -200,7 +214,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // at this point alice and bob have not yet converged on closing fees, but bob decides to publish a mutual close with one of the previous sigs
     val d = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
     implicit val log: LoggingAdapter = bob.underlyingActor.implicitLog
-    val Success(bobClosingTx) = Closing.checkClosingSignature(Bob.channelKeyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
+    val Right(bobClosingTx) = Closing.checkClosingSignature(Bob.channelKeyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
 
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
     alice2blockchain.expectMsgType[PublishAsap]

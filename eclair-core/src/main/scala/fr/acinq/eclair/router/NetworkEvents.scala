@@ -19,12 +19,13 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
 /**
   * Created by PM on 02/02/2017.
   */
-trait NetworkEvent
+trait NetworkEvent extends RemoteTypes
 
 case class NodesDiscovered(ann: Iterable[NodeAnnouncement]) extends NetworkEvent
 

@@ -157,9 +157,17 @@ trait Service extends ExtraDirectives with Logging {
                           }
                         } ~
                         path("open") {
-                          formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "fundingFeerateSatByte".as[FeeratePerByte].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
-                            (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>
-                              complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt))
+                          formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "fundingFeerateSatByte".as[FeeratePerByte].?, "feeBaseMsat".as[MilliSatoshi].?, "feeProportionalMillionths".as[Int].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
+                            (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, feeBase, feeProportional, channelFlags, openTimeout_opt) =>
+                              if (feeBase.nonEmpty && feeProportional.isEmpty || feeBase.isEmpty && feeProportional.nonEmpty) {
+                                 reject(MalformedFormFieldRejection("feeBaseMsat/feeProportionalMillionths", "All relay fees parameters (feeBaseMsat/feeProportionalMillionths) must be specified to override node defaults"))
+                              } else {
+                                val initialRelayFees = (feeBase, feeProportional) match {
+                                  case (Some(feeBase), Some(feeProportional)) => Some(feeBase, feeProportional)
+                                  case _ => None
+                                }
+                                complete(eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, initialRelayFees, channelFlags, openTimeout_opt))
+                              }
                           }
                         } ~
                         path("updaterelayfee") {

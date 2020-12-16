@@ -43,15 +43,15 @@ case class TorException(private val msg: String) extends RuntimeException(s"Tor 
   * @param onionServiceVersion v2 or v3
   * @param authentication      Tor controller auth mechanism (password or safecookie)
   * @param privateKeyPath      path to a file that contains a Tor private key
-  * @param virtualPort         port of our protected local server (typically 9735)
-  * @param targetPorts         target ports of the public hidden service
+  * @param virtualPort         port for the public hidden service (typically 9735)
+  * @param targets             address of our protected server (format [host:]port), 127.0.0.1:[[virtualPort]] if empty
   * @param onionAdded          a Promise to track creation of the endpoint
   */
 class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
                          authentication: Authentication,
                          privateKeyPath: Path,
                          virtualPort: Int,
-                         targetPorts: Seq[Int],
+                         targets: Seq[String],
                          onionAdded: Option[Promise[NodeAddress]]
                         ) extends Actor with Stash with ActorLogging {
 
@@ -159,10 +159,10 @@ class TorProtocolHandler(onionServiceVersion: OnionServiceVersion,
   }
 
   private def computePort: String = {
-    if (targetPorts.isEmpty) {
+    if (targets.isEmpty) {
       s"Port=$virtualPort,$virtualPort"
     } else {
-      targetPorts.map(p => s"Port=$virtualPort,$p").mkString(" ")
+      targets.map(p => s"Port=$virtualPort,$p").mkString(" ")
     }
   }
 
@@ -194,10 +194,10 @@ object TorProtocolHandler {
             authentication: Authentication,
             privateKeyPath: Path,
             virtualPort: Int,
-            targetPorts: Seq[Int] = Seq(),
+            targets: Seq[String] = Seq(),
             onionAdded: Option[Promise[NodeAddress]] = None
            ): Props =
-    Props(new TorProtocolHandler(version, authentication, privateKeyPath, virtualPort, targetPorts, onionAdded))
+    Props(new TorProtocolHandler(version, authentication, privateKeyPath, virtualPort, targets, onionAdded))
 
   // those are defined in the spec
   private val ServerKey = ByteVector.view("Tor safe cookie authentication server-to-controller hash".getBytes())

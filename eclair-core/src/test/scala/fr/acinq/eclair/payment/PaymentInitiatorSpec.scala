@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Block
@@ -38,11 +36,12 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
 import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient, _}
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 /**
@@ -53,20 +52,19 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
-  val defaultTestFeatures = Features(Set(
-    ActivatedFeature(InitialRoutingSync, Optional),
-    ActivatedFeature(OptionDataLossProtect, Optional),
-    ActivatedFeature(ChannelRangeQueries, Optional),
-    ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-    ActivatedFeature(VariableLengthOnion, Optional)))
+  val featuresWithoutMpp = Features(Set(
+    ActivatedFeature(VariableLengthOnion, Optional),
+    ActivatedFeature(PaymentSecret, Optional)
+  ))
 
-  val featuresWithMpp = Features(
-    defaultTestFeatures.activated +
-      ActivatedFeature(PaymentSecret, Optional) +
-      ActivatedFeature(BasicMultiPartPayment, Optional))
+  val featuresWithMpp = Features(Set(
+    ActivatedFeature(VariableLengthOnion, Optional),
+    ActivatedFeature(PaymentSecret, Optional),
+    ActivatedFeature(BasicMultiPartPayment, Optional),
+  ))
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val features = if (test.tags.contains("mpp_disabled")) defaultTestFeatures else featuresWithMpp
+    val features = if (test.tags.contains("mpp_disabled")) featuresWithoutMpp else featuresWithMpp
     val nodeParams = TestConstants.Alice.nodeParams.copy(features = features)
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()

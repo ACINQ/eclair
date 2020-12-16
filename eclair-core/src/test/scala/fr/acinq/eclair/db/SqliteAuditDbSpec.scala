@@ -16,10 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import java.util.UUID
-
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
@@ -29,6 +27,7 @@ import fr.acinq.eclair.payment._
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
 
+import java.util.UUID
 import scala.concurrent.duration._
 import scala.util.Random
 
