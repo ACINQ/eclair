@@ -384,6 +384,7 @@ object Commitments {
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
         val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
+        payment.Monitoring.Metrics.recordIncomingPaymentDistribution(commitments.remoteParams.nodeId, htlc.amountMsat)
         Right((commitments1, fulfill))
       case Some(_) => Left(InvalidHtlcPreimage(commitments.channelId, cmd.id))
       case None => Left(UnknownHtlcId(commitments.channelId, cmd.id))
@@ -392,7 +393,9 @@ object Commitments {
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
     commitments.getOutgoingHtlcCrossSigned(fulfill.id) match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => commitments.originChannels.get(fulfill.id) match {
-        case Some(origin) => Right(addRemoteProposal(commitments, fulfill), origin, htlc)
+        case Some(origin) =>
+          payment.Monitoring.Metrics.recordOutgoingPaymentDistribution(commitments.remoteParams.nodeId, htlc.amountMsat)
+          Right(addRemoteProposal(commitments, fulfill), origin, htlc)
         case None => Left(UnknownHtlcId(commitments.channelId, fulfill.id))
       }
       case Some(_) => Left(InvalidHtlcPreimage(commitments.channelId, fulfill.id))
