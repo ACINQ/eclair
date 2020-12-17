@@ -74,7 +74,7 @@ NB: we override the ports, otherwise they would conflict since in this example e
 In production you should:
 - run multiple `frontend`s
 - run one app per server
-- enable `tcp-tls` to encrypted between members of the cluster with your own generated certificate (see below)
+- enable `tcp-tls` to encrypt communications between members of the cluster with your own generated certificate (see below)
 - use a load balancer to hide all your `frontend` servers under the same ip address
 - set firewall rules to disable lightning connections (port 9735) on your `backend` server, so all connections go through the `frontend`
 - enable [monitoring](Monitoring.md)
@@ -122,7 +122,7 @@ You can run it as-is for testing.
 If you intend to use it in production, you need to enable encryption with your own certificate:
 1. Follow the procedure above to generate your `akka-tls.jks`
 
-2. We recommend forking the project and build your own bundle:
+2. We recommend forking the project and building your own bundle:
 ```shell
 $ git clone git@github.com:ACINQ/eclair.git
 $ vi eclair-core/src/main/reference.conf # set akka.remote.artery.transport = "tls-tcp"
@@ -134,7 +134,7 @@ Alternatively, you can also edit the existing bundle and manually add the `akka-
 
 #### Private key
 
-In production, we highly recommend using AWS Secrets manager to provide the node private key. This is done by setting `eclair.front.priv-key-provider=aws-sm`. Default secret name is "node-priv-key", but it is configurable with `eclair.front.aws-sm.aws-sm.priv-key-name`
+In production, we highly recommend using AWS Secrets manager to provide the node private key. This is done by setting `eclair.front.priv-key-provider=aws-sm`. Default secret name is "node-priv-key", but it is configurable with `eclair.front.aws-sm.priv-key-name`
 
 #### Configuration
 
