@@ -221,10 +221,13 @@ nodeId    | The **nodeId** of the node you want to disconnect from | No       | 
 ## Open
 
 ```shell
-curl -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> "http://localhost:8080/open" -u :<eclair_api_password>
+curl -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> \
+  -F feeBaseMsat=<feebase> \
+  -F feeProportionalMillionths=<feeproportional> \
+  "http://localhost:8080/open" -u :<eclair_api_password>
 
 # with eclair-cli
-eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis>
+eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis> --feeBaseMsat=<feebase> --feeProportionalMillionths=<feeproportional>
 ```
 
 > The above command returns the channelId of the newly created channel:
@@ -236,20 +239,24 @@ created channel e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
 you can send to the remote a _pushMsat_ value and you can specify wether this should be a public or private channel (default is set in the config).
 
+You can optionally set the initial routing fees that this channel will use (_feeBaseMsat_ and _feeProportionalMillionths_).
+
 ### HTTP Request
 
 `POST http://localhost:8080/open`
 
 ### Parameters
 
-Parameter             | Description                                                     | Optional | Type
---------------------- | --------------------------------------------------------------- | -------- | ---------------------------
-nodeId                | The nodeId of the node you want to connect to                   | No       | 33-bytes-HexString (String)
-fundingSatoshis       | Amount of satoshis to spend in the funding of the channel       | No       | Satoshis (Integer)
-pushMsat              | Amount of millisatoshi to unilaterally push to the counterparty | Yes      | Millisatoshis (Integer)
-fundingFeerateSatByte | Feerate in sat/byte to apply to the funding transaction         | Yes      | Satoshis (Integer)
-channelFlags          | Flags for the new channel: 0 = private, 1 = public              | Yes      | Integer
-openTimeoutSeconds    | Timeout for the operation to complete                           | Yes      | Seconds (Integer)
+Parameter                 | Description                                                     | Optional | Type
+--------------------------| --------------------------------------------------------------- | -------- | ---------------------------
+nodeId                    | The nodeId of the node you want to connect to                   | No       | 33-bytes-HexString (String)
+fundingSatoshis           | Amount of satoshis to spend in the funding of the channel       | No       | Satoshis (Integer)
+pushMsat                  | Amount of millisatoshi to unilaterally push to the counterparty | Yes      | Millisatoshis (Integer)
+feeBaseMsat               | The base fee to use when relaying payments                      | Yes      | Millisatoshi (Integer)
+feeProportionalMillionths | The proportional fee to use when relaying payments              | Yes      | Integer
+fundingFeerateSatByte     | Feerate in sat/byte to apply to the funding transaction         | Yes      | Satoshis (Integer)
+channelFlags              | Flags for the new channel: 0 = private, 1 = public              | Yes      | Integer
+openTimeoutSeconds        | Timeout for the operation to complete                           | Yes      | Seconds (Integer)
 
 # Close
 
@@ -2343,6 +2350,7 @@ several types covering all the possible outcomes. All monetary values are expres
 ```json
 {
   "type": "channel-state-changed",
+  "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
   "remoteNodeId": "02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199",
   "previousState": "OFFLINE",
   "currentState": "NORMAL"
