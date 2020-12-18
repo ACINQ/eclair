@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.sql.DriverManager
-
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
@@ -28,6 +26,7 @@ import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
+import java.sql.DriverManager
 import scala.util.{Failure, Random, Success, Try}
 
 class ElectrumWalletBasicSpec extends AnyFunSuite with Logging {
@@ -76,7 +75,6 @@ class ElectrumWalletBasicSpec extends AnyFunSuite with Logging {
   }
 
   def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]): Data = keyamounts.foldLeft(data)(addFunds)
-
 
   test("compute addresses") {
     val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)._1
