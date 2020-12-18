@@ -32,6 +32,7 @@ object Boot extends App with Logging {
     val config = ConfigFactory.parseString(
       Option(System.getenv("AKKA_CONF")).getOrElse("").replace(";", "\n"),
       ConfigParseOptions.defaults().setSyntax(ConfigSyntax.PROPERTIES))
+      .withFallback(ConfigFactory.parseProperties(System.getProperties))
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load())
 
