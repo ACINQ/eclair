@@ -94,15 +94,20 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
   /** Disconnect node C from a given F node. */
   def disconnectCF(channelId: ByteVector32, sender: TestProbe = TestProbe()): Unit = {
+    val (stateListenerC, stateListenerF) = (TestProbe(), TestProbe())
+    nodes("C").system.eventStream.subscribe(stateListenerC.ref, classOf[ChannelStateChanged])
+    nodes("F").system.eventStream.subscribe(stateListenerF.ref, classOf[ChannelStateChanged])
+
     sender.send(nodes("F").switchboard, Symbol("peers"))
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
     peers.head ! Peer.Disconnect(nodes("C").nodeParams.nodeId)
+
     // we then wait for F to be in disconnected state
-    awaitCond({
-      sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GETSTATE(ActorRef.noSender)))
-      sender.expectMsgType[RES_GETSTATE[State]].state == OFFLINE
-    }, max = 20 seconds, interval = 1 second)
+    Seq(stateListenerC, stateListenerF).foreach(listener => awaitCond({
+      val channelState = listener.expectMsgType[ChannelStateChanged]
+      channelState.currentState == OFFLINE && channelState.channelId == channelId
+    }, max = 20 seconds, interval = 1 second))
   }
 
   case class ForceCloseFixture(sender: TestProbe, paymentSender: TestProbe, stateListenerC: TestProbe, stateListenerF: TestProbe, paymentId: UUID, htlc: UpdateAddHtlc, preimage: ByteVector32, minerAddress: String, finalAddressC: String, finalAddressF: String)
