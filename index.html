@@ -627,10 +627,13 @@ eclair-cli disconnect --nodeId<span class="o">=</span>&lt;nodeId&gt;
 <td>33-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
-<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">fundingSatoshis</span><span class="o">=</span>&lt;funding_satoshis&gt; <span class="s2">"http://localhost:8080/open"</span> -u :&lt;eclair_api_password&gt;
+<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">fundingSatoshis</span><span class="o">=</span>&lt;funding_satoshis&gt; <span class="se">\</span>
+  -F <span class="nv">feeBaseMsat</span><span class="o">=</span>&lt;feebase&gt; <span class="se">\</span>
+  -F <span class="nv">feeProportionalMillionths</span><span class="o">=</span>&lt;feeproportional&gt; <span class="se">\</span>
+  <span class="s2">"http://localhost:8080/open"</span> -u :&lt;eclair_api_password&gt;
 
 <span class="c"># with eclair-cli</span>
-eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshis<span class="o">=</span>&lt;funding_satoshis&gt;
+eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshis<span class="o">=</span>&lt;funding_satoshis&gt; --feeBaseMsat<span class="o">=</span>&lt;feebase&gt; --feeProportionalMillionths<span class="o">=</span>&lt;feeproportional&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns the channelId of the newly created channel:</p>
@@ -639,6 +642,8 @@ eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshi
 </code></pre>
 <p>Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
 you can send to the remote a <em>pushMsat</em> value and you can specify wether this should be a public or private channel (default is set in the config).</p>
+
+<p>You can optionally set the initial routing fees that this channel will use (<em>feeBaseMsat</em> and <em>feeProportionalMillionths</em>).</p>
 <h3 id='http-request-6'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/open</code></p>
 <h3 id='parameters-5'>Parameters</h3>
@@ -667,6 +672,18 @@ you can send to the remote a <em>pushMsat</em> value and you can specify wether 
 <td>Amount of millisatoshi to unilaterally push to the counterparty</td>
 <td>Yes</td>
 <td>Millisatoshis (Integer)</td>
+</tr>
+<tr>
+<td>feeBaseMsat</td>
+<td>The base fee to use when relaying payments</td>
+<td>Yes</td>
+<td>Millisatoshi (Integer)</td>
+</tr>
+<tr>
+<td>feeProportionalMillionths</td>
+<td>The proportional fee to use when relaying payments</td>
+<td>Yes</td>
+<td>Integer</td>
 </tr>
 <tr>
 <td>fundingFeerateSatByte</td>
@@ -2998,6 +3015,7 @@ several types covering all the possible outcomes. All monetary values are expres
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
   </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"channel-state-changed"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"remoteNodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d150875194d076f662d4252a8dee7077ed4cc4a848bb9f83fb467b6d3c120199"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"previousState"</span><span class="p">:</span><span class="w"> </span><span class="s2">"OFFLINE"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"currentState"</span><span class="p">:</span><span class="w"> </span><span class="s2">"NORMAL"</span><span class="w">
