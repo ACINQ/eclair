@@ -19,8 +19,8 @@ package fr.acinq.eclair.blockchain.fee
 import akka.actor.ActorSystem
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.bitcoin.{Block, SatoshiLong}
+import fr.acinq.eclair.TestTags
 import org.json4s.DefaultFormats
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -60,6 +60,7 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
     val ref = FeeratesPerKB(
+      mempoolMinFee = FeeratePerKB(5070 sat),
       block_1 = FeeratePerKB(149453 sat),
       blocks_2 = FeeratePerKB(136797 sat),
       blocks_6 = FeeratePerKB(105566 sat),
@@ -71,7 +72,7 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     assert(feerates === ref)
   }
 
-  test("make sure API hasn't changed") {
+  test("make sure API hasn't changed", TestTags.ExternalApi) {
     import scala.concurrent.duration._
     implicit val system = ActorSystem("test")
     implicit val ec = system.dispatcher
@@ -81,7 +82,7 @@ class BitgoFeeProviderSpec extends AnyFunSuite {
     assert(Await.result(bitgo.getFeerates, timeout.duration).block_1.toLong > 0)
   }
 
-  test("check that read timeout is enforced") {
+  test("check that read timeout is enforced", TestTags.ExternalApi) {
     import scala.concurrent.duration._
     implicit val system = ActorSystem("test")
     implicit val ec = system.dispatcher

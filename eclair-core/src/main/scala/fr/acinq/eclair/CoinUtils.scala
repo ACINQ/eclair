@@ -176,13 +176,6 @@ object CoinUtils extends Logging {
    * @return a GUICoinAmount
    */
   private def convertAmountToGUIUnit(amount: BtcAmount, unit: CoinUnit): BtcAmountGUILossless = (amount, unit) match {
-    // amount is msat, so no conversion required
-    case (a: MilliSatoshi, MSatUnit) => GUIMSat(a.toLong * MSatUnit.factorToMsat)
-    case (a: MilliSatoshi, SatUnit) => GUISat(a.toLong * MSatUnit.factorToMsat)
-    case (a: MilliSatoshi, BitUnit) => GUIBits(a.toLong * MSatUnit.factorToMsat)
-    case (a: MilliSatoshi, MBtcUnit) => GUIMBtc(a.toLong * MSatUnit.factorToMsat)
-    case (a: MilliSatoshi, BtcUnit) => GUIBtc(a.toLong * MSatUnit.factorToMsat)
-
     // amount is satoshi, convert sat -> msat
     case (a: Satoshi, MSatUnit) => GUIMSat(a.toLong * SatUnit.factorToMsat)
     case (a: Satoshi, SatUnit) => GUISat(a.toLong * SatUnit.factorToMsat)

@@ -69,6 +69,7 @@ object BitgoFeeProvider {
 
   def extractFeerates(feeRanges: Seq[BlockTarget]): FeeratesPerKB =
     FeeratesPerKB(
+      mempoolMinFee = extractFeerate(feeRanges, 1008),
       block_1 = extractFeerate(feeRanges, 1),
       blocks_2 = extractFeerate(feeRanges, 2),
       blocks_6 = extractFeerate(feeRanges, 6),

@@ -194,7 +194,11 @@ object NodeParams extends Logging {
       "global-features" -> "features",
       "local-features" -> "features",
       // v0.4.1
-      "on-chain-fees.max-feerate-mismatch" -> "on-chain-fees.feerate-tolerance.ratio-low / on-chain-fees.feerate-tolerance.ratio-high"
+      "on-chain-fees.max-feerate-mismatch" -> "on-chain-fees.feerate-tolerance.ratio-low / on-chain-fees.feerate-tolerance.ratio-high",
+      // v0.4.3
+      "min-feerate" -> "on-chain-fees.min-feerate",
+      "smooth-feerate-window" -> "on-chain-fees.smoothing-window",
+      "feerate-provider-timeout" -> "on-chain-fees.provider-timeout"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")

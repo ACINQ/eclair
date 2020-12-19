@@ -88,6 +88,8 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
       val rs = statement.executeQuery()
       if (rs.next()) {
         Some(FeeratesPerKB(
+          // NB: we don't bother storing this value in the DB, because it's unused on mobile.
+          mempoolMinFee = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_1008"))),
           block_1 = FeeratePerKB(Satoshi(rs.getLong("rate_block_1"))),
           blocks_2 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_2"))),
           blocks_6 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_6"))),

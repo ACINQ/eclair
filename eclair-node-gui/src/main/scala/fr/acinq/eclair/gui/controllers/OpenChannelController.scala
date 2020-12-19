@@ -16,17 +16,14 @@
 
 package fr.acinq.eclair.gui.controllers
 
-import java.lang.Boolean
-
 import com.google.common.base.Strings
-import fr.acinq.bitcoin.Satoshi
-import fr.acinq.eclair._
+import fr.acinq.bitcoin.SatoshiLong
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
-import fr.acinq.eclair.channel.{Channel, ChannelFlags}
+import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.gui.utils.Constants
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.{CoinUtils, MilliSatoshi}
+import fr.acinq.eclair.{CoinUtils, MilliSatoshi, _}
 import grizzled.slf4j.Logging
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.event.ActionEvent
@@ -34,6 +31,7 @@ import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.stage.Stage
 
+import java.lang.Boolean
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
@@ -118,7 +116,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
           feerateError.setText("Fee rate must be greater than 0")
         case (Success(capacitySat), Success(pushMsat), Success(feeratePerByte_opt)) =>
           val channelFlags = if (publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-          handlers.open(nodeUri, Some(Peer.OpenChannel(nodeUri.nodeId, capacitySat, MilliSatoshi(pushMsat), feeratePerByte_opt.map(f => FeeratePerKw(FeeratePerByte(f.sat))), Some(channelFlags), Some(30 seconds))))
+          handlers.open(nodeUri, Some(Peer.OpenChannel(nodeUri.nodeId, capacitySat, MilliSatoshi(pushMsat), feeratePerByte_opt.map(f => FeeratePerKw(FeeratePerByte(f.sat))), None, Some(channelFlags), Some(30 seconds))))
           stage.close()
         case (Failure(t), _, _) =>
           logger.error(s"could not parse capacity with cause=${t.getLocalizedMessage}")

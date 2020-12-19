@@ -17,13 +17,12 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{Btc, Transaction}
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.eclair.MilliSatoshiLong
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.channel.Helpers.Closing
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 
 class HelpersSpec extends AnyFunSuite {

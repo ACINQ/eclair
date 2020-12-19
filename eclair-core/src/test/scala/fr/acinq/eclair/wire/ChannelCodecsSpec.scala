@@ -16,15 +16,12 @@
 
 package fr.acinq.eclair.wire
 
-import java.net.InetSocketAddress
-import java.util.UUID
-
 import akka.actor.ActorSystem
 import akka.testkit.TestProbe
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
@@ -43,6 +40,8 @@ import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import scodec.{Attempt, Codec, DecodeResult}
 
+import java.net.InetSocketAddress
+import java.util.UUID
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.util.Random
@@ -257,9 +256,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require === relayedCold)
 
     val adds = Seq(
-      UpdateAddHtlc(randomBytes32, 1L,1000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(randomBytes32, 1L,2000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(randomBytes32, 2L,3000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32, 1L, 1000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32, 1L, 2000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32, 2L, 3000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
     )
     val trampolineRelayedHot = Origin.TrampolineRelayedHot(replyTo, adds)
     val trampolineRelayedCold = Origin.TrampolineRelayedCold(trampolineRelayedHot.htlcs)

@@ -1,0 +1,46 @@
+<assembly xmlns="http://maven.apache.org/ASSEMBLY/2.0.0"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xsi:schemaLocation="http://maven.apache.org/ASSEMBLY/2.0.0 http://maven.apache.org/xsd/assembly-2.0.0.xsd">
+  <id>awseb-bundle</id>
+  <formats>
+    <format>zip</format>
+  </formats>
+  <includeBaseDirectory>false</includeBaseDirectory>
+  <fileSets>
+    <fileSet> <!-- release zip -->
+      <directory>${project.build.directory}</directory>
+      <outputDirectory>.</outputDirectory>
+      <includes>
+        <include>eclair-front-*-bin.zip</include>
+      </includes>
+    </fileSet>
+    <fileSet>
+      <directory>${project.basedir}/modules/awseb</directory>
+      <outputDirectory>.</outputDirectory>
+      <includes>
+        <include>Procfile</include>
+        <include>logback_eb.xml</include>
+      </includes>
+      <lineEnding>unix</lineEnding>
+    </fileSet>
+    <!-- uncomment if you want to include a keystore in the awseb package for TLS -->
+    <!--fileSet>
+      <directory>${project.basedir}/modules/awseb</directory>
+      <outputDirectory>.</outputDirectory>
+      <includes>
+        <include>*.jks</include>
+      </includes>
+      <fileMode>0400</fileMode>
+      <lineEnding>keep</lineEnding>
+    </fileSet-->
+    <fileSet>
+      <directory>${project.basedir}/modules/awseb</directory>
+      <outputDirectory>.</outputDirectory>
+      <includes>
+        <include>run.sh</include>
+      </includes>
+      <fileMode>0755</fileMode>
+      <lineEnding>unix</lineEnding>
+    </fileSet>
+  </fileSets>
+</assembly>

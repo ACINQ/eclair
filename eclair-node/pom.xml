@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.13</artifactId>
-        <version>0.4.3-SNAPSHOT</version>
+        <version>0.5.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-node_2.13</artifactId>
@@ -56,11 +56,6 @@
                     <descriptors>
                         <descriptor>modules/assembly.xml</descriptor>
                     </descriptors>
-                    <archive>
-                        <manifest>
-                            <mainClass>fr.acinq.eclair.Boot</mainClass>
-                        </manifest>
-                    </archive>
                 </configuration>
                 <executions>
                     <execution>

@@ -16,22 +16,20 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
-import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, randomKey}
+import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.collection.immutable.{SortedMap, SortedSet}
 import scala.collection.mutable.ArrayBuffer
-import scala.compat.Platform
 import scala.util.Random
-
 
 class ChannelRangeQueriesSpec extends AnyFunSuite {
 

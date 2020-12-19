@@ -29,8 +29,8 @@ import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
 /**
-  * Created by PM on 25/01/2016.
-  */
+ * Created by PM on 25/01/2016.
+ */
 object Boot extends App with Logging {
   try {
     val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
@@ -59,15 +59,15 @@ object Boot extends App with Logging {
   }
 
   /**
-    * Starts the http APIs service if enabled in the configuration
-    *
-    * @param kit
-    * @param system
-    * @param ec
-    */
+   * Starts the http APIs service if enabled in the configuration
+   *
+   * @param kit
+   * @param system
+   * @param ec
+   */
   def startApiServiceIfEnabled(kit: Kit)(implicit system: ActorSystem, ec: ExecutionContext) = {
     val config = system.settings.config.getConfig("eclair")
-    if(config.getBoolean("api.enabled")){
+    if (config.getBoolean("api.enabled")) {
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
       val apiPassword = config.getString("api.password") match {
         case "" => throw EmptyAPIPasswordException

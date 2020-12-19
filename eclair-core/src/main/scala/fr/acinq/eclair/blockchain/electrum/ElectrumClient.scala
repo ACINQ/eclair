@@ -50,7 +50,6 @@ import scala.util.{Failure, Success, Try}
 
 /**
   * For later optimizations, see http://normanmaurer.me/presentations/2014-facebook-eng-netty/slides.html
-  *
   */
 class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt: Option[Socks5ProxyParams] = None)(implicit val ec: ExecutionContext) extends Actor with Stash with ActorLogging {
 
@@ -353,6 +352,9 @@ class ElectrumClient(serverAddress: InetSocketAddress, ssl: SSL, socksProxy_opt:
   }
 }
 
+/**
+ * See the documentation at https://electrumx-spesmilo.readthedocs.io/en/latest/
+ */
 object ElectrumClient {
   val CLIENT_NAME = "3.3.6" // client name that we will include in our "version" message
   val PROTOCOL_VERSION = "1.4" // version of the protocol that we require

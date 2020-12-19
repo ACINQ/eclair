@@ -15,7 +15,7 @@
   ~ limitations under the License.
   -->
 
-<configuration scan="true" debug="false">
+<configuration>
 
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>

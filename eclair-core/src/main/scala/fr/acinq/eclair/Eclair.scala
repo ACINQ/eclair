@@ -38,7 +38,7 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest, SendPaymentToRouteResponse}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{NetworkStats, RouteCalculation}
+import fr.acinq.eclair.router.{NetworkStats, RouteCalculation, Router}
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
 
@@ -84,7 +84,7 @@ trait Eclair {
 
   def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String]
 
-  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeeratePerByte_opt: Option[FeeratePerByte], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse]
+  def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeeratePerByte_opt: Option[FeeratePerByte], initialRelayFees_opt: Option[(MilliSatoshi, Int)], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse]
 
   def close(channels: List[ApiTypes.ChannelIdentifier], scriptPubKey_opt: Option[ByteVector])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]]]
 
@@ -165,7 +165,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[String]
   }
 
-  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeeratePerByte_opt: Option[FeeratePerByte], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse] = {
+  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeeratePerByte_opt: Option[FeeratePerByte], initialRelayFees_opt: Option[(MilliSatoshi, Int)], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse] = {
     // we want the open timeout to expire *before* the default ask timeout, otherwise user won't get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(10 seconds))
     (appKit.switchboard ? Peer.OpenChannel(
@@ -173,6 +173,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
       fundingSatoshis = fundingAmount,
       pushMsat = pushAmount_opt.getOrElse(0 msat),
       fundingTxFeeratePerKw_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
+      initialRelayFees_opt = initialRelayFees_opt,
       channelFlags = flags_opt.map(_.toByte),
       timeout_opt = Some(openTimeout))).mapTo[ChannelOpenResponse]
   }
@@ -195,7 +196,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
   } yield peerinfos
 
   override def nodes(nodeIds_opt: Option[Set[PublicKey]])(implicit timeout: Timeout): Future[Iterable[NodeAnnouncement]] = {
-    (appKit.router ? Symbol("nodes"))
+    (appKit.router ? Router.GetNodes)
       .mapTo[Iterable[NodeAnnouncement]]
       .map(_.filter(n => nodeIds_opt.forall(_.contains(n.nodeId))))
   }
@@ -216,12 +217,12 @@ class EclairImpl(appKit: Kit) extends Eclair {
   }
 
   override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {
-    (appKit.router ? Symbol("channels")).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
+    (appKit.router ? Router.GetChannels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)))
   }
 
   override def allUpdates(nodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]] = nodeId_opt match {
-    case None => (appKit.router ? Symbol("updates")).mapTo[Iterable[ChannelUpdate]]
-    case Some(pk) => (appKit.router ? Symbol("channelsMap")).mapTo[Map[ShortChannelId, PublicChannel]].map { channels =>
+    case None => (appKit.router ? Router.GetChannelUpdates).mapTo[Iterable[ChannelUpdate]]
+    case Some(pk) => (appKit.router ? Router.GetChannelsMap).mapTo[Map[ShortChannelId, PublicChannel]].map { channels =>
       channels.values.flatMap {
         case PublicChannel(ann, _, _, Some(u1), _, _) if ann.nodeId1 == pk && u1.isNode1 => List(u1)
         case PublicChannel(ann, _, _, _, Some(u2), _) if ann.nodeId2 == pk && !u2.isNode1 => List(u2)

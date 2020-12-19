@@ -16,16 +16,15 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import java.util.concurrent.atomic.AtomicLong
-
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
-import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BlockHeader, ByteVector32, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.computeScriptHash
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{LongToBtcAmount, ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{ShortChannelId, TxCoordinates}
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.collection.immutable.{Queue, SortedMap}
 
 
@@ -120,7 +119,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
       history.filter(_.height >= -1).foreach { item => client ! ElectrumClient.GetTransaction(item.tx_hash, Some(item)) }
 
     case ElectrumClient.GetTransactionResponse(tx, Some(item: ElectrumClient.TransactionHistoryItem)) =>
-      // this is for WatchSpent/WatchSpendBasic
+      // this is for WatchSpent/WatchSpentBasic
       val watchSpentTriggered = tx.txIn.map(_.outPoint).flatMap(outPoint => watches.collect {
         case WatchSpent(channel, txid, pos, _, event) if txid == outPoint.txid && pos == outPoint.index.toInt =>
           log.info(s"output $txid:$pos spent by transaction ${tx.txid}")
@@ -141,7 +140,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
           val (dummyHeight, dummyTxIndex) = ElectrumWatcher.makeDummyShortChannelId(txid)
           channel ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, dummyHeight, dummyTxIndex, tx)
           Some(w)
-        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid && minDepth > 0 =>
+        case WatchConfirmed(_, txid, _, minDepth, _) if txid == tx.txid && minDepth > 0 && item.height > 0 =>
           // min depth > 0 here
           val txheight = item.height
           val confirmations = height - txheight + 1

@@ -31,11 +31,14 @@ import org.json4s.jackson.JsonMethods
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
 import scala.jdk.CollectionConverters._
 import scala.util.Random
 
 class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
+
+  implicit val formats = DefaultFormats.withBigDecimal
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
@@ -48,8 +51,6 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
   val config = ConfigFactory.load(commonConfig).getConfig("eclair")
 
   val walletPassword = Random.alphanumeric.take(8).mkString
-
-  implicit val formats = DefaultFormats.withBigDecimal
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -80,15 +81,14 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
   }
 
   test("get fee rates") {
-    import scala.concurrent.ExecutionContext.Implicits.global
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
       password = config.getString("bitcoind.rpcpassword"),
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"))
 
-    // the regtest client doesn't have enough data to estimate fees yet, so it's suppose to fail
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    // the regtest client doesn't have enough data to estimate fees yet, so it's supposed to fail
+    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
     val sender = TestProbe()
     regtestProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.asInstanceOf[RuntimeException].getMessage.contains("Insufficient data or no feerate found"))
@@ -105,6 +105,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
     )
 
     val ref = FeeratesPerKB(
+      mempoolMinFee = FeeratePerKB(300 sat),
       block_1 = fees(1),
       blocks_2 = fees(2),
       blocks_6 = fees(6),
@@ -124,13 +125,34 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
           val blocks = params(0).asInstanceOf[Int]
           val feerate = satoshi2btc(fees(blocks).feerate).toBigDecimal
           Future(JObject(List("feerate" -> JDecimal(feerate), "blocks" -> JInt(blocks))))(ec)
+        case "getmempoolinfo" =>
+          val mempoolInfo = List(
+            "minrelaytxfee" -> JDecimal(satoshi2btc(100 sat).toBigDecimal),
+            "mempoolminfee" -> JDecimal(satoshi2btc(ref.mempoolMinFee.feerate).toBigDecimal)
+          )
+          Future(JObject(mempoolInfo))(ec)
         case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
       }
     }
 
-    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    val mockProvider = new BitcoinCoreFeeProvider(mockBitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
     mockProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[FeeratesPerKB] == ref)
+  }
+
+  test("get mempool minimum fee") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+
+    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    val sender = TestProbe()
+    regtestProvider.mempoolMinFee().pipeTo(sender.ref)
+    val mempoolMinFee = sender.expectMsgType[FeeratePerKB]
+    // The regtest provider doesn't have any transaction in its mempool, so it defaults to the min_relay_fee.
+    assert(mempoolMinFee.feerate.toLong === FeeratePerKw.MinimumRelayFeeRate)
   }
 
 }

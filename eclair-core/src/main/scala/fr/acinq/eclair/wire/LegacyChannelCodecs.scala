@@ -20,6 +20,7 @@ import java.util.UUID
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -260,6 +261,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | provide[Option[Transaction]](None)) ::
+      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
       ("waitingSince" | provide(System.currentTimeMillis.milliseconds.toSeconds)) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
@@ -267,6 +269,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | optional(bool, txCodec)) ::
+      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
       ("waitingSince" | int64) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
@@ -274,7 +277,8 @@ private[wire] object LegacyChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
-      ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED].decodeOnly
+      ("lastSent" | fundingLockedCodec) ::
+      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)]))).as[DATA_WAIT_FOR_FUNDING_LOCKED].decodeOnly
 
   // All channel_announcement's written prior to supporting unknown trailing fields had the same fixed size, because
   // those are the announcements that *we* created and we always used an empty features field, which was the only

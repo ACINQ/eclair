@@ -18,7 +18,8 @@ package fr.acinq.eclair.blockchain.fee
 
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.bitcoin.SatoshiLong
+import fr.acinq.eclair.TestTags
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.scalatest.funsuite.AnyFunSuite
@@ -59,6 +60,7 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
     val feeRanges = parseFeeRanges(json)
     val feerates = extractFeerates(feeRanges)
     val ref = FeeratesPerKB(
+      mempoolMinFee = FeeratePerKB(10 * 1000 sat),
       block_1 = FeeratePerKB(400 * 1000 sat),
       blocks_2 = FeeratePerKB(350 * 1000 sat),
       blocks_6 = FeeratePerKB(230 * 1000 sat),
@@ -70,7 +72,7 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
     assert(feerates === ref)
   }
 
-  test("make sure API hasn't changed") {
+  test("make sure API hasn't changed", TestTags.ExternalApi) {
     import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
     implicit val sttpBackend = OkHttpFutureBackend()
@@ -79,7 +81,7 @@ class EarnDotComFeeProviderSpec extends AnyFunSuite with Logging {
     logger.info("earn.com livenet fees: " + Await.result(provider.getFeerates, 10 seconds))
   }
 
-  test("check that read timeout is enforced") {
+  test("check that read timeout is enforced", TestTags.ExternalApi) {
     import scala.concurrent.ExecutionContext.Implicits.global
     import scala.concurrent.duration._
     implicit val sttpBackend = OkHttpFutureBackend()

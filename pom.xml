@@ -20,11 +20,12 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.13</artifactId>
-    <version>0.4.3-SNAPSHOT</version>
+    <version>0.5.1-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
         <module>eclair-core</module>
+        <module>eclair-front</module>
         <module>eclair-node</module>
         <module>eclair-node-gui</module>
     </modules>

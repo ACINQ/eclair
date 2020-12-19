@@ -21,14 +21,14 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, Satoshi, Script, Transaction}
+import fr.acinq.bitcoin.{Block, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, ShortChannelId, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, randomKey}
 import org.json4s.JsonAST.JString
 import org.scalatest.funsuite.AnyFunSuite
 
