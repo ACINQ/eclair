@@ -209,7 +209,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100000").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
-      Route.seal(mockService.route) ~>
+      Route.seal(mockService.finalRoute) ~>
       check {
         assert(handled)
         assert(status == OK)
@@ -220,7 +220,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "50000", "feeBaseMsat" -> "100", "feeProportionalMillionths" -> "10").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockService.password)) ~>
       addHeader("Content-Type", "application/json") ~>
-      Route.seal(mockService.route) ~>
+      Route.seal(mockService.finalRoute) ~>
       check {
         assert(handled)
         assert(status == OK)
