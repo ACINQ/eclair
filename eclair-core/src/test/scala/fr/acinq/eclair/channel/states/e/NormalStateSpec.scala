@@ -2002,6 +2002,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.expectMsgType[CommitSig]
     bob ! CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
@@ -2035,6 +2036,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = false)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.expectNoMsg(500 millis)
     bob ! CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
