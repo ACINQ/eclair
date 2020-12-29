@@ -427,7 +427,7 @@ case class ChannelVersion(bits: BitVector) {
   def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
   def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
 
-  private def isSet(bit: Int) = bits.reverse.get(bit)
+  def isSet(bit: Int): Boolean = bits.reverse.get(bit)
 
   def hasPubkeyKeyPath: Boolean = isSet(USE_PUBKEY_KEYPATH_BIT)
   def hasStaticRemotekey: Boolean = isSet(USE_STATIC_REMOTEKEY_BIT)
@@ -445,7 +445,7 @@ object ChannelVersion {
   private val USE_STATIC_REMOTEKEY_BIT = 1
   private val USE_ANCHOR_OUTPUTS_BIT = 2
 
-  private def setBit(bit: Int) = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
+  def fromBit(bit: Int): ChannelVersion = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
 
   def pickChannelVersion(localFeatures: Features, remoteFeatures: Features): ChannelVersion = {
     if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
@@ -458,8 +458,8 @@ object ChannelVersion {
   }
 
   val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
-  val STANDARD = ZEROES | setBit(USE_PUBKEY_KEYPATH_BIT)
-  val STATIC_REMOTEKEY = STANDARD | setBit(USE_STATIC_REMOTEKEY_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY
-  val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | setBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
+  val STANDARD = ZEROES | fromBit(USE_PUBKEY_KEYPATH_BIT)
+  val STATIC_REMOTEKEY = STANDARD | fromBit(USE_STATIC_REMOTEKEY_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY
+  val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | fromBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
 }
 // @formatter:on
