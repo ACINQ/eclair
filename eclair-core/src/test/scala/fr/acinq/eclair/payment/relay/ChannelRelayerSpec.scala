@@ -198,25 +198,25 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(AmountBelowMinimum(outgoingAmount, u.channelUpdate)), commit = true))
   }
 
-  test("fail to relay an htlc-add (expiry too small)") { f =>
+  test("relay an htlc-add (expiry larger than our requirements)") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry - CltvExpiryDelta(1))
-    val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
+    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val u = createLocalUpdate(shortId1)
+    val r = createValidIncomingPacket(1100000 msat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta + CltvExpiryDelta(1), payload)
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r)
 
-    expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(payload.outgoingCltv, u.channelUpdate)), commit = true))
+    expectFwdAdd(register, shortId1, payload.amountToForward, payload.outgoingCltv).message
   }
 
-  test("fail to relay an htlc-add (expiry too large)") { f =>
+  test("fail to relay an htlc-add (expiry too small)") { f =>
     import f._
 
-    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry + CltvExpiryDelta(1))
-    val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
+    val payload = RelayLegacyPayload(shortId1, outgoingAmount, outgoingExpiry)
     val u = createLocalUpdate(shortId1)
+    val r = createValidIncomingPacket(1100000 msat, outgoingExpiry + u.channelUpdate.cltvExpiryDelta - CltvExpiryDelta(1), payload)
 
     channelRelayer ! WrappedLocalChannelUpdate(u)
     channelRelayer ! Relay(r)
@@ -330,11 +330,18 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       expectFwdAdd(register, ShortChannelId(12345), payload.amountToForward, payload.outgoingCltv).message
     }
     {
-      // invalid cltv expiry, no suitable channel found
-      val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(40))
+      // cltv expiry larger than our requirements
+      val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(50))
       val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
       channelRelayer ! Relay(r)
-      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(CltvExpiry(40), channelUpdates(ShortChannelId(12345)).channelUpdate)), commit = true))
+      expectFwdAdd(register, ShortChannelId(22223), payload.amountToForward, payload.outgoingCltv).message
+    }
+    {
+      // cltv expiry too small, no suitable channel found
+      val payload = RelayLegacyPayload(ShortChannelId(12345), 998900 msat, CltvExpiry(61))
+      val r = createValidIncomingPacket(1000000 msat, CltvExpiry(70), payload)
+      channelRelayer ! Relay(r)
+      expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(IncorrectCltvExpiry(CltvExpiry(61), channelUpdates(ShortChannelId(12345)).channelUpdate)), commit = true))
     }
   }
 
