@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.eventstream.EventStream
@@ -39,6 +37,7 @@ import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
+import java.util.UUID
 import scala.concurrent.duration.DurationInt
 
 class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
@@ -71,23 +70,22 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   test("relay an htlc-add") { f =>
     import f._
 
-    // we use this to build a valid onion
-    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
-    // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId = randomBytes32, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
-
-    system.eventStream ! EventStream.Publish(LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc)))
     def getOutgoingChannels: Seq[OutgoingChannel] = {
       val sender = TestProbe[Relayer.OutgoingChannels]()
       childActors.channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
       sender.expectMessageType[Relayer.OutgoingChannels].channels
     }
+
+    system.eventStream ! EventStream.Publish(LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc)))
     eventually {
-      getOutgoingChannels.nonEmpty
+      require(getOutgoingChannels.nonEmpty)
     }
 
+    // we use this to build a valid onion
+    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    // and then manually build an htlc
+    val add_ab = UpdateAddHtlc(channelId = randomBytes32, id = 123456, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
     relayer ! RelayForward(add_ab)
-
     register.expectMessageType[Register.ForwardShortId[CMD_ADD_HTLC]]
   }
 
