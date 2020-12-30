@@ -34,6 +34,7 @@ import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
+import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -70,15 +71,13 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   test("relay an htlc-add") { f =>
     import f._
 
-    def getOutgoingChannels: Seq[OutgoingChannel] = {
-      val sender = TestProbe[Relayer.OutgoingChannels]()
-      childActors.channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
-      sender.expectMessageType[Relayer.OutgoingChannels].channels
-    }
-
     system.eventStream ! EventStream.Publish(LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc, makeCommitments(channelId_bc)))
-    eventually {
-      require(getOutgoingChannels.nonEmpty)
+
+    val sender = TestProbe[Relayer.OutgoingChannels]()
+    eventually(PatienceConfiguration.Timeout(30 seconds), PatienceConfiguration.Interval(1 second)) {
+      childActors.channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender.ref.toClassic, GetOutgoingChannels())
+      val channels = sender.expectMessageType[Relayer.OutgoingChannels].channels
+      require(channels.nonEmpty)
     }
 
     // we use this to build a valid onion
