@@ -422,10 +422,12 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     // actual test starts here
-    bob2alice.forward(bob)
-    assert(alice.stateName == SHUTDOWN)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.isEmpty)
-    awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 2)
+    alice2bob.forward(bob)
+    assert(bob.stateName == SHUTDOWN)
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.size == 2)
+    awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.isEmpty)
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 2)
   }
 
   test("recv RevokeAndAck (no more htlcs on either side)") { f =>
