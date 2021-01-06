@@ -296,7 +296,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
-          // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = Helpers.minDepthForFunding(nodeParams, open.fundingSatoshis)
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimit,
@@ -346,7 +345,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       Helpers.validateParamsFunder(nodeParams, open, accept) match {
         case Left(t) => handleLocalError(t, d, Some(accept))
         case _ =>
-          // TODO: check equality of temporaryChannelId? or should be done upstream
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = accept.dustLimitSatoshis,

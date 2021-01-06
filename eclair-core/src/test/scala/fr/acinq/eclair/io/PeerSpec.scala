@@ -21,7 +21,7 @@ import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Btc, SatoshiLong, Script}
+import fr.acinq.bitcoin.{Block, Btc, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
@@ -235,6 +235,27 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
 
     // we make sure that the reconnection task has done a full circle
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.CONNECTING, ReconnectionTask.IDLE))
+  }
+
+  test("don't spawn a channel with duplicate temporary channel id") { f =>
+    import f._
+
+    val probe = TestProbe()
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, peer, peerConnection)
+    assert(peer.stateData.channels.isEmpty)
+
+    val open = wire.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32, 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, 0)
+    peerConnection.send(peer, open)
+    awaitCond(peer.stateData.channels.nonEmpty)
+    assert(probe.expectMsgType[ChannelCreated].temporaryChannelId === open.temporaryChannelId)
+    peerConnection.expectMsgType[AcceptChannel]
+
+    // open_channel messages with the same temporary channel id should simply be ignored
+    peerConnection.send(peer, open.copy(fundingSatoshis = 100000 sat, fundingPubkey = randomKey.publicKey))
+    probe.expectNoMsg(100 millis)
+    peerConnection.expectNoMsg(100 millis)
+    assert(peer.stateData.channels.size === 1)
   }
 
   test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
