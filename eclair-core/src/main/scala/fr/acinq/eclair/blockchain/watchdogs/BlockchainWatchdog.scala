@@ -23,6 +23,7 @@ import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 
+import java.util.UUID
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.Random
 
@@ -66,10 +67,11 @@ object BlockchainWatchdog {
             timers.startSingleTimer(CheckLatestHeaders(blockCount), delay)
             Behaviors.same
           case CheckLatestHeaders(blockCount) =>
-            context.spawn(HeadersOverDns(chainHash, blockCount), HeadersOverDns.Source) ! HeadersOverDns.CheckLatestHeaders(context.self)
-            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockstreamExplorer()), "blockstream") ! ExplorerApi.CheckLatestHeaders(context.self)
-            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockcypherExplorer()), "blockcypher") ! ExplorerApi.CheckLatestHeaders(context.self)
-            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.MempoolSpaceExplorer()), "mempool.space") ! ExplorerApi.CheckLatestHeaders(context.self)
+            val id = UUID.randomUUID()
+            context.spawn(HeadersOverDns(chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
+            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockstreamExplorer()), s"blockstream-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
+            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockcypherExplorer()), s"blockcypher-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
+            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.MempoolSpaceExplorer()), s"mempool.space-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
             Behaviors.same
           case headers@LatestHeaders(blockCount, blockHeaders, source) =>
             val missingBlocks = blockHeaders match {
