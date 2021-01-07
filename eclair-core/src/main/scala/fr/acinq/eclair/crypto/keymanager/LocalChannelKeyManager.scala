@@ -102,6 +102,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
    * @return a signature generated with the private key that matches the input extended public key
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
+    // NB: not all those transactions are actually commit txs (especially during closing), but this is good enough for monitoring purposes
     val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.CommitTx)
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
@@ -121,6 +122,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
    * @return a signature generated with a private key generated from the input key's matching private key and the remote point.
    */
   override def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): ByteVector64 = {
+    // NB: not all those transactions are actually htlc txs (especially during closing), but this is good enough for monitoring purposes
     val tags = TagSet.Empty.withTag(Tags.TxOwner, txOwner.toString).withTag(Tags.TxType, Tags.TxTypes.HtlcTx)
     Metrics.SignTxCount.withTags(tags).increment()
     KamonExt.time(Metrics.SignTxDuration.withTags(tags)) {
