@@ -145,20 +145,24 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101"),
     ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202"),
     ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"),
-    ByteVector32(hex"0404040404040404040404040404040404040404040404040404040404040404")
+    ByteVector32(hex"0404040404040404040404040404040404040404040404040404040404040404"),
+    ByteVector32(hex"0505050505050505050505050505050505050505050505050505050505050505")
   )
 
   val htlcs = Seq[DirectedHtlc](
     IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000 msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 2000000 msat, Crypto.sha256(paymentPreimages(1)), CltvExpiry(501), TestConstants.emptyOnionPacket)),
     OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 2000000 msat, Crypto.sha256(paymentPreimages(2)), CltvExpiry(502), TestConstants.emptyOnionPacket)),
-    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
-    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 3000000 msat, Crypto.sha256(paymentPreimages(3)), CltvExpiry(503), TestConstants.emptyOnionPacket)),
+    IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 5000001.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(505), TestConstants.emptyOnionPacket)),
+    OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 3, 5000000.msat, Crypto.sha256(paymentPreimages(5)), CltvExpiry(506), TestConstants.emptyOnionPacket))
   )
   val htlcScripts = htlcs.map {
     case OutgoingHtlc(add) => Scripts.htlcOffered(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), commitmentFormat)
     case IncomingHtlc(add) => Scripts.htlcReceived(Local.htlc_privkey.publicKey, Remote.htlc_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(add.paymentHash), add.cltvExpiry, commitmentFormat)
   }
+  val defaultHtlcs = htlcs.take(5) // most test cases only use the first 5 htlcs
 
   def dir2string(htlc: DirectedHtlc): String = htlc match {
     case _: IncomingHtlc => "remote->local"
@@ -169,7 +173,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     logger.info(s"htlc $i direction: ${dir2string(htlcs(i))}")
     logger.info(s"htlc $i amount_msat: ${htlcs(i).add.amountMsat}")
     logger.info(s"htlc $i expiry: ${htlcs(i).add.cltvExpiry}")
-    logger.info(s"htlc $i payment_preimage: ${paymentPreimages(i)}")
+    logger.info(s"htlc $i payment_preimage: ${if (i < paymentPreimages.size) paymentPreimages(i) else paymentPreimages.last}")
   }
 
   def run(name: String, specHtlcs: Set[DirectedHtlc]): (CommitTx, Seq[TransactionWithInputInfo]) = {
@@ -291,97 +295,98 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
   test("commitment tx with all five HTLCs untrimmed (minimum feerate)") {
     val name = "commitment tx with all five HTLCs untrimmed (minimum feerate)"
-    val (commitTx, _) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
+    verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with seven outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with seven outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with six outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with six outputs untrimmed (minimum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with six outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with six outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with five outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with five outputs untrimmed (minimum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with five outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with five outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with four outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with four outputs untrimmed (minimum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with four outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with four outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with three outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with three outputs untrimmed (minimum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with three outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with three outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with two outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with two outputs untrimmed (minimum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with two outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with two outputs untrimmed (maximum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with one output untrimmed (minimum feerate)") {
     val name = "commitment tx with one output untrimmed (minimum feerate)"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
 
   test("commitment tx with fee greater than funder amount") {
     val name = "commitment tx with fee greater than funder amount"
-    val (commitTx, htlcTxs) = run(name, htlcs.toSet)
+    val (commitTx, htlcTxs) = run(name, defaultHtlcs.toSet)
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
     verifyHtlcTxs(name, htlcTxs)
   }
@@ -389,13 +394,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   // Added to the spec in https://github.com/lightningnetwork/lightning-rfc/pull/539
   test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
     val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
-    val preimage = hex"0505050505050505050505050505050505050505050505050505050505050505"
-    val someHtlcs = Seq(
-      IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000.msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(506), TestConstants.emptyOnionPacket)),
-      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 5000001.msat, Crypto.sha256(preimage), CltvExpiry(505), TestConstants.emptyOnionPacket))
-    )
-
+    val someHtlcs = Seq(htlcs(1), htlcs(6), htlcs(5))
     val (commitTx, htlcTxs) = run(name, someHtlcs.toSet[DirectedHtlc])
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
 
