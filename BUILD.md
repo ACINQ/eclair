@@ -19,6 +19,7 @@ mvn package
 ```
 
 Notes:
+
 - This command will build all modules (core, node, gui).
 - If the build fails, you may need to clean previously built artifacts with the `mvn clean` command.
 - Some of the tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
@@ -30,12 +31,6 @@ Running tests takes time. If you want to skip them, use `-DskipTests`:
 
 ```shell
 mvn package -DskipTests
-```
-
-You can even skip the tests compilation with `maven.test.skip`:
-
-```shell
-mvn package -Dmaven.test.skip=true
 ```
 
 ### Run tests
