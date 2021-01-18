@@ -151,7 +151,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
             if (d.doSync) {
               log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-              router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, flags_opt = flags_opt)
+              router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious = true, flags_opt = flags_opt)
             } else {
               log.info("not syncing with this peer")
             }
@@ -358,6 +358,15 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         }
         stay using d.copy(behavior = behavior1)
 
+      case Event(DoSync, d: ConnectedData) =>
+        val flags_opt = if (d.localInit.features.hasFeature(Features.ChannelRangeQueriesExtended) && d.remoteInit.features.hasFeature(Features.ChannelRangeQueriesExtended)) {
+          Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
+        } else {
+          None
+        }
+        router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious = false, flags_opt)
+        stay
+
       case Event(ResumeAnnouncements, d: ConnectedData) =>
         log.info(s"resuming processing of network announcements for peer")
         stay using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
@@ -472,6 +481,7 @@ object PeerConnection {
   case object InitTimeout
   case object SendPing
   case object ResumeAnnouncements
+  case object DoSync
   // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes

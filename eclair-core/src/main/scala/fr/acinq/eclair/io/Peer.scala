@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
@@ -32,7 +33,6 @@ import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{wire, _}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -164,6 +164,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
 
       case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d: ConnectedData) if d.channels.contains(TemporaryChannelId(temporaryChannelId)) =>
         log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
+        // we have our first channel with that peer: let's sync our routing table
+        if (!d.channels.keys.exists(_.isInstanceOf[FinalChannelId])) {
+          d.peerConnection ! PeerConnection.DoSync
+        }
         // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
         // we won't clean it up, but we won't remember the temporary id on channel termination
         stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))

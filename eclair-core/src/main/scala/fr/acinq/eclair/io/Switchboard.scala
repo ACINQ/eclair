@@ -25,6 +25,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
 
+import scala.collection.mutable
+
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
@@ -33,8 +35,10 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
 
   import Switchboard._
 
+  context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
+
   // we load channels from database
-  {
+  val peersWithChannels: mutable.Set[PublicKey] = {
     // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
     // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
     // Closed channels will be removed, other channels will be restored.
@@ -44,9 +48,9 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
       nodeParams.db.channels.removeChannel(c.channelId)
     })
 
-    channels
-      .groupBy(_.commitments.remoteParams.nodeId)
-      .map { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
+    val peerChannels = channels.groupBy(_.commitments.remoteParams.nodeId)
+    peerChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
+    mutable.Set.empty.addAll(peerChannels.keys)
   }
 
   def receive: Receive = {
@@ -75,8 +79,11 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
       val features = nodeParams.featuresFor(authenticated.remoteNodeId)
-      val doSync = nodeParams.syncWhitelist.isEmpty || nodeParams.syncWhitelist.contains(authenticated.remoteNodeId)
+      // if the peer is whitelisted, we sync with them, otherwise we only sync with peers with whom we have at least one channel
+      val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && peersWithChannels.contains(authenticated.remoteNodeId))
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
+
+    case ChannelIdAssigned(_, remoteNodeId, _, _) => peersWithChannels.add(remoteNodeId)
 
     case Symbol("peers") => sender ! context.children
 
@@ -119,6 +126,7 @@ object Switchboard {
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   case object GetRouterPeerConf extends RemoteTypes
+
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
 
 }
