@@ -66,9 +66,16 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
     val switchboard = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
+
+    // We have a channel with our peer, so we trigger a sync when connecting.
     switchboard ! ChannelIdAssigned(TestProbe().ref, remoteNodeId, randomBytes32, randomBytes32)
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     peerConnection.expectMsg(PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
+
+    // We don't have channels with our peer, so we won't trigger a sync when connecting.
+    switchboard ! PeerLastChannelClosed(peer.ref, remoteNodeId)
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
+    peerConnection.expectMsg(PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = false))
   }
 
   test("don't sync if no whitelist is defined and peer does not have channels") {

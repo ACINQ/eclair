@@ -196,6 +196,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
         if (d.channels.values.toSet - actor == Set.empty) {
           log.info(s"that was the last open channel, closing the connection")
+          context.system.eventStream.publish(PeerLastChannelClosed(self, remoteNodeId))
           d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
         }
         stay using d.copy(channels = d.channels -- channelIds)
