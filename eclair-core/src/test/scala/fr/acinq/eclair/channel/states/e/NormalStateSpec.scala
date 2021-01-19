@@ -1758,6 +1758,15 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, CannotCloseWithUnsignedOutgoingHtlcs]]
   }
 
+  test("recv CMD_CLOSE (with unacked received htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    bob ! CMD_CLOSE(sender.ref, None)
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    bob2alice.expectMsgType[Shutdown]
+  }
+
   test("recv CMD_CLOSE (with invalid final script)") { f =>
     import f._
     val sender = TestProbe()
@@ -2002,6 +2011,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.expectMsgType[CommitSig]
     bob ! CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
@@ -2035,6 +2045,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = false)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.expectNoMsg(500 millis)
     bob ! CurrentBlockCount((htlc.cltvExpiry - Bob.nodeParams.fulfillSafetyBeforeTimeout).toLong)
 
     val ChannelErrorOccurred(_, _, _, _, LocalError(err), isFatal) = listener.expectMsgType[ChannelErrorOccurred]
