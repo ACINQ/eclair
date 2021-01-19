@@ -276,8 +276,10 @@ object Commitments {
 
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
+    // NB: there may be a pending update_fee that hasn't been signed yet that needs to be taken into account
+    val currentFeeratePerKw = commitments.remoteChanges.proposed.collect { case f: UpdateFee => f.feeratePerKw }.lastOption.getOrElse(commitments.localCommit.spec.feeratePerKw)
     val localFeeratePerKw = feeConf.getCommitmentFeerate(commitments.channelVersion, commitments.capacity, None)
-    if (feeConf.maxFeerateMismatchFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelVersion, localFeeratePerKw, commitments.localCommit.spec.feeratePerKw)) {
+    if (feeConf.maxFeerateMismatchFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelVersion, localFeeratePerKw, currentFeeratePerKw)) {
       return Left(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw))
     }
 
@@ -337,8 +339,10 @@ object Commitments {
 
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
+    // NB: there may be a pending update_fee that hasn't been signed yet that needs to be taken into account
+    val currentFeeratePerKw = commitments.remoteChanges.proposed.collect { case f: UpdateFee => f.feeratePerKw }.lastOption.getOrElse(commitments.localCommit.spec.feeratePerKw)
     val localFeeratePerKw = feeConf.getCommitmentFeerate(commitments.channelVersion, commitments.capacity, None)
-    if (feeConf.maxFeerateMismatchFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelVersion, localFeeratePerKw, commitments.localCommit.spec.feeratePerKw)) {
+    if (feeConf.maxFeerateMismatchFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelVersion, localFeeratePerKw, currentFeeratePerKw)) {
       return Left(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw))
     }
 
