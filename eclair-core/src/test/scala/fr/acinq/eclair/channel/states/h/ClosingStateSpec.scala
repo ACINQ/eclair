@@ -612,9 +612,6 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv BITCOIN_TX_CONFIRMED (remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
-    // Set feerates below the 10 sat/byte anchor outputs threshold to ensure a fee negotiation round-trip takes place.
-    alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(1200 sat)))
-    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(1200 sat)))
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(initialState.commitments.channelVersion === ChannelVersion.ANCHOR_OUTPUTS)
