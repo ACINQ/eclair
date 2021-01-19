@@ -702,7 +702,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.forward(alice)
     alice2bob.forward(bob)
 
-    //  at this point the channel still isn't deeply buried: channel_update isn't sent again
+    // at this point the channel still isn't deeply buried: channel_update isn't sent again
     alice2bob.expectNoMsg()
     bob2alice.expectNoMsg()
 
@@ -727,5 +727,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // this time peers re-send their channel_update
     alice2bob.expectMsgType[ChannelUpdate]
     bob2alice.expectMsgType[ChannelUpdate]
+    // and the channel is enabled
+    channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 }
