@@ -67,6 +67,9 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       if (test.tags.contains("fee2")) {
         alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(4316 sat)))
         bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(4316 sat)))
+      } else if (test.tags.contains(StateTestsTags.AnchorOutputs)) {
+        alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(1250 sat)))
+        bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(1250 sat)))
       } else {
         alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(5000 sat)))
         bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(5000 sat)))
@@ -100,7 +103,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val initialState = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
     bob2alice.forward(alice)
     val aliceCloseSig2 = alice2bob.expectMsgType[ClosingSigned]
-    // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
+    // BOLT 2: If the receiver doesn't agree with the fee it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
     assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig1.feeSatoshis)
     awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.map(_.localClosingSigned) == initialState.closingTxProposed.last.map(_.localClosingSigned) :+ aliceCloseSig2)
     val Some(closingTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
