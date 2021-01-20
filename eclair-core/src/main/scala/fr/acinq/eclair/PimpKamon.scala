@@ -16,9 +16,7 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.eclair.payment.{LocalFailure, PaymentFailure, RemoteFailure, UnreadableRemoteFailure}
 import kamon.metric.Timer
-import kamon.trace.Span
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -38,17 +36,6 @@ object KamonExt {
     val res = f
     res onComplete (_ => started.stop)
     res
-  }
-
-  /**
-   * A helper function that fails a span with proper messages when dealing with payments
-   */
-  def failSpan(span: Span, failure: PaymentFailure) = {
-    failure match {
-      case LocalFailure(_, t) => span.fail("local failure", t)
-      case RemoteFailure(_, e) => span.fail(s"remote failure: origin=${e.originNode} error=${e.failureMessage}")
-      case UnreadableRemoteFailure(_) => span.fail("unreadable remote failure")
-    }
   }
 
 }

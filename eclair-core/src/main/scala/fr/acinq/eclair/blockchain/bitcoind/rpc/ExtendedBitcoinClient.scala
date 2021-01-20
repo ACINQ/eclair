@@ -21,7 +21,6 @@ import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.wire.ChannelAnnouncement
-import kamon.Kamon
 import org.json4s.Formats
 import org.json4s.JsonAST._
 
@@ -170,31 +169,20 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
     val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
-    val span = Kamon.spanBuilder("validate-bitcoin-client").start()
     for {
-      _ <- Future.successful(0)
-      span0 = Kamon.spanBuilder("getblockhash").start()
       blockHash <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOpt[String].map(ByteVector32.fromValidHex).getOrElse(ByteVector32.Zeroes))
-      _ = span0.finish()
-      span1 = Kamon.spanBuilder("getblock").start()
       txid: ByteVector32 <- rpcClient.invoke("getblock", blockHash).map(json => Try {
         val JArray(txs) = json \ "tx"
         ByteVector32.fromValidHex(txs(txIndex).extract[String])
       }.getOrElse(ByteVector32.Zeroes))
-      _ = span1.finish()
-      span2 = Kamon.spanBuilder("getrawtx").start()
       tx <- getRawTransaction(txid)
-      _ = span2.finish()
-      span3 = Kamon.spanBuilder("utxospendable-mempool").start()
       unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
-      _ = span3.finish()
       fundingTxStatus <- if (unspent) {
         Future.successful(UtxoStatus.Unspent)
       } else {
         // if this returns true, it means that the spending tx is *not* in the blockchain
         isTransactionOutputSpendable(txid, outputIndex, includeMempool = false).map(res => UtxoStatus.Spent(spendingTxConfirmed = !res))
       }
-      _ = span.finish()
     } yield ValidateResult(c, Right((Transaction.read(tx), fundingTxStatus)))
   } recover {
     case t: Throwable => ValidateResult(c, Left(t))
