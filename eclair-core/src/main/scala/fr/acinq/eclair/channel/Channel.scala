@@ -247,8 +247,19 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId, None))
 
           // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
-          val candidateChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDelta,
-            normal.commitments.remoteParams.htlcMinimum, normal.channelUpdate.feeBaseMsat, normal.channelUpdate.feeProportionalMillionths, normal.commitments.capacity.toMilliSatoshi, enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
+          // NB: we don't update the routing fees, because we don't want to overwrite manual changes made with CMD_UPDATE_RELAY_FEE
+          // Since CMD_UPDATE_RELAY_FEE is handled even when being offline, that's the preferred solution to update routing fees
+          val candidateChannelUpdate = Announcements.makeChannelUpdate(
+            nodeParams.chainHash,
+            nodeParams.privateKey,
+            remoteNodeId,
+            normal.channelUpdate.shortChannelId,
+            nodeParams.expiryDelta,
+            normal.commitments.remoteParams.htlcMinimum,
+            normal.channelUpdate.feeBaseMsat,
+            normal.channelUpdate.feeProportionalMillionths,
+            normal.commitments.capacity.toMilliSatoshi,
+            enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
           val channelUpdate1 = if (Announcements.areSame(candidateChannelUpdate, normal.channelUpdate)) {
             // if there was no configuration change we keep the existing channel update
             normal.channelUpdate
