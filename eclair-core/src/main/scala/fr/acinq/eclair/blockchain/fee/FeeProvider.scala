@@ -32,6 +32,9 @@ case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve fee
 /** Fee rate in satoshi-per-bytes. */
 case class FeeratePerByte(feerate: Satoshi)
 
+/** Fee rate in satoshi-per-virtual-bytes. */
+case class FeeratePerVByte(feerate: Satoshi)
+
 object FeeratePerByte {
   def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(FeeratePerKB(feeratePerKw).feerate / 1000)
 }
@@ -96,6 +99,7 @@ object FeeratePerKw {
 
   // @formatter:off
   def apply(feeratePerKB: FeeratePerKB): FeeratePerKw = MinimumFeeratePerKw.max(FeeratePerKw(feeratePerKB.feerate / 4))
+  def apply(feeratePerVByte: FeeratePerVByte): FeeratePerKw = MinimumFeeratePerKw max FeeratePerKw(feeratePerVByte.feerate * 1000)
   def apply(feeratePerByte: FeeratePerByte): FeeratePerKw = FeeratePerKw(FeeratePerKB(feeratePerByte))
   // @formatter:on
 }
