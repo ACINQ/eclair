@@ -16,15 +16,16 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
-import fr.acinq.eclair.wire.Node
+import fr.acinq.eclair.wire.{ChannelUpdate, Node}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+
+import java.util.UUID
 
 /**
  * Created by PM on 01/02/2017.
@@ -195,6 +196,25 @@ object PaymentFailure {
   /** Update the set of nodes and channels to ignore in retries depending on the failures we received. */
   def updateIgnored(failures: Seq[PaymentFailure], ignore: Ignore): Ignore = {
     failures.foldLeft(ignore) { case (current, failure) => updateIgnored(failure, current) }
+  }
+
+  /** Update the invoice routing hints based on more recent channel updates received. */
+  def updateRoutingHints(failures: Seq[PaymentFailure], routingHints: Seq[Seq[ExtraHop]]): Seq[Seq[ExtraHop]] = {
+    // We're only interested in the last channel update received per channel.
+    val updates = failures.foldLeft(Map.empty[ShortChannelId, ChannelUpdate]) {
+      case (current, failure) => failure match {
+        case RemoteFailure(_, Sphinx.DecryptedFailurePacket(_, f: Update)) => current.updated(f.update.shortChannelId, f.update)
+        case _ => current
+      }
+    }
+    routingHints.map(_.map(extraHop => updates.get(extraHop.shortChannelId) match {
+      case Some(u) => extraHop.copy(
+        cltvExpiryDelta = u.cltvExpiryDelta,
+        feeBase = u.feeBaseMsat,
+        feeProportionalMillionths = u.feeProportionalMillionths
+      )
+      case None => extraHop
+    }))
   }
 
 }
