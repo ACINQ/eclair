@@ -16,12 +16,11 @@
 
 package fr.acinq.eclair.wire
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
@@ -67,7 +66,7 @@ object ChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool8) ::
       ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
-      ("localPaymentBasepoint" | optional(provide(channelVersion.hasStaticRemotekey), publicKey)) ::
+      ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
       ("features" | combinedFeaturesCodec)).as[LocalParams]
 
   val remoteParamsCodec: Codec[RemoteParams] = (
@@ -91,7 +90,7 @@ object ChannelCodecs extends Logging {
 
   val commitmentSpecCodec: Codec[CommitmentSpec] = (
     ("htlcs" | setCodec(htlcCodec)) ::
-      ("feeratePerKw" | uint32) ::
+      ("feeratePerKw" | feeratePerKw) ::
       ("toLocal" | millisatoshi) ::
       ("toRemote" | millisatoshi)).as[CommitmentSpec]
 
@@ -113,7 +112,7 @@ object ChannelCodecs extends Logging {
     .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcSuccessTx])
     .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcTimeoutTx])
     .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
-    .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimDelayedOutputTx])
+    .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
     .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])
     .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx])
     .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClosingTx])
@@ -156,21 +155,21 @@ object ChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64overflow) ::
       ("reSignAsap" | bool8)).as[WaitingForRevocation]
 
-  val localCodec: Codec[Origin.Local] = (
-    ("id" | uuid) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.Local]
+  val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 
-  val relayedCodec: Codec[Origin.Relayed] = (
+  val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
+
+  val relayedColdCodec: Codec[Origin.ChannelRelayedCold] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountIn" | millisatoshi) ::
-      ("amountOut" | millisatoshi)).as[Origin.Relayed]
+      ("amountOut" | millisatoshi)).as[Origin.ChannelRelayedCold]
 
-  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
-    listOfN(uint16, bytes32 ~ int64) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.TrampolineRelayed]
+  val relayedCodec: Codec[Origin.ChannelRelayed] = relayedColdCodec.xmap[Origin.ChannelRelayed](o => o: Origin.ChannelRelayed, o => Origin.ChannelRelayedCold(o.originChannelId, o.originHtlcId, o.amountIn, o.amountOut))
+
+  val trampolineRelayedColdCodec: Codec[Origin.TrampolineRelayedCold] = listOfN(uint16, bytes32 ~ int64).as[Origin.TrampolineRelayedCold]
+
+  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = trampolineRelayedColdCodec.xmap[Origin.TrampolineRelayed](o => o: Origin.TrampolineRelayed, o => Origin.TrampolineRelayedCold(o.htlcs))
 
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x02, relayedCodec)
@@ -229,6 +228,7 @@ object ChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | optional(bool8, txCodec)) ::
+      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
       ("waitingSince" | int64) ::
       ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec))) ::
       ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
@@ -236,7 +236,8 @@ object ChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
-      ("lastSent" | lengthDelimited(fundingLockedCodec))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
+      ("lastSent" | lengthDelimited(fundingLockedCodec)) ::
+      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)]))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
   val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
@@ -281,7 +282,7 @@ object ChannelCodecs extends Logging {
    * We use the fact that the discriminated codec encodes using the first suitable codec it finds in the list to handle
    * database migration.
    *
-   * For example, a data encoded with type 01 will be decoded using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
+   * For example, a data encoded with type 01 will be decoded using [[LegacyChannelCodecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
    * encoded to a type 08 using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec]].
    *
    * More info here: https://github.com/scodec/scodec/issues/122

@@ -16,19 +16,17 @@
 
 package fr.acinq.eclair.wire
 
-import java.net.InetSocketAddress
-import java.util.UUID
-
 import akka.actor.ActorSystem
+import akka.testkit.TestProbe
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, Transaction}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain}
-import fr.acinq.eclair.payment.relay.Origin
-import fr.acinq.eclair.payment.relay.Origin.{Local, Relayed, TrampolineRelayed}
+import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
@@ -37,11 +35,13 @@ import fr.acinq.eclair.wire.CommonCodecs.setCodec
 import fr.acinq.eclair.{TestConstants, UInt64, randomBytes32, randomKey, _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
-import org.json4s.{CustomKeySerializer, CustomSerializer}
+import org.json4s.{CustomKeySerializer, CustomSerializer, Formats}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 import scodec.{Attempt, Codec, DecodeResult}
 
+import java.net.InetSocketAddress
+import java.util.UUID
 import scala.concurrent.duration._
 import scala.io.Source
 import scala.util.Random
@@ -92,13 +92,16 @@ class ChannelCodecsSpec extends AnyFunSuite {
     val current02 = hex"0000000102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
     val current03 = hex"0000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
     val current04 = hex"0000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
+    val current05 = hex"0000000703d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
 
     assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(4).bits)))
     assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(4).bits)))
     assert(channelVersionCodec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(4).bits)))
+    assert(channelVersionCodec.decode(current05.bits) === Attempt.successful(DecodeResult(ChannelVersion.ANCHOR_OUTPUTS, current05.drop(4).bits)))
 
     assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"00000001".bits))
     assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"00000003".bits))
+    assert(channelVersionCodec.encode(ChannelVersion.ANCHOR_OUTPUTS) === Attempt.successful(hex"00000007".bits))
   }
 
   test("encode/decode localparams") {
@@ -118,13 +121,14 @@ class ChannelCodecsSpec extends AnyFunSuite {
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
-      staticPaymentBasepoint = None,
+      walletStaticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
       features = Features(randomBytes(256)))
-    val o1 = o.copy(staticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey))
+    val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey))
 
     roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
     roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
+    roundtrip(o, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
   }
 
   test("backward compatibility local params with global features") {
@@ -228,7 +232,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
-      feeratePerKw = Random.nextInt(Int.MaxValue),
+      feeratePerKw = FeeratePerKw(Random.nextInt(Int.MaxValue).sat),
       toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
     )
@@ -238,26 +242,41 @@ class ChannelCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode origin") {
-    val id = UUID.randomUUID()
-    assert(originCodec.decodeValue(originCodec.encode(Local(id, Some(ActorSystem("test").deadLetters))).require).require === Local(id, None))
-    val ZERO_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
-    val relayed = Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat)
-    assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
-    val trampolineRelayed = TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None)
-    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayed).require).require === trampolineRelayed)
+    val replyTo = TestProbe("replyTo")(ActorSystem("system")).ref
+
+    val localHot = Origin.LocalHot(replyTo, UUID.randomUUID())
+    val localCold = Origin.LocalCold(localHot.id)
+    assert(originCodec.decodeValue(originCodec.encode(localHot).require).require === localCold)
+    assert(originCodec.decodeValue(originCodec.encode(localCold).require).require === localCold)
+
+    val add = UpdateAddHtlc(randomBytes32, 4324, 11000000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket)
+    val relayedHot = Origin.ChannelRelayedHot(replyTo, add, 11000000 msat)
+    val relayedCold = Origin.ChannelRelayedCold(add.channelId, add.id, add.amountMsat, relayedHot.amountOut)
+    assert(originCodec.decodeValue(originCodec.encode(relayedHot).require).require === relayedCold)
+    assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require === relayedCold)
+
+    val adds = Seq(
+      UpdateAddHtlc(randomBytes32, 1L, 1000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32, 1L, 2000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32, 2L, 3000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
+    )
+    val trampolineRelayedHot = Origin.TrampolineRelayedHot(replyTo, adds)
+    val trampolineRelayedCold = Origin.TrampolineRelayedCold(trampolineRelayedHot.htlcs)
+    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedHot).require).require === trampolineRelayedCold)
+    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedCold).require).require === trampolineRelayedCold)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
-      1L -> Local(UUID.randomUUID(), None),
-      42L -> Relayed(randomBytes32, 4324, 12000000 msat, 11000000 msat),
-      43L -> TrampolineRelayed((randomBytes32, 17L) :: (randomBytes32, 21L) :: (randomBytes32, 21L) :: Nil, None),
-      130L -> Relayed(randomBytes32, -45, 13000000 msat, 12000000 msat),
-      140L -> TrampolineRelayed((randomBytes32, 0L) :: Nil, None),
-      1000L -> Relayed(randomBytes32, 10, 14000000 msat, 13000000 msat),
-      -32L -> Relayed(randomBytes32, 54, 15000000 msat, 14000000 msat),
-      -54L -> TrampolineRelayed((randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil, None),
-      -4L -> Local(UUID.randomUUID(), None))
+      1L -> Origin.LocalCold(UUID.randomUUID()),
+      42L -> Origin.ChannelRelayedCold(randomBytes32, 4324, 12000000 msat, 11000000 msat),
+      43L -> Origin.TrampolineRelayedCold((randomBytes32, 17L) :: (randomBytes32, 21L) :: (randomBytes32, 21L) :: Nil),
+      130L -> Origin.ChannelRelayedCold(randomBytes32, -45, 13000000 msat, 12000000 msat),
+      140L -> Origin.TrampolineRelayedCold((randomBytes32, 0L) :: Nil),
+      1000L -> Origin.ChannelRelayedCold(randomBytes32, 10, 14000000 msat, 13000000 msat),
+      -32L -> Origin.ChannelRelayedCold(randomBytes32, 54, 15000000 msat, 14000000 msat),
+      -54L -> Origin.TrampolineRelayedCold((randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil),
+      -4L -> Origin.LocalCold(UUID.randomUUID()))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
 
@@ -418,12 +437,15 @@ class ChannelCodecsSpec extends AnyFunSuite {
       assert(newjson === refjson)
     }
   }
+
 }
 
 object ChannelCodecsSpec {
-  val keyManager = new LocalKeyManager(ByteVector32(ByteVector.fill(32)(1)), Block.RegtestGenesisBlock.hash)
+  val seed = ByteVector32(ByteVector.fill(32)(1))
+  val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
+  val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
   val localParams = LocalParams(
-    keyManager.nodeId,
+    nodeKeyManager.nodeId,
     fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
     dustLimit = Satoshi(546),
     maxHtlcValueInFlightMsat = UInt64(50000000),
@@ -432,7 +454,7 @@ object ChannelCodecsSpec {
     toSelfDelay = CltvExpiryDelta(144),
     maxAcceptedHtlcs = 50,
     defaultFinalScriptPubKey = ByteVector.empty,
-    staticPaymentBasepoint = None,
+    walletStaticPaymentBasepoint = None,
     isFunder = true,
     features = Features.empty)
 
@@ -467,16 +489,16 @@ object ChannelCodecsSpec {
     IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 2, 4000000 msat, Crypto.sha256(paymentPreimages(4)), CltvExpiry(504), TestConstants.emptyOnionPacket))
   )
 
-  val normal = makeChannelDataNormal(htlcs, Map(42L -> Local(UUID.randomUUID, None), 15000L -> Relayed(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)))
+  val normal = makeChannelDataNormal(htlcs, Map(42L -> Origin.LocalCold(UUID.randomUUID), 15000L -> Origin.ChannelRelayedCold(ByteVector32(ByteVector.fill(32)(42)), 43, 11000000 msat, 10000000 msat)))
 
   def makeChannelDataNormal(htlcs: Seq[DirectedHtlc], origins: Map[Long, Origin]): DATA_NORMAL = {
     val channelUpdate = Announcements.makeChannelUpdate(ByteVector32(ByteVector.fill(32)(1)), randomKey, randomKey.publicKey, ShortChannelId(142553), CltvExpiryDelta(42), 15 msat, 575 msat, 53, Channel.MAX_FUNDING.toMilliSatoshi)
     val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
     val fundingAmount = fundingTx.txOut.head.amount
-    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
+    val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, channelKeyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey)
 
-    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
-    val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, 1500, 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
+    val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, FeeratePerKw(1500 sat), 50000000 msat, 70000000 msat), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, FeeratePerKw(1500 sat), 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
     val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 32L,
       remoteNextHtlcId = 4L,
@@ -491,91 +513,97 @@ object ChannelCodecsSpec {
 
   object JsonSupport {
 
-    class ByteVectorSerializer extends CustomSerializer[ByteVector](format => ( {
+    class ByteVectorSerializer extends CustomSerializer[ByteVector](_ => ( {
       null
     }, {
       case x: ByteVector => JString(x.toHex)
     }))
 
-    class ByteVector32Serializer extends CustomSerializer[ByteVector32](format => ( {
+    class ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {
       null
     }, {
       case x: ByteVector32 => JString(x.toHex)
     }))
 
-    class ByteVector64Serializer extends CustomSerializer[ByteVector64](format => ( {
+    class ByteVector64Serializer extends CustomSerializer[ByteVector64](_ => ( {
       null
     }, {
       case x: ByteVector64 => JString(x.toHex)
     }))
 
-    class UInt64Serializer extends CustomSerializer[UInt64](format => ( {
+    class UInt64Serializer extends CustomSerializer[UInt64](_ => ( {
       null
     }, {
       case x: UInt64 => JInt(x.toBigInt)
     }))
 
-    class SatoshiSerializer extends CustomSerializer[Satoshi](format => ( {
+    class SatoshiSerializer extends CustomSerializer[Satoshi](_ => ( {
       null
     }, {
       case x: Satoshi => JInt(x.toLong)
     }))
 
-    class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](format => ( {
+    class MilliSatoshiSerializer extends CustomSerializer[MilliSatoshi](_ => ( {
       null
     }, {
       case x: MilliSatoshi => JInt(x.toLong)
     }))
 
-    class CltvExpirySerializer extends CustomSerializer[CltvExpiry](format => ( {
+    class CltvExpirySerializer extends CustomSerializer[CltvExpiry](_ => ( {
       null
     }, {
       case x: CltvExpiry => JLong(x.toLong)
     }))
 
-    class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](format => ( {
+    class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](_ => ( {
       null
     }, {
       case x: CltvExpiryDelta => JInt(x.toInt)
     }))
 
-    class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ( {
+    class FeeratePerKwSerializer extends CustomSerializer[FeeratePerKw](_ => ( {
+      null
+    }, {
+      case x: FeeratePerKw => JLong(x.toLong)
+    }))
+
+    class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](_ => ( {
       null
     }, {
       case x: ShortChannelId => JString(x.toString())
     }))
 
-    class StateSerializer extends CustomSerializer[State](format => ( {
+    class StateSerializer extends CustomSerializer[State](_ => ( {
       null
     }, {
       case x: State => JString(x.toString())
     }))
 
-    class ShaChainSerializer extends CustomSerializer[ShaChain](format => ( {
+    class ShaChainSerializer extends CustomSerializer[ShaChain](_ => ( {
       null
     }, {
-      case x: ShaChain => JNull
+      case _: ShaChain => JNull
     }))
 
-    class PublicKeySerializer extends CustomSerializer[PublicKey](format => ( {
+    class PublicKeySerializer extends CustomSerializer[PublicKey](_ => ( {
       null
     }, {
       case x: PublicKey => JString(x.toString())
     }))
 
-    class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ( {
+    class PrivateKeySerializer extends CustomSerializer[PrivateKey](_ => ( {
       null
     }, {
-      case x: PrivateKey => JString("XXX")
+      case _: PrivateKey => JString("XXX")
     }))
 
-    class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](format => ( {
+    class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](_ => ( {
       null
     }, {
       case x: ChannelVersion => JString(x.bits.toBin)
     }))
 
-    class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ( {
+    class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
       null
     }, {
       case x: Transaction => JObject(List(
@@ -584,7 +612,7 @@ object ChannelCodecsSpec {
       ))
     }))
 
-    class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ( {
+    class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
       null
     }, {
       case x: TransactionWithInputInfo => JObject(List(
@@ -593,31 +621,31 @@ object ChannelCodecsSpec {
       ))
     }))
 
-    class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](format => ( {
+    class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](_ => ( {
       null
     }, {
       case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
     }))
 
-    class OutPointSerializer extends CustomSerializer[OutPoint](format => ( {
+    class OutPointSerializer extends CustomSerializer[OutPoint](_ => ( {
       null
     }, {
       case x: OutPoint => JString(s"${x.txid}:${x.index}")
     }))
 
-    class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ( {
+    class OutPointKeySerializer extends CustomKeySerializer[OutPoint](_ => ( {
       null
     }, {
       case x: OutPoint => s"${x.txid}:${x.index}"
     }))
 
-    class InputInfoSerializer extends CustomSerializer[InputInfo](format => ( {
+    class InputInfoSerializer extends CustomSerializer[InputInfo](_ => ( {
       null
     }, {
       case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
     }))
 
-    implicit val formats = org.json4s.DefaultFormats +
+    implicit val formats: Formats = org.json4s.DefaultFormats +
       new ByteVectorSerializer +
       new ByteVector32Serializer +
       new ByteVector64Serializer +
@@ -626,6 +654,7 @@ object ChannelCodecsSpec {
       new MilliSatoshiSerializer +
       new CltvExpirySerializer +
       new CltvExpiryDeltaSerializer +
+      new FeeratePerKwSerializer +
       new ShortChannelIdSerializer +
       new StateSerializer +
       new ShaChainSerializer +

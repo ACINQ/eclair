@@ -20,12 +20,16 @@ import java.net.{Inet4Address, Inet6Address, InetAddress}
 
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.DecodeResult
 import scodec.bits.{BitVector, HexStringSyntax}
+import scodec.codecs.uint32
 
 /**
   * Created by t-bast on 20/06/2019.
@@ -249,6 +253,12 @@ class CommonCodecsSpec extends AnyFunSuite {
       val encoded = macCodec.encode(expected).require.toByteVector
       assert(encoded === bin)
     }
+  }
+
+  test("backward compatibility on feerate codec") {
+    val value = 123456
+    val feerate = FeeratePerKw(value sat)
+    assert(feeratePerKw.decode(uint32.encode(value).require).require === DecodeResult(feerate, BitVector.empty))
   }
 
 }

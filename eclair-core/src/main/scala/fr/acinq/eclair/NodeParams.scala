@@ -25,41 +25,48 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
+import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Channel
-import fr.acinq.eclair.crypto.KeyManager
+import fr.acinq.eclair.crypto.Noise.KeyPair
+import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
+import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
 /**
  * Created by PM on 26/02/2017.
  */
-case class NodeParams(keyManager: KeyManager,
+case class NodeParams(nodeKeyManager: NodeKeyManager,
+                      channelKeyManager: ChannelKeyManager,
                       instanceId: UUID, // a unique instance ID regenerated after each restart
                       private val blockCount: AtomicLong,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       features: Features,
-                      overrideFeatures: Map[PublicKey, Features],
+                      private val overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
+                      pluginParams: Seq[PluginParams],
                       dustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
-                      expiryDeltaBlocks: CltvExpiryDelta,
-                      fulfillSafetyBeforeTimeoutBlocks: CltvExpiryDelta,
+                      expiryDelta: CltvExpiryDelta,
+                      fulfillSafetyBeforeTimeout: CltvExpiryDelta,
+                      minFinalExpiryDelta: CltvExpiryDelta,
                       htlcMinimum: MilliSatoshi,
-                      toRemoteDelayBlocks: CltvExpiryDelta,
-                      maxToLocalDelayBlocks: CltvExpiryDelta,
+                      toRemoteDelay: CltvExpiryDelta,
+                      maxToLocalDelay: CltvExpiryDelta,
                       minDepthBlocks: Int,
                       feeBase: MilliSatoshi,
                       feeProportionalMillionth: Int,
@@ -67,32 +74,41 @@ case class NodeParams(keyManager: KeyManager,
                       maxReserveToFundingRatio: Double,
                       db: Databases,
                       revocationTimeout: FiniteDuration,
-                      authTimeout: FiniteDuration,
-                      initTimeout: FiniteDuration,
-                      pingInterval: FiniteDuration,
-                      pingTimeout: FiniteDuration,
-                      pingDisconnect: Boolean,
                       autoReconnect: Boolean,
                       initialRandomReconnectDelay: FiniteDuration,
                       maxReconnectInterval: FiniteDuration,
                       chainHash: ByteVector32,
                       channelFlags: Byte,
                       watcherType: WatcherType,
+                      watchSpentWindow: FiniteDuration,
                       paymentRequestExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
                       minFundingSatoshis: Satoshi,
                       maxFundingSatoshis: Satoshi,
+                      peerConnectionConf: PeerConnection.Conf,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean) {
-  val privateKey = keyManager.nodeKey.privateKey
-  val nodeId = keyManager.nodeId
+  val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
+
+  val nodeId: PublicKey = nodeKeyManager.nodeId
+
+  val keyPair: KeyPair = KeyPair(nodeId.value, privateKey.value)
+
+  val pluginMessageTags: Set[Int] = pluginParams.collect { case p: CustomFeaturePlugin => p.messageTags }.toSet.flatten
+
+  def forceReconnect(nodeId: PublicKey): Boolean = pluginParams.exists {
+    case p: ConnectionControlPlugin => p.forceReconnect(nodeId)
+    case _ => false
+  }
 
   def currentBlockHeight: Long = blockCount.get
+
+  def featuresFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features)
 }
 
-object NodeParams {
+object NodeParams extends Logging {
 
   sealed trait WatcherType
 
@@ -112,16 +128,47 @@ object NodeParams {
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load())
 
-  def getSeed(datadir: File): ByteVector = {
-    val seedPath = new File(datadir, "seed.dat")
-    if (seedPath.exists()) {
-      ByteVector(Files.readAllBytes(seedPath.toPath))
-    } else {
-      datadir.mkdirs()
-      val seed = randomBytes32
-      Files.write(seedPath.toPath, seed.toArray)
-      seed
+  private def readSeedFromFile(seedPath: File): ByteVector = {
+    logger.info(s"use seed file: ${seedPath.getCanonicalPath}")
+    ByteVector(Files.readAllBytes(seedPath.toPath))
+  }
+
+  private def writeSeedToFile(path: File, seed: ByteVector): Unit = {
+    Files.write(path.toPath, seed.toArray)
+    logger.info(s"create new seed file: ${path.getCanonicalPath}")
+  }
+
+  private def migrateSeedFile(source: File, destination: File): Unit = {
+    if (source.exists() && !destination.exists()) {
+      Files.copy(source.toPath, destination.toPath)
+      logger.info(s"migrate seed file: ${source.getCanonicalPath} → ${destination.getCanonicalPath}")
     }
+  }
+
+  def getSeeds(datadir: File): Seeds = {
+    // Previously we used one seed file ("seed.dat") to generate the node and the channel private keys
+    // Now we use two separate files and thus we need to migrate the old seed file if necessary
+    val oldSeedPath = new File(datadir, "seed.dat")
+    val nodeSeedFilename: String = "node_seed.dat"
+    val channelSeedFilename: String = "channel_seed.dat"
+
+    def getSeed(filename: String): ByteVector = {
+      val seedPath = new File(datadir, filename)
+      if (seedPath.exists()) {
+        readSeedFromFile(seedPath)
+      } else if (oldSeedPath.exists()) {
+        migrateSeedFile(oldSeedPath, seedPath)
+        readSeedFromFile(seedPath)
+      } else {
+        val randomSeed = randomBytes32
+        writeSeedToFile(seedPath, randomSeed)
+        randomSeed.bytes
+      }
+    }
+
+    val nodeSeed = getSeed(nodeSeedFilename)
+    val channelSeed = getSeed(channelSeedFilename)
+    Seeds(nodeSeed, channelSeed)
   }
 
   private val chain2Hash: Map[String, ByteVector32] = Map(
@@ -134,7 +181,9 @@ object NodeParams {
 
   def chainFromHash(chainHash: ByteVector32): String = chain2Hash.map(_.swap).getOrElse(chainHash, throw new RuntimeException(s"invalid chainHash '$chainHash'"))
 
-  def makeNodeParams(config: Config, instanceId: UUID, keyManager: KeyManager, torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator): NodeParams = {
+  def makeNodeParams(config: Config, instanceId: UUID, nodeKeyManager: NodeKeyManager, channelKeyManager: ChannelKeyManager,
+                     torAddress_opt: Option[NodeAddress], database: Databases, blockCount: AtomicLong, feeEstimator: FeeEstimator,
+                     pluginParams: Seq[PluginParams] = Nil): NodeParams = {
     // check configuration for keys that have been renamed
     val deprecatedKeyPaths = Map(
       // v0.3.2
@@ -145,7 +194,11 @@ object NodeParams {
       "global-features" -> "features",
       "local-features" -> "features",
       // v0.4.1
-      "on-chain-fees.max-feerate-mismatch" -> "on-chain-fees.feerate-tolerance.ratio-low / on-chain-fees.feerate-tolerance.ratio-high"
+      "on-chain-fees.max-feerate-mismatch" -> "on-chain-fees.feerate-tolerance.ratio-low / on-chain-fees.feerate-tolerance.ratio-high",
+      // v0.4.3
+      "min-feerate" -> "on-chain-fees.min-feerate",
+      "smooth-feerate-window" -> "on-chain-fees.smoothing-window",
+      "feerate-provider-timeout" -> "on-chain-fees.provider-timeout"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -166,6 +219,9 @@ object NodeParams {
       case _ => BITCOIND
     }
 
+    val watchSpentWindow = FiniteDuration(config.getDuration("watch-spent-window").getSeconds, TimeUnit.SECONDS)
+    require(watchSpentWindow > 0.seconds, "watch-spent-window must be strictly greater than 0")
+
     val dustLimitSatoshis = Satoshi(config.getLong("dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
       require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
@@ -181,21 +237,39 @@ object NodeParams {
     val offeredCLTV = CltvExpiryDelta(config.getInt("to-remote-delay-blocks"))
     require(maxToLocalCLTV <= Channel.MAX_TO_SELF_DELAY && offeredCLTV <= Channel.MAX_TO_SELF_DELAY, s"CLTV delay values too high, max is ${Channel.MAX_TO_SELF_DELAY}")
 
-    val expiryDeltaBlocks = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
-    val fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
-    require(fulfillSafetyBeforeTimeoutBlocks * 2 < expiryDeltaBlocks, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
+    val expiryDelta = CltvExpiryDelta(config.getInt("expiry-delta-blocks"))
+    val fulfillSafetyBeforeTimeout = CltvExpiryDelta(config.getInt("fulfill-safety-before-timeout-blocks"))
+    require(fulfillSafetyBeforeTimeout * 2 < expiryDelta, "fulfill-safety-before-timeout-blocks must be smaller than expiry-delta-blocks / 2 because it effectively reduces that delta; if you want to increase this value, you may want to increase expiry-delta-blocks as well")
+    val minFinalExpiryDelta = CltvExpiryDelta(config.getInt("min-final-expiry-delta-blocks"))
+    require(minFinalExpiryDelta > fulfillSafetyBeforeTimeout, "min-final-expiry-delta-blocks must be strictly greater than fulfill-safety-before-timeout-blocks; otherwise it may lead to undesired channel closure")
 
     val nodeAlias = config.getString("node-alias")
     require(nodeAlias.getBytes("UTF-8").length <= 32, "invalid alias, too long (max allowed 32 bytes)")
 
+    def validateFeatures(features: Features): Unit = {
+      val featuresErr = Features.validateFeatureGraph(features)
+      require(featuresErr.isEmpty, featuresErr.map(_.message))
+      require(features.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
+    }
+
+    val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
     val features = Features.fromConfiguration(config)
-    val featuresErr = Features.validateFeatureGraph(features)
-    require(featuresErr.isEmpty, featuresErr.map(_.message))
+    validateFeatures(features)
+
+    require(pluginMessageParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
+    require(pluginMessageParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
+    require(pluginMessageParams.flatMap(_.messageTags).forall(_ > 32768), "Plugin messages tags must be > 32768")
+    val pluginFeatureSet = pluginMessageParams.map(_.feature.mandatory).toSet
+    require(Features.knownFeatures.map(_.mandatory).intersect(pluginFeatureSet).isEmpty, "Plugin feature bit overlaps with known feature bit")
+    require(pluginFeatureSet.size == pluginMessageParams.size, "Duplicate plugin feature bits found")
+
+    val coreAndPluginFeatures = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
 
     val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
       val f = Features.fromConfiguration(e)
-      p -> f
+      validateFeatures(f)
+      p -> f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature))
     }.toMap
 
     val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
@@ -236,30 +310,38 @@ object NodeParams {
     }
 
     NodeParams(
-      keyManager = keyManager,
+      nodeKeyManager = nodeKeyManager,
+      channelKeyManager = channelKeyManager,
       instanceId = instanceId,
       blockCount = blockCount,
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
-      features = features,
+      features = coreAndPluginFeatures,
+      pluginParams = pluginParams,
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
-        maxFeerateMismatch = FeerateTolerance(config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"), config.getDouble("on-chain-fees.feerate-tolerance.ratio-high")),
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
-        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio")
+        updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),
+        defaultFeerateTolerance = FeerateTolerance(config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"), config.getDouble("on-chain-fees.feerate-tolerance.ratio-high")),
+        perNodeFeerateTolerance = config.getConfigList("on-chain-fees.override-feerate-tolerance").asScala.map { e =>
+          val nodeId = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
+          val tolerance = FeerateTolerance(e.getDouble("feerate-tolerance.ratio-low"), e.getDouble("feerate-tolerance.ratio-high"))
+          nodeId -> tolerance
+        }.toMap
       ),
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
       maxAcceptedHtlcs = maxAcceptedHtlcs,
-      expiryDeltaBlocks = expiryDeltaBlocks,
-      fulfillSafetyBeforeTimeoutBlocks = fulfillSafetyBeforeTimeoutBlocks,
+      expiryDelta = expiryDelta,
+      fulfillSafetyBeforeTimeout = fulfillSafetyBeforeTimeout,
+      minFinalExpiryDelta = minFinalExpiryDelta,
       htlcMinimum = htlcMinimum,
-      toRemoteDelayBlocks = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
-      maxToLocalDelayBlocks = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
+      toRemoteDelay = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
+      maxToLocalDelay = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
       feeBase = feeBase,
       feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
@@ -267,21 +349,25 @@ object NodeParams {
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       db = database,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
-      authTimeout = FiniteDuration(config.getDuration("auth-timeout").getSeconds, TimeUnit.SECONDS),
-      initTimeout = FiniteDuration(config.getDuration("init-timeout").getSeconds, TimeUnit.SECONDS),
-      pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
-      pingTimeout = FiniteDuration(config.getDuration("ping-timeout").getSeconds, TimeUnit.SECONDS),
-      pingDisconnect = config.getBoolean("ping-disconnect"),
       autoReconnect = config.getBoolean("auto-reconnect"),
       initialRandomReconnectDelay = FiniteDuration(config.getDuration("initial-random-reconnect-delay").getSeconds, TimeUnit.SECONDS),
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
       watcherType = watcherType,
+      watchSpentWindow = watchSpentWindow,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),
       minFundingSatoshis = Satoshi(config.getLong("min-funding-satoshis")),
       maxFundingSatoshis = Satoshi(config.getLong("max-funding-satoshis")),
+      peerConnectionConf = PeerConnection.Conf(
+        authTimeout = FiniteDuration(config.getDuration("peer-connection.auth-timeout").getSeconds, TimeUnit.SECONDS),
+        initTimeout = FiniteDuration(config.getDuration("peer-connection.init-timeout").getSeconds, TimeUnit.SECONDS),
+        pingInterval = FiniteDuration(config.getDuration("peer-connection.ping-interval").getSeconds, TimeUnit.SECONDS),
+        pingTimeout = FiniteDuration(config.getDuration("peer-connection.ping-timeout").getSeconds, TimeUnit.SECONDS),
+        pingDisconnect = config.getBoolean("peer-connection.ping-disconnect"),
+        maxRebroadcastDelay = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS) // it makes sense to not delay rebroadcast by more than the rebroadcast period
+      ),
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),

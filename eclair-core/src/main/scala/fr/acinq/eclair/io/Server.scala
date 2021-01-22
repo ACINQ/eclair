@@ -23,22 +23,23 @@ import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props}
 import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
+import fr.acinq.eclair.Logs
 import fr.acinq.eclair.Logs.LogCategory
-import fr.acinq.eclair.{Logs, NodeParams}
+import fr.acinq.eclair.crypto.Noise.KeyPair
 
 import scala.concurrent.Promise
 
 /**
  * Created by PM on 27/10/2015.
  */
-class Server(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
+class Server(keyPair: KeyPair, peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None) extends Actor with DiagnosticActorLogging {
 
   import Tcp._
   import context.system
 
   IO(Tcp) ! Bind(self, address, options = KeepAlive(true) :: Nil, pullMode = true)
 
-  def receive() = {
+  override def receive: Receive = {
     case Bound(localAddress) =>
       bound.map(_.success(Done))
       log.info(s"bound on $localAddress")
@@ -56,7 +57,8 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, ad
       log.info(s"connected to $remote")
       val connection = sender
       val peerConnection = context.actorOf(PeerConnection.props(
-        nodeParams = nodeParams,
+        keyPair = keyPair,
+        conf = peerConnectionConf,
         switchboard = switchboard,
         router = router
       ))
@@ -69,7 +71,7 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, ad
 
 object Server {
 
-  def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None): Props = Props(new Server(nodeParams, switchboard, router: ActorRef, address, bound))
+  def props(keyPair: KeyPair, peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, bound: Option[Promise[Done]] = None): Props = Props(new Server(keyPair, peerConnectionConf, switchboard, router: ActorRef, address, bound))
 
 }
 

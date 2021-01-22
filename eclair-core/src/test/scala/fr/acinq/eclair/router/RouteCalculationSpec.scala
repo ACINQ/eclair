@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
@@ -26,7 +26,7 @@ import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, ToMilliSatoshiConversion, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, ToMilliSatoshiConversion, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.{ParallelTestExecution, Tag}
 import scodec.bits._
@@ -978,6 +978,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     {
       val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = routeParams.copy(randomize = true), currentBlockHeight = 400000)
       assert(routes.length >= 4, routes)
+      assert(routes.forall(_.length == 1), routes)
+      checkRouteAmounts(routes, amount, 0 msat)
+    }
+    {
+      // We set min-part-amount to a value that would exclude channels 1 and 4, but it should be ignored when sending to a direct neighbor.
+      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = routeParams.copy(mpp = MultiPartParams(20000 msat, 3)), currentBlockHeight = 400000)
+      assert(routes.length === 4, routes)
       assert(routes.forall(_.length == 1), routes)
       checkRouteAmounts(routes, amount, 0 msat)
     }

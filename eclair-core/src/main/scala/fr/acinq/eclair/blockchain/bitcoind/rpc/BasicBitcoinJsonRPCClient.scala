@@ -21,13 +21,13 @@ import com.softwaremill.sttp.json4s._
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
-import org.json4s.{CustomSerializer, DefaultFormats}
 import org.json4s.JsonAST.{JString, JValue}
 import org.json4s.jackson.Serialization
+import org.json4s.{CustomSerializer, DefaultFormats}
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient {
+class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient {
 
   // necessary to properly serialize ByteVector32 into String readable by bitcoind
   object ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {
@@ -35,9 +35,13 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
   }, {
     case x: ByteVector32 => JString(x.toHex)
   }))
+
   implicit val formats = DefaultFormats.withBigDecimal + ByteVector32Serializer
   private val scheme = if (ssl) "https" else "http"
-  private val serviceUri = uri"$scheme://$host:$port/wallet/" // wallet/ specifies to use the default bitcoind wallet, named ""
+  private val serviceUri = wallet match {
+    case Some(name) => uri"$scheme://$host:$port/wallet/$name"
+    case None => uri"$scheme://$host:$port"
+  }
   implicit val serialization = Serialization
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =

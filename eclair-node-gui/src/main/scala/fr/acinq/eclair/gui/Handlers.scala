@@ -20,6 +20,7 @@ import java.util.UUID
 
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
+import fr.acinq.eclair.blockchain.fee.FeeratePerKB
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment._
@@ -86,7 +87,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
       kit <- fKit
       sendPayment = req.minFinalCltvExpiryDelta match {
         case None => SendPaymentRequest(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo)
-        case Some(minFinalCltvExpiry) => SendPaymentRequest(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo, finalExpiryDelta = minFinalCltvExpiry)
+        case Some(minFinalCltvExpiry) => SendPaymentRequest(MilliSatoshi(amountMsat), req.paymentHash, req.nodeId, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo, fallbackFinalExpiryDelta = minFinalCltvExpiry)
       }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {
@@ -121,7 +122,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
    *
    * @return Future containing a Long in satoshi per kilobyte
    */
-  def getFundingFeeRatePerKb(): Future[Long] = {
+  def getFundingFeeRatePerKb(): Future[FeeratePerKB] = {
     for {
       kit <- fKit
       ratePerKw = {

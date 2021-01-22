@@ -16,28 +16,27 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{InetAddress, ServerSocket, Socket}
-import java.util.concurrent.Executors
-
 import akka.actor.FSM
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.{Btc, Script}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Block, Btc, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.{Wumbo, StaticRemoteKey}
+import fr.acinq.eclair.Features.{StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{CMD_GETINFO, Channel, ChannelCreated, ChannelVersion, DATA_WAIT_FOR_ACCEPT_CHANNEL, HasCommitments, RES_GETINFO, WAIT_FOR_ACCEPT_CHANNEL}
 import fr.acinq.eclair.io.Peer._
-import fr.acinq.eclair.wire.{ChannelCodecsSpec, Color, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
-import scodec.bits.{ByteVector, _}
+import scodec.bits.ByteVector
 
+import java.net.{InetAddress, ServerSocket, Socket}
+import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -102,7 +101,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     import f._
 
     // this actor listens to connection requests and creates connections
-    system.actorOf(ClientSpawner.props(nodeParams, TestProbe().ref, TestProbe().ref))
+    system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
@@ -128,7 +127,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     import f._
 
     // this actor listens to connection requests and creates connections
-    system.actorOf(ClientSpawner.props(nodeParams, TestProbe().ref, TestProbe().ref))
+    system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
 
     // we create a dummy tcp server and update bob's announcement to point to it
     val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
@@ -162,6 +161,19 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     probe.expectMsg(PeerConnection.ConnectionResult.AlreadyConnected)
   }
 
+  test("handle unknown messages") { f =>
+    import f._
+
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[UnknownMessageReceived])
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+
+    peerConnection.send(peer, UnknownMessage(tag = TestConstants.pluginParams.messageTags.head, data = ByteVector.empty))
+    listener.expectMsgType[UnknownMessageReceived]
+    peerConnection.send(peer, UnknownMessage(tag = 60005, data = ByteVector.empty)) // No plugin is subscribed to this tag
+    listener.expectNoMessage()
+  }
+
   test("handle disconnect in state CONNECTED") { f =>
     import f._
 
@@ -178,28 +190,26 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
   test("handle new connection in state CONNECTED") { f =>
     import f._
 
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
-    // this is just to extract inits
-    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
-
     val peerConnection1 = peerConnection
     val peerConnection2 = TestProbe()
     val peerConnection3 = TestProbe()
 
-    val deathWatch = TestProbe()
-    deathWatch.watch(peerConnection1.ref)
-    deathWatch.watch(peerConnection2.ref)
-    deathWatch.watch(peerConnection3.ref)
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    peerConnection1.expectMsgType[ChannelReestablish]
+    // this is just to extract inits
+    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
 
     peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
-    deathWatch.expectTerminated(peerConnection1.ref)
+    peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection2.ref)
+    peerConnection2.expectMsgType[ChannelReestablish]
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
-    deathWatch.expectTerminated(peerConnection2.ref)
+    peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
+    peerConnection3.expectMsgType[ChannelReestablish]
   }
 
   test("send state transitions to child reconnection actor", Tag("auto_reconnect"), Tag("with_node_announcement")) { f =>
@@ -227,6 +237,27 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.CONNECTING, ReconnectionTask.IDLE))
   }
 
+  test("don't spawn a channel with duplicate temporary channel id") { f =>
+    import f._
+
+    val probe = TestProbe()
+    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
+    connect(remoteNodeId, peer, peerConnection)
+    assert(peer.stateData.channels.isEmpty)
+
+    val open = wire.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32, 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, 0)
+    peerConnection.send(peer, open)
+    awaitCond(peer.stateData.channels.nonEmpty)
+    assert(probe.expectMsgType[ChannelCreated].temporaryChannelId === open.temporaryChannelId)
+    peerConnection.expectMsgType[AcceptChannel]
+
+    // open_channel messages with the same temporary channel id should simply be ignored
+    peerConnection.send(peer, open.copy(fundingSatoshis = 100000 sat, fundingPubkey = randomKey.publicKey))
+    probe.expectNoMsg(100 millis)
+    peerConnection.expectNoMsg(100 millis)
+    assert(peer.stateData.channels.size === 1)
+  }
+
   test("don't spawn a wumbo channel if wumbo feature isn't enabled") { f =>
     import f._
 
@@ -236,7 +267,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     connect(remoteNodeId, peer, peerConnection)
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)")
   }
@@ -250,7 +281,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     connect(remoteNodeId, peer, peerConnection) // Bob doesn't support wumbo, Alice does
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big, the remote peer doesn't support wumbo")
   }
@@ -264,7 +295,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Set(ActivatedFeature(Wumbo, Optional))))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
 
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
   }
@@ -275,14 +306,23 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection)
-
     assert(peer.stateData.channels.isEmpty)
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, None, None))
+
+    val relayFees = Some(100 msat, 1000)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, relayFees, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
 
     val channelCreated = probe.expectMsgType[ChannelCreated]
     assert(channelCreated.initialFeeratePerKw == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.commitmentBlockTarget))
     assert(channelCreated.fundingTxFeeratePerKw.get == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.fundingBlockTarget))
+
+    peer.stateData.channels.foreach { case (_, channelRef) =>
+      probe.send(channelRef, CMD_GETINFO(probe.ref))
+      val info = probe.expectMsgType[RES_GETINFO]
+      assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
+      val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
+      assert(inputInit.initialRelayFees_opt === relayFees)
+    }
   }
 
   test("use correct final script if option_static_remotekey is negotiated", Tag("static_remotekey")) { f =>
@@ -290,16 +330,16 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
 
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))))) // Bob supports option_static_remotekey
-    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None))
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
     peer.stateData.channels.foreach { case (_, channelRef) =>
-      probe.send(channelRef, CMD_GETINFO)
+      probe.send(channelRef, CMD_GETINFO(probe.ref))
       val info = probe.expectMsgType[RES_GETINFO]
       assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
       val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
       assert(inputInit.channelVersion.hasStaticRemotekey)
-      assert(inputInit.localParams.staticPaymentBasepoint.isDefined)
-      assert(inputInit.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(inputInit.localParams.staticPaymentBasepoint.get)))
+      assert(inputInit.localParams.walletStaticPaymentBasepoint.isDefined)
+      assert(inputInit.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(inputInit.localParams.walletStaticPaymentBasepoint.get)))
     }
   }
 }

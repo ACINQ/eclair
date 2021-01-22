@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -31,6 +31,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
@@ -76,8 +77,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
       registerA ! alice
       registerB ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte, ChannelVersion.STANDARD)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte, ChannelVersion.STANDARD)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelVersion.STANDARD)
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
@@ -101,8 +102,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     }
 
     def main(channel: ActorRef): Receive = {
-      case Register.Forward(_, msg) => channel forward msg
-      case Register.ForwardShortId(_, msg) => channel forward msg
+      case fwd: Register.Forward[_] => channel forward fwd.message
+      case fwd: Register.ForwardShortId[_] => channel forward fwd.message
     }
   }
 
@@ -115,7 +116,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
       // allow overpaying (no more than 2 times the required amount)
       val amount = requiredAmount + Random.nextInt(requiredAmount.toLong.toInt).msat
       val expiry = (Channel.MIN_CLTV_EXPIRY_DELTA + 1).toCltvExpiry(blockHeight = 400000)
-      OutgoingPacket.buildCommand(Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
+      OutgoingPacket.buildCommand(self, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(null, dest, null) :: Nil, FinalLegacyPayload(amount, expiry))._1
     }
 
     def initiatePaymentOrStop(remaining: Int): Unit =
@@ -125,13 +126,14 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
           case req: PaymentRequest =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId)
             context become {
-              case u: Relayer.ForwardFulfill =>
-                log.info(s"successfully sent htlc #${u.htlc.id}")
+              case RES_SUCCESS(_: CMD_ADD_HTLC, _) => ()
+              case RES_ADD_SETTLED(_, htlc, _: HtlcResult.Fulfill) =>
+                log.info(s"successfully sent htlc #${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case u: Relayer.ForwardFail =>
-                log.warning(s"htlc failed: ${u.htlc.id}")
+              case RES_ADD_SETTLED(_, htlc, _: HtlcResult.Fail) =>
+                log.warning(s"htlc failed: ${htlc.id}")
                 initiatePaymentOrStop(remaining - 1)
-              case Status.Failure(t) =>
+              case RES_ADD_FAILED(_, t: Throwable, _) =>
                 log.error(s"htlc error: ${t.getMessage}")
                 initiatePaymentOrStop(remaining - 1)
             }
@@ -179,8 +181,9 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     awaitCond(latch.getCount == 0, interval = 1 second, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
-      sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure]) == ChannelCommandResponse.Ok
+      val c = CMD_CLOSE(sender.ref, None)
+      alice ! c
+      sender.expectMsgType[CommandResponse[CMD_CLOSE]].isInstanceOf[RES_SUCCESS[CMD_CLOSE]]
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)
@@ -196,12 +199,13 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     awaitCond(latch.getCount == 0, interval = 1 second, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
-      sender.send(alice, CMD_CLOSE(None))
-      val resa = sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure])
-      sender.send(bob, CMD_CLOSE(None))
-      val resb = sender.expectMsgAnyClassOf(classOf[ChannelCommandResponse], classOf[Status.Failure])
+      val c = CMD_CLOSE(sender.ref, None)
+      alice ! c
+      val resa = sender.expectMsgType[CommandResponse[CMD_CLOSE]]
+      sender.send(bob, c)
+      val resb = sender.expectMsgType[CommandResponse[CMD_CLOSE]]
       // we only need that one of them succeeds
-      resa == ChannelCommandResponse.Ok || resb == ChannelCommandResponse.Ok
+      resa.isInstanceOf[RES_SUCCESS[CMD_CLOSE]] || resb.isInstanceOf[RES_SUCCESS[CMD_CLOSE]]
     }, interval = 1 second, max = 30 seconds)
     awaitCond(alice.stateName == CLOSING, interval = 1 second, max = 3 minutes)
     awaitCond(bob.stateName == CLOSING, interval = 1 second, max = 3 minutes)

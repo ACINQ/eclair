@@ -17,6 +17,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire._
 
 /**
@@ -30,6 +31,10 @@ object CommitmentOutput {
   case object ToLocal extends CommitmentOutput
 
   case object ToRemote extends CommitmentOutput
+
+  case object ToLocalAnchor extends CommitmentOutput
+
+  case object ToRemoteAnchor extends CommitmentOutput
 
   case class InHtlc(incomingHtlc: IncomingHtlc) extends CommitmentOutput
 
@@ -65,13 +70,11 @@ case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
 case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
-final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
+final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
 
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }
 
   def findOutgoingHtlcById(id: Long): Option[OutgoingHtlc] = htlcs.collectFirst { case htlc: OutgoingHtlc if htlc.add.id == id => htlc }
-
-  val totalFunds: MilliSatoshi = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
 object CommitmentSpec {

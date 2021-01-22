@@ -16,16 +16,17 @@
 
 package fr.acinq.eclair.wire
 
-import java.net.{Inet4Address, InetAddress}
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
+
+import java.net.{Inet4Address, InetAddress}
 
 /**
  * Created by PM on 31/05/2016.
@@ -88,7 +89,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode open_channel") {
-    val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, 1, CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
+    val defaultOpen = OpenChannel(ByteVector32.Zeroes, ByteVector32.Zeroes, 1 sat, 1 msat, 1 sat, UInt64(1), 1 sat, 1 msat, FeeratePerKw(1 sat), CltvExpiryDelta(1), 1, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
     // Legacy encoding that omits the upfront_shutdown_script and trailing tlv stream.
     // To allow extending all messages with TLV streams, the upfront_shutdown_script was moved to a TLV stream extension
     // in https://github.com/lightningnetwork/lightning-rfc/pull/714 and made mandatory when including a TLV stream.
@@ -159,12 +160,12 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode all channel messages") {
-    val open = OpenChannel(randomBytes32, randomBytes32, 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, 9, CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
+    val open = OpenChannel(randomBytes32, randomBytes32, 3 sat, 4 msat, 5 sat, UInt64(6), 7 sat, 8 msat, FeeratePerKw(9 sat), CltvExpiryDelta(10), 11, publicKey(1), point(2), point(3), point(4), point(5), point(6), 0.toByte)
     val accept = AcceptChannel(randomBytes32, 3 sat, UInt64(4), 5 sat, 6 msat, 7, CltvExpiryDelta(8), 9, publicKey(1), point(2), point(3), point(4), point(5), point(6))
     val funding_created = FundingCreated(randomBytes32, bin32(0), 3, randomBytes64)
     val funding_signed = FundingSigned(randomBytes32, randomBytes64)
     val funding_locked = FundingLocked(randomBytes32, point(2))
-    val update_fee = UpdateFee(randomBytes32, 2)
+    val update_fee = UpdateFee(randomBytes32, FeeratePerKw(2 sat))
     val shutdown = Shutdown(randomBytes32, bin(47, 0))
     val closing_signed = ClosingSigned(randomBytes32, 2 sat, randomBytes64)
     val update_add_htlc = UpdateAddHtlc(randomBytes32, 2, 3 msat, bin32(0), CltvExpiry(4), TestConstants.emptyOnionPacket)
@@ -194,18 +195,31 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val pong = Pong(bin(10, 1))
     val channel_reestablish = ChannelReestablish(randomBytes32, 242842L, 42L, randomKey, randomKey.publicKey)
 
+    val unknown_message = UnknownMessage(tag = 60000, data = ByteVector32.One.bytes)
+
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures :: ping :: pong :: channel_reestablish :: Nil
+        channel_announcement :: node_announcement :: channel_update :: gossip_timestamp_filter :: query_short_channel_id :: query_channel_range :: reply_channel_range :: announcement_signatures ::
+        ping :: pong :: channel_reestablish :: unknown_message :: Nil
 
     msgs.foreach {
       msg => {
-        val encoded = lightningMessageCodec.encode(msg).require
-        val decoded = lightningMessageCodec.decode(encoded).require
+        val encoded = lightningMessageCodecWithFallback.encode(msg).require
+        val decoded = lightningMessageCodecWithFallback.decode(encoded).require
         assert(msg === decoded.value)
       }
     }
+  }
+
+  test("Unknown messages") {
+    // Non-standard tag number so this message can only be handled by a codec with a fallback
+    val unknown = UnknownMessage(tag = 47282, data = ByteVector32.Zeroes.bytes)
+    assert(lightningMessageCodec.encode(unknown).isFailure)
+    val encoded1 = lightningMessageCodecWithFallback.encode(unknown).require
+    val decoded1 = lightningMessageCodecWithFallback.decode(encoded1).require.value
+    assert(lightningMessageCodec.decode(encoded1).isFailure)
+    assert(decoded1 === unknown)
   }
 
   test("non-reg encoding type") {

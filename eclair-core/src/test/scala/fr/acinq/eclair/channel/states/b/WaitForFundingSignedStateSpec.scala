@@ -44,8 +44,8 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, ChannelVersion.STANDARD)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
@@ -76,13 +76,17 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
 
   test("recv CMD_CLOSE") { f =>
     import f._
-    alice ! CMD_CLOSE(None)
+    val sender = TestProbe()
+    val c = CMD_CLOSE(sender.ref, None)
+    alice ! c
+    sender.expectMsg(RES_SUCCESS(c, alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].channelId))
     awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv CMD_FORCECLOSE") { f =>
     import f._
-    alice ! CMD_FORCECLOSE
+    val sender = TestProbe()
+    alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSED)
   }
 

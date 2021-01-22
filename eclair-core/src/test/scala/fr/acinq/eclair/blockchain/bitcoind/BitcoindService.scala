@@ -18,7 +18,6 @@ package fr.acinq.eclair.blockchain.bitcoind
 
 import java.io.File
 import java.nio.file.Files
-import java.util.UUID
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
@@ -52,10 +51,10 @@ trait BitcoindService extends Logging {
 
   import scala.sys.process._
 
-  val INTEGRATION_TMP_DIR = new File(TestUtils.BUILD_DIRECTORY, s"integration-${UUID.randomUUID()}")
+  val INTEGRATION_TMP_DIR: File = TestUtils.newIntegrationTmpDir()
   logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
 
-  val PATH_BITCOIND = new File(TestUtils.BUILD_DIRECTORY, "bitcoin-0.19.1/bin/bitcoind")
+  val PATH_BITCOIND = new File(TestUtils.BUILD_DIRECTORY, "bitcoin-0.20.1/bin/bitcoind")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
 
   var bitcoind: Process = null

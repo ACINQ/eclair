@@ -22,6 +22,8 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
+import fr.acinq.eclair.router.Router.RouterConf
 
 /**
  * Ties network connections to peers.
@@ -72,10 +74,13 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
     case authenticated: PeerConnection.Authenticated =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(authenticated.remoteNodeId, offlineChannels = Set.empty)
-      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer)
+      val features = nodeParams.featuresFor(authenticated.remoteNodeId)
+      val doSync = nodeParams.syncWhitelist.isEmpty || nodeParams.syncWhitelist.contains(authenticated.remoteNodeId)
+      authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
 
     case Symbol("peers") => sender ! context.children
 
+    case GetRouterPeerConf => sender ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
   }
 
   /**
@@ -88,9 +93,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
    */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
-  def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(
-    Peer.props(nodeParams, remoteNodeId, watcher, relayer, wallet),
-    name = peerActorName(remoteNodeId))
+  def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(Peer.props(nodeParams, remoteNodeId, watcher, relayer, wallet), name = peerActorName(remoteNodeId))
 
   def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[HasCommitments]): ActorRef = {
     getPeer(remoteNodeId) match {
@@ -114,5 +117,8 @@ object Switchboard {
   def props(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, watcher, relayer, wallet))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
+
+  case object GetRouterPeerConf extends RemoteTypes
+  case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
 
 }

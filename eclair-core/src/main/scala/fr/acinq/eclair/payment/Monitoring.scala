@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.payment
 
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.CMD_FAIL_HTLC
 import kamon.Kamon
 
@@ -35,12 +37,34 @@ object Monitoring {
     // Once enough data has been collected, we will update the MultiPartPaymentLifecycle logic accordingly.
     val RetryFailedChannelsResult = Kamon.counter("payment.mpp.retry-failed-channels-result")
 
+    private val PaymentNodeInAmount = Kamon.histogram("payment.node.in.amount", "Distribution of incoming payments across nodes (satoshi)")
+    private val PaymentNodeIn = Kamon.histogram("payment.node.in", "Distribution of incoming payments across nodes (count)")
+    private val PaymentNodeOutAmount = Kamon.histogram("payment.node.out.amount", "Distribution of outgoing payments across nodes (satoshi)")
+    private val PaymentNodeOut = Kamon.histogram("payment.node.out", "Distribution of outgoing payments across nodes (count)")
+
     def recordPaymentRelayFailed(failureType: String, relayType: String): Unit =
       Metrics.PaymentFailed
         .withTag(Tags.Direction, Tags.Directions.Relayed)
         .withTag(Tags.Failure, failureType)
         .withTag(Tags.Relay, relayType)
         .increment()
+
+    /**
+     * Assign a bucket to a node id. There are 256 buckets.
+     */
+    def nodeIdBucket(nodeId: PublicKey): Short = nodeId.value.takeRight(1).toShort(signed = false) // we use short to not have negative values
+
+    def recordIncomingPaymentDistribution(nodeId: PublicKey, amount: MilliSatoshi): Unit = {
+      val bucket = nodeIdBucket(nodeId)
+      PaymentNodeInAmount.withoutTags().record(bucket, amount.truncateToSatoshi.toLong)
+      PaymentNodeIn.withoutTags().record(bucket)
+    }
+
+    def recordOutgoingPaymentDistribution(nodeId: PublicKey, amount: MilliSatoshi): Unit = {
+      val bucket = nodeIdBucket(nodeId)
+      PaymentNodeOutAmount.withoutTags().record(bucket, amount.truncateToSatoshi.toLong)
+      PaymentNodeOut.withoutTags().record(bucket)
+    }
   }
 
   object Tags {

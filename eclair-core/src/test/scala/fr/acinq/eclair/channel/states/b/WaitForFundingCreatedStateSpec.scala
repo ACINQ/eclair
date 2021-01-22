@@ -16,23 +16,24 @@
 
 package fr.acinq.eclair.channel.states.b
 
+import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{LongToBtcAmount, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
 
 /**
-  * Created by PM on 05/07/2016.
-  */
+ * Created by PM on 05/07/2016.
+ */
 
 class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
 
@@ -49,8 +50,8 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, ChannelVersion.STANDARD)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
@@ -72,7 +73,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
 
   test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>
     import f._
-    val fees = Satoshi(Transactions.commitWeight * TestConstants.feeratePerKw / 1000)
+    val fees = Transactions.weight2fee(TestConstants.feeratePerKw, Transactions.DefaultCommitmentFormat.commitWeight)
     val reserve = Bob.channelParams.channelReserve
     val missing = 100.sat - fees - reserve
     val fundingCreated = alice2bob.expectMsgType[FundingCreated]
@@ -90,7 +91,21 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
 
   test("recv CMD_CLOSE") { f =>
     import f._
-    bob ! CMD_CLOSE(None)
+    val sender = TestProbe()
+    val c = CMD_CLOSE(sender.ref, None)
+    bob ! c
+    sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv CMD_CLOSE (with noSender)") { f =>
+    import f._
+    val sender = TestProbe()
+    // this makes sure that our backward-compatibility hack for the ask pattern (which uses context.sender as reply-to)
+    // works before we fully transition to akka typed
+    val c = CMD_CLOSE(ActorRef.noSender, None)
+    sender.send(bob, c)
+    sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
     awaitCond(bob.stateName == CLOSED)
   }
 

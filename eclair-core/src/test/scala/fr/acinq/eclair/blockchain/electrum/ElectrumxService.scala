@@ -24,6 +24,8 @@ import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import org.scalatest.Suite
 
+import scala.concurrent.duration.DurationInt
+
 trait ElectrumxService extends DockerTestKit {
   self: Suite with BitcoindService =>
 
@@ -44,6 +46,11 @@ trait ElectrumxService extends DockerTestKit {
       .withEnv(s"DAEMON_URL=http://foo:bar@host.docker.internal:$bitcoindRpcPort", "COIN=BitcoinSegwit", "NET=regtest", s"TCP_PORT=$electrumPort")
       //.withLogLineReceiver(LogLineReceiver(true, println))
   }
+
+  //override DockerKit timeouts
+  override val StartContainersTimeout = 60 seconds
+
+  override val StopContainersTimeout = 60 seconds
 
   override def dockerContainers: List[DockerContainer] = electrumxContainer :: super.dockerContainers
 

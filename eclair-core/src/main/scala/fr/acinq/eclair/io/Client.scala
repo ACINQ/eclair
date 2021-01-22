@@ -23,10 +23,11 @@ import akka.event.Logging.MDC
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.Logs
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.tor.Socks5Connection.{Socks5Connect, Socks5Connected, Socks5Error}
 import fr.acinq.eclair.tor.{Socks5Connection, Socks5ProxyParams}
-import fr.acinq.eclair.{Logs, NodeParams}
 
 import scala.concurrent.duration._
 
@@ -34,7 +35,7 @@ import scala.concurrent.duration._
  * Created by PM on 27/10/2015.
  *
  */
-class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, remoteAddress: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
+class Client(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef, remoteAddress: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with DiagnosticActorLogging {
 
   import context.system
 
@@ -43,7 +44,7 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
 
   def receive: Receive = {
     case Symbol("connect") =>
-      val (peerOrProxyAddress, proxyParams_opt) = nodeParams.socksProxy_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteAddress, proxyParams))) match {
+      val (peerOrProxyAddress, proxyParams_opt) = socks5ProxyParams_opt.map(proxyParams => (proxyParams, Socks5ProxyParams.proxyAddress(remoteAddress, proxyParams))) match {
         case Some((proxyParams, Some(proxyAddress))) =>
           log.info(s"connecting to SOCKS5 proxy ${str(proxyAddress)}")
           (proxyAddress, Some(proxyParams))
@@ -121,7 +122,8 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
 
   def auth(connection: ActorRef): ActorRef = {
     val peerConnection = context.actorOf(PeerConnection.props(
-      nodeParams = nodeParams,
+      keyPair = keyPair,
+      conf = peerConnectionConf,
       switchboard = switchboard,
       router = router
     ))
@@ -132,6 +134,6 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, re
 
 object Client {
 
-  def props(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, switchboard, router, address, remoteNodeId, origin_opt))
+  def props(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyParams], peerConnectionConf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(keyPair, socks5ProxyParams_opt, peerConnectionConf, switchboard, router, address, remoteNodeId, origin_opt))
 
 }

@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, LongToBtcAmount, MilliSatoshi, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -124,9 +124,16 @@ object PaymentRequest {
     Block.TestnetGenesisBlock.hash -> "lntb",
     Block.LivenetGenesisBlock.hash -> "lnbc")
 
-  def apply(chainHash: ByteVector32, amount: Option[MilliSatoshi], paymentHash: ByteVector32, privateKey: PrivateKey,
-            description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
-            extraHops: List[List[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L,
+  def apply(chainHash: ByteVector32,
+            amount: Option[MilliSatoshi],
+            paymentHash: ByteVector32,
+            privateKey: PrivateKey,
+            description: String,
+            minFinalCltvExpiryDelta: CltvExpiryDelta,
+            fallbackAddress: Option[String] = None,
+            expirySeconds: Option[Long] = None,
+            extraHops: List[List[ExtraHop]] = Nil,
+            timestamp: Long = System.currentTimeMillis() / 1000L,
             features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
@@ -136,6 +143,7 @@ object PaymentRequest {
         Some(Description(description)),
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
+        Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
         features).flatten
       val paymentSecretTag = if (features.exists(_.allowPaymentSecret)) PaymentSecret(randomBytes32) :: Nil else Nil
       val routingInfoTags = extraHops.map(RoutingInfo)
@@ -331,13 +339,14 @@ object PaymentRequest {
    */
   case class PaymentRequestFeatures(bitmask: BitVector) extends TaggedField {
     lazy val features: Features = Features(bitmask)
-    lazy val supported: Boolean = Features.areSupported(features)
     lazy val allowMultiPart: Boolean = features.hasFeature(Features.BasicMultiPartPayment)
     lazy val allowPaymentSecret: Boolean = features.hasFeature(Features.PaymentSecret)
     lazy val requirePaymentSecret: Boolean = features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory))
     lazy val allowTrampoline: Boolean = features.hasFeature(Features.TrampolinePayment)
 
     def toByteVector: ByteVector = features.toByteVector
+
+    def areSupported(nodeParams: NodeParams): Boolean = nodeParams.features.areSupported(features)
 
     override def toString: String = s"Features(${bitmask.toBin})"
   }
@@ -453,7 +462,7 @@ object PaymentRequest {
     def decode(input: String): Option[MilliSatoshi] =
       (input match {
         case "" => None
-        case a if a.last == 'p' => Some(MilliSatoshi(a.dropRight(1).toLong / 10L)) // 1 pico-bitcoin == 10 milli-satoshis
+        case a if a.last == 'p' => Some(MilliSatoshi(a.dropRight(1).toLong / 10L)) // 1 pico-bitcoin == 0.1 milli-satoshis
         case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
         case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
         case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
@@ -466,7 +475,7 @@ object PaymentRequest {
     def encode(amount: Option[MilliSatoshi]): String = {
       amount match {
         case None => ""
-        case Some(amt) if unit(amt) == 'p' => s"${amt.toLong * 10L}p" // 1 pico-bitcoin == 10 milli-satoshis
+        case Some(amt) if unit(amt) == 'p' => s"${amt.toLong * 10L}p" // 1 pico-bitcoin == 0.1 milli-satoshis
         case Some(amt) if unit(amt) == 'n' => s"${amt.toLong / 100L}n"
         case Some(amt) if unit(amt) == 'u' => s"${amt.toLong / 100000L}u"
         case Some(amt) if unit(amt) == 'm' => s"${amt.toLong / 100000000L}m"

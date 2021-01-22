@@ -33,7 +33,7 @@ object FeatureSupport {
   case object Optional extends FeatureSupport { override def toString: String = "optional" }
 }
 
-sealed trait Feature {
+trait Feature {
 
   def rfcName: String
   def mandatory: Int
@@ -60,6 +60,20 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
     case None => hasFeature(feature, Some(Optional)) || hasFeature(feature, Some(Mandatory))
   }
 
+  def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
+
+  /** NB: this method is not reflexive, see [[Features.areCompatible]] if you want symmetric validation. */
+  def areSupported(remoteFeatures: Features): Boolean = {
+    // we allow unknown odd features (it's ok to be odd)
+    val unknownFeaturesOk = remoteFeatures.unknown.forall(_.bitIndex % 2 == 1)
+    // we verify that we activated every mandatory feature they require
+    val knownFeaturesOk = remoteFeatures.activated.forall {
+      case ActivatedFeature(_, Optional) => true
+      case ActivatedFeature(feature, Mandatory) => hasFeature(feature)
+    }
+    unknownFeaturesOk && knownFeaturesOk
+  }
+
   def toByteVector: ByteVector = {
     val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case ActivatedFeature(f, s) => f.supportBit(s) })
     val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))
@@ -77,23 +91,11 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
     buf.reverse.bytes
   }
 
-  /**
-    * Eclair-mobile thinks feature bit 15 (payment_secret) is gossip_queries_ex which creates issues, so we mask
-    * off basic_mpp and payment_secret. As long as they're provided in the invoice it's not an issue.
-    * We use a long enough mask to account for future features.
-    * TODO: remove that once eclair-mobile is patched.
-    */
-  def maskFeaturesForEclairMobile(): Features = {
-    Features(
-      activated = activated.filter {
-        case ActivatedFeature(PaymentSecret, _) => false
-        case ActivatedFeature(BasicMultiPartPayment, _) => false
-        case _ => true
-      },
-      unknown = unknown
-    )
+  override def toString: String = {
+    val a = activated.map(f => f.feature.rfcName + ":" + f.support).mkString(",")
+    val u = unknown.map(_.bitIndex).mkString(",")
+    s"$a" + (if (unknown.nonEmpty) s" (unknown=$u)" else "")
   }
-
 }
 
 object Features {
@@ -133,6 +135,7 @@ object Features {
       config.getString(s"features.$name") match {
         case support if support == Mandatory.toString => Some(Mandatory)
         case support if support == Optional.toString => Some(Optional)
+        case support if support == "disabled" => None
         case wrongSupport => throw new IllegalArgumentException(s"Wrong support specified ($wrongSupport)")
       }
     }
@@ -184,12 +187,22 @@ object Features {
     val mandatory = 18
   }
 
+  case object AnchorOutputs extends Feature {
+    val rfcName = "option_anchor_outputs"
+    val mandatory = 20
+  }
+
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
   case object TrampolinePayment extends Feature {
     val rfcName = "trampoline_payment"
     val mandatory = 50
+  }
+
+  case object KeySend extends Feature {
+    val rfcName = "keysend"
+    val mandatory = 54
   }
 
   val knownFeatures: Set[Feature] = Set(
@@ -202,17 +215,9 @@ object Features {
     BasicMultiPartPayment,
     Wumbo,
     TrampolinePayment,
-    StaticRemoteKey
-  )
-
-  private val supportedMandatoryFeatures: Set[Feature] = Set(
-    OptionDataLossProtect,
-    ChannelRangeQueries,
-    VariableLengthOnion,
-    ChannelRangeQueriesExtended,
-    PaymentSecret,
-    BasicMultiPartPayment,
-    Wumbo
+    StaticRemoteKey,
+    AnchorOutputs,
+    KeySend
   )
 
   // Features may depend on other features, as specified in Bolt 9.
@@ -222,7 +227,9 @@ object Features {
     // invoices in their payment history. We choose to treat such invoices as valid; this is a harmless spec violation.
     // PaymentSecret -> (VariableLengthOnion :: Nil),
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
-    TrampolinePayment -> (PaymentSecret :: Nil)
+    AnchorOutputs -> (StaticRemoteKey :: Nil),
+    TrampolinePayment -> (PaymentSecret :: Nil),
+    KeySend -> (VariableLengthOnion :: Nil)
   )
 
   case class FeatureException(message: String) extends IllegalArgumentException(message)
@@ -232,16 +239,8 @@ object Features {
       FeatureException(s"$feature is set but is missing a dependency (${dependencies.filter(d => !features.hasFeature(d)).mkString(" and ")})")
   }
 
-  /**
-   * A feature set is supported if all even bits are supported.
-   * We just ignore unknown odd bits.
-   */
-  def areSupported(features: Features): Boolean = {
-    !features.unknown.exists(_.bitIndex % 2 == 0) && features.activated.forall {
-      case ActivatedFeature(_, Optional) => true
-      case ActivatedFeature(feature, Mandatory) => supportedMandatoryFeatures.contains(feature)
-    }
-  }
+  /** Returns true if both feature sets are compatible. */
+  def areCompatible(ours: Features, theirs: Features): Boolean = ours.areSupported(theirs) && theirs.areSupported(ours)
 
   /** returns true if both have at least optional support */
   def canUseFeature(localFeatures: Features, remoteFeatures: Features, feature: Feature): Boolean = {

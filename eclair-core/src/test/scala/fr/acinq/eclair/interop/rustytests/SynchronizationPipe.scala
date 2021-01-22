@@ -57,13 +57,13 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
 
     script match {
       case offer(x, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, Upstream.Local(UUID.randomUUID()))
+        resolve(x) ! CMD_ADD_HTLC(self, MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, Origin.LocalHot(self, UUID.randomUUID()))
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, ByteVector32.fromValidHex(r))
         exec(rest, a, b)
       case commit(x) :: rest =>
-        resolve(x) ! CMD_SIGN
+        resolve(x) ! CMD_SIGN()
         exec(rest, a, b)
       /*case feechange(x) :: rest =>
         resolve(x) ! CmdFeeChange()
@@ -81,7 +81,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         fout.newLine()
         exec(rest, a, b)
       case dump(x) :: rest =>
-        resolve(x) ! CMD_GETSTATEDATA
+        resolve(x) ! CMD_GETSTATEDATA(ActorRef.noSender)
         context.become(wait(a, b, script))
       case "" :: rest =>
         exec(rest, a, b)
@@ -104,7 +104,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       import scala.io.Source
       val script = Source.fromFile(file).getLines().filterNot(_.startsWith("#")).toList
       exec(script, a, b)
-    case ChannelCommandResponse.Ok => {}
+    case _: RES_SUCCESS[_] => {}
     case msg if sender() == a =>
       log.info(s"a -> b $msg")
       b forward msg
@@ -115,7 +115,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
   }
 
   def wait(a: ActorRef, b: ActorRef, script: List[String]): Receive = {
-    case ChannelCommandResponse.Ok => {}
+    case _: RES_SUCCESS[_] => {}
     case msg if sender() == a && script.head.startsWith("B:recv") =>
       log.info(s"a -> b $msg")
       b forward msg
@@ -126,7 +126,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       a forward msg
       unstashAll()
       exec(script.drop(1), a, b)
-    case d: DATA_NORMAL if script.head.endsWith(":dump") =>
+    case RES_GETSTATEDATA(d: DATA_NORMAL) if script.head.endsWith(":dump") =>
       def rtrim(s: String) = s.replaceAll("\\s+$", "")
       import d.commitments._
       val l = List(
@@ -136,14 +136,14 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         s"  Received htlcs: ${localCommit.spec.htlcs.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Balance us: ${localCommit.spec.toLocal}",
         s"  Balance them: ${localCommit.spec.toRemote}",
-        s"  Fee rate: ${localCommit.spec.feeratePerKw}",
+        s"  Fee rate: ${localCommit.spec.feeratePerKw.toLong}",
         "REMOTE COMMITS:",
         s" Commit ${remoteCommit.index}:",
         s"  Offered htlcs: ${remoteCommit.spec.htlcs.collect { case OutgoingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Received htlcs: ${remoteCommit.spec.htlcs.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Balance us: ${remoteCommit.spec.toLocal}",
         s"  Balance them: ${remoteCommit.spec.toRemote}",
-        s"  Fee rate: ${remoteCommit.spec.feeratePerKw}")
+        s"  Fee rate: ${remoteCommit.spec.feeratePerKw.toLong}")
         .foreach(s => {
           fout.write(rtrim(s))
           fout.newLine()

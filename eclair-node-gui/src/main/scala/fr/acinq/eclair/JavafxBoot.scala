@@ -34,7 +34,7 @@ object JavafxBoot extends App with Logging {
 
     if (headless) {
       implicit val system = ActorSystem("eclair-node-gui", config)
-      val setup = new Setup(datadir)
+      val setup = new Setup(datadir, pluginParams = Seq.empty)
       setup.bootstrap.map { kit =>
         Boot.startApiServiceIfEnabled(kit)
       }

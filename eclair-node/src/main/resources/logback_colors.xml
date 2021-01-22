@@ -21,7 +21,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -29,7 +29,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %yellow(%msg) %ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %yellow(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -37,7 +37,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %red(%msg) %ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %red(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -45,7 +45,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %blue(%msg) %ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %blue(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -53,7 +53,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %cyan(%msg) %ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %cyan(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -61,7 +61,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %green(%msg) %ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %green(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -69,7 +69,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %magenta(%msg) %ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %replace(%logger{24}){'\$.*',''}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %magenta(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 

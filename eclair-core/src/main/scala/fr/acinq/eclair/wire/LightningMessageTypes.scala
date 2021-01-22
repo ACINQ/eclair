@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets
 import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
@@ -33,7 +34,7 @@ import scala.util.Try
  */
 
 // @formatter:off
-sealed trait LightningMessage
+sealed trait LightningMessage extends Serializable
 sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage
@@ -44,6 +45,7 @@ sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChann
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32 } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
+sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 // @formatter:on
 
 case class Init(features: Features, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
@@ -76,7 +78,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
                        channelReserveSatoshis: Satoshi,
                        htlcMinimumMsat: MilliSatoshi,
-                       feeratePerKw: Long,
+                       feeratePerKw: FeeratePerKw,
                        toSelfDelay: CltvExpiryDelta,
                        maxAcceptedHtlcs: Int,
                        fundingPubkey: PublicKey,
@@ -131,16 +133,16 @@ case class UpdateAddHtlc(channelId: ByteVector32,
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
-                             paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId
+                             paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class UpdateFailHtlc(channelId: ByteVector32,
                           id: Long,
-                          reason: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId
+                          reason: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class UpdateFailMalformedHtlc(channelId: ByteVector32,
                                    id: Long,
                                    onionHash: ByteVector32,
-                                   failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId
+                                   failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
@@ -151,7 +153,7 @@ case class RevokeAndAck(channelId: ByteVector32,
                         nextPerCommitmentPoint: PublicKey) extends HtlcMessage with HasChannelId
 
 case class UpdateFee(channelId: ByteVector32,
-                     feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
+                     feeratePerKw: FeeratePerKw) extends ChannelMessage with UpdateMessage with HasChannelId
 
 case class AnnouncementSignatures(channelId: ByteVector32,
                                   shortChannelId: ShortChannelId,
@@ -306,3 +308,5 @@ case class GossipTimestampFilter(chainHash: ByteVector32,
 //
 
 //
+
+case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage

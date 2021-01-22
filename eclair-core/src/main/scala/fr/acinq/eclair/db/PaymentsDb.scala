@@ -82,6 +82,7 @@ case object PaymentType {
   val Standard = "Standard"
   val SwapIn = "SwapIn"
   val SwapOut = "SwapOut"
+  val KeySend = "KeySend"
 }
 
 /**
@@ -200,6 +201,7 @@ object HopSummary {
 case class FailureSummary(failureType: FailureType.Value, failureMessage: String, failedRoute: List[HopSummary])
 
 object FailureType extends Enumeration {
+  type FailureType = Value
   val LOCAL = Value(1, "Local")
   val REMOTE = Value(2, "Remote")
   val UNREADABLE_REMOTE = Value(3, "UnreadableRemote")

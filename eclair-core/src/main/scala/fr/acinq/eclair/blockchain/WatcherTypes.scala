@@ -26,21 +26,29 @@ import scodec.bits.ByteVector
 import scala.util.{Failure, Success, Try}
 
 /**
-  * Created by PM on 19/01/2016.
-  */
+ * Created by PM on 19/01/2016.
+ */
 
 // @formatter:off
 
 sealed trait Watch {
-  def channel: ActorRef
+  def replyTo: ActorRef
   def event: BitcoinEvent
 }
-// we need a public key script to use electrum apis
-final case class WatchConfirmed(channel: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent) extends Watch
+
+/**
+ * Watch for confirmation of a given transaction.
+ *
+ * @param replyTo         actor to notify once the transaction is confirmed.
+ * @param txId            txid of the transaction to watch.
+ * @param publicKeyScript when using electrum, we need to specify a public key script; any of the output scripts should work.
+ * @param minDepth        number of confirmations.
+ * @param event           channel event related to the transaction.
+ */
+final case class WatchConfirmed(replyTo: ActorRef, txId: ByteVector32, publicKeyScript: ByteVector, minDepth: Long, event: BitcoinEvent) extends Watch
 object WatchConfirmed {
-  // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
-  // we support both p2pkh and p2wpkh scripts
-  def apply(channel: ActorRef, tx: Transaction, minDepth: Long, event: BitcoinEvent): WatchConfirmed = WatchConfirmed(channel, tx.txid, tx.txOut.map(_.publicKeyScript).headOption.getOrElse(ByteVector.empty), minDepth, event)
+  // if we have the entire transaction, we can get the publicKeyScript from any of the outputs
+  def apply(replyTo: ActorRef, tx: Transaction, minDepth: Long, event: BitcoinEvent): WatchConfirmed = WatchConfirmed(replyTo, tx.txid, tx.txOut.map(_.publicKeyScript).headOption.getOrElse(ByteVector.empty), minDepth, event)
 
   def extractPublicKeyScript(witness: ScriptWitness): ByteVector = Try(PublicKey(witness.stack.last)) match {
     case Success(pubKey) =>
@@ -52,37 +60,90 @@ object WatchConfirmed {
   }
 }
 
-final case class WatchSpent(channel: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent) extends Watch
+/**
+ * Watch for transactions spending the given outpoint.
+ *
+ * NB: an event will be triggered *every time* a transaction spends the given outpoint. This can be useful when:
+ *  - we see a spending transaction in the mempool, but it is then replaced (RBF)
+ *  - we see a spending transaction in the mempool, but a conflicting transaction "wins" and gets confirmed in a block
+ *
+ * @param replyTo         actor to notify when the outpoint is spent.
+ * @param txId            txid of the outpoint to watch.
+ * @param outputIndex     index of the outpoint to watch.
+ * @param publicKeyScript electrum requires us to specify a public key script; the script of the outpoint must be provided.
+ * @param event           channel event related to the outpoint.
+ */
+final case class WatchSpent(replyTo: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent) extends Watch
 object WatchSpent {
   // if we have the entire transaction, we can get the publicKeyScript from the relevant output
-  def apply(channel: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent): WatchSpent = WatchSpent(channel, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event)
+  def apply(replyTo: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent): WatchSpent = WatchSpent(replyTo, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event)
 }
-final case class WatchSpentBasic(channel: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent) extends Watch // we use this when we don't care about the spending tx, and we also assume txid already exists
+
+/**
+ * Watch for the first transaction spending the given outpoint. We assume that txid is already confirmed or in the
+ * mempool (i.e. the outpoint exists).
+ *
+ * NB: an event will be triggered only once when we see a transaction that spends the given outpoint. If you want to
+ * react to the transaction spending the outpoint, you should use [[WatchSpent]] instead.
+ *
+ * @param replyTo         actor to notify when the outpoint is spent.
+ * @param txId            txid of the outpoint to watch.
+ * @param outputIndex     index of the outpoint to watch.
+ * @param publicKeyScript electrum requires us to specify a public key script; the script of the outpoint must be provided.
+ * @param event           channel event related to the outpoint.
+ */
+final case class WatchSpentBasic(replyTo: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent) extends Watch
 object WatchSpentBasic {
   // if we have the entire transaction, we can get the publicKeyScript from the relevant output
-  def apply(channel: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent): WatchSpentBasic = WatchSpentBasic(channel, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event)
+  def apply(replyTo: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent): WatchSpentBasic = WatchSpentBasic(replyTo, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event)
 }
-// TODO: notify me if confirmation number gets below minDepth?
-final case class WatchLost(channel: ActorRef, txId: ByteVector32, minDepth: Long, event: BitcoinEvent) extends Watch
 
+// TODO: not implemented yet: notify me if confirmation number gets below minDepth?
+final case class WatchLost(replyTo: ActorRef, txId: ByteVector32, minDepth: Long, event: BitcoinEvent) extends Watch
+
+/** Even triggered when a watch condition is met. */
 trait WatchEvent {
   def event: BitcoinEvent
 }
-final case class WatchEventConfirmed(event: BitcoinEvent, blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchEvent
-final case class WatchEventSpent(event: BitcoinEvent, tx: Transaction) extends WatchEvent
-final case class WatchEventSpentBasic(event: BitcoinEvent) extends WatchEvent
-final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
 
 /**
-  * Publish the provided tx as soon as possible depending on locktime and csv
-  */
+ * This event is sent when a [[WatchConfirmed]] condition is met.
+ *
+ * @param event       channel event related to the transaction that has been confirmed.
+ * @param blockHeight block in which the transaction was confirmed.
+ * @param txIndex     index of the transaction in the block.
+ * @param tx          transaction that has been confirmed.
+ */
+final case class WatchEventConfirmed(event: BitcoinEvent, blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchEvent
+
+/**
+ * This event is sent when a [[WatchSpent]] condition is met.
+ *
+ * @param event channel event related to the outpoint that was spent.
+ * @param tx    transaction spending the watched outpoint.
+ */
+final case class WatchEventSpent(event: BitcoinEvent, tx: Transaction) extends WatchEvent
+
+/**
+ * This event is sent when a [[WatchSpentBasic]] condition is met.
+ *
+ * @param event channel event related to the outpoint that was spent.
+ */
+final case class WatchEventSpentBasic(event: BitcoinEvent) extends WatchEvent
+
+// TODO: not implemented yet.
+final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
+
+/** Publish the provided tx as soon as possible depending on locktime and csv */
 final case class PublishAsap(tx: Transaction)
-final case class ValidateRequest(ann: ChannelAnnouncement)
+
 sealed trait UtxoStatus
 object UtxoStatus {
   case object Unspent extends UtxoStatus
   case class Spent(spendingTxConfirmed: Boolean) extends UtxoStatus
 }
+
+final case class ValidateRequest(ann: ChannelAnnouncement)
 final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
 
 final case class GetTxWithMeta(txid: ByteVector32)

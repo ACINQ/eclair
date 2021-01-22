@@ -26,6 +26,7 @@ ENV MAVEN_CONFIG "$USER_HOME_DIR/.m2"
 WORKDIR /usr/src
 COPY pom.xml pom.xml
 COPY eclair-core/pom.xml eclair-core/pom.xml
+COPY eclair-front/pom.xml eclair-front/pom.xml
 COPY eclair-node/pom.xml eclair-node/pom.xml
 COPY eclair-node-gui/pom.xml eclair-node-gui/pom.xml
 COPY eclair-node/modules/assembly.xml eclair-node/modules/assembly.xml
@@ -55,7 +56,7 @@ RUN chmod +x eclair-cli && mv eclair-cli /sbin/eclair-cli
 
 # we only need the eclair-node.zip to run
 COPY --from=BUILD /usr/src/eclair-node/target/eclair-node-*.zip ./eclair-node.zip
-RUN unzip eclair-node.zip && mv eclair-node-* eclair-node
+RUN unzip eclair-node.zip && mv eclair-node-* eclair-node && chmod +x eclair-node/bin/eclair-node.sh
 
 ENV ECLAIR_DATADIR=/data
 ENV JAVA_OPTS=
@@ -63,4 +64,4 @@ ENV JAVA_OPTS=
 RUN mkdir -p "$ECLAIR_DATADIR"
 VOLUME [ "/data" ]
 
-ENTRYPOINT $JAVA_OPTS bash eclair-node/bin/eclair-node.sh -Declair.datadir=$ECLAIR_DATADIR
+ENTRYPOINT JAVA_OPTS="${JAVA_OPTS}" eclair-node/bin/eclair-node.sh "-Declair.datadir=${ECLAIR_DATADIR}"

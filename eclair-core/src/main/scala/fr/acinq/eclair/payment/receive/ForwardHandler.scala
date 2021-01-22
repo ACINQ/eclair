@@ -24,5 +24,7 @@ import akka.event.DiagnosticLoggingAdapter
  * Simple handler that forwards all messages to an actor
  */
 class ForwardHandler(actor: ActorRef) extends ReceiveHandler {
-  override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = { case msg => actor forward msg}
+  override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
+    case msg => actor forward msg
+  }
 }

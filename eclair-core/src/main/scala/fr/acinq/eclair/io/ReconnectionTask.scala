@@ -18,7 +18,10 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, Props, Status}
+import akka.actor.{ActorRef, Props}
+import akka.cluster.Cluster
+import akka.cluster.pubsub.DistributedPubSub
+import akka.cluster.pubsub.DistributedPubSubMediator.Send
 import akka.event.Logging.MDC
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -80,33 +83,36 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
   when(IDLE) {
     case Event(Peer.Transition(previousPeerData, nextPeerData: Peer.DisconnectedData), d: IdleData) =>
-      if (nodeParams.autoReconnect && nextPeerData.channels.nonEmpty) { // we only reconnect if there are existing channels
+      if (nodeParams.autoReconnect && (nodeParams.forceReconnect(remoteNodeId) || nextPeerData.channels.nonEmpty)) { // we only reconnect if nodeParams explicitly instructs us to or there are existing channels
         val (initialDelay, firstNextReconnectionDelay) = (previousPeerData, d.previousData) match {
           case (Peer.Nothing, _) =>
             // When restarting, we add some randomization before the first reconnection attempt to avoid herd effect
-            val initialDelay = randomizeDelay(nodeParams.initialRandomReconnectDelay)
+            // We also add a fixed delay to give time to the front to boot up
+            val initialDelay = nodeParams.initialRandomReconnectDelay + randomizeDelay(nodeParams.initialRandomReconnectDelay)
             // When restarting, we will ~immediately reconnect, but then:
             // - we don't want all the subsequent reconnection attempts to be synchronized (herd effect)
             // - we don't want to go through the exponential backoff delay, because we were offline, not them, so there is no
             // reason to eagerly retry
             // That's why we set the next reconnection delay to a random value between MAX_RECONNECT_INTERVAL/2 and MAX_RECONNECT_INTERVAL.
             val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
+            log.debug("first connection attempt in {}", initialDelay)
             (initialDelay, firstNextReconnectionDelay)
           case (_, cd: ConnectingData) if System.currentTimeMillis.milliseconds - d.since < 30.seconds =>
-            log.info("peer is disconnected (shortly after connection was established)")
             // If our latest successful connection attempt was less than 30 seconds ago, we pick up the exponential
             // back-off retry delay where we left it. The goal is to address cases where the reconnection is successful,
             // but we are disconnected right away.
             val initialDelay = cd.nextReconnectionDelay
             val firstNextReconnectionDelay = nextReconnectionDelay(initialDelay, nodeParams.maxReconnectInterval)
+            log.info("peer got disconnected shortly after connection was established, next reconnection in {}", initialDelay)
             (initialDelay, firstNextReconnectionDelay)
           case _ =>
-            log.info("peer is disconnected")
             // Randomizing the initial delay is important in the case of a reconnection. If both peers have a public
             // address, they may attempt to simultaneously connect back to each other, which could result in reconnection loop,
             // given that each new connection will cause the previous one to be killed.
-            val initialDelay = randomizeDelay(nodeParams.initialRandomReconnectDelay)
+            // We also add a fixed delay to give time to the front to boot up
+            val initialDelay = nodeParams.initialRandomReconnectDelay + randomizeDelay(nodeParams.initialRandomReconnectDelay)
             val firstNextReconnectionDelay = nextReconnectionDelay(initialDelay, nodeParams.maxReconnectInterval)
+            log.info("peer is disconnected, next reconnection in {}", initialDelay)
             (initialDelay, firstNextReconnectionDelay)
         }
         setReconnectTimer(initialDelay)
@@ -140,9 +146,17 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
   private def setReconnectTimer(delay: FiniteDuration): Unit = setTimer(RECONNECT_TIMER, TickReconnect, delay, repeat = false)
 
+  // activate the extension only on demand, so that tests pass
+  lazy val mediator = DistributedPubSub(context.system).mediator
+
   private def connect(address: InetSocketAddress, origin: ActorRef): Unit = {
     log.info(s"connecting to $address")
-    context.system.eventStream.publish(ClientSpawner.ConnectionRequest(address, remoteNodeId, origin))
+    val req = ClientSpawner.ConnectionRequest(address, remoteNodeId, origin)
+    if (context.system.hasExtension(Cluster) && !address.getHostName.endsWith("onion")) {
+      mediator ! Send(path = "/user/client-spawner", msg = req, localAffinity = false)
+    } else {
+      context.system.eventStream.publish(req)
+    }
     Metrics.ReconnectionsAttempts.withoutTags().increment()
   }
 

@@ -6,9 +6,10 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.crypto.{Generators, KeyManager}
+import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, InputInfo}
+import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
 import fr.acinq.eclair.wire.{ChannelReestablish, CommitSig, Error, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, _}
 import org.scalatest.Outcome
@@ -46,8 +47,7 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Sta
     val oldStateData = alice.stateData
     // then we add an htlc and sign it
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
-    sender.send(alice, CMD_SIGN)
-    sender.expectMsg(ChannelCommandResponse.Ok)
+    sender.send(alice, CMD_SIGN())
     alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
     // alice will receive neither the revocation nor the commit sig
@@ -93,18 +93,18 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Sta
 
     val OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil = Script.parse(ourOutput.publicKeyScript)
 
-    val keyManager = TestConstants.Alice.nodeParams.keyManager
+    val keyManager = TestConstants.Alice.nodeParams.channelKeyManager
 
     // find our funding pub key
     val fundingPubKey = Seq(PublicKey(pub1), PublicKey(pub2)).find {
       pub =>
-        val channelKeyPath = KeyManager.channelKeyPath(pub)
+        val channelKeyPath = ChannelKeyManager.keyPath(pub)
         val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint)
         localPubkey.hash160 == pubKeyHash
     } get
 
     // compute our to-remote pubkey
-    val channelKeyPath = KeyManager.channelKeyPath(fundingPubKey)
+    val channelKeyPath = ChannelKeyManager.keyPath(fundingPubKey)
     val ourToRemotePubKey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint)
 
     // spend our output
@@ -116,7 +116,9 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Sta
     val sig = keyManager.sign(
       ClaimP2WPKHOutputTx(InputInfo(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), ourOutput, Script.pay2pkh(ourToRemotePubKey)), tx),
       keyManager.paymentPoint(channelKeyPath),
-      ce.myCurrentPerCommitmentPoint)
+      ce.myCurrentPerCommitmentPoint,
+      TxOwner.Local,
+      DefaultCommitmentFormat)
     val tx1 = tx.updateWitness(0, ScriptWitness(Scripts.der(sig) :: ourToRemotePubKey.value :: Nil))
     Transaction.correctlySpends(tx1, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }

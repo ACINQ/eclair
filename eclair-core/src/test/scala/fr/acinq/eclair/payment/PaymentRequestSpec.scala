@@ -16,17 +16,17 @@
 
 package fr.acinq.eclair.payment
 
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Protocol}
+import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, Protocol, SatoshiLong}
 import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, LongToBtcAmount, ShortChannelId, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
 import scodec.codecs.bits
+
+import java.nio.ByteOrder
 
 /**
  * Created by fabrice on 15/05/17.
@@ -48,8 +48,8 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert('u' === Amount.unit((100 sat).toMilliSatoshi))
     assert('n' === Amount.unit((101 sat).toMilliSatoshi))
     assert('u' === Amount.unit((1155400 sat).toMilliSatoshi))
-    assert('m' === Amount.unit((1 mbtc).toMilliSatoshi))
-    assert('m' === Amount.unit((10 mbtc).toMilliSatoshi))
+    assert('m' === Amount.unit((1 millibtc).toMilliSatoshi))
+    assert('m' === Amount.unit((10 millibtc).toMilliSatoshi))
     assert('m' === Amount.unit((1 btc).toMilliSatoshi))
   }
 
@@ -247,7 +247,7 @@ class PaymentRequestSpec extends AnyFunSuite {
       assert(!pr.features.allowMultiPart)
       assert(!pr.features.requirePaymentSecret)
       assert(!pr.features.allowTrampoline)
-      assert(pr.features.supported)
+      assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
       assert(PaymentRequest.write(pr.sign(priv)) === ref.toLowerCase)
     }
   }
@@ -267,7 +267,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(!pr.features.allowMultiPart)
     assert(!pr.features.requirePaymentSecret)
     assert(!pr.features.allowTrampoline)
-    assert(!pr.features.supported)
+    assert(!pr.features.areSupported(TestConstants.Alice.nodeParams))
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -284,7 +284,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(pr.expiry === Some(604800L))
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(10)))
     assert(pr.routingInfo === Seq(Seq(ExtraHop(PublicKey(hex"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"), ShortChannelId("589390x3312x1"), 1000 msat, 2500, CltvExpiryDelta(40)))))
-    assert(pr.features.supported)
+    assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
@@ -310,10 +310,8 @@ class PaymentRequestSpec extends AnyFunSuite {
 
   test("correctly serialize/deserialize variable-length tagged fields") {
     val number = 123456
-
     val codec = PaymentRequest.Codecs.dataCodec(scodec.codecs.bits).as[PaymentRequest.Expiry]
     val field = PaymentRequest.Expiry(number)
-
     assert(field.toLong == number)
 
     val serializedExpiry = codec.encode(field).require
@@ -321,8 +319,8 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(field1 == field)
 
     // Now with a payment request
-    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = "Some invoice", expirySeconds = Some(123456), timestamp = 12345)
-
+    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = "Some invoice", minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345)
+    assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(18)))
     val serialized = PaymentRequest.write(pr)
     val pr1 = PaymentRequest.read(serialized)
     assert(pr == pr1)
@@ -341,8 +339,8 @@ class PaymentRequestSpec extends AnyFunSuite {
       ),
       signature = ByteVector.empty).sign(priv)
 
-    val serialized = PaymentRequest write pr
-    val pr1 = PaymentRequest read serialized
+    val serialized = PaymentRequest.write(pr)
+    val pr1 = PaymentRequest.read(serialized)
     val Some(_) = pr1.tags.collectFirst { case u: UnknownTag21 => u }
   }
 
@@ -384,9 +382,8 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("supported payment request features") {
-
+    val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(knownFeatures.map(ActivatedFeature(_, FeatureSupport.Optional))))
     case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule"
-
     val featureBits = Map(
       PaymentRequestFeatures(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       PaymentRequestFeatures(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
@@ -397,9 +394,9 @@ class PaymentRequestSpec extends AnyFunSuite {
       PaymentRequestFeatures(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       PaymentRequestFeatures(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       PaymentRequestFeatures(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"          0000110000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
+      PaymentRequestFeatures(bin"          0000110000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"          0000100000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      PaymentRequestFeatures(bin"          0000100000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"          0010000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"     000001000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
       PaymentRequestFeatures(bin"     000100000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
@@ -408,8 +405,8 @@ class PaymentRequestSpec extends AnyFunSuite {
     )
 
     for ((features, res) <- featureBits) {
-      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(features))
-      assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.supported) === res)
+      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = Some(features))
+      assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.areSupported(nodeParams)) === res)
       assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
     }
   }
@@ -432,7 +429,7 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("payment secret") {
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18))
     assert(pr.paymentSecret.isDefined)
     assert(pr.features === PaymentRequestFeatures(PaymentSecret.optional, VariableLengthOnion.optional))
     assert(!pr.features.requirePaymentSecret)
@@ -451,19 +448,19 @@ class PaymentRequestSpec extends AnyFunSuite {
 
     // A multi-part invoice must use a payment secret.
     assertThrows[IllegalArgumentException](
-      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", features = Some(PaymentRequestFeatures(BasicMultiPartPayment.optional, VariableLengthOnion.optional)))
+      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(BasicMultiPartPayment.optional, VariableLengthOnion.optional)))
     )
   }
 
   test("trampoline") {
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice")
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18))
     assert(!pr.features.allowTrampoline)
 
-    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, TrampolinePayment.optional)))
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, TrampolinePayment.optional)))
     assert(!pr1.features.allowMultiPart)
     assert(pr1.features.allowTrampoline)
 
-    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)))
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)))
     assert(pr2.features.allowMultiPart)
     assert(pr2.features.allowTrampoline)
 

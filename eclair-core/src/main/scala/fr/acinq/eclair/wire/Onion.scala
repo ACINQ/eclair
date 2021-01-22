@@ -87,27 +87,27 @@ Notes:
 
 TRAMPOLINE PAYMENT TO LEGACY RECIPIENT (the last trampoline node converts to a standard payment to the final recipient):
 
-    a -------------> b ---------------------------> t1 -----------------------------> t2 ------------------------------ -> e ---------------------------> f
-         +----------------------+     +---------------------------+     +---------------------------------+     +-----------------------+     +-------------------------+
-         | amount_fwd: 950 msat |     | amount_fwd: 950 msat      |     | amount_fwd: 750 msat            |     | amount_fwd: 1000 msat |     | amount_fwd: 1000 msat   |
-         | expiry: 600112       |     | expiry: 600112            |     | expiry: 600042                  |     | expiry: 600000        |     | expiry: 600000          |
-         | channel_id: 42       |     | secret: yyyyy             |     | secret: zzzzz                   |     | channel_id: 42        |     | secret: xyz             | <- invoice secret (omitted if not supported by invoice)
-         |----------------------|     | total_amount: 1750 msat   |     | total_amount: 1600 msat         |     |-----------------------|     | total_amount: 2500 msat | <- t2 is using multi-part to pay 1500 msat to f, for a total payment
-         |     (encrypted)      |     | trampoline_onion:         |     | trampoline_onion:               |     |     (encrypted)       |     +-------------------------+    of 2500 msat split between multiple trampoline routes (omitted if
-         +----------------------+     | +-----------------------+ |     | +-----------------------------+ |     +-----------------------+     |           EOF           |    MPP not supported by invoice)
-                                      | | amount_fwd: 1600 msat | |     | | amount_fwd: 1500 msat       | |                                   +-------------------------+
-                                      | | expiry: 600042        | |     | | expiry: 600000              | |
-                                      | | node_id: t2           | |     | | total_amount: 2500 msat     | |
-                                      | +-----------------------+ |     | | secret: xyz                 | |
-                                      | |      (encrypted)      | |     | | node_id: f                  | |
-                                      | +-----------------------+ |     | | invoice_features: 0x0a      | |
-                                      +---------------------------+     | | invoice_routing_info: ..... | |
-                                      |             EOF           |     | +-----------------------------+ |
-                                      +---------------------------+     | |      (encrypted)            | |
-                                                                        | +-----------------------------+ |
-                                                                        +---------------------------------+
-                                                                        |             EOF                 |
-                                                                        +---------------------------------+
+    a -------------> b ----------------------------> t1 -----------------------------> t2 ---------------------------------- -> e ---------------------------> f
+         +-----------------------+     +---------------------------+     +---------------------------------+        +-----------------------+     +-------------------------+
+         | amount_fwd: 1750 msat |     | amount_fwd: 1750 msat     |     | amount_fwd: 1600 msat           |        | amount_fwd: 1000 msat |     | amount_fwd: 1000 msat   |
+         | expiry: 600112        |     | expiry: 600112            |     | expiry: 600042                  |        | expiry: 600000        |     | expiry: 600000          |
+         | channel_id: 42        |     | secret: yyyyy             |     | secret: zzzzz                   |  +---->| channel_id: 42        |---->| secret: xyz             | <- invoice secret (omitted if not supported by invoice)
+         +-----------------------+     | total_amount: 1750 msat   |     | total_amount: 1600 msat         |  |     +-----------------------+     | total_amount: 2500 msat | <- t2 is using multi-part to pay 1500 msat to f, for a total payment
+         |     (encrypted)       |     | trampoline_onion:         |     | trampoline_onion:               |  |     |     (encrypted)       |     +-------------------------+    of 2500 msat split between multiple trampoline routes (omitted if
+         +-----------------------+     | +-----------------------+ |     | +-----------------------------+ |  |     +-----------------------+     |           EOF           |    MPP not supported by invoice).
+                                       | | amount_fwd: 1600 msat | |     | | amount_fwd: 1500 msat       | |  |                                   +-------------------------+    The remaining 1000 msat needed to reach the total 2500 msat have
+                                       | | expiry: 600042        | |     | | expiry: 600000              | |--+                                                                  been sent by a via a completely separate trampoline route (not
+                                       | | node_id: t2           | |     | | total_amount: 2500 msat     | |  |     +-----------------------+     +-------------------------+    included in this diagram).
+                                       | +-----------------------+ |     | | secret: xyz                 | |  |     | amount_fwd: 500 msat  |     | amount_fwd: 500 msat    |
+                                       | |      (encrypted)      | |     | | node_id: f                  | |  |     | expiry: 600000        |     | expiry: 600000          |
+                                       | +-----------------------+ |     | | invoice_features: 0x0a      | |  +---->| channel_id: 43        |---->| secret: xyz             |
+                                       +---------------------------+     | | invoice_routing_info: ..... | |        +-----------------------+     | total_amount: 2500 msat |
+                                       |             EOF           |     | +-----------------------------+ |        |     (encrypted)       |     +-------------------------+
+                                       +---------------------------+     | |      (encrypted)            | |        +-----------------------+     |           EOF           |
+                                                                         | +-----------------------------+ |                                      +-------------------------+
+                                                                         +---------------------------------+
+                                                                         |             EOF                 |
+                                                                         +---------------------------------+
 
 Notes:
   - the last trampoline node learns the payment details (who the recipient is, the payment amount and secret)
@@ -162,6 +162,8 @@ object OnionTlv {
   /** An encrypted trampoline onion packet. */
   case class TrampolineOnion(packet: OnionRoutingPacket) extends OnionTlv
 
+  /** Pre-image included by the sender of a payment in case of a donation */
+  case class KeySend(paymentPreimage: ByteVector32) extends OnionTlv
 }
 
 object Onion {
@@ -228,6 +230,7 @@ object Onion {
     val expiry: CltvExpiry
     val paymentSecret: Option[ByteVector32]
     val totalAmount: MilliSatoshi
+    val paymentPreimage: Option[ByteVector32]
   }
 
   case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends ChannelRelayPayload with LegacyFormat
@@ -235,6 +238,7 @@ object Onion {
   case class FinalLegacyPayload(amount: MilliSatoshi, expiry: CltvExpiry) extends FinalPayload with LegacyFormat {
     override val paymentSecret = None
     override val totalAmount = amount
+    override val paymentPreimage = None
   }
 
   case class ChannelRelayTlvPayload(records: TlvStream[OnionTlv]) extends ChannelRelayPayload with TlvFormat {
@@ -264,6 +268,7 @@ object Onion {
       case MilliSatoshi(0) => amount
       case totalAmount => totalAmount
     }).getOrElse(amount)
+    override val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
   }
 
   def createNodeRelayPayload(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): NodeRelayPayload =
@@ -289,7 +294,6 @@ object Onion {
   def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload = {
     FinalTlvPayload(TlvStream(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount), TrampolineOnion(trampolinePacket)))
   }
-
 }
 
 object OnionCodecs {
@@ -334,6 +338,8 @@ object OnionCodecs {
 
   private val trampolineOnion: Codec[TrampolineOnion] = variableSizeBytesLong(varintoverflow, trampolineOnionPacketCodec).as[TrampolineOnion]
 
+  private val keySend: Codec[KeySend] = variableSizeBytesLong(varintoverflow, bytes32).as[KeySend]
+
   private val onionTlvCodec = discriminated[OnionTlv].by(varint)
     .typecase(UInt64(2), amountToForward)
     .typecase(UInt64(4), outgoingCltv)
@@ -344,6 +350,7 @@ object OnionCodecs {
     .typecase(UInt64(66098), outgoingNodeId)
     .typecase(UInt64(66099), invoiceRoutingInfo)
     .typecase(UInt64(66100), trampolineOnion)
+    .typecase(UInt64(5482373484L), keySend)
 
   val tlvPerHopPayloadCodec: Codec[TlvStream[OnionTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionTlv](onionTlvCodec).complete
 

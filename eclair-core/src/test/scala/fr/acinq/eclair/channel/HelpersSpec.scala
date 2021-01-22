@@ -17,13 +17,12 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{Btc, Transaction}
-import fr.acinq.eclair.LongToBtcAmount
+import fr.acinq.eclair.MilliSatoshiLong
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.channel.Helpers.Closing
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 
 class HelpersSpec extends AnyFunSuite {
@@ -59,7 +58,7 @@ class HelpersSpec extends AnyFunSuite {
     // only mutual close
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
@@ -74,7 +73,7 @@ class HelpersSpec extends AnyFunSuite {
     // mutual + local close, but local commit tx isn't confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = tx1 :: Nil,
@@ -120,7 +119,7 @@ class HelpersSpec extends AnyFunSuite {
     // local close + remote close, none is confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = Nil,
@@ -214,7 +213,7 @@ class HelpersSpec extends AnyFunSuite {
     // future remote close, not confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = Nil,
@@ -235,7 +234,7 @@ class HelpersSpec extends AnyFunSuite {
     // future remote close, confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = Nil,
@@ -258,7 +257,7 @@ class HelpersSpec extends AnyFunSuite {
     // local close + revoked close, none confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = Nil,
@@ -305,7 +304,7 @@ class HelpersSpec extends AnyFunSuite {
     // local close + revoked close, one revoked confirmed
     assert(Closing.isClosingTypeAlreadyKnown(
       DATA_CLOSING(
-        commitments = null,
+        commitments = commitments,
         fundingTx = None,
         waitingSince = 0,
         mutualCloseProposed = Nil,

@@ -52,7 +52,7 @@ class FxApp extends Application with Logging {
   def onError(t: Throwable): Unit = t match {
     case e@TCPBindException(port) =>
       notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", e))
-    case e@BitcoinRPCConnectionException =>
+    case e: BitcoinRPCConnectionException =>
       notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
     case e@BitcoinZMQConnectionTimeoutException =>
@@ -84,7 +84,7 @@ class FxApp extends Application with Logging {
           val datadir = new File(getParameters.getUnnamed.get(0))
           val config = NodeParams.loadConfiguration(datadir)
           implicit val system = ActorSystem("eclair-node-gui", config)
-          val setup = new Setup(datadir)
+          val setup = new Setup(datadir, pluginParams = Seq.empty)
 
           val unitConf = setup.config.getString("gui.unit")
           FxApp.unit = Try(CoinUtils.getUnitFromString(unitConf)) match {

@@ -17,14 +17,15 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, LongToBtcAmount, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -41,20 +42,22 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
+    val aliceParams = Alice.channelParams
+
     val bobNodeParams = Bob.nodeParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(1))
+    val bobParams = Bob.channelParams
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
 
     val setup = init(nodeParamsB = bobNodeParams)
 
     import setup._
     val channelVersion = ChannelVersion.STANDARD
-    val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(bob, alice2bob, bob2alice, bob2blockchain)))
     }
@@ -135,7 +138,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val delayTooHigh = CltvExpiryDelta(10000)
     bob ! open.copy(toSelfDelay = delayTooHigh)
     val error = bob2alice.expectMsgType[Error]
-    assert(error === Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Alice.nodeParams.maxToLocalDelayBlocks).getMessage))
+    assert(error === Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Alice.nodeParams.maxToLocalDelay).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -154,7 +157,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // set a very small fee
-    val tinyFee = 253
+    val tinyFee = FeeratePerKw(253 sat)
     bob ! open.copy(feeratePerKw = tinyFee)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
@@ -166,14 +169,13 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // set a very small fee
-    val tinyFee = 252
+    val tinyFee = FeeratePerKw(252 sat)
     bob ! open.copy(feeratePerKw = tinyFee)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
     assert(error === Error(open.temporaryChannelId, "remote fee rate is too small: remoteFeeratePerKw=252"))
     awaitCond(bob.stateName == CLOSED)
   }
-
 
   test("recv OpenChannel (reserve below dust)") { f =>
     import f._
@@ -215,7 +217,10 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
 
   test("recv CMD_CLOSE") { f =>
     import f._
-    bob ! CMD_CLOSE(None)
+    val sender = TestProbe()
+    val c = CMD_CLOSE(sender.ref, None)
+    bob ! c
+    sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
     awaitCond(bob.stateName == CLOSED)
   }
 

@@ -21,13 +21,12 @@ import java.util.concurrent.TimeUnit
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.ChannelCommandResponse
+import fr.acinq.eclair.channel.RES_SUCCESS
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams, wire}
 
 import scala.collection.immutable.Queue
-import scala.compat.Platform
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -39,7 +38,7 @@ import scala.compat.Platform
  * After a reasonable delay, if not enough partial payments have been received, a MultiPartPaymentFailed message is sent to the parent.
  * This handler assumes that the parent only sends payments for the same payment hash.
  */
-class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, totalAmount: MilliSatoshi, parent: ActorRef) extends FSMDiagnosticActorLogging[MultiPartPaymentFSM.State, MultiPartPaymentFSM.Data] {
+class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, totalAmount: MilliSatoshi, replyTo: ActorRef) extends FSMDiagnosticActorLogging[MultiPartPaymentFSM.State, MultiPartPaymentFSM.Data] {
 
   import MultiPartPaymentFSM._
 
@@ -74,7 +73,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     case Event(part: PaymentPart, _) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
       log.info("received extraneous payment part with amount={}", part.amount)
-      parent ! ExtraPaymentReceived(paymentHash, part, None)
+      replyTo ! ExtraPaymentReceived(paymentHash, part, None)
       stay
   }
 
@@ -84,12 +83,8 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
     case Event(part: PaymentPart, PaymentFailed(failure, _)) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
       log.info("received extraneous payment part for payment hash {}", paymentHash)
-      parent ! ExtraPaymentReceived(paymentHash, part, Some(failure))
+      replyTo ! ExtraPaymentReceived(paymentHash, part, Some(failure))
       stay
-  }
-
-  whenUnhandled {
-    case Event(ChannelCommandResponse.Ok, _) => stay
   }
 
   onTransition {
@@ -102,7 +97,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
       nextStateData match {
         case PaymentSucceeded(parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
-          parent ! MultiPartPaymentSucceeded(paymentHash, parts)
+          replyTo ! MultiPartPaymentSucceeded(paymentHash, parts)
           Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = true).record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
         case d =>
           log.error("unexpected payment success data {}", d.getClass.getSimpleName)
@@ -111,7 +106,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
       nextStateData match {
         case PaymentFailed(failure, parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
-          parent ! MultiPartPaymentFailed(paymentHash, failure, parts)
+          replyTo ! MultiPartPaymentFailed(paymentHash, failure, parts)
           Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = false).record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
         case d =>
           log.error("unexpected payment failure data {}", d.getClass.getSimpleName)
@@ -149,7 +144,7 @@ object MultiPartPaymentFSM {
   /** We aborted the payment because of an inconsistency in the payment set or because we didn't receive the total amount in reasonable time. */
   case class MultiPartPaymentFailed(paymentHash: ByteVector32, failure: FailureMessage, parts: Queue[PaymentPart])
   /** We received an extraneous payment after we reached a final state (succeeded or failed). */
-  case class ExtraPaymentReceived(paymentHash: ByteVector32, payment: PaymentPart, failure: Option[FailureMessage])
+  case class ExtraPaymentReceived[T <: PaymentPart](paymentHash: ByteVector32, payment: T, failure: Option[FailureMessage])
   // @formatter:on
 
   // @formatter:off

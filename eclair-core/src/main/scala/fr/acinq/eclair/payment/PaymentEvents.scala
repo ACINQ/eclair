@@ -127,7 +127,6 @@ case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
 
 object PaymentFailure {
 
-  import fr.acinq.eclair.channel.AddHtlcFailed
   import fr.acinq.eclair.router.RouteNotFound
   import fr.acinq.eclair.wire.Update
 
@@ -143,10 +142,7 @@ object PaymentFailure {
    * @param failures a list of payment failures for a payment
    */
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
-    failures.map {
-      case LocalFailure(hops, AddHtlcFailed(_, _, t, _, _, _)) => LocalFailure(hops, t) // we're interested in the error which caused the add-htlc to fail
-      case other => other
-    } match {
+    failures match {
       case previousFailures :+ LocalFailure(_, RouteNotFound) if previousFailures.nonEmpty => previousFailures
       case other => other
     }

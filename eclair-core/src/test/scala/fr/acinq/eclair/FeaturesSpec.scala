@@ -41,7 +41,6 @@ class FeaturesSpec extends AnyFunSuite {
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
     val features = Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(OptionDataLossProtect, Optional), ActivatedFeature(VariableLengthOnion, Mandatory)))
     assert(features.toByteVector == hex"010a")
-    assert(areSupported(features))
     assert(features.hasFeature(OptionDataLossProtect))
     assert(features.hasFeature(InitialRoutingSync, None))
     assert(features.hasFeature(VariableLengthOnion))
@@ -60,7 +59,6 @@ class FeaturesSpec extends AnyFunSuite {
     assert(Features(hex"2000").hasFeature(StaticRemoteKey))
     assert(Features(hex"2000").hasFeature(StaticRemoteKey, Some(Optional)))
   }
-
 
   test("features dependencies") {
     val testCases = Map(
@@ -82,7 +80,14 @@ class FeaturesSpec extends AnyFunSuite {
       bin"000000101000000000000000" -> true, // we allow not setting var_onion_optin
       bin"000000011000000000000000" -> true, // we allow not setting var_onion_optin
       bin"000000011000001000000000" -> true,
-      bin"000000100100000100000000" -> true
+      bin"000000100100000100000000" -> true,
+      // option_anchor_outputs depends on option_static_remotekey
+      bin"001000000000000000000000" -> false,
+      bin"000100000000000000000000" -> false,
+      bin"001000000010000000000000" -> true,
+      bin"001000000001000000000000" -> true,
+      bin"000100000010000000000000" -> true,
+      bin"000100000001000000000000" -> true
     )
 
     for ((testCase, valid) <- testCases) {
@@ -97,45 +102,105 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("features compatibility") {
-    assert(areSupported(Features(Set(ActivatedFeature(InitialRoutingSync, Optional)))))
-    assert(areSupported(Features(Set(ActivatedFeature(OptionDataLossProtect, Mandatory)))))
-    assert(areSupported(Features(Set(ActivatedFeature(OptionDataLossProtect, Optional)))))
-    assert(areSupported(Features(Set(ActivatedFeature(ChannelRangeQueries, Mandatory)))))
-    assert(areSupported(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional)))))
-    assert(areSupported(Features(Set(ActivatedFeature(ChannelRangeQueriesExtended, Mandatory)))))
-    assert(areSupported(Features(Set(ActivatedFeature(ChannelRangeQueriesExtended, Optional)))))
-    assert(areSupported(Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory)))))
-    assert(areSupported(Features(Set(ActivatedFeature(VariableLengthOnion, Optional)))))
-    assert(areSupported(Features(Set(ActivatedFeature(PaymentSecret, Mandatory)))))
-    assert(areSupported(Features(Set(ActivatedFeature(PaymentSecret, Optional)))))
-    assert(areSupported(Features(Set(ActivatedFeature(BasicMultiPartPayment, Mandatory)))))
-    assert(areSupported(Features(Set(ActivatedFeature(BasicMultiPartPayment, Optional)))))
-    assert(areSupported(Features(Set(ActivatedFeature(Wumbo, Mandatory)))))
-    assert(areSupported(Features(Set(ActivatedFeature(Wumbo, Optional)))))
-
-    val testCases = Map(
-      bin"            00000000000000001011" -> true,
-      bin"            00010000100001000000" -> true,
-      bin"            00100000100000100000" -> true,
-      bin"            00010100000000001000" -> true,
-      bin"            00011000001000000000" -> true,
-      bin"            00101000000000000000" -> true,
-      bin"            00000000010001000000" -> true,
-      bin"            01000000000000000000" -> true,
-      bin"            10000000000000000000" -> true,
-      // unknown optional feature bits
-      bin"        001000000000000000000000" -> true,
-      bin"        100000000000000000000000" -> true,
-      // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      bin"        000100000000000000000000" -> false,
-      bin"        010000000000000000000000" -> false,
-      bin"    0001000000000000000000000000" -> false,
-      bin"    0100000000000000000000000000" -> false,
-      bin"00010000000000000000000000000000" -> false,
-      bin"01000000000000000000000000000000" -> false
+    case class TestCase(ours: Features, theirs: Features, oursSupportTheirs: Boolean, theirsSupportOurs: Boolean, compatible: Boolean)
+    val testCases = Seq(
+      // Empty features
+      TestCase(
+        Features.empty,
+        Features.empty,
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      TestCase(
+        Features.empty,
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      TestCase(
+        Features.empty,
+        Features(Set.empty, Set(UnknownFeature(101), UnknownFeature(103))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      // Same feature set
+      TestCase(
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      // Many optional features
+      TestCase(
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(PaymentSecret, Optional))),
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(ChannelRangeQueriesExtended, Optional))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      // We support their mandatory features
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      // They support our mandatory features
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory))),
+        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      // They have unknown optional features
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional)), Set(UnknownFeature(141))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = true,
+        compatible = true
+      ),
+      // They have unknown mandatory features
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional)), Set(UnknownFeature(142))),
+        oursSupportTheirs = false,
+        theirsSupportOurs = true,
+        compatible = false
+      ),
+      // We don't support one of their mandatory features
+      TestCase(
+        Features(Set(ActivatedFeature(ChannelRangeQueries, Optional))),
+        Features(Set(ActivatedFeature(ChannelRangeQueries, Mandatory), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        oursSupportTheirs = false,
+        theirsSupportOurs = true,
+        compatible = false
+      ),
+      // They don't support one of our mandatory features
+      TestCase(
+        Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory), ActivatedFeature(PaymentSecret, Mandatory))),
+        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        oursSupportTheirs = true,
+        theirsSupportOurs = false,
+        compatible = false
+      ),
+      // nonreg testing of future features (needs to be updated with every new supported mandatory bit)
+      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(22))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(23))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true)
     )
-    for ((testCase, expected) <- testCases) {
-      assert(areSupported(Features(testCase)) === expected, testCase.toBin)
+
+    for (testCase <- testCases) {
+      assert(areCompatible(testCase.ours, testCase.theirs) === testCase.compatible, testCase)
+      assert(testCase.ours.areSupported(testCase.theirs) === testCase.oursSupportTheirs, testCase)
+      assert(testCase.theirs.areSupported(testCase.ours) === testCase.theirsSupportOurs, testCase)
     }
   }
 
@@ -175,7 +240,6 @@ class FeaturesSpec extends AnyFunSuite {
       val features = fromConfiguration(conf)
       assert(features.toByteVector === hex"028a8a")
       assert(Features(hex"028a8a") === features)
-      assert(areSupported(features))
       assert(validateFeatureGraph(features) === None)
       assert(features.hasFeature(OptionDataLossProtect, Some(Optional)))
       assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
@@ -203,7 +267,6 @@ class FeaturesSpec extends AnyFunSuite {
       val features = fromConfiguration(conf)
       assert(features.toByteVector === hex"068a")
       assert(Features(hex"068a") === features)
-      assert(areSupported(features))
       assert(validateFeatureGraph(features) === None)
       assert(features.hasFeature(OptionDataLossProtect, Some(Optional)))
       assert(features.hasFeature(InitialRoutingSync, Some(Optional)))
@@ -227,7 +290,6 @@ class FeaturesSpec extends AnyFunSuite {
       val features = fromConfiguration(confWithUnknownFeatures)
       assert(features.toByteVector === hex"4080")
       assert(Features(hex"4080") === features)
-      assert(areSupported(features))
       assert(features.hasFeature(ChannelRangeQueries, Some(Optional)))
       assert(features.hasFeature(PaymentSecret, Some(Mandatory)))
     }
@@ -244,11 +306,31 @@ class FeaturesSpec extends AnyFunSuite {
 
       assertThrows[RuntimeException](fromConfiguration(confWithUnknownSupport))
     }
+
+    {
+      val confWithDisabledFeatures = ConfigFactory.parseString(
+        """
+          |features {
+          |  option_data_loss_protect = disabled
+          |  gossip_queries = optional
+          |  payment_secret = mandatory
+          |  option_support_large_channel = disabled
+          |  gossip_queries_ex = mandatory
+          |}
+        """.stripMargin)
+
+      val features = fromConfiguration(confWithDisabledFeatures)
+      assert(!features.hasFeature(OptionDataLossProtect))
+      assert(!features.hasFeature(Wumbo))
+      assert(features.hasFeature(ChannelRangeQueries))
+      assert(features.hasFeature(ChannelRangeQueriesExtended))
+      assert(features.hasFeature(PaymentSecret))
+    }
   }
 
   test("'knownFeatures' contains all our known features (reflection test)") {
     import scala.reflect.runtime.universe._
-    import scala.reflect.runtime.{ universe => runtime }
+    import scala.reflect.runtime.{universe => runtime}
     val mirror = runtime.runtimeMirror(ClassLoader.getSystemClassLoader)
     val subclasses = typeOf[Feature].typeSymbol.asClass.knownDirectSubclasses
     val knownFeatures = subclasses.map({ desc =>

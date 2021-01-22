@@ -19,7 +19,7 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.Connection
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.{Command, HasHtlcId}
+import fr.acinq.eclair.channel.{Command, HtlcSettlementCommand}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
@@ -40,7 +40,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
   }
 
-  override def addPendingRelay(channelId: ByteVector32, cmd: Command with HasHtlcId): Unit = withMetrics("pending-relay/add") {
+  override def addPendingRelay(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add") {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending_relay VALUES (?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, cmd.id)
@@ -57,7 +57,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     }
   }
 
-  override def listPendingRelay(channelId: ByteVector32): Seq[Command with HasHtlcId] = withMetrics("pending-relay/list-channel") {
+  override def listPendingRelay(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel") {
     using(sqlite.prepareStatement("SELECT data FROM pending_relay WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       val rs = statement.executeQuery()

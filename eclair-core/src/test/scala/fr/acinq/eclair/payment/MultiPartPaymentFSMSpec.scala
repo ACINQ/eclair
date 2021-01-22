@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM._
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, wire}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, wire}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -88,7 +88,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val extraPart = createMultiPartHtlc(1000 msat, 300 msat, 3)
     f.parent.send(f.handler, extraPart)
-    val fail = f.parent.expectMsgType[ExtraPaymentReceived]
+    val fail = f.parent.expectMsgType[ExtraPaymentReceived[PaymentPart]]
     assert(fail.paymentHash === paymentHash)
     assert(fail.failure === Some(wire.PaymentTimeout))
     assert(fail.payment === extraPart)
@@ -181,7 +181,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val extra = createMultiPartHtlc(1000 msat, 300 msat, 3)
     f.parent.send(f.handler, extra)
-    val extraneousPayment = f.parent.expectMsgType[ExtraPaymentReceived]
+    val extraneousPayment = f.parent.expectMsgType[ExtraPaymentReceived[PaymentPart]]
     assert(extraneousPayment.paymentHash === paymentHash)
     assert(extraneousPayment.payment === extra)
 

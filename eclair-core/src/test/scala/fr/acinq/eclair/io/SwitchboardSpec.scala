@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Features, NodeParams, TestKitBaseClass}
+import fr.acinq.eclair.{Features, NodeParams, TestKitBaseClass, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
@@ -42,6 +42,29 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     probe.send(switchboard, Peer.Connect(remoteNodeId, None))
     peer.expectMsg(Peer.Init(Set.empty))
     peer.expectMsg(Peer.Connect(remoteNodeId, None))
+  }
+
+  def sendFeatures(remoteNodeId: PublicKey, features: Features, syncWhitelist: Set[PublicKey], expectedFeatures: Features, expectedSync: Boolean) = {
+    val peer = TestProbe()
+    val peerConnection = TestProbe()
+    val nodeParams = Alice.nodeParams.copy(features = features, syncWhitelist = syncWhitelist)
+    val switchboard = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
+    switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
+    peerConnection.expectMsg(PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, expectedFeatures, doSync = expectedSync))
+  }
+
+  test("sync if no whitelist is defined") {
+    sendFeatures(randomKey.publicKey, Alice.nodeParams.features, Set.empty, Alice.nodeParams.features, expectedSync = true)
+  }
+
+  test("sync if whitelist contains peer") {
+    val remoteNodeId = randomKey.publicKey
+    sendFeatures(remoteNodeId, Alice.nodeParams.features, Set(remoteNodeId, randomKey.publicKey, randomKey.publicKey), Alice.nodeParams.features, expectedSync = true)
+  }
+
+  test("don't sync if whitelist doesn't contain peer") {
+    val remoteNodeId = randomKey.publicKey
+    sendFeatures(remoteNodeId, Alice.nodeParams.features, Set(randomKey.publicKey, randomKey.publicKey, randomKey.publicKey), Alice.nodeParams.features, expectedSync = false)
   }
 
 }

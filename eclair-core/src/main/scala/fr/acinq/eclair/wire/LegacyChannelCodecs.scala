@@ -18,12 +18,11 @@ package fr.acinq.eclair.wire
 
 import java.util.UUID
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.relay.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
@@ -71,7 +70,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
-      ("localPaymentBasepoint" | optional(provide(channelVersion.hasStaticRemotekey), publicKey)) ::
+      ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
       ("features" | combinedFeaturesCodec)).as[LocalParams].decodeOnly
 
   val remoteParamsCodec: Codec[RemoteParams] = (
@@ -100,7 +99,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
 
   val commitmentSpecCodec: Codec[CommitmentSpec] = (
     ("htlcs" | setCodec(htlcCodec)) ::
-      ("feeratePerKw" | uint32) ::
+      ("feeratePerKw" | feeratePerKw) ::
       ("toLocal" | millisatoshi) ::
       ("toRemote" | millisatoshi)).as[CommitmentSpec].decodeOnly
 
@@ -122,7 +121,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
     .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcSuccessTx])
     .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcTimeoutTx])
     .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
-    .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimDelayedOutputTx])
+    .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
     .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])
     .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx])
     .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClosingTx])
@@ -174,28 +173,28 @@ private[wire] object LegacyChannelCodecs extends Logging {
       ("sentAfterLocalCommitIndex" | uint64overflow) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation].decodeOnly
 
-  val localCodec: Codec[Origin.Local] = (
-    ("id" | uuid) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.Local]
+  val localColdCodec: Codec[Origin.LocalCold] = ("id" | uuid).as[Origin.LocalCold]
 
-  val relayedCodec: Codec[Origin.Relayed] = (
+  val localCodec: Codec[Origin.Local] = localColdCodec.xmap[Origin.Local](o => o: Origin.Local, o => Origin.LocalCold(o.id))
+
+  val relayedColdCodec: Codec[Origin.ChannelRelayedCold] = (
     ("originChannelId" | bytes32) ::
       ("originHtlcId" | int64) ::
       ("amountIn" | millisatoshi) ::
-      ("amountOut" | millisatoshi)).as[Origin.Relayed]
+      ("amountOut" | millisatoshi)).as[Origin.ChannelRelayedCold]
+
+  val relayedCodec: Codec[Origin.ChannelRelayed] = relayedColdCodec.xmap[Origin.ChannelRelayed](o => o: Origin.ChannelRelayed, o => Origin.ChannelRelayedCold(o.originChannelId, o.originHtlcId, o.amountIn, o.amountOut))
+
+  val trampolineRelayedColdCodec: Codec[Origin.TrampolineRelayedCold] = listOfN(uint16, bytes32 ~ int64).as[Origin.TrampolineRelayedCold]
+
+  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = trampolineRelayedColdCodec.xmap[Origin.TrampolineRelayed](o => o: Origin.TrampolineRelayed, o => Origin.TrampolineRelayedCold(o.htlcs))
 
   // this is for backward compatibility to handle legacy payments that didn't have identifiers
   val UNKNOWN_UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
-  val trampolineRelayedCodec: Codec[Origin.TrampolineRelayed] = (
-    listOfN(uint16, bytes32 ~ int64) ::
-      ("sender" | provide(Option.empty[ActorRef]))
-    ).as[Origin.TrampolineRelayed]
-
   val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x03, localCodec) // backward compatible
-    .typecase(0x01, provide(Origin.Local(UNKNOWN_UUID, None)))
+    .typecase(0x01, provide(Origin.LocalCold(UNKNOWN_UUID)))
     .typecase(0x02, relayedCodec)
     .typecase(0x04, trampolineRelayedCodec)
 
@@ -262,6 +261,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | provide[Option[Transaction]](None)) ::
+      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
       ("waitingSince" | provide(System.currentTimeMillis.milliseconds.toSeconds)) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
@@ -269,6 +269,7 @@ private[wire] object LegacyChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | optional(bool, txCodec)) ::
+      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
       ("waitingSince" | int64) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
       ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
@@ -276,7 +277,8 @@ private[wire] object LegacyChannelCodecs extends Logging {
   val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
     ("commitments" | commitmentsCodec) ::
       ("shortChannelId" | shortchannelid) ::
-      ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED].decodeOnly
+      ("lastSent" | fundingLockedCodec) ::
+      ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)]))).as[DATA_WAIT_FOR_FUNDING_LOCKED].decodeOnly
 
   // All channel_announcement's written prior to supporting unknown trailing fields had the same fixed size, because
   // those are the announcements that *we* created and we always used an empty features field, which was the only

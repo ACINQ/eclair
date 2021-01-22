@@ -16,16 +16,15 @@
 
 package fr.acinq.eclair.api
 
-import java.net.InetSocketAddress
-import java.util.UUID
-
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
-import fr.acinq.eclair.channel.{ChannelCommandResponse, ChannelVersion, State}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteResponse
@@ -37,10 +36,14 @@ import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, TypeHints, jackson}
 import scodec.bits.ByteVector
 
+import java.net.InetSocketAddress
+import java.util.UUID
+
 /**
  * JSON Serializers.
  * Note: in general, deserialization does not need to be implemented.
  */
+
 class ByteVectorSerializer extends CustomSerializer[ByteVector](_ => ( {
   null
 }, {
@@ -89,6 +92,12 @@ class CltvExpiryDeltaSerializer extends CustomSerializer[CltvExpiryDelta](_ => (
   case x: CltvExpiryDelta => JInt(x.toInt)
 }))
 
+class FeeratePerKwSerializer extends CustomSerializer[FeeratePerKw](_ => ( {
+  null
+}, {
+  case x: FeeratePerKw => JLong(x.toLong)
+}))
+
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](_ => ( {
   null
 }, {
@@ -132,10 +141,17 @@ class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](_ => ( {
   case x: ChannelVersion => JString(x.bits.toBin)
 }))
 
-class ChannelCommandResponseSerializer extends CustomSerializer[ChannelCommandResponse](_ => ( {
+class ChannelOpenResponseSerializer extends CustomSerializer[ChannelOpenResponse](_ => ( {
   null
 }, {
-  case x: ChannelCommandResponse => JString(x.toString)
+  case x: ChannelOpenResponse => JString(x.toString)
+}))
+
+class CommandResponseSerializer extends CustomSerializer[CommandResponse[Command]](_ => ( {
+  null
+}, {
+  case RES_SUCCESS(_: CloseCommand, channelId) => JString(s"closed channel $channelId")
+  case RES_FAILURE(_: Command, ex: Throwable) => JString(ex.getMessage)
 }))
 
 class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
@@ -210,6 +226,12 @@ class FailureMessageSerializer extends CustomSerializer[FailureMessage](_ => ( {
   case m: FailureMessage => JString(m.message)
 }))
 
+class FailureTypeSerializer extends CustomSerializer[FailureType](_ => ( {
+  null
+}, {
+  case ft: FailureType => JString(ft.toString)
+}))
+
 class NodeAddressSerializer extends CustomSerializer[NodeAddress](_ => ( {
   null
 }, {
@@ -264,6 +286,47 @@ class JavaUUIDSerializer extends CustomSerializer[UUID](_ => ( {
   case id: UUID => JString(id.toString)
 }))
 
+class ChannelEventSerializer extends CustomSerializer[ChannelEvent](_ => ( {
+  null
+}, {
+  case e: ChannelCreated => JObject(
+    JField("type", JString("channel-opened")),
+    JField("remoteNodeId", JString(e.remoteNodeId.toString())),
+    JField("isFunder", JBool(e.isFunder)),
+    JField("temporaryChannelId", JString(e.temporaryChannelId.toHex)),
+    JField("initialFeeratePerKw", JLong(e.initialFeeratePerKw.toLong)),
+    JField("fundingTxFeeratePerKw", e.fundingTxFeeratePerKw.map(f => JLong(f.toLong)).getOrElse(JNothing))
+  )
+  case e: ChannelStateChanged => JObject(
+    JField("type", JString("channel-state-changed")),
+    JField("channelId", JString(e.channelId.toHex)),
+    JField("remoteNodeId", JString(e.remoteNodeId.toString())),
+    JField("previousState", JString(e.previousState.toString)),
+    JField("currentState", JString(e.currentState.toString))
+  )
+  case e: ChannelClosed => JObject(
+    JField("type", JString("channel-closed")),
+    JField("channelId", JString(e.channelId.toHex)),
+    JField("closingType", JString(e.closingType.getClass.getSimpleName))
+  )
+}))
+
+class OriginSerializer extends CustomSerializer[Origin](_ => ( {
+  null
+}, {
+  case o: Origin.Local => JObject(JField("paymentId", JString(o.id.toString)))
+  case o: Origin.ChannelRelayed => JObject(
+    JField("channelId", JString(o.originChannelId.toHex)),
+    JField("htlcId", JLong(o.originHtlcId)),
+  )
+  case o: Origin.TrampolineRelayed => JArray(o.htlcs.map {
+    case (channelId, htlcId) => JObject(
+      JField("channelId", JString(channelId.toHex)),
+      JField("htlcId", JLong(htlcId)),
+    )
+  })
+}))
+
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
@@ -307,11 +370,13 @@ object JsonSupport extends Json4sSupport {
     new ByteVectorSerializer +
     new ByteVector32Serializer +
     new ByteVector64Serializer +
+    new ChannelEventSerializer +
     new UInt64Serializer +
     new SatoshiSerializer +
     new MilliSatoshiSerializer +
     new CltvExpirySerializer +
     new CltvExpiryDeltaSerializer +
+    new FeeratePerKwSerializer +
     new ShortChannelIdSerializer +
     new ChannelIdentifierSerializer +
     new StateSerializer +
@@ -324,17 +389,20 @@ object JsonSupport extends Json4sSupport {
     new OutPointSerializer +
     new OutPointKeySerializer +
     new ChannelVersionSerializer +
-    new ChannelCommandResponseSerializer +
+    new ChannelOpenResponseSerializer +
+    new CommandResponseSerializer +
     new InputInfoSerializer +
     new ColorSerializer +
     new RouteResponseSerializer +
     new ThrowableSerializer +
     new FailureMessageSerializer +
+    new FailureTypeSerializer +
     new NodeAddressSerializer +
     new DirectedHtlcSerializer +
     new PaymentRequestSerializer +
     new JavaUUIDSerializer +
     new FeaturesSerializer +
+    new OriginSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent).withTypeHintFieldName("type")
@@ -344,10 +412,12 @@ object JsonSupport extends Json4sSupport {
       JObject(
         JField("name", JString(a.feature.rfcName)),
         JField("support", JString(a.support.toString))
-      )}.toList)),
+      )
+    }.toList)),
     JField("unknown", JArray(features.unknown.map { i =>
       JObject(
         JField("featureBit", JInt(i.bitIndex))
-      )}.toList))
+      )
+    }.toList))
   )
 }
