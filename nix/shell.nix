@@ -7,7 +7,7 @@ let nixpkgs = import ./nixpkgs.nix;
             then import nixpkgs {inherit overlays;}
             else pkgs;
     haskell-ide = import (
-      fetchTarball "https://github.com/tim2CF/ultimate-haskell-ide/tarball/master"
+      fetchTarball "https://github.com/tim2CF/ultimate-haskell-ide/tarball/54af8e0483b38457bf067086c3f214e90cb2e0f1"
     ) {};
     mavenix = import (
       fetchTarball "https://github.com/nix-community/mavenix/tarball/master"
@@ -24,6 +24,9 @@ stdenv.mkDerivation {
     jdk11
     maven
     mavenix.cli
+    # test deps
+    bitcoin
+    docker
     # utils
     nix-prefetch-scripts
     openssh
