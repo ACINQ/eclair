@@ -655,6 +655,13 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     val ps = sender.expectMsgType[PaymentSent](60 seconds)
     assert(ps.id == paymentId)
 
+    // we make sure the htlc has been removed from F's commitment before we force-close
+    awaitCond({
+      sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
+      val stateDataF = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
+      stateDataF.commitments.localCommit.spec.htlcs.isEmpty
+    }, max = 20 seconds, interval = 1 second)
+
     sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
     val stateDataF = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
     val commitmentIndex = stateDataF.commitments.localCommit.index

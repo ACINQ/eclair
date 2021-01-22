@@ -247,8 +247,19 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId, None))
 
           // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
-          val candidateChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDelta,
-            normal.commitments.remoteParams.htlcMinimum, normal.channelUpdate.feeBaseMsat, normal.channelUpdate.feeProportionalMillionths, normal.commitments.capacity.toMilliSatoshi, enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
+          // NB: we don't update the routing fees, because we don't want to overwrite manual changes made with CMD_UPDATE_RELAY_FEE
+          // Since CMD_UPDATE_RELAY_FEE is handled even when being offline, that's the preferred solution to update routing fees
+          val candidateChannelUpdate = Announcements.makeChannelUpdate(
+            nodeParams.chainHash,
+            nodeParams.privateKey,
+            remoteNodeId,
+            normal.channelUpdate.shortChannelId,
+            nodeParams.expiryDelta,
+            normal.commitments.remoteParams.htlcMinimum,
+            normal.channelUpdate.feeBaseMsat,
+            normal.channelUpdate.feeProportionalMillionths,
+            normal.commitments.capacity.toMilliSatoshi,
+            enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
           val channelUpdate1 = if (Announcements.areSame(candidateChannelUpdate, normal.channelUpdate)) {
             // if there was no configuration change we keep the existing channel update
             normal.channelUpdate
@@ -954,7 +965,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val age = System.currentTimeMillis.milliseconds - d.channelUpdate.timestamp.seconds
       val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       reason match {
-        case Reconnected if Announcements.areSame(channelUpdate1, d.channelUpdate) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
+        case Reconnected if d.commitments.announceChannel && Announcements.areSame(channelUpdate1, d.channelUpdate) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
           // we already sent an identical channel_update not long ago (flapping protection in case we keep being disconnected/reconnected)
           log.debug("not sending a new identical channel_update, current one was created {} days ago", age.toDays)
           stay
@@ -1559,8 +1570,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             }
           }
 
-          // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
-          setTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds, repeat = false)
+          if (d.commitments.announceChannel) {
+            // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
+            setTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds, repeat = false)
+          } else {
+            // except for private channels where our peer is likely a mobile wallet: they will stay online only for a short period of time,
+            // so we need to re-enable them immediately to ensure we can route payments to them. It's also less of a problem to frequently
+            // refresh the channel update for private channels, since we won't broadcast it to the rest of the network.
+            self ! BroadcastChannelUpdate(Reconnected)
+          }
 
           // We usually handle feerate updates once per block (~10 minutes), but when our remote is a mobile wallet that
           // only briefly connects and then disconnects, we may never have the opportunity to send our `update_fee`, so

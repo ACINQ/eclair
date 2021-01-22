@@ -197,8 +197,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val mutualCloseTx = bob2blockchain.expectMsgType[PublishAsap].tx
     assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTx))
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
-    alice2blockchain.expectMsgType[PublishAsap]
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsg(PublishAsap(mutualCloseTx))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === mutualCloseTx.txid)
     alice2blockchain.expectNoMsg(100 millis)
     assert(alice.stateName == CLOSING)
   }
@@ -217,8 +217,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val Right(bobClosingTx) = Closing.checkClosingSignature(Bob.channelKeyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
 
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
-    alice2blockchain.expectMsgType[PublishAsap]
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsg(PublishAsap(bobClosingTx))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobClosingTx.txid)
     alice2blockchain.expectNoMsg(100 millis)
     assert(alice.stateName == CLOSING)
   }

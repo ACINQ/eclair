@@ -177,7 +177,6 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == CLOSED)
   }
 
-
   test("recv OpenChannel (reserve below dust)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]

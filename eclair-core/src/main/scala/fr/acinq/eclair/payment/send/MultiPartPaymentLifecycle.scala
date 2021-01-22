@@ -32,8 +32,6 @@ import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams}
-import kamon.Kamon
-import kamon.context.Context
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -57,13 +55,6 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   val start = System.currentTimeMillis
   private var retriedFailedChannels = false
 
-  private val span = Kamon.spanBuilder("multi-part-payment")
-    .tag(Tags.ParentId, cfg.parentId.toString)
-    .tag(Tags.PaymentHash, paymentHash.toHex)
-    .tag(Tags.RecipientNodeId, cfg.recipientNodeId.toString())
-    .tag(Tags.RecipientAmount, cfg.recipientAmount.toLong)
-    .start()
-
   startWith(WAIT_FOR_PAYMENT_REQUEST, WaitingForRequest)
 
   when(WAIT_FOR_PAYMENT_REQUEST) {
@@ -83,11 +74,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val (toSend, maxFee) = remainingToSend(nodeParams, d.request, d.pending.values)
       if (routes.map(_.amount).sum == toSend) {
         val childPayments = routes.map(route => (UUID.randomUUID(), route)).toMap
-        Kamon.runWithContextEntry(parentPaymentIdKey, cfg.parentId) {
-          Kamon.runWithSpan(span, finishSpan = true) {
-            childPayments.foreach { case (childId, route) => spawnChildPaymentFsm(childId) ! createChildPayment(self, route, d.request) }
-          }
-        }
+        childPayments.foreach { case (childId, route) => spawnChildPaymentFsm(childId) ! createChildPayment(self, route, d.request) }
         goto(PAYMENT_IN_PROGRESS) using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), pending = d.pending ++ childPayments)
       } else {
         // If a child payment failed while we were waiting for routes, the routes we received don't cover the whole
@@ -242,7 +229,6 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       case Left(paymentFailed) =>
         log.warning("multi-part payment failed")
         reply(origin, paymentFailed)
-        span.fail("payment failed")
       case Right(paymentSent) =>
         log.info("multi-part payment succeeded")
         reply(origin, paymentSent)
@@ -254,7 +240,6 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     if (retriedFailedChannels) {
       Metrics.RetryFailedChannelsResult.withTag(Tags.Success, event.isRight).increment()
     }
-    span.finish()
     stop(FSM.Normal)
   }
 
@@ -277,8 +262,6 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 }
 
 object MultiPartPaymentLifecycle {
-
-  val parentPaymentIdKey = Context.key[UUID]("parentPaymentId", UUID.fromString("00000000-0000-0000-0000-000000000000"))
 
   def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(new MultiPartPaymentLifecycle(nodeParams, cfg, router, register))
 

@@ -503,7 +503,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // actual test starts here
     channelUpdateListener.expectMsgType[LocalChannelDown]
     assert(closingState.htlcSuccessTxs.isEmpty && closingState.htlcTimeoutTxs.isEmpty && closingState.claimHtlcDelayedTxs.isEmpty)
-    // when the commit tx is signed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
+    // when the commit tx is confirmed, alice knows that the htlc she sent right before the unilateral close will never reach the chain
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0, aliceCommitTx)
     // so she fails it
     val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
@@ -513,9 +513,31 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     relayerA.expectNoMsg(100 millis)
   }
 
+  test("recv BITCOIN_TX_CONFIRMED (local commit with fulfill only signed by local)") { f =>
+    import f._
+    // bob sends an htlc
+    val (r, htlc) = addHtlc(110000000 msat, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    relayerA.expectMsgType[RelayForward]
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    assert(aliceCommitTx.txOut.size === 3) // 2 main outputs + 1 htlc
+
+    // alice fulfills the HTLC but bob doesn't receive the signature
+    alice ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
+    alice2bob.expectMsgType[UpdateFulfillHtlc]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    // note that bob doesn't receive the new sig!
+    // then we make alice unilaterally close the channel
+    val closingState = localClose(alice, alice2blockchain)
+    assert(closingState.commitTx === aliceCommitTx)
+    assert(closingState.htlcTimeoutTxs.isEmpty)
+    assert(closingState.htlcSuccessTxs.size === 1)
+    assert(closingState.claimHtlcDelayedTxs.size === 1)
+  }
+
   test("recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)") { f =>
     import f._
-    val sender = TestProbe()
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
