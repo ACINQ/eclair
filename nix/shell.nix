@@ -7,7 +7,7 @@ let nixpkgs = import ./nixpkgs.nix;
             then import nixpkgs {inherit overlays;}
             else pkgs;
     haskell-ide = import (
-      fetchTarball "https://github.com/tim2CF/ultimate-haskell-ide/tarball/54af8e0483b38457bf067086c3f214e90cb2e0f1"
+      fetchTarball "https://github.com/tim2CF/ultimate-haskell-ide/tarball/a6c2ca747a8b226b9fac51b33600347df61d549f"
     ) {};
     mavenix = import (
       fetchTarball "https://github.com/nix-community/mavenix/tarball/master"

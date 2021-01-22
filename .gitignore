@@ -28,3 +28,6 @@ DeleteMe*.*
 
 .DS_Store
 result
+
+.bloop/
+.metals/
