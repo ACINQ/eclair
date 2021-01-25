@@ -6,9 +6,9 @@ let nixpkgs = import ./nixpkgs.nix;
     pkgs' = if pkgs == null
             then import nixpkgs {inherit overlays;}
             else pkgs;
-    haskell-ide = import (
+    vim-ide = import (
       fetchTarball "https://github.com/tim2CF/ultimate-haskell-ide/tarball/a6c2ca747a8b226b9fac51b33600347df61d549f"
-    ) {};
+    ) {deps = [];};
     mavenix = import (
       fetchTarball "https://github.com/nix-community/mavenix/tarball/master"
     ) {};
@@ -19,14 +19,14 @@ stdenv.mkDerivation {
   name = "eclair-env";
   buildInputs = [
     # ide
-    haskell-ide
+    vim-ide
     # java
     jdk11
     maven
     mavenix.cli
     # test deps
-    bitcoin
     docker
+    bitcoin
     # utils
     nix-prefetch-scripts
     openssh

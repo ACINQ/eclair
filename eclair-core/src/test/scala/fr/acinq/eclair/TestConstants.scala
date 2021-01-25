@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import com.opentable.db.postgres.embedded.EmbeddedPostgres
+import _root_.io.zonky.test.db.postgres.embedded.EmbeddedPostgres
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.Optional

@@ -4,10 +4,11 @@ echo "starting nixos container..."
 docker run -it --rm \
   -e NIXPKGS_ALLOW_BROKEN=1 \
   -v "$(pwd):/app" \
-  -v "nix:/nix" \
-  -v "nix-19.09-root:/root" \
-  -w "/app" nixos/nix:2.3 sh -c "
+  -v "/var/run/docker.sock:/var/run/docker.sock" \
+  -v "nix-ubuntu:/nix" \
+  -v "nix-ubuntu-19.09-developer:/home/developer" \
+  -w "/app" tkachuklabs/nix-ubuntu:2.3.10 sh -c "
   nix-shell ./nix/shell.nix --pure \
    --option sandbox false \
-   -vvvvv --show-trace
+   -v --show-trace
   "
