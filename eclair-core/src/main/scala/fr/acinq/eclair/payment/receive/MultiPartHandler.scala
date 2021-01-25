@@ -168,7 +168,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 // and we do as if we had received only that pay-to-open request (this is what will be written to db)
                 val parts1 = parts.collect { case h: MultiPartPaymentFSM.HtlcPart => h } :+ MultiPartPaymentFSM.PayToOpenPart(parts.head.totalAmount, summarizedPayToOpenRequest, payToOpenParts.head.peer)
                 log.info(s"received pay-to-open payment for amount=${summarizedPayToOpenRequest.amountMsat}")
-                if (summarizedPayToOpenRequest.feeSatoshis == 0.sat) {
+                if (summarizedPayToOpenRequest.payToOpenFee == 0.sat) {
                   // we always say ok when fee is zero, without asking the user
                   ctx.self ! DoFulfill(preimage, s)
                 } else {
@@ -183,7 +183,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                     .foreach {
                       case true =>
                         // user said yes
-                        log.info(s"user said ok to pay-to-open request for amount=${summarizedPayToOpenRequest.amountMsat} fee=${summarizedPayToOpenRequest.feeSatoshis}")
+                        log.info(s"user said ok to pay-to-open request for amount=${summarizedPayToOpenRequest.amountMsat} fee=${summarizedPayToOpenRequest.payToOpenFee}")
                         ctx.self ! DoFulfill(preimage, MultiPartPaymentFSM.MultiPartPaymentSucceeded(paymentHash, parts1))
                       case false =>
                         // user said no or didn't answer
@@ -223,7 +223,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         log.info("fulfilling payment for amount={}", parts.map(_.amount).sum)
         val received = PaymentReceived(paymentHash, parts.map {
           case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
-          case p: MultiPartPaymentFSM.PayToOpenPart => PaymentReceived.PartialPayment(p.amount - p.payToOpen.feeSatoshis, ByteVector32.Zeroes)
+          case p: MultiPartPaymentFSM.PayToOpenPart => PaymentReceived.PartialPayment(p.amount - p.payToOpen.payToOpenFee, ByteVector32.Zeroes)
         })
         // The first thing we do is store the payment. This allows us to reconcile pending HTLCs after a restart.
         db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)

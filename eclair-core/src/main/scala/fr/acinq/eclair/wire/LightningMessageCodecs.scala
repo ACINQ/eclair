@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair.wire
 
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.{Features, KamonExt, wire}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
-
 import scodec.bits._
 
 /**
@@ -300,8 +300,8 @@ object LightningMessageCodecs {
       ("pushMsat" | millisatoshi) ::
       ("feeSatoshis" | satoshi) ::
       ("paymentHash" | bytes32) ::
-      ("feeThresholdSatoshis" | satoshi) ::
-      ("feeProportionalMillionths" | uint32) ::
+      ("feeThresholdSatoshis" | satoshi.unit(Satoshi(0))) ::
+      ("feeProportionalMillionths" | uint32.unit(0)) ::
       ("expireAt" | uint32) ::
       ("htlc_opt" | optional(bool(8), updateAddHtlcCodec))).as[PayToOpenRequest]
 

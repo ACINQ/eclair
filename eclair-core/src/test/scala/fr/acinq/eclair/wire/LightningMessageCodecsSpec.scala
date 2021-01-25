@@ -431,14 +431,47 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       ("chainHash" | bytes32) ::
         ("fundingSatoshis" | satoshi) ::
         ("pushMsat" | millisatoshi) ::
-        ("feeSatoshis" | satoshi) ::
+        ("payToOpenFee" | satoshi) ::
         ("paymentHash" | bytes32)).as[OldPayToOpenRequest]
 
-    val p = PayToOpenRequest(randomBytes32, 12 mbtc, 12345 msat, 7 sat, randomBytes32, 10000 sat, 1000, 1234567890L, Some(UpdateAddHtlc(randomBytes32, 42, 12345 msat, randomBytes32, CltvExpiry(420), TestConstants.emptyOnionPacket)))
+    val p = PayToOpenRequest(randomBytes32, 12 mbtc, 12345 msat, 7 sat, randomBytes32, 1234567890L, Some(UpdateAddHtlc(randomBytes32, 42, 12345 msat, randomBytes32, CltvExpiry(420), TestConstants.emptyOnionPacket)))
     val bits = payToOpenRequestCodec.encode(p).require
     val DecodeResult(oldp, remainder) = oldPayToOpenRequestCodec.decode(bits).require
-    assert(oldp === OldPayToOpenRequest(p.chainHash, p.fundingSatoshis, p.amountMsat, p.feeSatoshis, p.paymentHash))
+    assert(oldp === OldPayToOpenRequest(p.chainHash, p.fundingSatoshis, p.amountMsat, p.payToOpenFee, p.paymentHash))
     assert(remainder.nonEmpty)
+  }
+
+  test("non-reg pay-to-open 2") {
+    // we just need to make sure that old phoenix can decode new pay-to-open requests
+    case class OldPayToOpenRequest(chainHash: ByteVector32,
+                                   fundingSatoshis: Satoshi,
+                                   amountMsat: MilliSatoshi,
+                                   feeSatoshis: Satoshi,
+                                   paymentHash: ByteVector32,
+                                   feeThresholdSatoshis: Satoshi,
+                                   feeProportionalMillionths: Long,
+                                   expireAt: Long,
+                                   htlc_opt: Option[UpdateAddHtlc]
+                                  )
+
+    import fr.acinq.eclair.wire.CommonCodecs._
+    import scodec.codecs._
+    val oldPayToOpenRequestCodec: Codec[OldPayToOpenRequest] = (
+      ("chainHash" | bytes32) ::
+        ("fundingSatoshis" | satoshi) ::
+        ("pushMsat" | millisatoshi) ::
+        ("feeSatoshis" | satoshi) ::
+        ("paymentHash" | bytes32) ::
+        ("feeThresholdSatoshis" | satoshi) ::
+        ("feeProportionalMillionths" | uint32) ::
+        ("expireAt" | uint32) ::
+        ("htlc_opt" | optional(bool(8), updateAddHtlcCodec))).as[OldPayToOpenRequest]
+
+    val p = OldPayToOpenRequest(randomBytes32, 12 mbtc, 12345 msat, 7 sat, randomBytes32, 10000 sat, 1000, 1234567890L, Some(UpdateAddHtlc(randomBytes32, 42, 12345 msat, randomBytes32, CltvExpiry(420), TestConstants.emptyOnionPacket)))
+    val bits = oldPayToOpenRequestCodec.encode(p).require
+    val DecodeResult(newp, remainder) = payToOpenRequestCodec.decode(bits).require
+    assert(newp === PayToOpenRequest(p.chainHash, p.fundingSatoshis, p.amountMsat, p.feeSatoshis, p.paymentHash, p.expireAt, p.htlc_opt))
+    assert(remainder.isEmpty)
   }
 
 }

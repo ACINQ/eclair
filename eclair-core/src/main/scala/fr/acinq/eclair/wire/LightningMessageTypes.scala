@@ -300,10 +300,8 @@ case class GossipTimestampFilter(chainHash: ByteVector32,
 case class PayToOpenRequest(chainHash: ByteVector32,
                             fundingSatoshis: Satoshi,
                             amountMsat: MilliSatoshi,
-                            feeSatoshis: Satoshi,
+                            payToOpenFee: Satoshi,
                             paymentHash: ByteVector32,
-                            feeThresholdSatoshis: Satoshi,
-                            feeProportionalMillionths: Long,
                             expireAt: Long,
                             htlc_opt: Option[UpdateAddHtlc]
                            ) extends LightningMessage with HasChainHash {
@@ -319,16 +317,6 @@ case class PayToOpenRequest(chainHash: ByteVector32,
 
 object PayToOpenRequest {
 
-  def computeFee(amount: MilliSatoshi, feeThresholdSatoshis: Satoshi, feeProportionalMillionths: Long) = {
-    if (amount.truncateToSatoshi < feeThresholdSatoshis) {
-      // for tiny amounts there is no fee
-      0.sat
-    } else {
-      // NB: this fee is proportional, which allow us to sum them in case of multi-parts payments
-      amount.truncateToSatoshi * feeProportionalMillionths / 1000000
-    }
-  }
-
   def computeFunding(amount: MilliSatoshi, fee: Satoshi) = 100000.sat + (amount * 1.5D).truncateToSatoshi + fee
 
   /**
@@ -341,15 +329,13 @@ object PayToOpenRequest {
     require(requests.nonEmpty, "there needs to be at least one pay-to-open request")
     require(requests.map(_.chainHash).toSet.size == 1, "all pay-to-open chain hash must be equal")
     require(requests.map(_.paymentHash).toSet.size == 1, "all pay-to-open payment hash must be equal")
-    require(requests.map(_.feeThresholdSatoshis).toSet.size == 1, "all pay-to-open fee rates must be equal")
-    require(requests.map(_.feeProportionalMillionths).toSet.size == 1, "all pay-to-open fee rates must be equal")
     val chainHash = requests.head.chainHash
     val paymentHash = requests.head.paymentHash
     val totalAmount = requests.map(_.amountMsat).sum
-    val feeAmount = PayToOpenRequest.computeFee(totalAmount, requests.head.feeThresholdSatoshis, requests.head.feeProportionalMillionths)
-    val fundingAmount = PayToOpenRequest.computeFunding(totalAmount, feeAmount)
+    val payToOpenFees = requests.map(_.payToOpenFee).sum
+    val fundingAmount = PayToOpenRequest.computeFunding(totalAmount, payToOpenFees)
     val expireAt = requests.map(_.expireAt).min // the aggregate request expires when the first of the underlying request expires
-    PayToOpenRequest(chainHash, fundingAmount, totalAmount, feeAmount, paymentHash, requests.head.feeThresholdSatoshis, requests.head.feeProportionalMillionths, expireAt, None)
+    PayToOpenRequest(chainHash, fundingAmount, totalAmount, payToOpenFees, paymentHash, expireAt, None)
   }
 
 }
