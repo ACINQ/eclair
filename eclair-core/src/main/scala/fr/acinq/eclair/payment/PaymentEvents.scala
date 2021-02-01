@@ -110,6 +110,11 @@ object PaymentReceived {
 
 }
 
+/**
+ * We may reject an incoming payment, because it requires the creation of a new channel, but the amount is too low.
+ */
+case class MissedPayToOpenPayment(paymentHash: ByteVector32, amount: MilliSatoshi, minAmount: MilliSatoshi)
+
 case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: Long = System.currentTimeMillis) extends PaymentEvent
 
 sealed trait PaymentFailure {

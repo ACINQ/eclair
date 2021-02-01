@@ -505,7 +505,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.send(handler, ReceivePayment(Some(1000 msat), "1 fast coffee"))
     val pr = f.sender.expectMsgType[PaymentRequest]
 
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 1000 msat, 0 sat, pr.paymentHash, secondsFromNow(60), None)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 1000 msat, 0 sat, pr.paymentHash, secondsFromNow(60), None, 0.msat)
     f.sender.send(handler, p1)
 
     val r1 = f.sender.expectMsgType[PayToOpenResponse]
@@ -522,7 +522,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     })
 
     // Extraneous pay-to-opens will be ignored
-    val pExtra = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 200 msat, 0 sat, pr.paymentHash, secondsFromNow(60), None)
+    val pExtra = PayToOpenRequest(Block.RegtestGenesisBlock.hash, 1 mbtc, 200 msat, 0 sat, pr.paymentHash, secondsFromNow(60), None, 0.msat)
     f.sender.send(handler, MultiPartPaymentFSM.ExtraPaymentReceived(pr.paymentHash, PayToOpenPart(1000 msat, pExtra, f.sender.ref), None))
     f.sender.expectNoMsg()
 
@@ -543,7 +543,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
     val pr = f.sender.expectMsgType[PaymentRequest]
 
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None, 0.msat)
     f.sender.send(handler, p1)
 
     val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
@@ -581,7 +581,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
     val pr = f.sender.expectMsgType[PaymentRequest]
 
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None, 0.msat)
     f.sender.send(handler, p1)
 
     val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
@@ -609,13 +609,74 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
     val pr = f.sender.expectMsgType[PaymentRequest]
 
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(2), None)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(2), None, 0.msat)
     f.sender.send(handler, p1)
 
     val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
     assert(e1.payToOpenRequest === p1)
     assert(e1.peer === f.sender.ref)
     Thread.sleep(3000) // timeout
+
+    val r1 = f.sender.expectMsgType[PayToOpenResponse]
+    assert(r1.paymentPreimage === ByteVector32.Zeroes)
+
+    f.sender.send(handler, GetPendingPayments)
+    f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+  }
+
+  test("reject single-part payment with pay-to-open if min amount not reached") { f =>
+    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = Features(hex"028a8a"))
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
+    system.eventStream.subscribe(eventListener.ref, classOf[MissedPayToOpenPayment])
+
+    val amount = 9000000 msat
+    val fee = 1000 sat
+    val funding = PayToOpenRequest.computeFunding(amount, fee)
+
+    f.sender.send(handler, ReceivePayment(Some(9000000 msat), "1 fast coffee"))
+    val pr = f.sender.expectMsgType[PaymentRequest]
+
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(60), None, 10000000.msat)
+    f.sender.send(handler, p1)
+
+    eventListener.expectMsg(MissedPayToOpenPayment(pr.paymentHash, amount, p1.payToOpenMinAmount))
+
+    val r1 = f.sender.expectMsgType[PayToOpenResponse]
+    assert(r1.paymentPreimage === ByteVector32.Zeroes)
+
+    f.sender.send(handler, GetPendingPayments)
+    f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
+  }
+
+  test("reject multi-part payment with pay-to-open if min amount not reached") { f =>
+    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = Features(hex"028a8a"))
+    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
+    system.eventStream.subscribe(eventListener.ref, classOf[MissedPayToOpenPayment])
+
+    f.sender.send(handler, ReceivePayment(Some(9000000 msat), "1 fast coffee"))
+    val pr = f.sender.expectMsgType[PaymentRequest]
+
+    val add = UpdateAddHtlc(ByteVector32.One, 0, 4000000 msat, pr.paymentHash, f.defaultExpiry, TestConstants.emptyOnionPacket)
+    f.sender.send(handler, IncomingPacket.FinalPacket(add, Onion.createMultiPartPayload(add.amountMsat, 9000000 msat, add.cltvExpiry, pr.paymentSecret.get)))
+
+    val amount = 5000000 msat
+    val fee = 1000 sat
+    val funding = PayToOpenRequest.computeFunding(amount, fee)
+    val payload = Onion.createMultiPartPayload(amount, 9000000 msat, f.defaultExpiry, pr.paymentSecret.get)
+    val onion = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload :: Nil, pr.paymentHash).packet
+    val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload.amount, pr.paymentHash, payload.expiry, onion)
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(45), Some(htlc), 10000000.msat)
+    f.sender.send(handler, p1)
+
+    eventListener.expectMsg(MissedPayToOpenPayment(pr.paymentHash, 9000000 msat, p1.payToOpenMinAmount))
+
+    val cmd = f.register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(9000000 msat, nodeParams.currentBlockHeight)))
+    assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
 
     val r1 = f.sender.expectMsgType[PayToOpenResponse]
     assert(r1.paymentPreimage === ByteVector32.Zeroes)
@@ -645,7 +706,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payload1 = Onion.createMultiPartPayload(amount1, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
     val onion1 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload1 :: Nil, pr.paymentHash).packet
     val htlc1 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload1.amount, pr.paymentHash, payload1.expiry, onion1)
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding1, amount1, fee1, pr.paymentHash, secondsFromNow(45), Some(htlc1))
+    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding1, amount1, fee1, pr.paymentHash, secondsFromNow(45), Some(htlc1), 0.msat)
     f.sender.send(handler, p1)
 
     val amount2 = 20000000 msat
@@ -654,7 +715,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payload2 = Onion.createMultiPartPayload(amount2, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
     val onion2 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload2 :: Nil, pr.paymentHash).packet
     val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload2.amount, pr.paymentHash, payload2.expiry, onion2)
-    val p2 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding2, amount2, fee2, pr.paymentHash, secondsFromNow(50), Some(htlc2))
+    val p2 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding2, amount2, fee2, pr.paymentHash, secondsFromNow(50), Some(htlc2), 0.msat)
     f.sender.send(handler, p2)
 
     val amount3 = 10000000 msat
@@ -663,7 +724,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val payload3 = Onion.createMultiPartPayload(amount3, 100000000 msat, CltvExpiry(420000), pr.paymentSecret.get)
     val onion3 = buildOnion(Sphinx.PaymentPacket)(nodeParams.nodeId :: Nil, payload3 :: Nil, pr.paymentHash).packet
     val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 0, payload3.amount, pr.paymentHash, payload3.expiry, onion3)
-    val p3 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding3, amount3, fee3, pr.paymentHash, secondsFromNow(60), Some(htlc3))
+    val p3 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding3, amount3, fee3, pr.paymentHash, secondsFromNow(60), Some(htlc3), 0.msat)
     f.sender.send(handler, p3)
 
     val payToOpenAmount = amount1 + amount2 + amount3
@@ -678,7 +739,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       payToOpenFee = payToOpenFee,
       paymentHash = p1.paymentHash,
       expireAt = p1.expireAt,
-      htlc_opt = None
+      htlc_opt = None,
+      payToOpenMinAmount = 0.msat
     ))
     assert(e1.peer === f.sender.ref)
     e1.decision.success(true)

@@ -303,7 +303,8 @@ case class PayToOpenRequest(chainHash: ByteVector32,
                             payToOpenFee: Satoshi,
                             paymentHash: ByteVector32,
                             expireAt: Long,
-                            htlc_opt: Option[UpdateAddHtlc]
+                            htlc_opt: Option[UpdateAddHtlc],
+                            payToOpenMinAmount: MilliSatoshi
                            ) extends LightningMessage with HasChainHash {
   def denied(nodeSecret: PrivateKey, failure_opt: Option[FailureMessage]): PayToOpenResponse = {
     // if we have the necessary information, we include a properly onion-encrypted failure reason
@@ -329,13 +330,15 @@ object PayToOpenRequest {
     require(requests.nonEmpty, "there needs to be at least one pay-to-open request")
     require(requests.map(_.chainHash).toSet.size == 1, "all pay-to-open chain hash must be equal")
     require(requests.map(_.paymentHash).toSet.size == 1, "all pay-to-open payment hash must be equal")
+    require(requests.map(_.payToOpenMinAmount).toSet.size == 1, "all pay-to-open min amount must be equal")
     val chainHash = requests.head.chainHash
     val paymentHash = requests.head.paymentHash
     val totalAmount = requests.map(_.amountMsat).sum
     val payToOpenFees = requests.map(_.payToOpenFee).sum
     val fundingAmount = PayToOpenRequest.computeFunding(totalAmount, payToOpenFees)
     val expireAt = requests.map(_.expireAt).min // the aggregate request expires when the first of the underlying request expires
-    PayToOpenRequest(chainHash, fundingAmount, totalAmount, payToOpenFees, paymentHash, expireAt, None)
+    val payToOpenMinAmount = requests.head.payToOpenMinAmount
+    PayToOpenRequest(chainHash, fundingAmount, totalAmount, payToOpenFees, paymentHash, expireAt, None, payToOpenMinAmount)
   }
 
 }

@@ -303,7 +303,8 @@ object LightningMessageCodecs {
       ("feeThresholdSatoshis" | satoshi.unit(Satoshi(0))) ::
       ("feeProportionalMillionths" | uint32.unit(0)) ::
       ("expireAt" | uint32) ::
-      ("htlc_opt" | optional(bool(8), updateAddHtlcCodec))).as[PayToOpenRequest]
+      ("htlc_opt" | optional(bool(8), updateAddHtlcCodec)) ::
+      ("payToOpenMinAmount" | millisatoshi)).as[PayToOpenRequest]
 
   val payToOpenResponseCodec: Codec[PayToOpenResponse] = (
     ("chainHash" | bytes32) ::

@@ -16,18 +16,17 @@
 
 package fr.acinq.eclair.payment.receive
 
-import java.util.concurrent.TimeUnit
-
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.ChannelCommandResponse
+import fr.acinq.eclair.payment.MissedPayToOpenPayment
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, PayToOpenRequest, UpdateAddHtlc}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams, wire}
 
+import java.util.concurrent.TimeUnit
 import scala.collection.immutable.Queue
-import scala.compat.Platform
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -61,7 +60,23 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
         log.warning("multi-part payment total amount mismatch: previously {}, now {}", totalAmount, part.totalAmount)
         goto(PAYMENT_FAILED) using PaymentFailed(IncorrectOrUnknownPaymentDetails(part.totalAmount, nodeParams.currentBlockHeight), updatedParts)
       } else if (d.paidAmount + part.amount >= totalAmount) {
-        goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(updatedParts)
+        // Because of the cost of opening a new channel, there is a minimum amount for incoming payments to trigger
+        // a pay-to-open. Given that the total amount of a payment is included in each payment part, we could have
+        // rejected pay-to-open parts as they arrived, but it would have caused two issues:
+        // - in case there is a mix of htlc parts and pay-to-open parts, the htlc parts would have been accepted and we
+        // would have waited for a timeout before failing them (since the payment would never complete)
+        // - if we rejected each pay-to-open part individually, we wouldn't have been able to emit a single event
+        //   regarding the failed pay-to-open
+        // That is why, instead, we wait for all parts to arrive. Then, if there is at least one pay-to-open part, and if
+        // the total received amount is less than the minimum amount required for a pay-to-open, we fail the payment.
+        updatedParts
+          .collectFirst { case p: PayToOpenPart => p } match {
+          case Some(p) if p.totalAmount < p.payToOpen.payToOpenMinAmount =>
+            context.system.eventStream.publish(MissedPayToOpenPayment(p.paymentHash, p.totalAmount, p.payToOpen.payToOpenMinAmount))
+            goto(PAYMENT_FAILED) using PaymentFailed(IncorrectOrUnknownPaymentDetails(part.totalAmount, nodeParams.currentBlockHeight), updatedParts)
+          case _ =>
+            goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(updatedParts)
+        }
       } else {
         stay using d.copy(parts = updatedParts)
       }
