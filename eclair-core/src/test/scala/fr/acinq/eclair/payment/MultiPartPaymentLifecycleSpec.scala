@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import akka.actor.{ActorRef, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Crypto}
@@ -26,6 +24,7 @@ import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{FailureSummary, FailureType, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
@@ -38,6 +37,7 @@ import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 /**
@@ -238,6 +238,64 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val result = fulfillPendingPayments(f, 2)
     assert(result.amountWithFees === 1000200.msat)
+  }
+
+  test("retry with updated routing hints") { f =>
+    import f._
+
+    // The B -> E channel is private and provided in the invoice routing hints.
+    val routingHint = ExtraHop(b, hop_be.lastUpdate.shortChannelId, hop_be.lastUpdate.feeBaseMsat, hop_be.lastUpdate.feeProportionalMillionths, hop_be.lastUpdate.cltvExpiryDelta)
+    val payment = SendMultiPartPayment(sender.ref, randomBytes32, e, finalAmount, expiry, 3, routeParams = Some(routeParams), assistedRoutes = List(List(routingHint)))
+    sender.send(payFsm, payment)
+    assert(router.expectMsgType[RouteRequest].assistedRoutes.head.head === routingHint)
+    val route = Route(finalAmount, hop_ab_1 :: hop_be :: Nil)
+    router.send(payFsm, RouteResponse(Seq(route)))
+    childPayFsm.expectMsgType[SendPaymentToRoute]
+    childPayFsm.expectNoMsg(100 millis)
+
+    // B changed his fees and expiry after the invoice was issued.
+    val channelUpdate = hop_be.lastUpdate.copy(feeBaseMsat = 250 msat, feeProportionalMillionths = 150, cltvExpiryDelta = CltvExpiryDelta(24))
+    val childId = payFsm.stateData.asInstanceOf[PaymentProgress].pending.keys.head
+    childPayFsm.send(payFsm, PaymentFailed(childId, paymentHash, Seq(RemoteFailure(route.hops, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(finalAmount, channelUpdate))))))
+    // We update the routing hints accordingly before requesting a new route.
+    assert(router.expectMsgType[RouteRequest].assistedRoutes.head.head === ExtraHop(b, channelUpdate.shortChannelId, 250 msat, 150, CltvExpiryDelta(24)))
+  }
+
+  test("update routing hints") { _ =>
+    val routingHints = Seq(
+      Seq(ExtraHop(a, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ExtraHop(b, ShortChannelId(2), 0 msat, 100, CltvExpiryDelta(24))),
+      Seq(ExtraHop(a, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144)))
+    )
+
+    def makeChannelUpdate(shortChannelId: ShortChannelId, feeBase: MilliSatoshi, feeProportional: Long, cltvExpiryDelta: CltvExpiryDelta): ChannelUpdate = {
+      defaultChannelUpdate.copy(shortChannelId = shortChannelId, feeBaseMsat = feeBase, feeProportionalMillionths = feeProportional, cltvExpiryDelta = cltvExpiryDelta)
+    }
+
+    {
+      val failures = Seq(
+        LocalFailure(Nil, ChannelUnavailable(randomBytes32)),
+        RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48))))),
+        UnreadableRemoteFailure(Nil)
+      )
+      val routingHints1 = Seq(
+        Seq(ExtraHop(a, ShortChannelId(1), 10 msat, 0, CltvExpiryDelta(12)), ExtraHop(b, ShortChannelId(2), 15 msat, 150, CltvExpiryDelta(48))),
+        Seq(ExtraHop(a, ShortChannelId(3), 1 msat, 10, CltvExpiryDelta(144)))
+      )
+      assert(routingHints1 === PaymentFailure.updateRoutingHints(failures, routingHints))
+    }
+    {
+      val failures = Seq(
+        RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(1), 20 msat, 20, CltvExpiryDelta(20))))),
+        RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(b, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21))))),
+        RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22))))),
+        RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(a, FeeInsufficient(100 msat, makeChannelUpdate(ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23))))),
+      )
+      val routingHints1 = Seq(
+        Seq(ExtraHop(a, ShortChannelId(1), 23 msat, 23, CltvExpiryDelta(23)), ExtraHop(b, ShortChannelId(2), 21 msat, 21, CltvExpiryDelta(21))),
+        Seq(ExtraHop(a, ShortChannelId(3), 22 msat, 22, CltvExpiryDelta(22)))
+      )
+      assert(routingHints1 === PaymentFailure.updateRoutingHints(failures, routingHints))
+    }
   }
 
   test("abort after too many failed attempts") { f =>
