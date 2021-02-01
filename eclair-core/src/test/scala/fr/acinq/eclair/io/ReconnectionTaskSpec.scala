@@ -96,7 +96,6 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(channels = Map.empty)))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
-    monitor.expectNoMessage()
   }
 
   test("only try to connect once at startup if auto-reconnect is enabled but there are no known address", Tag("auto_reconnect")) { f =>
@@ -106,7 +105,6 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
-    monitor.expectNoMsg()
   }
 
   test("initiate reconnection at startup if auto-reconnect is enabled", Tag("auto_reconnect"), Tag("with_node_announcements")) { f =>
