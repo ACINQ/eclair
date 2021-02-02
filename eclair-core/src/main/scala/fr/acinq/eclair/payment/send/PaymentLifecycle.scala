@@ -90,8 +90,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event(RES_SUCCESS(_: CMD_ADD_HTLC, _), _) => stay
 
-    case Event(RES_ADD_FAILED(_, t: ChannelException, _), d: WaitingForComplete) =>
-      handleLocalFail(d, t, isFatal = false)
+    case Event(RES_ADD_FAILED(_, t: ChannelException, _), d: WaitingForComplete) => handleLocalFail(d, t, isFatal = false)
 
     case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)

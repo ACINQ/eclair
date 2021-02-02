@@ -154,10 +154,12 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     val amountMsat = 4200000.msat
     // first we retrieve a payment hash from D
-    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
+    val x = ReceivePayment(Some(amountMsat), "1 coffee")
+    sender.send(nodes("D").paymentHandler, x)
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
-    sender.send(nodes("A").paymentInitiator, SendPaymentRequest(amountMsat, pr.paymentHash, nodes("D").nodeParams.nodeId, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1))
+    val y = SendPaymentRequest(amountMsat, pr.paymentHash, nodes("D").nodeParams.nodeId, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1)
+    sender.send(nodes("A").paymentInitiator, y)
     val paymentId = sender.expectMsgType[UUID]
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
