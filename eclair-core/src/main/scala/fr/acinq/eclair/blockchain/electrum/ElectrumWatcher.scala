@@ -191,7 +191,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
         context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
 
-    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
+    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), _, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)

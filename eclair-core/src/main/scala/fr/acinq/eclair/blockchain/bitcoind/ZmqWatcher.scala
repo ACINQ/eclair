@@ -198,7 +198,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
         context become watching(watches, watchedUtxos, block2tx1, nextTick)
       } else publish(tx)
 
-    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
+    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), _, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)

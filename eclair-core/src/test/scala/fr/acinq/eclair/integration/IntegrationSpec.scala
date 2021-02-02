@@ -23,7 +23,6 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Graph.WeightRatios
@@ -31,7 +30,6 @@ import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, NORMAL => _, State => _}
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -76,6 +74,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
     "eclair.bitcoind.zmqblock" -> s"tcp://127.0.0.1:$bitcoindZmqBlockPort",
     "eclair.bitcoind.zmqtx" -> s"tcp://127.0.0.1:$bitcoindZmqTxPort",
+    "eclair.bitcoind.wallet" -> defaultWallet,
     "eclair.mindepth-blocks" -> 2,
     "eclair.max-htlc-value-in-flight-msat" -> 100000000000L,
     "eclair.router.broadcast-interval" -> "2 second",
@@ -109,14 +108,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
 
   override def beforeAll(): Unit = {
     startBitcoind()
-    val sender = TestProbe()
-    logger.info(s"waiting for bitcoind to initialize...")
-    awaitCond({
-      sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
-      sender.receiveOne(5 second).isInstanceOf[JValue]
-    }, max = 30 seconds, interval = 500 millis)
-    logger.info(s"generating initial blocks...")
-    generateBlocks(bitcoincli, 150, timeout = 30 seconds)
+    waitForBitcoindReady()
   }
 
   override def afterAll(): Unit = {

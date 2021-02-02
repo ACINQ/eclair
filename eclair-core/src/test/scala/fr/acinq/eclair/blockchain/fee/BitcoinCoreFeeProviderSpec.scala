@@ -19,7 +19,6 @@ package fr.acinq.eclair.blockchain.fee
 import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -33,35 +32,21 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
-import scala.jdk.CollectionConverters._
 import scala.util.Random
 
 class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
   implicit val formats = DefaultFormats.withBigDecimal
 
-  val commonConfig = ConfigFactory.parseMap(Map(
-    "eclair.chain" -> "regtest",
-    "eclair.spv" -> false,
-    "eclair.server.public-ips.1" -> "localhost",
-    "eclair.bitcoind.port" -> bitcoindPort,
-    "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
-    "eclair.router-broadcast-interval" -> "2 second",
-    "eclair.auto-reconnect" -> false).asJava)
-  val config = ConfigFactory.load(commonConfig).getConfig("eclair")
-
   val walletPassword = Random.alphanumeric.take(8).mkString
 
   override def beforeAll(): Unit = {
     startBitcoind()
+    waitForBitcoindReady()
   }
 
   override def afterAll(): Unit = {
     stopBitcoind()
-  }
-
-  test("wait bitcoind ready") {
-    waitForBitcoindReady()
   }
 
   test("parse error") {
@@ -81,14 +66,8 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
   }
 
   test("get fee rates") {
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-
     // the regtest client doesn't have enough data to estimate fees yet, so it's supposed to fail
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
     val sender = TestProbe()
     regtestProvider.getFeerates.pipeTo(sender.ref)
     assert(sender.expectMsgType[Failure].cause.asInstanceOf[RuntimeException].getMessage.contains("Insufficient data or no feerate found"))
@@ -115,11 +94,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       blocks_144 = fees(144),
       blocks_1008 = fees(1008))
 
-    val mockBitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport")) {
+    val mockBitcoinClient = new BasicBitcoinJsonRPCClient(user = "", password = "", host = "localhost", port = 0) {
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]
@@ -141,13 +116,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
   }
 
   test("get mempool minimum fee") {
-    val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport"))
-
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinClient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
+    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
     val sender = TestProbe()
     regtestProvider.mempoolMinFee().pipeTo(sender.ref)
     val mempoolMinFee = sender.expectMsgType[FeeratePerKB]
