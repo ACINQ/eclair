@@ -224,11 +224,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, pr.paymentHash.toHex)
-        if(preimage_opt.isDefined) {
-          statement.setString(2, preimage_opt.get.toHex)
-        } else {
-          statement.setString(2, null)
-        }
+        statement.setString(2, preimage_opt.orNull.toHex)
         statement.setString(3, paymentType)
         statement.setString(4, PaymentRequest.write(pr))
         statement.setLong(5, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds

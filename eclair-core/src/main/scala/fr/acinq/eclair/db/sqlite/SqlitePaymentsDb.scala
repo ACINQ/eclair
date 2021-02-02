@@ -267,13 +267,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   override def addIncomingPayment(pr: PaymentRequest, preimage_opt: Option[ByteVector32], paymentType: String): Unit = withMetrics("payments/add-incoming") {
     using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, pr.paymentHash.toArray)
-      if(preimage_opt.isDefined){
-        statement.setBytes(2, preimage_opt.get.toArray)
-      }
-      else{
-        statement.setBytes(2, null)
-      }
-//      statement.setBytes(2, preimage_opt.get.toArray)
+      statement.setBytes(2, preimage_opt.orNull.toArray)
       statement.setString(3, paymentType)
       statement.setString(4, PaymentRequest.write(pr))
       statement.setLong(5, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
