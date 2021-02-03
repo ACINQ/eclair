@@ -73,7 +73,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     peerConnection.expectMsg(PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
 
     // We don't have channels with our peer, so we won't trigger a sync when connecting.
-    switchboard ! PeerLastChannelClosed(peer.ref, remoteNodeId)
+    switchboard ! LastChannelClosed(peer.ref, remoteNodeId)
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     peerConnection.expectMsg(PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = false))
   }

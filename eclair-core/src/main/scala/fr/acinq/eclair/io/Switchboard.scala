@@ -36,7 +36,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
   import Switchboard._
 
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
-  context.system.eventStream.subscribe(self, classOf[PeerLastChannelClosed])
+  context.system.eventStream.subscribe(self, classOf[LastChannelClosed])
 
   // we load channels from database
   val peersWithChannels: mutable.Set[PublicKey] = {
@@ -86,7 +86,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
 
     case ChannelIdAssigned(_, remoteNodeId, _, _) => peersWithChannels.add(remoteNodeId)
 
-    case PeerLastChannelClosed(_, remoteNodeId) => peersWithChannels.remove(remoteNodeId)
+    case LastChannelClosed(_, remoteNodeId) => peersWithChannels.remove(remoteNodeId)
 
     case Symbol("peers") => sender ! context.children
 
