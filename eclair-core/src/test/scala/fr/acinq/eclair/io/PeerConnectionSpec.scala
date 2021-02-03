@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{Inet4Address, InetSocketAddress}
-
 import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Block
@@ -26,21 +24,21 @@ import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.wire._
-import org.scalatest.Outcome
+import org.scalatest.{Outcome, ParallelTestExecution}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits._
 
+import java.net.{Inet4Address, InetSocketAddress}
 import scala.collection.mutable
 import scala.concurrent.duration._
 
-class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
 
-  def ipv4FromInet4(address: InetSocketAddress) = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
+  def ipv4FromInet4(address: InetSocketAddress): IPv4 = IPv4.apply(address.getAddress.asInstanceOf[Inet4Address], address.getPort)
 
   val address = new InetSocketAddress("localhost", 42000)
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
@@ -61,7 +59,6 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val transport = TestProbe()
     val peer = TestProbe()
     val remoteNodeId = Bob.nodeParams.nodeId
-    
     val aliceParams = TestConstants.Alice.nodeParams
 
     val peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection] = TestFSMRef(new PeerConnection(aliceParams.keyPair, aliceParams.peerConnectionConf, switchboard.ref, router.ref))

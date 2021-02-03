@@ -21,7 +21,7 @@ import akka.testkit.TestKit
 import org.scalatest.{BeforeAndAfterAll, TestSuite}
 
 /**
- * This base class kills all actor between each tests.
+ * This base class ensures the actor system is shutdown after the test suite ends.
  * Created by PM on 06/09/2016.
  */
 abstract class TestKitBaseClass extends TestKit(ActorSystem("test")) with TestSuite with BeforeAndAfterAll {
