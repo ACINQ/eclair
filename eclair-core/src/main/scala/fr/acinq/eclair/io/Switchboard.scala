@@ -25,8 +25,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
 
-import scala.collection.mutable
-
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
@@ -39,7 +37,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
   context.system.eventStream.subscribe(self, classOf[LastChannelClosed])
 
   // we load channels from database
-  val peersWithChannels: mutable.Set[PublicKey] = {
+  private def initialPeersWithChannels: Set[PublicKey] = {
     // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
     // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
     // Closed channels will be removed, other channels will be restored.
@@ -51,10 +49,12 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
 
     val peerChannels = channels.groupBy(_.commitments.remoteParams.nodeId)
     peerChannels.foreach { case (remoteNodeId, states) => createOrGetPeer(remoteNodeId, offlineChannels = states.toSet) }
-    mutable.Set.empty.addAll(peerChannels.keys)
+    peerChannels.keySet
   }
 
-  def receive: Receive = {
+  def receive: Receive = normal(initialPeersWithChannels)
+
+  def normal(peersWithChannels: Set[PublicKey]): Receive = {
 
     case Peer.Connect(publicKey, _) if publicKey == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
@@ -84,9 +84,9 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
       val doSync = nodeParams.syncWhitelist.contains(authenticated.remoteNodeId) || (nodeParams.syncWhitelist.isEmpty && peersWithChannels.contains(authenticated.remoteNodeId))
       authenticated.peerConnection ! PeerConnection.InitializeConnection(peer, nodeParams.chainHash, features, doSync)
 
-    case ChannelIdAssigned(_, remoteNodeId, _, _) => peersWithChannels.add(remoteNodeId)
+    case ChannelIdAssigned(_, remoteNodeId, _, _) => context.become(normal(peersWithChannels + remoteNodeId))
 
-    case LastChannelClosed(_, remoteNodeId) => peersWithChannels.remove(remoteNodeId)
+    case LastChannelClosed(_, remoteNodeId) => context.become(normal(peersWithChannels - remoteNodeId))
 
     case Symbol("peers") => sender ! context.children
 
