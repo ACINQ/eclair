@@ -49,6 +49,17 @@ trait StateTestsBase extends StateTestsHelperMethods with FixtureTestSuite with 
 
 }
 
+object StateTestsTags {
+  /** If set, channels will use option_static_remotekey. */
+  val StaticRemoteKey = "static_remotekey"
+  /** If set, channels will use option_anchor_outputs. */
+  val AnchorOutputs = "anchor_outputs"
+  /** If set, channels will be public (otherwise we don't announce them by default). */
+  val ChannelsPublic = "channels_public"
+  /** If set, no amount will be pushed when opening a channel (by default we push a small amount). */
+  val NoPushMsat = "no_push_msat"
+}
+
 trait StateTestsHelperMethods extends TestKitBase {
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
@@ -87,12 +98,12 @@ trait StateTestsHelperMethods extends TestKitBase {
 
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
     import setup._
-    val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
-    val (aliceParams, bobParams, channelVersion) = if (tags.contains("anchor_outputs")) {
+    val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
+    val pushMsat = if (tags.contains(StateTestsTags.NoPushMsat)) 0.msat else TestConstants.pushMsat
+    val (aliceParams, bobParams, channelVersion) = if (tags.contains(StateTestsTags.AnchorOutputs)) {
       val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
       (Alice.channelParams.copy(features = features), Bob.channelParams.copy(features = features), ChannelVersion.ANCHOR_OUTPUTS)
-    } else if (tags.contains("static_remotekey")) {
+    } else if (tags.contains(StateTestsTags.StaticRemoteKey)) {
       val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
       val aliceParams = Alice.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
       val bobParams = Bob.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))

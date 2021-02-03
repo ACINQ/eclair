@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateTestsBase
+import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -111,7 +111,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     testClosingSigned _
   }
 
-  test("recv ClosingSigned (anchor outputs)", Tag("anchor_outputs")) {
+  test("recv ClosingSigned (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) {
     testClosingSigned _
   }
 
@@ -136,7 +136,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     testFeeConverge(f)
   }
 
-  test("recv ClosingSigned (nothing at stake)", Tag("no_push_msat")) { f =>
+  test("recv ClosingSigned (nothing at stake)", Tag(StateTestsTags.NoPushMsat)) { f =>
     import f._
     val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
     alice2bob.forward(bob)
