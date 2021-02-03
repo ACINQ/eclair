@@ -137,22 +137,10 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected)
 
-          val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, remoteInit.features, Features.ChannelRangeQueries)
-          val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, remoteInit.features, Features.ChannelRangeQueriesExtended)
-          if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
-            // if they support channel queries we don't send routing info yet, if they want it they will query us
-            // we will query them, using extended queries if supported
-            val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-            if (d.doSync) {
-              log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-              router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious = true, flags_opt = flags_opt)
-            } else {
-              log.info("not syncing with this peer")
-            }
-          } else if (remoteInit.features.hasFeature(Features.InitialRoutingSync)) {
-            // "old" nodes, do as before
-            log.info("peer requested a full routing table dump")
-            router ! GetRoutingState
+          if (d.doSync) {
+            self ! DoSync(replacePrevious = true)
+          } else {
+            log.info("not syncing with this peer")
           }
 
           // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
@@ -352,16 +340,17 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         }
         stay using d.copy(behavior = behavior1)
 
-      case Event(DoSync, d: ConnectedData) =>
+      case Event(DoSync(replacePrevious), d: ConnectedData) =>
         val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueries)
         val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueriesExtended)
         if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
-          val flags_opt = if (canUseChannelRangeQueriesEx) {
-            Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
-          } else {
-            None
-          }
-          router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious = false, flags_opt)
+          val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
+          log.info(s"sending sync channel range query with flags_opt=$flags_opt")
+          router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
+        } else if (d.remoteInit.features.hasFeature(Features.InitialRoutingSync) && replacePrevious) {
+          // For "old" nodes that don't support channel queries, we send them the full routing table
+          log.info("peer requested a full routing table dump")
+          router ! GetRoutingState
         }
         stay
 
@@ -479,7 +468,7 @@ object PeerConnection {
   case object InitTimeout
   case object SendPing
   case object ResumeAnnouncements
-  case object DoSync
+  case class DoSync(replacePrevious: Boolean)
   // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes
