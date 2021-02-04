@@ -97,6 +97,9 @@ object Sync {
         log.info("received unsolicited reply_channel_range with {} channels", r.shortChannelIds.array.size)
         d // we didn't request a sync from this node, ignore
       case Some(currentSync) if currentSync.remainingQueries.isEmpty && r.shortChannelIds.array.isEmpty =>
+        // NB: this case deals with peers who don't return any sync data. We're currently not correctly detecting the end
+        // of a stream of reply_channel_range, but it's not an issue in practice (we instead rely on the remaining query_short_channel_ids).
+        // We should fix that once https://github.com/lightningnetwork/lightning-rfc/pull/826 is deployed.
         log.info("received empty reply_channel_range, sync is complete")
         d.copy(sync = d.sync - origin.nodeId)
       case Some(currentSync) =>
