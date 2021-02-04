@@ -34,8 +34,8 @@ import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32}
-import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -46,7 +46,7 @@ import scala.concurrent.duration._
  * Created by t-bast on 21/11/2019.
  */
 
-class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution with StateTestsHelperMethods {
 
   import PostRestartHtlcCleanerSpec._
 

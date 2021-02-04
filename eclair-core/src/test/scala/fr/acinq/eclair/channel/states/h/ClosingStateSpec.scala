@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
@@ -40,7 +40,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, bobCommitTxes: List[PublishableTxs])
 
@@ -330,7 +330,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testMutualCloseBeforeConverge(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (mutual close before converging, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_FUNDING_SPENT (mutual close before converging, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testMutualCloseBeforeConverge(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
@@ -433,7 +433,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testLocalCommitTxConfirmed(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (local commit, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (local commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testLocalCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
@@ -593,7 +593,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelVersion === ChannelVersion.STATIC_REMOTEKEY)
@@ -610,7 +610,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -673,7 +673,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testRemoteCommitTxWithHtlcsConfirmed(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit with multiple htlcs for the same payment, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (remote commit with multiple htlcs for the same payment, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testRemoteCommitTxWithHtlcsConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
@@ -778,7 +778,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (next remote commit, static_remotekey)", Tag("static_remotekey")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (next remote commit, static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
     val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.STATIC_REMOTEKEY)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 42, 0, bobCommitTx)
@@ -797,7 +797,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (next remote commit, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (next remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 42, 0, bobCommitTx)
@@ -929,7 +929,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag("static_remotekey")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.STATIC_REMOTEKEY)
     // using option_static_remotekey alice doesn't need to sweep her output
@@ -939,7 +939,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED, 10 seconds)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (future remote commit, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (future remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
     // alice is able to claim its main output
@@ -1091,11 +1091,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testFundingSpentRevokedTx(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (one revoked tx, option_static_remotekey)", Tag("static_remotekey")) { f =>
+  test("recv BITCOIN_FUNDING_SPENT (one revoked tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     testFundingSpentRevokedTx(f, ChannelVersion.STATIC_REMOTEKEY)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (one revoked tx, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_FUNDING_SPENT (one revoked tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testFundingSpentRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
@@ -1244,11 +1244,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testOutputSpentRevokedTx(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, option_static_remotekey)", Tag("static_remotekey")) { f =>
+  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     testOutputSpentRevokedTx(f, ChannelVersion.STATIC_REMOTEKEY)
   }
 
-  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testOutputSpentRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
@@ -1301,7 +1301,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     testRevokedTxConfirmed(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (one revoked tx, pending htlcs, anchor outputs)", Tag("anchor_outputs")) { f =>
+  test("recv BITCOIN_TX_CONFIRMED (one revoked tx, pending htlcs, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testRevokedTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 

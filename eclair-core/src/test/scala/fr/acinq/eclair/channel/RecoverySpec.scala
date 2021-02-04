@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.WatchEventSpent
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.Scripts
@@ -17,7 +17,7 @@ import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
 
-class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
 
   type FixtureParam = SetupFixture
 
