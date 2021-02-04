@@ -347,10 +347,6 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
           log.info(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
           router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
-        } else if (d.remoteInit.features.hasFeature(Features.InitialRoutingSync) && replacePrevious) {
-          // For "old" nodes that don't support channel queries, we send them the full routing table
-          log.info("peer requested a full routing table dump")
-          router ! GetRoutingState
         }
         stay
 
