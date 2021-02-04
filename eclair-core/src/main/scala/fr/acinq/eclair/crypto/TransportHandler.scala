@@ -206,7 +206,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
       case Event(t: T, d: NormalData[T]) =>
         if (d.sendBuffer.normalPriority.size + d.sendBuffer.lowPriority.size >= MAX_BUFFERED) {
-          log.warning(s"send buffer overrun, closing connection")
+          log.warning("send buffer overrun, closing connection")
           connection ! PoisonPill
           stop(FSM.Normal)
         } else if (d.unackedSent.isDefined) {

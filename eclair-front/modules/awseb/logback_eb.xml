@@ -25,7 +25,8 @@
                     return formattedMessage.contains("connected to /10.") ||
                     (formattedMessage.contains("connection closed") &amp;&amp; !mdc.containsKey("nodeId")) ||
                     (formattedMessage.contains("transport died") &amp;&amp; !mdc.containsKey("nodeId")) ||
-                    (formattedMessage.contains("stopping") &amp;&amp; !mdc.containsKey("nodeId"));
+                    (formattedMessage.contains("stopping") &amp;&amp; !mdc.containsKey("nodeId")) ||
+                    (formattedMessage.contains("buffering send data"));
                 </expression>
             </evaluator>
             <OnMismatch>NEUTRAL</OnMismatch>
@@ -34,7 +35,8 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>${HOSTNAME} %d %-5level %logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg%ex{12}%n</pattern>
+            <!-- the 'replace' conversion word strips the end of 64+ hexadecimal strings and keeps only the first 8 characters -->
+            <pattern>${HOSTNAME} %d %-5level %replace(%logger{24}%X{category}%X{nodeId}%X{channelId}%X{paymentHash}%.-11X{parentPaymentId}%.-11X{paymentId} - %msg){'(?&lt;=[a-f0-9]{8})[a-f0-9]{56,}', ''}%ex{12}%n</pattern>
         </encoder>
     </appender>
 

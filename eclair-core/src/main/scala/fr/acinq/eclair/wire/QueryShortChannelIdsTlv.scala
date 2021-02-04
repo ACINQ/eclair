@@ -14,7 +14,10 @@ object QueryShortChannelIdsTlv {
     * @param encoding 0 means uncompressed, 1 means compressed with zlib
     * @param array array of query flags, each flags specifies the info we want for a given channel
     */
-  case class EncodedQueryFlags(encoding: EncodingType, array: List[Long]) extends QueryShortChannelIdsTlv
+  case class EncodedQueryFlags(encoding: EncodingType, array: List[Long]) extends QueryShortChannelIdsTlv {
+    /** custom toString because it can get huge in logs */
+    override def toString: String = s"EncodedQueryFlags($encoding, size=${array.size})"
+  }
 
   case object QueryFlagType {
     val INCLUDE_CHANNEL_ANNOUNCEMENT: Long = 1

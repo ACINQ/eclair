@@ -241,7 +241,10 @@ object EncodingType {
 }
 // @formatter:on
 
-case class EncodedShortChannelIds(encoding: EncodingType, array: List[ShortChannelId])
+case class EncodedShortChannelIds(encoding: EncodingType, array: List[ShortChannelId]) {
+  /** custom toString because it can get huge in logs */
+  override def toString: String = s"EncodedShortChannelIds($encoding,${array.headOption.getOrElse("")}->${array.lastOption.getOrElse("")} size=${array.size})"
+}
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,

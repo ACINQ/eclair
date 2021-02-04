@@ -1,6 +1,6 @@
 package fr.acinq.eclair.wire
 
-import fr.acinq.eclair.{UInt64, wire}
+import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.CommonCodecs.{varint, varintoverflow}
 import scodec.Codec
 import scodec.codecs._
@@ -22,7 +22,10 @@ object ReplyChannelRangeTlv {
     * @param encoding same convention as for short channel ids
     * @param timestamps
     */
-  case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends ReplyChannelRangeTlv
+  case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends ReplyChannelRangeTlv {
+    /** custom toString because it can get huge in logs */
+    override def toString: String = s"EncodedTimestamps($encoding, size=${timestamps.size})"
+  }
 
   /**
     *
@@ -36,7 +39,10 @@ object ReplyChannelRangeTlv {
     *
     * @param checksums
     */
-  case class EncodedChecksums(checksums: List[Checksums]) extends ReplyChannelRangeTlv
+  case class EncodedChecksums(checksums: List[Checksums]) extends ReplyChannelRangeTlv {
+    /** custom toString because it can get huge in logs */
+    override def toString: String = s"EncodedChecksums(size=${checksums.size})"
+  }
 
   val timestampsCodec: Codec[Timestamps] = (
     ("timestamp1" | uint32) ::
