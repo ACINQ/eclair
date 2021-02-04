@@ -61,7 +61,7 @@ Note that you can also disable some default features:
 
 ```conf
 eclair.features {
-    initial_routing_sync = disabled
+    option_support_large_channel = disabled
 }
 ```
 
@@ -77,7 +77,7 @@ eclair.override-features = [
     {
         nodeId = "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"
         features {
-            initial_routing_sync = disabled
+            option_support_large_channel = disabled
             option_static_remotekey = optional
         }
     },

@@ -93,7 +93,6 @@ class StartupSpec extends AnyFunSuite {
 
     val legalFeaturesConf = ConfigFactory.parseMap(Map(
       s"features.${OptionDataLossProtect.rfcName}" -> "optional",
-      s"features.${InitialRoutingSync.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
       s"features.${VariableLengthOnion.rfcName}" -> "optional",
@@ -104,9 +103,17 @@ class StartupSpec extends AnyFunSuite {
     // var_onion_optin cannot be disabled
     val noVariableLengthOnionConf = ConfigFactory.parseMap(Map(
       s"features.${OptionDataLossProtect.rfcName}" -> "optional",
-      s"features.${InitialRoutingSync.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional"
+    ).asJava)
+
+    // initial_routing_sync cannot be enabled
+    val initialRoutingSyncConf = ConfigFactory.parseMap(Map(
+      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${InitialRoutingSync.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueries.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
+      s"features.${VariableLengthOnion.rfcName}" -> "optional"
     ).asJava)
 
     // basic_mpp without payment_secret
@@ -116,6 +123,7 @@ class StartupSpec extends AnyFunSuite {
 
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(legalFeaturesConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(noVariableLengthOnionConf))).isFailure)
+    assert(Try(makeNodeParamsWithDefaults(finalizeConf(initialRoutingSyncConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalFeaturesConf))).isFailure)
   }
 
