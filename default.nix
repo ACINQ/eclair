@@ -8,17 +8,37 @@ in {
   mavenix ? import mavenix-src { inherit pkgs; },
   src ? ./.,
   doCheck ? false,
-}: mavenix.buildMaven {
+}:
+with pkgs;
+mavenix.buildMaven {
   inherit src doCheck;
+  debug = true;
   infoFile = ./mavenix.lock;
 
   # Add build dependencies
   #
   #buildInputs = with pkgs; [ git makeWrapper ];
+  buildInputs = with pkgs; [ unzip ];
+  propagatedBuildInputs = with pkgs; [ jq jdk11 ];
+
 
   # Set build environment variables
   #
   #MAVEN_OPTS = "-Dfile.encoding=UTF-8";
+  #TERM="xterm-256color";
+  MAVEN_OPTS="-Dfile.encoding=UTF-8";
+
+  preBuild = ''
+    rm -rf ./.git
+    mvn clean install -pl eclair-core -am -Dmaven.test.skip=true
+    mvn clean install -pl eclair-node -am -Dmaven.test.skip=true
+  '';
+  installPhase = ''
+    export THIS_DIST="eclair-core-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
+    (cd ./eclair-node/target/ && \
+      unzip -o "./$THIS_DIST-bin.zip" && \
+      mv "./$THIS_DIST" "$out")
+  '';
 
   # Attributes are passed to the underlying `stdenv.mkDerivation`, so build
   #   hooks can be set here also.
@@ -29,7 +49,7 @@ in {
   #'';
 
   # Add extra maven dependencies which might not have been picked up
-  #   automatically
+  # automatically
   #
   #deps = [
   #  { path = "org/group-id/artifactId/version/file.jar"; sha1 = "0123456789abcdef"; }
@@ -42,7 +62,7 @@ in {
 
   # Override which maven package to build with
   #
-  #maven = maven.overrideAttrs (_: { jdk = pkgs.oraclejdk10; });
+  maven = maven.overrideAttrs (_: { jdk = jdk11; });
 
   # Override remote repository URLs and settings.xml
   #
