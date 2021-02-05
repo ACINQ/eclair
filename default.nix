@@ -30,11 +30,9 @@ mavenix.buildMaven {
 
   preBuild = ''
     rm -rf ./.git
-    mvn clean install -pl eclair-core -am -Dmaven.test.skip=true
-    mvn clean install -pl eclair-node -am -Dmaven.test.skip=true
   '';
   installPhase = ''
-    export THIS_DIST="eclair-core-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
+    export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
     (cd ./eclair-node/target/ && \
       unzip -o "./$THIS_DIST-bin.zip" && \
       mv "./$THIS_DIST" "$out")
