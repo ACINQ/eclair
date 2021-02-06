@@ -37,7 +37,7 @@ Make sure eclair is allowed to read Tor's cookie file (typically `/var/run/tor/c
 
 #### Windows:
 
-On Windows it is easier to use the password authentication mechanism.
+On Windows, it is easier to use the password authentication mechanism.
 
 First pick a password and hash it with this command:
 
@@ -99,7 +99,7 @@ You can see what onion address is assigned using `eclair-cli`:
 eclair-cli getinfo
 ```
 Eclair saves the Tor endpoint's private key in `~/.eclair/tor_pk`, so that it can recreate the endpoint address after 
-restart. If you remove the private key eclair will regenerate the endpoint address.   
+a restart. If you remove the private key eclair will regenerate the endpoint address.   
 
 There are two possible values for `protocol-version`:
 
@@ -122,13 +122,13 @@ eclair.server.binding-ip = "127.0.0.1"
 
 ### Configure SOCKS5 proxy
 
-By default all incoming connections will be established via Tor network, but all outgoing will be created via the 
+By default, all incoming connections will be established via Tor network, but all outgoing will be created via the 
 clearnet. To route them through Tor you can use Tor's SOCKS5 proxy. Add this line in your `eclair.conf`:
 ```
 eclair.socks5.enabled = true
 ```
 You can use SOCKS5 proxy only for specific types of addresses. Use `eclair.socks5.use-for-ipv4`, `eclair.socks5.use-for-ipv6`
-or `eclair.socks5.use-for-tor` for fine tuning.
+or `eclair.socks5.use-for-tor` for fine-tuning.
 
 To create a new Tor circuit for every connection, use `randomize-credentials` parameter:
 
@@ -136,7 +136,7 @@ To create a new Tor circuit for every connection, use `randomize-credentials` pa
 eclair.socks5.randomize-credentials = true
 ```
 
-:warning: Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get the most privacy 
-features from using Tor use both.  
+:warning: Tor hidden service and SOCKS5 are independent options. You can use just one of them, but if you want to get most privacy 
+features from using Tor, use both.
 
 Note, that bitcoind should be configured to use Tor as well (https://en.bitcoin.it/wiki/Setting_up_a_Tor_hidden_service).

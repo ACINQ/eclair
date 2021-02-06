@@ -26,14 +26,14 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ## JSON API
 
-Eclair offers a feature rich HTTP API that enables application developers to easily integrate.
+Eclair offers a feature-rich HTTP API that enables application developers to easily integrate.
 
 For more information please visit the [API documentation website](https://acinq.github.io/eclair).
 
 ## Documentation
 
 Please visit our [docs](./docs) and [wiki](https://github.com/acinq/eclair/wiki) to find detailed instructions on how to configure your
-node, connect to other nodes, open channels, send and receive payments and more advanced scenario.
+node, connect to other nodes, open channels, send and receive payments, and more advanced scenario.
 
 You will find detailed guides and frequently asked questions there.
 
@@ -63,7 +63,7 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 
 Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive.
 
-To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot). Other runtimes also work but we don't recommend using them.
+To run Eclair, you first need to install Java, we recommend that you use [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot). Other runtimes also work, but we don't recommend using them.
 
 Then download our latest [release](https://github.com/ACINQ/eclair/releases), unzip the archive and run the following command:
 
@@ -149,15 +149,15 @@ The files that you need to backup are located in your data directory. You must b
 
 Your seeds never change once they have been created, but your channels will change whenever you receive or send payments. Eclair will
 create and maintain a snapshot of its database, named `eclair.sqlite.bak`, in your data directory, and update it when needed. This file is
-always consistent and safe to use even when Eclair is running, and this is what you should backup regularly.
+always consistent and safe to use even when Eclair is running, and this is what you should back up regularly.
 
-For example you could configure a `cron` task for your backup job. Or you could configure an optional notification script to be called by eclair once a new database snapshot has been created, using the following option:
+For example, you could configure a `cron` task for your backup job. Or you could configure an optional notification script to be called by eclair once a new database snapshot has been created, using the following option:
 
 ```conf
 eclair.backup-notify-script = "/absolute/path/to/script.sh"
 ```
 
-Make sure that your script is executable and uses an absolute path name for `eclair.sqlite.bak`.
+Make sure your script is executable and uses an absolute path name for `eclair.sqlite.bak`.
 
 Note that depending on your filesystem, in your backup process we recommend first moving `eclair.sqlite.bak` to some temporary file
 before copying that file to your final backup location.
