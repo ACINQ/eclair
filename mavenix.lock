@@ -550,6 +550,10 @@
       "sha1": "4b8ef56d9079f1ee8679ccd3c2969f6419133e11"
     },
     {
+      "path": "com/googlecode/juniversalchardet/juniversalchardet/1.0.3/juniversalchardet-1.0.3.pom",
+      "sha1": "be6da8320adedafc712d645ddaaad00357b55408"
+    },
+    {
       "path": "com/googlecode/maven-download-plugin/download-maven-plugin/1.3.0/download-maven-plugin-1.3.0.jar",
       "sha1": "e0656313969650a2e71109bd0cde3c6229693261"
     },
@@ -1576,6 +1580,14 @@
     {
       "path": "net/java/dev/jna/jna-platform/5.5.0/jna-platform-5.5.0.pom",
       "sha1": "a79e586606a32462c92b54b084596ba9976db000"
+    },
+    {
+      "path": "net/java/dev/jna/jna/5.3.1/jna-5.3.1.jar",
+      "sha1": "6eb9d07456c56b9c2560722e90382252f0f98405"
+    },
+    {
+      "path": "net/java/dev/jna/jna/5.3.1/jna-5.3.1.pom",
+      "sha1": "1639fbc106fb148481148978c45531e49e79c745"
     },
     {
       "path": "net/java/dev/jna/jna/5.5.0/jna-5.5.0.jar",
@@ -4002,6 +4014,26 @@
       "sha1": "1694d169953848d5c464b91b65a632af5848947f"
     },
     {
+      "path": "org/apache/sshd/sshd-common/2.1.0/sshd-common-2.1.0.pom",
+      "sha1": "e9a3fc83c513175bcaa2c959bc86b6016e0a1fab"
+    },
+    {
+      "path": "org/apache/sshd/sshd-core/2.1.0/sshd-core-2.1.0.pom",
+      "sha1": "899d4daf011070a85ca24331146a19a63d6074e6"
+    },
+    {
+      "path": "org/apache/sshd/sshd-scp/2.1.0/sshd-scp-2.1.0.pom",
+      "sha1": "1d73472baaa55e68f24e500e0fa2a7a3b819980b"
+    },
+    {
+      "path": "org/apache/sshd/sshd-sftp/2.1.0/sshd-sftp-2.1.0.pom",
+      "sha1": "39773899699005cc6334ec397f6d29281fe76c50"
+    },
+    {
+      "path": "org/apache/sshd/sshd/2.1.0/sshd-2.1.0.pom",
+      "sha1": "907e16f55698951a6bfab35e3ceed6d77640bd44"
+    },
+    {
       "path": "org/apache/struts/struts-core/1.3.8/struts-core-1.3.8.jar",
       "sha1": "66178d4a9279ebb1cd1eb79c10dc204b4199f061"
     },
@@ -5070,6 +5102,18 @@
       "sha1": "ab33893b7af22e2074242bdf1432e6f9fafca2cb"
     },
     {
+      "path": "org/fusesource/fusesource-pom/1.11/fusesource-pom-1.11.pom",
+      "sha1": "f5547b0657be718d1ec0d2816cbcd5c398d6fccb"
+    },
+    {
+      "path": "org/fusesource/jansi/jansi-project/1.18/jansi-project-1.18.pom",
+      "sha1": "5142f25c525a3184def79c5f690e5638971c50ff"
+    },
+    {
+      "path": "org/fusesource/jansi/jansi/1.18/jansi-1.18.pom",
+      "sha1": "0e5be937c76095ab5b16f2cc6747cbb58b2414ce"
+    },
+    {
       "path": "org/glassfish/hk2/external/2.4.0-b34/external-2.4.0-b34.pom",
       "sha1": "e8059805a76582babea53c4f3dfbf8378d2780ce"
     },
@@ -5292,6 +5336,18 @@
     {
       "path": "org/jheaps/jheaps/0.9/jheaps-0.9.pom",
       "sha1": "f2b1f0cc090a93f553dab2168d2beceff9a828f9"
+    },
+    {
+      "path": "org/jline/jline-parent/3.15.0/jline-parent-3.15.0.pom",
+      "sha1": "569506b2939c376680b19bcec63c23eb15967890"
+    },
+    {
+      "path": "org/jline/jline/3.15.0/jline-3.15.0.jar",
+      "sha1": "6c8d38639ac26de5ccb5bed947ce2fd40b7e2269"
+    },
+    {
+      "path": "org/jline/jline/3.15.0/jline-3.15.0.pom",
+      "sha1": "bbfba7fbbd359dcb32200f2dd9d9531fa472e315"
     },
     {
       "path": "org/json4s/json4s-ast_2.13/3.6.7/json4s-ast_2.13-3.6.7.jar",
@@ -5686,6 +5742,14 @@
       "sha1": "8debaf4613752b9a6ddbd7d71821641b2babb5e0"
     },
     {
+      "path": "org/scala-lang/scala-compiler/2.13.3/scala-compiler-2.13.3.jar",
+      "sha1": "73ec4478475a863cd4e9fd46ae7dd600c0daeee5"
+    },
+    {
+      "path": "org/scala-lang/scala-compiler/2.13.3/scala-compiler-2.13.3.pom",
+      "sha1": "29047dd83ad9d555d65b645ab64b4a726e4f72fb"
+    },
+    {
       "path": "org/scala-lang/scala-library/2.10.6/scala-library-2.10.6.jar",
       "sha1": "421989aa8f95a05a4f894630aad96b8c7b828732"
     },
@@ -5744,6 +5808,14 @@
     {
       "path": "org/scala-lang/scala-reflect/2.13.1/scala-reflect-2.13.1.pom",
       "sha1": "5527d57bbc23581cf2da0e030abcfc0f7d397a4f"
+    },
+    {
+      "path": "org/scala-lang/scala-reflect/2.13.3/scala-reflect-2.13.3.jar",
+      "sha1": "0eb08a460df09947c423e5ce77b3d4af566085f1"
+    },
+    {
+      "path": "org/scala-lang/scala-reflect/2.13.3/scala-reflect-2.13.3.pom",
+      "sha1": "1d2f0ab898832f7e48c38b9526cf585b37ef7147"
     },
     {
       "path": "org/scalactic/scalactic_2.13/3.0.8/scalactic_2.13-3.0.8.pom",
@@ -5842,6 +5914,10 @@
       "sha1": "3fceb45ce8f7a6f87f3f2077a24a3833d1ecb4c6"
     },
     {
+      "path": "org/slf4j/slf4j-api/1.7.21/slf4j-api-1.7.21.pom",
+      "sha1": "da1347f4af6398d8c9cece95ca215baf8570449b"
+    },
+    {
       "path": "org/slf4j/slf4j-api/1.7.22/slf4j-api-1.7.22.pom",
       "sha1": "6a4d2a6a2b67f9fff9d67e37bb73531d6bac6380"
     },
@@ -5904,6 +5980,10 @@
     {
       "path": "org/slf4j/slf4j-parent/1.7.2/slf4j-parent-1.7.2.pom",
       "sha1": "26c68730e36b29249e0c3bb70eba4a5dbaa4f76c"
+    },
+    {
+      "path": "org/slf4j/slf4j-parent/1.7.21/slf4j-parent-1.7.21.pom",
+      "sha1": "974e5bae7c87ae28134204511dcba6f327de9d5c"
     },
     {
       "path": "org/slf4j/slf4j-parent/1.7.22/slf4j-parent-1.7.22.pom",
@@ -6112,6 +6192,10 @@
     {
       "path": "org/sonatype/spice/spice-parent/17/spice-parent-17.pom",
       "sha1": "7f500699ef371383492a4d6ee799b1a77ffd82cc"
+    },
+    {
+      "path": "org/springframework/spring-framework-bom/5.0.8.RELEASE/spring-framework-bom-5.0.8.RELEASE.pom",
+      "sha1": "ff907a9872f3996de48c2c6288c6f11cb6edc111"
     },
     {
       "path": "org/tukaani/xz/1.5/xz-1.5.jar",
