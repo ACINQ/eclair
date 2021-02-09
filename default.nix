@@ -27,7 +27,7 @@ mavenix.buildMaven {
   #
   TERM="xterm-256color";
   MAVEN_OPTS="-Dfile.encoding=UTF-8";
-  MAVEN_HOME="./"
+  MAVEN_HOME="./";
 
   # Attributes are passed to the underlying `stdenv.mkDerivation`, so build
   #   hooks can be set here also.
