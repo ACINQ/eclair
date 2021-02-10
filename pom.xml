@@ -25,7 +25,7 @@
 
     <modules>
         <module>eclair-core</module>
-        <module>eclair-front</module>
+        <!--module>eclair-front</module-->
         <module>eclair-node</module>
         <module>eclair-node-gui</module>
     </modules>

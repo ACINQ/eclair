@@ -70,34 +70,6 @@
       "sha1": "4703c4199028094698c222c17afea6dcd9f04999"
     },
     {
-      "path": "com/amazonaws/aws-java-sdk-core/1.11.776/aws-java-sdk-core-1.11.776.jar",
-      "sha1": "b238fd916f71f12f97ce8877b764626d22ddb011"
-    },
-    {
-      "path": "com/amazonaws/aws-java-sdk-core/1.11.776/aws-java-sdk-core-1.11.776.pom",
-      "sha1": "c9b7155c68bf8f85aca2ca8543b4986d48ad9a67"
-    },
-    {
-      "path": "com/amazonaws/aws-java-sdk-pom/1.11.776/aws-java-sdk-pom-1.11.776.pom",
-      "sha1": "36bff9fe6b6ca0da73938150551ba8733b0edf72"
-    },
-    {
-      "path": "com/amazonaws/aws-java-sdk-secretsmanager/1.11.776/aws-java-sdk-secretsmanager-1.11.776.jar",
-      "sha1": "9c91bbc77e57bd6a02f7ab196d7e465d97786b0f"
-    },
-    {
-      "path": "com/amazonaws/aws-java-sdk-secretsmanager/1.11.776/aws-java-sdk-secretsmanager-1.11.776.pom",
-      "sha1": "bae2a98f431b1e69f7767d74be775dedb3dff079"
-    },
-    {
-      "path": "com/amazonaws/jmespath-java/1.11.776/jmespath-java-1.11.776.jar",
-      "sha1": "d6c404c638bf3f0b7438f07e00681225a6d870d6"
-    },
-    {
-      "path": "com/amazonaws/jmespath-java/1.11.776/jmespath-java-1.11.776.pom",
-      "sha1": "58f978bcd969417e5f4d524849509e132c24131b"
-    },
-    {
       "path": "com/chuusai/shapeless_2.13/2.3.3/shapeless_2.13-2.3.3.jar",
       "sha1": "61817a5ac96ba59ce20b9073416c57519be40f41"
     },
@@ -142,10 +114,6 @@
       "sha1": "89b81f49cefc588c4966801f4b9253e8b275842c"
     },
     {
-      "path": "com/fasterxml/jackson/core/jackson-core/2.6.7/jackson-core-2.6.7.pom",
-      "sha1": "3457ebb3180f4f2f599242e70697c80135c58dcf"
-    },
-    {
       "path": "com/fasterxml/jackson/core/jackson-core/2.9.4/jackson-core-2.9.4.pom",
       "sha1": "711d7cd577af274720d35327b8c4f4fe12881c4a"
     },
@@ -170,10 +138,6 @@
       "sha1": "4e94acc51aee3c79f7946ab1fa9fbd2ab27b7417"
     },
     {
-      "path": "com/fasterxml/jackson/core/jackson-databind/2.6.7.3/jackson-databind-2.6.7.3.pom",
-      "sha1": "6ef4047868ed76c8d5bc9022697e9a0c4fdd00ac"
-    },
-    {
       "path": "com/fasterxml/jackson/core/jackson-databind/2.9.4/jackson-databind-2.9.4.pom",
       "sha1": "805af52c13c9b96798b7fb11f594204f5a667b5e"
     },
@@ -184,14 +148,6 @@
     {
       "path": "com/fasterxml/jackson/core/jackson-databind/2.9.8/jackson-databind-2.9.8.pom",
       "sha1": "89ed6c92fed03aa14dadf983420db6a9e3199dbe"
-    },
-    {
-      "path": "com/fasterxml/jackson/dataformat/jackson-dataformat-cbor/2.6.7/jackson-dataformat-cbor-2.6.7.jar",
-      "sha1": "ba9e74b11135b18248e960df657a2b86ae77a079"
-    },
-    {
-      "path": "com/fasterxml/jackson/dataformat/jackson-dataformat-cbor/2.6.7/jackson-dataformat-cbor-2.6.7.pom",
-      "sha1": "db89ee53576ae700a78bfe1a9f605b074531064a"
     },
     {
       "path": "com/fasterxml/jackson/datatype/jackson-datatype-guava/2.9.4/jackson-datatype-guava-2.9.4.jar",
@@ -1522,14 +1478,6 @@
       "sha1": "7d57cf1fa9e1cd07ac40d86b9ce4e4de1b753aa2"
     },
     {
-      "path": "joda-time/joda-time/2.8.1/joda-time-2.8.1.jar",
-      "sha1": "f5bfc718c95a7b1d3c371bb02a188a4df18361a9"
-    },
-    {
-      "path": "joda-time/joda-time/2.8.1/joda-time-2.8.1.pom",
-      "sha1": "b6cd86ad72eb5eb5aa0614880ca284369e4e3624"
-    },
-    {
       "path": "joda-time/joda-time/2.9.1/joda-time-2.9.1.jar",
       "sha1": "c261495d1e01df849cdb3cbc941564018f0d3539"
     },
@@ -1934,14 +1882,6 @@
       "sha1": "7ff44b91901e8ecf2a1316b975b15c389c6b06a6"
     },
     {
-      "path": "org/apache/httpcomponents/httpclient/4.5.9/httpclient-4.5.9.jar",
-      "sha1": "a25c1be5ce99d0ce99aa43eb982868c796dd0775"
-    },
-    {
-      "path": "org/apache/httpcomponents/httpclient/4.5.9/httpclient-4.5.9.pom",
-      "sha1": "2b382e49ec08a138a7f0b36916632517f6a6838e"
-    },
-    {
       "path": "org/apache/httpcomponents/httpclient/4.5/httpclient-4.5.jar",
       "sha1": "a1e6cbb3cc2c5f210dd1310ff9fcb2c09c0d1438"
     },
@@ -1960,10 +1900,6 @@
     {
       "path": "org/apache/httpcomponents/httpcomponents-client/4.3.6/httpcomponents-client-4.3.6.pom",
       "sha1": "c50d432fb65515f304ca50880b913e8851377316"
-    },
-    {
-      "path": "org/apache/httpcomponents/httpcomponents-client/4.5.9/httpcomponents-client-4.5.9.pom",
-      "sha1": "ec94d21b5dacc56fac902390c7e37ca810ab6cff"
     },
     {
       "path": "org/apache/httpcomponents/httpcomponents-client/4.5/httpcomponents-client-4.5.pom",
@@ -1986,16 +1922,8 @@
       "sha1": "861a9c833de4e21eb089ee3210447803a40f9be3"
     },
     {
-      "path": "org/apache/httpcomponents/httpcomponents-core/4.4.11/httpcomponents-core-4.4.11.pom",
-      "sha1": "3cae168cde302e64df8c7f640102af6c58d2d867"
-    },
-    {
       "path": "org/apache/httpcomponents/httpcomponents-core/4.4.5/httpcomponents-core-4.4.5.pom",
       "sha1": "020c728c32a780a0a41ce5ba6e61891aadf25cf1"
-    },
-    {
-      "path": "org/apache/httpcomponents/httpcomponents-parent/11/httpcomponents-parent-11.pom",
-      "sha1": "3ee7a841cc49326e8681089ea7ad6a3b81b88581"
     },
     {
       "path": "org/apache/httpcomponents/httpcore/4.0-beta3/httpcore-4.0-beta3.jar",
@@ -2024,14 +1952,6 @@
     {
       "path": "org/apache/httpcomponents/httpcore/4.4.1/httpcore-4.4.1.pom",
       "sha1": "76dee61699141b27d6423a28e3778be5aa2bc2bd"
-    },
-    {
-      "path": "org/apache/httpcomponents/httpcore/4.4.11/httpcore-4.4.11.jar",
-      "sha1": "de748cf874e4e193b42eceea9fe5574fabb9d4df"
-    },
-    {
-      "path": "org/apache/httpcomponents/httpcore/4.4.11/httpcore-4.4.11.pom",
-      "sha1": "f055c410b7d91bd8fdcc2efef1fbce44843f2404"
     },
     {
       "path": "org/apache/httpcomponents/httpcore/4.4.5/httpcore-4.4.5.jar",
@@ -4242,20 +4162,8 @@
       "sha1": "7d7a4373e1f276e377ffc65050dd40afb9216a28"
     },
     {
-      "path": "org/codehaus/janino/commons-compiler/3.1.2/commons-compiler-3.1.2.jar",
-      "sha1": "e6944b15d2b3964ebd3c520c6bd26cbb4f614910"
-    },
-    {
-      "path": "org/codehaus/janino/commons-compiler/3.1.2/commons-compiler-3.1.2.pom",
-      "sha1": "99e902f4911f82d9da7c61ab91e45683571021de"
-    },
-    {
       "path": "org/codehaus/janino/janino-parent/3.0.7/janino-parent-3.0.7.pom",
       "sha1": "353972408b12bed26955a8195fe869d697fb421a"
-    },
-    {
-      "path": "org/codehaus/janino/janino-parent/3.1.2/janino-parent-3.1.2.pom",
-      "sha1": "606c1be4c3ec6cb84e4937ba3a15e6f0911476e3"
     },
     {
       "path": "org/codehaus/janino/janino/3.0.7/janino-3.0.7.jar",
@@ -4264,14 +4172,6 @@
     {
       "path": "org/codehaus/janino/janino/3.0.7/janino-3.0.7.pom",
       "sha1": "ad6a0fdd650121f52beebc520c00f4d8c5524bae"
-    },
-    {
-      "path": "org/codehaus/janino/janino/3.1.2/janino-3.1.2.jar",
-      "sha1": "49961f7c8a31c8d1019be19c37df1362a7d1ece3"
-    },
-    {
-      "path": "org/codehaus/janino/janino/3.1.2/janino-3.1.2.pom",
-      "sha1": "b049bc086fd0910f6a6e8a7ab0b159015fbac1aa"
     },
     {
       "path": "org/codehaus/mojo/animal-sniffer-annotations/1.14/animal-sniffer-annotations-1.14.jar",
@@ -6378,14 +6278,6 @@
       "sha1": "e242eb61100bc8444c9aa29e29c76b23cc2815d4"
     },
     {
-      "path": "software/amazon/ion/ion-java/1.0.2/ion-java-1.0.2.jar",
-      "sha1": "ee9dacea7726e495f8352b81c12c23834ffbc564"
-    },
-    {
-      "path": "software/amazon/ion/ion-java/1.0.2/ion-java-1.0.2.pom",
-      "sha1": "fbc83906db667eaef1cb07b0c01087b1ba8a97c3"
-    },
-    {
       "path": "sslext/sslext/1.2-0/sslext-1.2-0.jar",
       "sha1": "c86a7db4ac0bc450e675f3d44b3d64cdc934361b"
     },
@@ -6439,13 +6331,6 @@
       "groupId": "fr.acinq.eclair",
       "name": "eclair-core_2.13-0.5.1-SNAPSHOT",
       "path": "./eclair-core",
-      "version": "0.5.1-SNAPSHOT"
-    },
-    {
-      "artifactId": "eclair-front_2.13",
-      "groupId": "fr.acinq.eclair",
-      "name": "eclair-front_2.13-0.5.1-SNAPSHOT",
-      "path": "./eclair-front",
       "version": "0.5.1-SNAPSHOT"
     },
     {
