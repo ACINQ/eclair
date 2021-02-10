@@ -16,83 +16,38 @@
 
 package fr.acinq.eclair.api
 
-import java.util.UUID
-
-import akka.NotUsed
-import akka.actor.{Actor, ActorSystem, Props}
-import akka.http.scaladsl.model.HttpMethods.POST
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
-import akka.http.scaladsl.model.headers.{`Access-Control-Allow-Headers`, `Access-Control-Allow-Methods`, `Cache-Control`}
-import akka.http.scaladsl.model.ws.{Message, TextMessage}
+import akka.actor.ActorSystem
 import akka.http.scaladsl.server._
-import akka.http.scaladsl.server.directives.Credentials
-import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
-import akka.stream.{Materializer, OverflowStrategy}
+import akka.stream.Materializer
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
-import fr.acinq.eclair.channel.{ChannelClosed, ChannelCreated, ChannelEvent, ChannelStateChanged, WAIT_FOR_INIT_INTERNAL}
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.payment.{PaymentEvent, PaymentRequest}
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.Router.{PredefinedChannelRoute, PredefinedNodeRoute}
 import fr.acinq.eclair.{CltvExpiryDelta, Eclair, MilliSatoshi}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
-import scala.concurrent.Future
-import scala.concurrent.duration._
+import java.util.UUID
 
 case class ErrorResponse(error: String)
 
-trait Service extends ExtraDirectives with Logging {
+trait Service extends EclairDirectives with WebSocket with Logging {
 
   // important! Must NOT import the unmarshaller as it is too generic...see https://github.com/akka/akka-http/issues/541
-
   import JsonSupport.{formats, marshaller, serialization}
 
-  // def password: String
+  def password: String
 
   val eclairApi: Eclair
 
-  //implicit val actorSystem: ActorSystem
+  implicit val actorSystem: ActorSystem
+
   implicit val mat: Materializer
-
-  lazy val makeSocketHandler: Flow[Message, TextMessage.Strict, NotUsed] = {
-
-    // create a flow transforming a queue of string -> string
-    val (flowInput, flowOutput) = Source.queue[String](10, OverflowStrategy.dropTail).toMat(BroadcastHub.sink[String])(Keep.both).run()
-
-    // register an actor that feeds the queue on payment related events
-    actorSystem.actorOf(Props(new Actor {
-
-      override def preStart: Unit = {
-        context.system.eventStream.subscribe(self, classOf[PaymentEvent])
-        context.system.eventStream.subscribe(self, classOf[ChannelCreated])
-        context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
-        context.system.eventStream.subscribe(self, classOf[ChannelClosed])
-      }
-
-      def receive: Receive = {
-        case message: PaymentEvent => flowInput.offer(serialization.write(message))
-        case message: ChannelCreated => flowInput.offer(serialization.write(message))
-        case message: ChannelStateChanged =>
-          if (message.previousState != WAIT_FOR_INIT_INTERNAL) {
-            flowInput.offer(serialization.write(message))
-          }
-        case message: ChannelClosed => flowInput.offer(serialization.write(message))
-      }
-
-    }))
-
-    Flow[Message]
-      .mapConcat(_ => Nil) // Ignore heartbeats and other data from the client
-      .merge(flowOutput) // Stream the data we want to the client
-      .map(TextMessage.apply)
-  }
 
 
 
@@ -394,9 +349,7 @@ trait Service extends ExtraDirectives with Logging {
     }
   }
 
-  val webSocket: Route = getRequest("ws") { implicit t =>
-    handleWebSocketMessages(makeSocketHandler)
-  }
+  serialization
 
   val route: Route = {
     getInfo ~
