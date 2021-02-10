@@ -16,10 +16,16 @@
 
 package fr.acinq.eclair.api
 
+import akka.actor.ActorSystem
 import akka.http.scaladsl.marshalling.ToResponseMarshaller
+import akka.http.scaladsl.model.HttpMethods.POST
 import akka.http.scaladsl.model.StatusCodes.NotFound
-import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
-import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
+import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
+import akka.http.scaladsl.model.headers.{`Access-Control-Allow-Headers`, `Access-Control-Allow-Methods`, `Cache-Control`}
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpRequest, HttpResponse, StatusCodes}
+import akka.http.scaladsl.server.directives.Credentials
+import akka.http.scaladsl.server.{Directive, Directive0, Directive1, Directives, ExceptionHandler, MalformedFormFieldRejection, PathMatcher, RejectionHandler, Route}
+import akka.util.Timeout
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
@@ -27,11 +33,50 @@ import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.api.JsonSupport._
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import grizzled.slf4j.Logging
 
 import scala.concurrent.Future
+import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
 
 trait ExtraDirectives extends Directives {
+  this: Logging =>
+
+  implicit val actorSystem: ActorSystem
+
+  // timeout for reading request parameters from the underlying stream
+  val paramParsingTimeout = 5 seconds
+
+  val apiExceptionHandler = ExceptionHandler {
+    case t: IllegalArgumentException =>
+      logger.error(s"API call failed with cause=${t.getMessage}", t)
+      complete(StatusCodes.BadRequest, ErrorResponse(t.getMessage))
+    case t: Throwable =>
+      logger.error(s"API call failed with cause=${t.getMessage}", t)
+      complete(StatusCodes.InternalServerError, ErrorResponse(t.getMessage))
+  }
+
+  // map all the rejections to a JSON error object ErrorResponse
+  val apiRejectionHandler = RejectionHandler.default.mapRejectionResponse {
+    case res@HttpResponse(_, _, ent: HttpEntity.Strict, _) =>
+      res.withEntity(HttpEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse(ent.data.utf8String))))
+  }
+
+  val customHeaders = `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
+    `Access-Control-Allow-Methods`(POST) ::
+    `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
+
+  val timeoutResponse: HttpRequest => HttpResponse = { _ =>
+    HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse("request timed out")))
+  }
+
+  def password: String
+
+  def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
+    case p@Credentials.Provided(id) if p.verify(password) => Future.successful(Some(id))
+    case _ => akka.pattern.after(1 second, using = actorSystem.scheduler)(Future.successful(None))(actorSystem.dispatcher) // force a 1 sec pause to deter brute force
+  }
+
 
   // named and typed URL parameters used across several routes
   val shortChannelIdFormParam = "shortChannelId".as[ShortChannelId](shortChannelIdUnmarshaller)
@@ -75,5 +120,31 @@ trait ExtraDirectives extends Directives {
     case (Some(shortChannelIds), _) => provide(Left(shortChannelIds))
     case (_, Some(nodeIds)) => provide(Right(nodeIds))
   }
+
+  def handled: Directive0 = handleExceptions(apiExceptionHandler) &
+   handleExceptions(apiExceptionHandler) &
+   handleRejections(apiRejectionHandler)
+
+  def authenticated: Directive0 = authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator).tflatMap { _ =>
+    pass
+  }
+
+  def withTimeout:Directive[Tuple1[Timeout]] = formFields("timeoutSeconds".as[Timeout].?).tflatMap { tm_opt =>
+     withTimeoutRequest(tm_opt._1.getOrElse(Timeout(30 seconds)))
+     val timeout: Timeout = tm_opt._1.getOrElse(Timeout(30 seconds))
+     withTimeoutRequest(timeout) & provide(timeout)
+   }
+
+  def withTimeoutRequest(t:Timeout): Directive0 = withRequestTimeout(t.duration + 2.seconds) &
+    withRequestTimeoutResponse(timeoutResponse)
+
+  def eclairRoute: Directive[Tuple1[Timeout]] = respondWithDefaultHeaders(customHeaders) &
+    handled & toStrictEntity(paramParsingTimeout) & authenticated & withTimeout
+
+
+  def postRequest(p:String):Directive[Tuple1[Timeout]] = post & path(p) & eclairRoute
+
+  def getRequest(p:String):Directive[Tuple1[Timeout]] = get & path(p) & eclairRoute
+
 
 }
