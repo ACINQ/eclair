@@ -1,29 +1,36 @@
 package fr.acinq.eclair.api
 
-import akka.http.scaladsl.model.HttpMethods.POST
-import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
-import akka.http.scaladsl.model.headers._
-import akka.http.scaladsl.server.{Directive, Directives}
+import akka.http.scaladsl.server.{Directive0, Directive1, Directives}
 import akka.util.Timeout
 import fr.acinq.eclair.api.directives._
 
 import scala.concurrent.duration.DurationInt
 
 class EclairDirectives extends Directives with TimeoutDirective with ErrorDirective
-  with AuthDirective with ExtraDirectives { this: Service =>
+  with AuthDirective with DefaultHeaders with ExtraDirectives { this: Service =>
 
-  def eclairRoute: Directive[Tuple1[Timeout]] = respondWithDefaultHeaders(customHeaders) &
-    handled & toStrictEntity(paramParsingTimeout) & authenticated & withTimeout
+  /**
+   * Prepares inner routes to be exposed as public API with default headers and
+   * basic authentication.
+   */
+  def securedPublicHandler:Directive0 = eclairHeaders & authenticated
 
-  def postRequest(p:String):Directive[Tuple1[Timeout]] = post & path(p) & eclairRoute
+  /**
+   * Wraps inner route with Exception/Rejection handlers and provides a Timeout
+   * to the inner route either from request param or the default.
+   */
+  def standardHandler:Directive1[Timeout] = toStrictEntity(5 seconds) & handled & withTimeout
 
-  def getRequest(p:String):Directive[Tuple1[Timeout]] = get & path(p) & eclairRoute
+  /**
+   * Handles POST requests with given simple path. The inner route is wrapped in a
+   * standard handler and provides a Timeout as parameter.
+   */
+  def postRequest(p:String):Directive1[Timeout] = post & path(p) & standardHandler
 
-
-  private val paramParsingTimeout = 5 seconds
-
-  private val customHeaders = `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
-    `Access-Control-Allow-Methods`(POST) ::
-    `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
+  /**
+   * Handles GET requests with given simple path. The inner route is wrapped in a
+   * standard handler and provides a Timeout as parameter.
+   */
+  def getRequest(p:String):Directive1[Timeout] = get & path(p) & standardHandler
 
 }

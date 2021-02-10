@@ -351,7 +351,7 @@ trait Service extends EclairDirectives with WebSocket with Logging {
 
   serialization
 
-  val route: Route = {
+  val route: Route = securedPublicHandler {
     getInfo ~
       connect ~ disconnect ~
       open ~ close ~ forceClose ~
