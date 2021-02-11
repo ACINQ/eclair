@@ -36,12 +36,12 @@ mavenix.buildMaven {
     rm -rf ./.git
     echo "preBuild end"
   '';
-  installPhase = ''
-    export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
-    (cd ./eclair-node/target/ && \
-      unzip -o "./$THIS_DIST-bin.zip" && \
-      mv "./$THIS_DIST" "$out")
-  '';
+ # installPhase = ''
+ #   export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
+ #   (cd ./eclair-node/target/ && \
+ #     unzip -o "./$THIS_DIST-bin.zip" && \
+ #     mv "./$THIS_DIST" "$out")
+ # '';
 
   # Add extra maven dependencies which might not have been picked up
   #   automatically
