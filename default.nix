@@ -32,8 +32,10 @@ mavenix.buildMaven {
   #   hooks can be set here also.
   #
   preBuild = ''
+    echo "running preBuild"
     rm -rf ./.git
     mvn clean
+    echo "preBuild end"
   '';
   installPhase = ''
     export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
