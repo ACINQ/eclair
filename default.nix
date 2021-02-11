@@ -34,7 +34,6 @@ mavenix.buildMaven {
   preBuild = ''
     echo "running preBuild"
     rm -rf ./.git
-    mvn clean
     echo "preBuild end"
   '';
   installPhase = ''
