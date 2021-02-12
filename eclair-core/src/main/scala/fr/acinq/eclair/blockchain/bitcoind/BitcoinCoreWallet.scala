@@ -42,12 +42,20 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
   def fundTransaction(tx: Transaction, lockUnspents: Boolean, feeRatePerKw: FeeratePerKw): Future[FundTransactionResponse] = fundTransaction(Transaction.write(tx).toHex, lockUnspents, feeRatePerKw)
 
   private def fundTransaction(hex: String, lockUnspents: Boolean, feeRatePerKw: FeeratePerKw): Future[FundTransactionResponse] = {
-    val feeRatePerKB = BigDecimal(FeeratePerKB(feeRatePerKw).toLong)
-    rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKB.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
-      val JString(hex) = json \ "hex"
-      val JInt(changepos) = json \ "changepos"
-      val JDecimal(fee) = json \ "fee"
-      FundTransactionResponse(Transaction.read(hex), changepos.intValue, toSatoshi(fee))
+    val requestedFeeRatePerKB = FeeratePerKB(feeRatePerKw)
+    rpcClient.invoke("getmempoolinfo").map(json => json \ "mempoolminfee" match {
+      case JDecimal(feerate) => FeeratePerKB(Btc(feerate).toSatoshi).max(requestedFeeRatePerKB)
+      case JInt(feerate) => FeeratePerKB(Btc(feerate.toLong).toSatoshi).max(requestedFeeRatePerKB)
+      case other =>
+        logger.warn(s"cannot retrieve mempool minimum fee: $other")
+        requestedFeeRatePerKB
+    }).flatMap(feeRatePerKB => {
+      rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, BigDecimal(feeRatePerKB.toLong).bigDecimal.scaleByPowerOfTen(-8))).map(json => {
+        val JString(hex) = json \ "hex"
+        val JInt(changepos) = json \ "changepos"
+        val JDecimal(fee) = json \ "fee"
+        FundTransactionResponse(Transaction.read(hex), changepos.intValue, toSatoshi(fee))
+      })
     })
   }
 
