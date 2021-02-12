@@ -20,7 +20,7 @@ import java.io.File
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.stream.{ActorMaterializer, BindFailedException}
+import akka.stream.BindFailedException
 import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
 import kamon.Kamon
@@ -69,18 +69,16 @@ object Boot extends App with Logging {
     val config = system.settings.config.getConfig("eclair")
     if (config.getBoolean("api.enabled")) {
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
-      implicit val materializer = ActorMaterializer()
       val apiPassword = config.getString("api.password") match {
         case "" => throw EmptyAPIPasswordException
         case valid => valid
       }
       val apiRoute = new Service {
         override val actorSystem = system
-        override val mat = materializer
         override val password = apiPassword
         override val eclairApi: Eclair = new EclairImpl(kit)
-      }.route
-      Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+      }.finalRoute
+      Http().newServerAt(config.getString("api.binding-ip"), config.getInt("api.port")).bindFlow(apiRoute).recover {
         case _: BindFailedException => onError(TCPBindException(config.getInt("api.port")))
       }
     } else {
