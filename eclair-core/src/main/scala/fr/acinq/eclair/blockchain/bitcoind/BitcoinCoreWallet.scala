@@ -27,6 +27,7 @@ import org.json4s.JsonAST._
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.math.BigDecimal.long2bigDecimal
 import scala.util.{Failure, Success}
 
 /**
@@ -49,7 +50,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
         logger.warn(s"cannot retrieve mempool minimum fee: $other")
         requestedFeeRatePerKB
     }).flatMap(feeRatePerKB => {
-      rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, BigDecimal(feeRatePerKB.toLong).bigDecimal.scaleByPowerOfTen(-8))).map(json => {
+      rpcClient.invoke("fundrawtransaction", hex, Options(lockUnspents, feeRatePerKB.toLong.bigDecimal.scaleByPowerOfTen(-8))).map(json => {
         val JString(hex) = json \ "hex"
         val JInt(changepos) = json \ "changepos"
         val JDecimal(fee) = json \ "fee"
