@@ -16,22 +16,19 @@
 
 package fr.acinq.eclair.io
 
-import java.net.{InetAddress, ServerSocket}
-
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.ChannelId
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
 import fr.acinq.eclair.wire.{Color, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, _}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{Outcome, Tag}
-import scodec.bits.ByteVector
+import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 
+import java.net.{InetAddress, ServerSocket}
 import scala.concurrent.duration._
 
-class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
 
   val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
   val channels = Map(Peer.FinalChannelId(randomBytes32) -> system.deadLetters)
@@ -51,8 +48,10 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
       .modify(_.pluginParams).setToIf(test.tags.contains("plugin_force_reconnect"))(List(new ConnectionControlPlugin {
+      // @formatter:off
       override def forceReconnect(nodeId: PublicKey): Boolean = true
       override def name = "plugin with force-reconnect"
+      // @formatter:on
     }))
 
     if (test.tags.contains("with_node_announcements")) {
@@ -96,7 +95,6 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, Peer.DisconnectedData(channels = Map.empty)))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
-    monitor.expectNoMessage()
   }
 
   test("only try to connect once at startup if auto-reconnect is enabled but there are no known address", Tag("auto_reconnect")) { f =>
@@ -106,7 +104,6 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
-    monitor.expectNoMsg()
   }
 
   test("initiate reconnection at startup if auto-reconnect is enabled", Tag("auto_reconnect"), Tag("with_node_announcements")) { f =>

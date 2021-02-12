@@ -245,6 +245,8 @@ object RouteCalculation {
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
                                 currentBlockHeight: Long): Either[RouterException, Seq[Graph.WeightedPath]] = {
+    require(amount > 0.msat, "route amount must be strictly positive")
+
     if (localNodeId == targetNodeId) return Left(CannotRouteToSelf)
 
     def feeOk(fee: MilliSatoshi): Boolean = fee <= maxFee
@@ -329,9 +331,11 @@ object RouteCalculation {
       case class DirectChannel(balance: MilliSatoshi, isEmpty: Boolean)
       val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).collect {
         // We should always have balance information available for local channels.
-        case GraphEdge(_, update, _, Some(balance)) => DirectChannel(balance, balance < update.htlcMinimumMsat)
+        // NB: htlcMinimumMsat is set by our peer and may be 0 msat (even though it's not recommended).
+        case GraphEdge(_, update, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < update.htlcMinimumMsat)
       }
       // If we have direct channels to the target, we can use them all.
+      // We also count empty channels, which allows replacing them with a non-direct route (multiple hops).
       val numRoutes = routeParams.mpp.maxParts.max(directChannels.length)
       // If we have direct channels to the target, we can use them all, even if they have only a small balance left.
       val minPartAmount = (amount +: routeParams.mpp.minPartAmount +: directChannels.filter(!_.isEmpty).map(_.balance)).min

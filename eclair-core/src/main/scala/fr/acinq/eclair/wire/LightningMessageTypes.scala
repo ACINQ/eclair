@@ -241,8 +241,10 @@ object EncodingType {
 }
 // @formatter:on
 
-case class EncodedShortChannelIds(encoding: EncodingType,
-                                  array: List[ShortChannelId])
+case class EncodedShortChannelIds(encoding: EncodingType, array: List[ShortChannelId]) {
+  /** custom toString because it can get huge in logs */
+  override def toString: String = s"EncodedShortChannelIds($encoding,${array.headOption.getOrElse("")}->${array.lastOption.getOrElse("")} size=${array.size})"
+}
 
 case class QueryShortChannelIds(chainHash: ByteVector32,
                                 shortChannelIds: EncodedShortChannelIds,
@@ -250,9 +252,7 @@ case class QueryShortChannelIds(chainHash: ByteVector32,
   val queryFlags_opt: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.get[QueryShortChannelIdsTlv.EncodedQueryFlags]
 }
 
-case class ReplyShortChannelIdsEnd(chainHash: ByteVector32,
-                                   complete: Byte) extends RoutingMessage with HasChainHash
-
+case class ReplyShortChannelIdsEnd(chainHash: ByteVector32, complete: Byte) extends RoutingMessage with HasChainHash
 
 case class QueryChannelRange(chainHash: ByteVector32,
                              firstBlockNum: Long,
@@ -268,7 +268,6 @@ case class ReplyChannelRange(chainHash: ByteVector32,
                              shortChannelIds: EncodedShortChannelIds,
                              tlvStream: TlvStream[ReplyChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
   val timestamps_opt: Option[ReplyChannelRangeTlv.EncodedTimestamps] = tlvStream.get[ReplyChannelRangeTlv.EncodedTimestamps]
-
   val checksums_opt: Option[ReplyChannelRangeTlv.EncodedChecksums] = tlvStream.get[ReplyChannelRangeTlv.EncodedChecksums]
 }
 
@@ -279,17 +278,14 @@ object ReplyChannelRange {
             complete: Byte,
             shortChannelIds: EncodedShortChannelIds,
             timestamps: Option[ReplyChannelRangeTlv.EncodedTimestamps],
-            checksums: Option[ReplyChannelRangeTlv.EncodedChecksums]) = {
+            checksums: Option[ReplyChannelRangeTlv.EncodedChecksums]): ReplyChannelRange = {
     timestamps.foreach(ts => require(ts.timestamps.length == shortChannelIds.array.length))
     checksums.foreach(cs => require(cs.checksums.length == shortChannelIds.array.length))
     new ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, complete, shortChannelIds, TlvStream(timestamps.toList ::: checksums.toList))
   }
 }
 
-
-case class GossipTimestampFilter(chainHash: ByteVector32,
-                                 firstTimestamp: Long,
-                                 timestampRange: Long) extends RoutingMessage with HasChainHash
+case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Long, timestampRange: Long) extends RoutingMessage with HasChainHash
 
 // NB: blank lines to minimize merge conflicts
 

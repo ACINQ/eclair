@@ -22,7 +22,7 @@ Notes:
 
 - This command will build all modules (core, node, gui).
 - If the build fails, you may need to clean previously built artifacts with the `mvn clean` command.
-- Some of the tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
+- Some tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
 - Archives can be found in the `target` folder for each module.
 
 ### Skip tests

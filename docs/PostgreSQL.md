@@ -1,6 +1,6 @@
 ## PostgreSQL Configuration
 
-By default Eclair stores its data on the machine's local file system (typically in `~/.eclair` directory) using SQLite.
+By default, Eclair stores its data on the machine's local file system (typically in `~/.eclair` directory) using SQLite.
 
 It also supports PostgreSQL version 10.6 and higher as a database backend. 
 
@@ -78,7 +78,7 @@ by PostgreSQL.
 For nodes with infrequent channel updates its easier to use `pg_dump` to perform the task. 
 
 It's important to stop the node to prevent any channel updates while a backup/restore operation is in progress. It makes
-sense to backup the database after each channel update, to prevent restoring an outdated channel's state and consequently 
+sense to back up the database after each channel update, to prevent restoring an outdated channel's state and consequently 
 losing the funds associated with that channel.
 
 For more information about backup refer to the official PostgreSQL documentation: https://www.postgresql.org/docs/current/backup.html
@@ -103,8 +103,8 @@ Follow the official PostgreSQL high availability documentation for the instructi
 
 Using Eclair with an outdated version of the database or a database created with another seed might lead to loss of funds.
 
-Every time Eclair starts, it checks if the Postgres database connection settings were changed since the last start. 
-If in fact the settings were changed, Eclair stops immediately to prevent potentially dangerous 
+Every time Eclair starts, it checks if the Postgres database connection settings have changed since the last start. 
+If in fact the settings have changed, Eclair stops immediately to prevent potentially dangerous 
 but accidental configuration changes to come into effect.
 
 Eclair stores the latest database settings in the `${data-dir}/last_jdbcurl` file, and compares its contents with the database settings from the config file. 

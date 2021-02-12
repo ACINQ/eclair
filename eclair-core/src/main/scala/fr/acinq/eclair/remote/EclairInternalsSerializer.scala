@@ -128,6 +128,7 @@ object EclairInternalsSerializer {
     ("chainsHash" | bytes32) ::
       ("remoteNodeId" | publicKey) ::
       ("to" | actorRefCodec(system)) ::
+      ("replacePrevious" | bool(8)) ::
       ("flags_opt" | optionQueryChannelRangeTlv)).as[SendChannelQuery]
 
   def peerRoutingMessageCodec(system: ExtendedActorSystem): Codec[PeerRoutingMessage] = (
