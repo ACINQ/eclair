@@ -1,8 +1,22 @@
+/*
+ * Copyright 2019 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.api.directives
 
-import fr.acinq.eclair.api.ErrorResponse
-import fr.acinq.eclair.api.JsonSupport.serialization
-
+import fr.acinq.eclair.api.serde.JsonSupport.serialization
 import akka.http.scaladsl.common.{NameReceptacle, NameUnmarshallerReceptacle}
 import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.StatusCodes.NotFound
@@ -11,8 +25,8 @@ import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldReje
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
-import fr.acinq.eclair.api.FormParamExtractors._
-import fr.acinq.eclair.api.JsonSupport._
+import fr.acinq.eclair.api.serde.FormParamExtractors._
+import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
