@@ -1812,6 +1812,23 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NORMAL)
   }
 
+  test("recv CMD_CLOSE (with unsigned fee update)") { f =>
+    import f._
+    val sender = TestProbe()
+    alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), commit = false)
+    alice2bob.expectMsgType[UpdateFee]
+    alice ! CMD_CLOSE(sender.ref, None)
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, CannotCloseWithUnsignedOutgoingUpdateFee]]
+    alice2bob.expectNoMsg(100 millis)
+    // once alice signs, the channel can be closed
+    alice ! CMD_SIGN()
+    alice2bob.expectMsgType[CommitSig]
+    alice ! CMD_CLOSE(sender.ref, None)
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    alice2bob.expectMsgType[Shutdown]
+    awaitCond(alice.stateName == NORMAL)
+  }
+
   def testShutdown(f: FixtureParam): Unit = {
     import f._
     alice ! Shutdown(ByteVector32.Zeroes, Bob.channelParams.defaultFinalScriptPubKey)
@@ -1861,6 +1878,34 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv Shutdown (with unsigned fee update)") { f =>
+    import f._
+    val sender = TestProbe()
+    alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), commit = true)
+    alice2bob.expectMsgType[UpdateFee]
+    alice2bob.forward(bob)
+    val sig = alice2bob.expectMsgType[CommitSig]
+    // Bob initiates a close before receiving the signature.
+    bob ! CMD_CLOSE(sender.ref, None)
+    bob2alice.expectMsgType[Shutdown]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob, sig)
+    alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    // Once the fee update has been signed, shutdown resumes.
+    alice2bob.expectMsgType[ClosingSigned]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingSigned]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateName == CLOSING)
   }
 
   test("recv Shutdown (with invalid final script)") { f =>

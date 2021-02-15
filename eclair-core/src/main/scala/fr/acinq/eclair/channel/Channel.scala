@@ -823,8 +823,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       if (d.localShutdown.isDefined) {
         handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
       } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) {
-        // TODO: simplistic behavior, we could also sign-then-close
+        // NB: simplistic behavior, we could also sign-then-close
         handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
+      } else if (Commitments.localHasUnsignedOutgoingUpdateFee(d.commitments)) {
+        handleCommandError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), c)
       } else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey)) {
         handleCommandError(InvalidFinalScript(d.channelId), c)
       } else {
@@ -842,33 +844,34 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       //        we are waiting for a rev          => we stop sending further htlcs, we wait for their revocation, will resign immediately after, and then we will send our shutdown message
       //    we have no pending unsigned htlcs
       //      we already sent a shutdown message
-      //        there are pending signed htlcs    => send our shutdown message, go to SHUTDOWN
+      //        there are pending signed changes  => send our shutdown message, go to SHUTDOWN
       //        there are no htlcs                => send our shutdown message, go to NEGOTIATING
       //      we did not send a shutdown message
-      //        there are pending signed htlcs    => go to SHUTDOWN
+      //        there are pending signed changes  => go to SHUTDOWN
       //        there are no htlcs                => go to NEGOTIATING
-
       if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey)) {
         handleLocalError(InvalidFinalScript(d.channelId), d, Some(remoteShutdown))
       } else if (Commitments.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
         handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d, Some(remoteShutdown))
+      } else if (Commitments.remoteHasUnsignedOutgoingUpdateFee(d.commitments)) {
+        handleLocalError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), d, Some(remoteShutdown))
       } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
         require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
         // are we in the middle of a signature?
         d.commitments.remoteNextCommitInfo match {
           case Left(waitForRevocation) =>
-            // yes, let's just schedule a new signature ASAP, which will include all pending unsigned htlcs
+            // yes, let's just schedule a new signature ASAP, which will include all pending unsigned changes
             val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
-            // in the meantime we won't send new htlcs
+            // in the meantime we won't send new changes
             stay using d.copy(commitments = commitments1, remoteShutdown = Some(remoteShutdown))
           case Right(_) =>
             // no, let's sign right away
             self ! CMD_SIGN()
-            // in the meantime we won't send new htlcs
+            // in the meantime we won't send new changes
             stay using d.copy(remoteShutdown = Some(remoteShutdown))
         }
       } else {
-        // so we don't have any unsigned outgoing htlcs
+        // so we don't have any unsigned outgoing changes
         val (localShutdown, sendList) = d.localShutdown match {
           case Some(localShutdown) =>
             (localShutdown, Nil)
@@ -877,9 +880,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             // we need to send our shutdown if we didn't previously
             (localShutdown, localShutdown :: Nil)
         }
-        // are there pending signed htlcs on either side? we need to have received their last revocation!
-        if (d.commitments.hasNoPendingHtlcs) {
-          // there are no pending signed htlcs, let's go directly to NEGOTIATING
+        // are there pending signed changes on either side? we need to have received their last revocation!
+        if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
+          // there are no pending signed changes, let's go directly to NEGOTIATING
           if (d.commitments.localParams.isFunder) {
             // we are funder, need to initiate the negotiation by sending the first closing_signed
             val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
@@ -888,9 +891,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             // we are fundee, will wait for their closing_signed
             goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending sendList
           }
-
         } else {
-          // there are some pending signed htlcs, we need to fail/fulfill them
+          // there are some pending signed changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
           goto(SHUTDOWN) using DATA_SHUTDOWN(d.commitments, localShutdown, remoteShutdown) storing() sending sendList
         }
       }
@@ -1107,7 +1109,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // we always reply with a revocation
           log.debug("received a new sig:\n{}", Commitments.specs2String(commitments1))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-          if (commitments1.hasNoPendingHtlcs) {
+          if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
             if (d.commitments.localParams.isFunder) {
               // we are funder, need to initiate the negotiation by sending the first closing_signed
               val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
@@ -1142,7 +1144,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               log.debug("forwarding {} to relayer", forward)
               relayer ! forward
           }
-          if (commitments1.hasNoPendingHtlcs) {
+          if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
             log.debug("switching to NEGOTIATING spec:\n{}", Commitments.specs2String(commitments1))
             if (d.commitments.localParams.isFunder) {
               // we are funder, need to initiate the negotiation by sending the first closing_signed
@@ -1583,7 +1585,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // We usually handle feerate updates once per block (~10 minutes), but when our remote is a mobile wallet that
           // only briefly connects and then disconnects, we may never have the opportunity to send our `update_fee`, so
           // we send it (if needed) when reconnected.
-          if (d.commitments.localParams.isFunder) {
+          val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
+          if (d.commitments.localParams.isFunder && !shutdownInProgress) {
             val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
             val networkFeeratePerKw = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
             if (Helpers.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw, nodeParams.onChainFeeConf.updateFeeMinDiffRatio)) {
