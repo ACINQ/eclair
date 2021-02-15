@@ -40,7 +40,7 @@ mavenix.buildMaven {
     export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
     (cd ./eclair-node/target/ && \
       unzip -o "./$THIS_DIST-bin.zip" && \
-      cp -R "./$THIS_DIST/*" "$out/" && \
+      cp -R "./$THIS_DIST" "$out/" && \
       rm -rf "./$THIS_DIST")
   '' else '''';
 
