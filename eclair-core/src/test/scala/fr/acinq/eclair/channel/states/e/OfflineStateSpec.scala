@@ -571,7 +571,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectNoMsg()
   }
 
-  test("handle feerate changes while offline (update at reconnection)") { f =>
+  def testUpdateFeeOnReconnect(f: FixtureParam, shouldUpdateFee: Boolean): Unit = {
     import f._
 
     // we simulate a disconnection
@@ -593,11 +593,30 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // peers exchange channel_reestablish messages
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
-    // note that we don't forward the channel_reestablish so that only alice reaches NORMAL state, it facilitates the test below
     bob2alice.forward(alice)
 
     alice2bob.expectMsgType[FundingLocked] // since the channel's commitment hasn't been updated, we re-send funding_locked
-    alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
+    if (shouldUpdateFee) {
+      alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
+    } else {
+      alice2bob.expectMsgType[Shutdown]
+      alice2bob.expectNoMsg(100 millis)
+    }
+  }
+
+  test("handle feerate changes while offline (update at reconnection)") { f =>
+    testUpdateFeeOnReconnect(f, shouldUpdateFee = true)
+  }
+
+  test("handle feerate changes while offline (shutdown sent, don't update at reconnection)") { f =>
+    import f._
+
+    // alice initiates a shutdown
+    val sender = TestProbe()
+    alice ! CMD_CLOSE(sender.ref, None)
+    alice2bob.expectMsgType[Shutdown]
+
+    testUpdateFeeOnReconnect(f, shouldUpdateFee = false)
   }
 
   test("handle feerate changes while offline (fundee scenario)") { f =>
