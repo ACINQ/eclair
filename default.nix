@@ -38,7 +38,7 @@ mavenix.buildMaven {
     echo "preBuild end"
   '';
 
-  postInstall = ''
+  postInstall = if executable then '''' else ''
     export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
     (cd ./eclair-node/target/ && \
       unzip -o "./$THIS_DIST-bin.zip" && \
