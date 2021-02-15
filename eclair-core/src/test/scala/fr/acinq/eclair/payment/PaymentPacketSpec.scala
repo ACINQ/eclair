@@ -36,8 +36,10 @@ import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Attempt
 import scodec.bits.{ByteVector, HexStringSyntax}
-
 import java.util.UUID
+
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.transactions.CommitmentSpec
 
 /**
  * Created by PM on 31/05/2016.
@@ -389,7 +391,8 @@ object PaymentPacketSpec {
     val params = LocalParams(null, null, null, null, null, null, null, 0, isFunder = true, null, None, null)
     val remoteParams = RemoteParams(randomKey.publicKey, null, null, null, null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null)
     val commitInput = InputInfo(OutPoint(randomBytes32, 1), TxOut(testCapacity, Nil), Nil)
-    new Commitments(ChannelVersion.STANDARD, params, remoteParams, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, commitInput, null, channelId) {
+    val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw.MinimumFeeratePerKw, toRemote = 100L.msat, toLocal = 100L.msat), randomBytes32, randomKey.publicKey)
+    new Commitments(ChannelVersion.STANDARD, params, remoteParams, 0.toByte, null, remoteCommit, null, null, 0, 0, Map.empty, Right(randomKey.publicKey), commitInput, null, channelId) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }
