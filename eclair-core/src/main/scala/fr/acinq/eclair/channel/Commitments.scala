@@ -521,9 +521,9 @@ object Commitments {
 
   def remoteHasUnsignedOutgoingHtlcs(commitments: Commitments): Boolean = commitments.remoteChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
 
-  def localHasUnsignedUpdateFee(commitments: Commitments): Boolean = commitments.localChanges.proposed.collectFirst { case u: UpdateFee => u }.isDefined
+  def localHasUnsignedOutgoingUpdateFee(commitments: Commitments): Boolean = commitments.localChanges.proposed.collectFirst { case u: UpdateFee => u }.isDefined
 
-  def remoteHasUnsignedUpdateFee(commitments: Commitments): Boolean = commitments.remoteChanges.proposed.collectFirst { case u: UpdateFee => u }.isDefined
+  def remoteHasUnsignedOutgoingUpdateFee(commitments: Commitments): Boolean = commitments.remoteChanges.proposed.collectFirst { case u: UpdateFee => u }.isDefined
 
   def localHasChanges(commitments: Commitments): Boolean = commitments.remoteChanges.acked.nonEmpty || commitments.localChanges.proposed.nonEmpty
 

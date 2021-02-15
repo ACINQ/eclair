@@ -814,8 +814,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) {
         // NB: simplistic behavior, we could also sign-then-close
         handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
-      } else if (Commitments.localHasUnsignedUpdateFee(d.commitments)) {
-        handleCommandError(CannotCloseWithUnsignedUpdateFee(d.channelId), c)
+      } else if (Commitments.localHasUnsignedOutgoingUpdateFee(d.commitments)) {
+        handleCommandError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), c)
       } else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey)) {
         handleCommandError(InvalidFinalScript(d.channelId), c)
       } else {
@@ -842,8 +842,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         handleLocalError(InvalidFinalScript(d.channelId), d, Some(remoteShutdown))
       } else if (Commitments.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
         handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d, Some(remoteShutdown))
-      } else if (Commitments.remoteHasUnsignedUpdateFee(d.commitments)) {
-        handleLocalError(CannotCloseWithUnsignedUpdateFee(d.channelId), d, Some(remoteShutdown))
+      } else if (Commitments.remoteHasUnsignedOutgoingUpdateFee(d.commitments)) {
+        handleLocalError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), d, Some(remoteShutdown))
       } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
         require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
         // are we in the middle of a signature?

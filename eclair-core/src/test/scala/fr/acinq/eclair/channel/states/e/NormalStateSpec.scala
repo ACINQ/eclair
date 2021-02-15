@@ -1818,7 +1818,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), commit = false)
     alice2bob.expectMsgType[UpdateFee]
     alice ! CMD_CLOSE(sender.ref, None)
-    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, CannotCloseWithUnsignedUpdateFee]]
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, CannotCloseWithUnsignedOutgoingUpdateFee]]
     alice2bob.expectNoMsg(100 millis)
     // once alice signs, the channel can be closed
     alice ! CMD_SIGN()
