@@ -38,12 +38,12 @@ mavenix.buildMaven {
     echo "preBuild end"
   '';
 
-  postInstall = if executable then '''' else ''
+  postInstall = if executable then ''
     export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
     (cd ./eclair-node/target/ && \
       unzip -o "./$THIS_DIST-bin.zip" && \
       mv "./$THIS_DIST" "$out")
-  '';
+  '' else '''';
 
 
   # Add extra maven dependencies which might not have been picked up
