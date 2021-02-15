@@ -51,6 +51,7 @@ case class ChannelFundingError                 (override val channelId: ByteVect
 case class NoMoreHtlcsClosingInProgress        (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class ClosingAlreadyInProgress            (override val channelId: ByteVector32) extends ChannelException(channelId, "closing already in progress")
 case class CannotCloseWithUnsignedOutgoingHtlcs(override val channelId: ByteVector32) extends ChannelException(channelId, "cannot close when there are unsigned outgoing htlcs")
+case class CannotCloseWithUnsignedOutgoingUpdateFee    (override val channelId: ByteVector32) extends ChannelException(channelId, "cannot close when there is an unsigned fee update")
 case class ChannelUnavailable                  (override val channelId: ByteVector32) extends ChannelException(channelId, "channel is unavailable (offline or closing)")
 case class InvalidFinalScript                  (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid final script")
 case class FundingTxTimedout                   (override val channelId: ByteVector32) extends ChannelException(channelId, "funding tx timed out")
