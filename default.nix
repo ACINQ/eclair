@@ -39,10 +39,10 @@ mavenix.buildMaven {
   postInstall = if executable then ''
     export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
     (cd ./eclair-node/target/ && \
-      unzip -o "./$THIS_DIST-bin.zip")
+      unzip -o "./$THIS_DIST-bin.zip"
+      cp -R "./$THIS_DIST/*" "$out/")
   '' else '''';
 
-    #  cp -R "./$THIS_DIST/*" "$out/" && \
     #  rm -rf "./$THIS_DIST")
 
   # Add extra maven dependencies which might not have been picked up
