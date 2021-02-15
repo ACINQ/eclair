@@ -33,16 +33,15 @@ mavenix.buildMaven {
   #   hooks can be set here also.
   #
   preBuild = ''
-    echo "running preBuild"
     rm -rf ./.git
-    echo "preBuild end"
   '';
 
   postInstall = if executable then ''
     export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
     (cd ./eclair-node/target/ && \
       unzip -o "./$THIS_DIST-bin.zip" && \
-      mv "./$THIS_DIST" "$out")
+      cp -R "./$THIS_DIST/*" "$out/" && \
+      rm -rf "./$THIS_DIST")
   '' else '''';
 
 
