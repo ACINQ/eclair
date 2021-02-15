@@ -62,7 +62,10 @@ case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, cl
   /**
    * Get the feerate that should apply to a channel commitment transaction:
    *  - if we're using anchor outputs, we use a feerate that allows network propagation of the commit tx: we will use CPFP to speed up confirmation if needed
-   *  - otherwise we use a feerate that should get the commit tx confirmed in the configured number of blocks
+   *  - otherwise we use a feerate that should get the commit tx confirmed within the configured block target
+   *
+   * @param channelVersion      channel version
+   * @param currentFeerates_opt if provided, will be used to compute the most up-to-date network fee, otherwise we rely on the fee estimator
    */
   def getCommitmentFeerate(channelVersion: ChannelVersion, channelCapacity: Satoshi, currentFeerates_opt: Option[CurrentFeerates]): FeeratePerKw = {
     val networkFeerate = currentFeerates_opt match {
