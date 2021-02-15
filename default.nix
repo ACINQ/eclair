@@ -44,7 +44,7 @@ mavenix.buildMaven {
       unzip -o "./$THIS_DIST-bin.zip" && \
       mv "./$THIS_DIST" "$out")
   ''
-  else null;
+  else installPhase;
 
 
   # Add extra maven dependencies which might not have been picked up
