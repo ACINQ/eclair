@@ -27,7 +27,7 @@ mavenix.buildMaven {
   # Set build environment variables
   #
   TERM="xterm-256color";
-  MAVEN_OPTS="-Dfile.encoding=UTF-8";
+  MAVEN_OPTS="-Dfile.encoding=UTF-8 -Dnix-build.skip=true";
 
   # Attributes are passed to the underlying `stdenv.mkDerivation`, so build
   #   hooks can be set here also.
