@@ -276,11 +276,12 @@ object Commitments {
 
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before offering new HTLCs
-    // NB: there may be a pending update_fee that hasn't been signed yet that needs to be taken into account
-    val currentFeeratePerKw = commitments.remoteChanges.proposed.collect { case f: UpdateFee => f.feeratePerKw }.lastOption.getOrElse(commitments.localCommit.spec.feeratePerKw)
+    // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
     val localFeeratePerKw = feeConf.getCommitmentFeerate(commitments.channelVersion, commitments.capacity, None)
-    if (feeConf.maxFeerateMismatchFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelVersion, localFeeratePerKw, currentFeeratePerKw)) {
-      return Left(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw))
+    val remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw +: commitments.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
+    remoteFeeratePerKw.find(feerate => feeConf.maxFeerateMismatchFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelVersion, localFeeratePerKw, feerate)) match {
+      case Some(feerate) => return Left(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
+      case None =>
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -339,11 +340,12 @@ object Commitments {
 
     // we allowed mismatches between our feerates and our remote's as long as commitments didn't contain any HTLC at risk
     // we need to verify that we're not disagreeing on feerates anymore before accepting new HTLCs
-    // NB: there may be a pending update_fee that hasn't been signed yet that needs to be taken into account
-    val currentFeeratePerKw = commitments.remoteChanges.proposed.collect { case f: UpdateFee => f.feeratePerKw }.lastOption.getOrElse(commitments.localCommit.spec.feeratePerKw)
+    // NB: there may be a pending update_fee that hasn't been applied yet that needs to be taken into account
     val localFeeratePerKw = feeConf.getCommitmentFeerate(commitments.channelVersion, commitments.capacity, None)
-    if (feeConf.maxFeerateMismatchFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelVersion, localFeeratePerKw, currentFeeratePerKw)) {
-      return Left(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw))
+    val remoteFeeratePerKw = commitments.localCommit.spec.feeratePerKw +: commitments.remoteChanges.all.collect { case f: UpdateFee => f.feeratePerKw }
+    remoteFeeratePerKw.find(feerate => feeConf.maxFeerateMismatchFor(commitments.remoteNodeId).isFeeDiffTooHigh(commitments.channelVersion, localFeeratePerKw, feerate)) match {
+      case Some(feerate) => return Left(FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = feerate))
+      case None =>
     }
 
     // let's compute the current commitment *as seen by us* including this change
