@@ -188,6 +188,16 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == CLOSED)
   }
 
+  test("recv OpenChannel (dust limit too high)") { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    val dustLimitTooHigh = 2000.sat
+    bob ! open.copy(dustLimitSatoshis = dustLimitTooHigh)
+    val error = bob2alice.expectMsgType[Error]
+    assert(error === Error(open.temporaryChannelId, DustLimitTooLarge(open.temporaryChannelId, dustLimitTooHigh, Bob.nodeParams.maxRemoteDustLimit).getMessage))
+    awaitCond(bob.stateName == CLOSED)
+  }
+
   test("recv OpenChannel (toLocal + toRemote below reserve)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
