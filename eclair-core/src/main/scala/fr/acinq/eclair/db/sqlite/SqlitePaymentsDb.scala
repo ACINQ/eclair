@@ -18,13 +18,13 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, ResultSet, Statement}
 import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
+import fr.acinq.eclair.io.Peer.Nothing
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.CommonCodecs
 import grizzled.slf4j.Logging
@@ -66,7 +66,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       // We make payment request expiration not null in the received_payments table.
       // When it was previously set to NULL the default expiry should apply.
       statement.executeUpdate(s"UPDATE _received_payments_old SET expire_at = created_at + ${PaymentRequest.DEFAULT_EXPIRY_SECONDS} WHERE expire_at IS NULL")
-      statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
+      statement.executeUpdate("CREATE TABLE received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_preimage BLOB, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
       statement.executeUpdate("INSERT INTO received_payments (payment_hash, payment_preimage, payment_request, received_msat, created_at, expire_at, received_at) SELECT payment_hash, preimage, payment_request, received_msat, created_at, expire_at, received_at FROM _received_payments_old")
       statement.executeUpdate("DROP table _received_payments_old")
 
@@ -115,7 +115,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         migration34(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage BLOB, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER, recipient_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
 
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
@@ -264,10 +264,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming") {
+  override def addIncomingPayment(pr: PaymentRequest, preimage_opt: Option[ByteVector32], paymentType: String): Unit = withMetrics("payments/add-incoming") {
     using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, pr.paymentHash.toArray)
-      statement.setBytes(2, preimage.toArray)
+      statement.setBytes(2, preimage_opt.orNull.toArray)
       statement.setString(3, paymentType)
       statement.setString(4, PaymentRequest.write(pr))
       statement.setLong(5, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
@@ -292,7 +292,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     val paymentRequest = rs.getString("payment_request")
     IncomingPayment(
       PaymentRequest.read(paymentRequest),
-      rs.getByteVector32("payment_preimage"),
+      rs.getByteVector32Nullable("payment_preimage"),
       rs.getString("payment_type"),
       rs.getLong("created_at"),
       buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(paymentRequest), rs.getLongNullable("received_at")))

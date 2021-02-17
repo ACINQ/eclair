@@ -88,7 +88,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(incoming.isDefined)
       assert(incoming.get.status === IncomingPaymentStatus.Pending)
       assert(!incoming.get.paymentRequest.isExpired)
-      assert(Crypto.sha256(incoming.get.paymentPreimage) === pr.paymentHash)
+      assert(incoming.get.paymentPreimage.isDefined)
+      assert(Crypto.sha256(incoming.get.paymentPreimage.get) === pr.paymentHash)
 
       val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, pr.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
       sender.send(handlerWithoutMpp, IncomingPacket.FinalPacket(add, Onion.FinalLegacyPayload(add.amountMsat, add.cltvExpiry)))

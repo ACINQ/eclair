@@ -29,7 +29,7 @@ trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with Payment
 
 trait IncomingPaymentsDb {
   /** Add a new expected incoming payment (not yet received). */
-  def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
+  def addIncomingPayment(pr: PaymentRequest, preimage: Option[ByteVector32], paymentType: String = PaymentType.Standard): Unit
 
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
@@ -97,7 +97,7 @@ case object PaymentType {
  * @param status          current status of the payment.
  */
 case class IncomingPayment(paymentRequest: PaymentRequest,
-                           paymentPreimage: ByteVector32,
+                           paymentPreimage: Option[ByteVector32],
                            paymentType: String,
                            createdAt: Long,
                            status: IncomingPaymentStatus)

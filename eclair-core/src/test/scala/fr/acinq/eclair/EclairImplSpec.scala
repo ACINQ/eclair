@@ -316,7 +316,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
+    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None, None)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
     assert(receive.amount_opt === Some(123 msat))
@@ -324,7 +324,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(receive.fallbackAddress === Some(fallBackAddressRaw))
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None, None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
@@ -334,7 +334,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32
 
-    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage))
+    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage), None)
     awaitCond({
       fResp.value match {
         case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)

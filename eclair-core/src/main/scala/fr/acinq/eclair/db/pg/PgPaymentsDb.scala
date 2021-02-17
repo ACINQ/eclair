@@ -57,7 +57,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
 
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
         case CURRENT_VERSION =>
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT NOT NULL, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, received_at BIGINT)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash TEXT NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage TEXT, payment_request TEXT NOT NULL, received_msat BIGINT, created_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, received_at BIGINT)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash TEXT NOT NULL, payment_preimage TEXT, payment_type TEXT NOT NULL, amount_msat BIGINT NOT NULL, fees_msat BIGINT, recipient_amount_msat BIGINT NOT NULL, recipient_node_id TEXT NOT NULL, payment_request TEXT, payment_route BYTEA, failures BYTEA, created_at BIGINT NOT NULL, completed_at BIGINT)")
 
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_parent_id_idx ON sent_payments(parent_id)")
@@ -220,11 +220,11 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     }
   }
 
-  override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming") {
+  override def addIncomingPayment(pr: PaymentRequest, preimage_opt: Option[ByteVector32], paymentType: String): Unit = withMetrics("payments/add-incoming") {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, pr.paymentHash.toHex)
-        statement.setString(2, preimage.toHex)
+        statement.setString(2, preimage_opt.orNull.toHex)
         statement.setString(3, paymentType)
         statement.setString(4, PaymentRequest.write(pr))
         statement.setLong(5, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
@@ -252,7 +252,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: DatabaseLock) extends Payments
     val paymentRequest = rs.getString("payment_request")
     IncomingPayment(
       PaymentRequest.read(paymentRequest),
-      rs.getByteVector32FromHex("payment_preimage"),
+      rs.getByteVector32FromHexNullable("payment_preimage"),
       rs.getString("payment_type"),
       rs.getLong("created_at"),
       buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(paymentRequest), rs.getLongNullable("received_at")))

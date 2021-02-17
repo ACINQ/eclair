@@ -52,10 +52,15 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   def postFulfill(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
 
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
-    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType) =>
+    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType, paymentPreimageHash_opt) =>
       Try {
-        val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
-        val paymentHash = Crypto.sha256(paymentPreimage)
+        val (paymentPreimage_opt2, paymentHash) = (paymentPreimage_opt, paymentPreimageHash_opt) match {
+            case (Some(paymentPreimage), _) => (paymentPreimage_opt, Crypto.sha256(paymentPreimage))
+            case (None, Some(paymentHash)) => (None, paymentHash)
+            case (None, None) =>
+              val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
+              (Some(paymentPreimage), Crypto.sha256(paymentPreimage))
+        }
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).
         // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
@@ -68,7 +73,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
-        db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
+        db.addIncomingPayment(paymentRequest, paymentPreimage_opt2, paymentType)
         paymentRequest
       } match {
         case Success(paymentRequest) => ctx.sender ! paymentRequest
@@ -90,7 +95,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 case None =>
                   val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, ctx.self))
                   handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
-                  pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
+                  pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage.orNull, handler))
               }
           }
           case None => p.payload.paymentPreimage match {
@@ -107,7 +112,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               // Insert a fake invoice and then restart the incoming payment handler
               val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, features = Some(features))
               log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
-              db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
+              db.addIncomingPayment(paymentRequest, Some(paymentPreimage), paymentType = PaymentType.KeySend)
               ctx.self ! p
             case _ =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
@@ -149,7 +154,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
             // expensive code path by fetching the preimage from DB.
             case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(paymentHash).foreach(record => {
-              PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
+              PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage.orNull, commit = true))
               val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
               db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)
               ctx.system.eventStream.publish(received)
@@ -197,6 +202,7 @@ object MultiPartHandler {
    * @param extraHops         routing hints to help the payer.
    * @param fallbackAddress   fallback Bitcoin address.
    * @param paymentPreimage   payment preimage.
+   * @param paymentPreimageHash   payment preimage hash.
    */
   case class ReceivePayment(amount_opt: Option[MilliSatoshi],
                             description: String,
@@ -204,7 +210,8 @@ object MultiPartHandler {
                             extraHops: List[List[ExtraHop]] = Nil,
                             fallbackAddress: Option[String] = None,
                             paymentPreimage: Option[ByteVector32] = None,
-                            paymentType: String = PaymentType.Standard)
+                            paymentType: String = PaymentType.Standard,
+                            paymentPreimageHash: Option[ByteVector32] = None)
 
   private def validatePaymentStatus(payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {

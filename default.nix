@@ -10,6 +10,7 @@ in {
   mavenix ? import mavenix-src { inherit pkgs; },
   src ? ./.,
   doCheck ? false,
+  executable ? true,
 }:
 with pkgs;
 mavenix.buildMaven {
@@ -26,7 +27,7 @@ mavenix.buildMaven {
   # Set build environment variables
   #
   TERM="xterm-256color";
-  MAVEN_OPTS="-Dfile.encoding=UTF-8 -Dmaven.test.skip=true";
+  MAVEN_OPTS="-Dfile.encoding=UTF-8 -Dnix-build.skip=true";
 
   # Attributes are passed to the underlying `stdenv.mkDerivation`, so build
   #   hooks can be set here also.
@@ -34,12 +35,15 @@ mavenix.buildMaven {
   preBuild = ''
     rm -rf ./.git
   '';
-  installPhase = ''
-    export THIS_DIST="eclair-node-0.4.1-SNAPSHOT-\''${git.commit.id.abbrev}"
+
+  postInstall = if executable then ''
+    export THIS_DIST="eclair-node-0.5.1-SNAPSHOT-\''${git.commit.id.abbrev}"
     (cd ./eclair-node/target/ && \
-      unzip -o "./$THIS_DIST-bin.zip" && \
-      mv "./$THIS_DIST" "$out")
-  '';
+      unzip -o "./$THIS_DIST-bin.zip"
+      cp -R "./$THIS_DIST/." "$out")
+  '' else '''';
+
+    #  rm -rf "./$THIS_DIST")
 
   # Add extra maven dependencies which might not have been picked up
   #   automatically
