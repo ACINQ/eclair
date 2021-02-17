@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
+import fr.acinq.eclair.wire.NodeAddress
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -55,6 +56,23 @@ class AnnouncementsSpec extends AnyFunSuite {
     assert(ann.features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Optional)))
     assert(checkSig(ann))
     assert(checkSig(ann.copy(timestamp = 153)) === false)
+  }
+
+  test("sort node announcement addresses") {
+    val addresses = List(
+      NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get,
+      NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:200", 9735).get,
+      NodeAddress.fromParts("140.82.121.4", 9735).get,
+      NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get,
+    )
+    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, addresses, Alice.nodeParams.features)
+    assert(checkSig(ann))
+    assert(ann.addresses === List(
+      NodeAddress.fromParts("140.82.121.4", 9735).get,
+      NodeAddress.fromParts("2620:1ec:c11:0:0:0:0:200", 9735).get,
+      NodeAddress.fromParts("hsmithsxurybd7uh.onion", 9735).get,
+      NodeAddress.fromParts("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735).get,
+    ))
   }
 
   test("nodeParams.nodeId equals nodeParams.privateKey.publicKey") {
