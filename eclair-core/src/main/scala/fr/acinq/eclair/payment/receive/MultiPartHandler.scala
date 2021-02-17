@@ -40,7 +40,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   import MultiPartHandler._
 
   // NB: this is safe because this handler will be called from within an actor
-  private var pendingPayments: Map[ByteVector32, (ByteVector32, ActorRef)] = Map.empty
+  private var pendingPayments: Map[ByteVector32, (Option[ByteVector32], ActorRef)] = Map.empty
 
   /**
    * Can be overridden for a more fine-grained control of whether or not to handle this payment hash.
@@ -55,10 +55,15 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType, paymentPreimageHash_opt) =>
       Try {
         val (paymentPreimage_opt2, paymentHash) = (paymentPreimage_opt, paymentPreimageHash_opt) match {
-            case (Some(paymentPreimage), _) => (paymentPreimage_opt, Crypto.sha256(paymentPreimage))
+            case (Some(paymentPreimage), Some(paymentPreimageHash)) =>
+              if(Crypto.sha256(paymentPreimage) == paymentPreimageHash)
+                (paymentPreimage_opt, paymentPreimageHash)
+              else
+                throw new RuntimeException(s"payment preimage is not correspond to preimageHash")
+            case (Some(paymentPreimage), None) => (paymentPreimage_opt, Crypto.sha256(paymentPreimage))
             case (None, Some(paymentHash)) => (None, paymentHash)
             case (None, None) =>
-              val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
+              val paymentPreimage = randomBytes32
               (Some(paymentPreimage), Crypto.sha256(paymentPreimage))
         }
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
@@ -95,7 +100,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 case None =>
                   val handler = ctx.actorOf(MultiPartPaymentFSM.props(nodeParams, p.add.paymentHash, p.payload.totalAmount, ctx.self))
                   handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
-                  pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage.orNull, handler))
+                  pendingPayments = pendingPayments + (p.add.paymentHash -> (record.paymentPreimage, handler))
               }
           }
           case None => p.payload.paymentPreimage match {
@@ -137,9 +142,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(paymentHash))) {
         log.info("received complete payment for amount={}", parts.map(_.amount).sum)
         pendingPayments.get(paymentHash).foreach {
-          case (preimage: ByteVector32, handler: ActorRef) =>
+          case (preimage: Option[ByteVector32], handler: ActorRef) =>
             handler ! PoisonPill
-            ctx.self ! DoFulfill(preimage, s)
+            ctx.self ! DoFulfill(preimage.orNull, s)
         }
         pendingPayments = pendingPayments - paymentHash
       }
