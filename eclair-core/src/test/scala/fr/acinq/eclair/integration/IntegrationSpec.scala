@@ -85,7 +85,6 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
 
   val commonFeatures = ConfigFactory.parseMap(Map(
     s"eclair.features.${OptionDataLossProtect.rfcName}" -> "optional",
-    s"eclair.features.${InitialRoutingSync.rfcName}" -> "optional",
     s"eclair.features.${ChannelRangeQueries.rfcName}" -> "optional",
     s"eclair.features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
     s"eclair.features.${VariableLengthOnion.rfcName}" -> "optional",

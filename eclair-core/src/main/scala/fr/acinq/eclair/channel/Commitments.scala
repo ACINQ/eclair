@@ -84,6 +84,12 @@ case class Commitments(channelVersion: ChannelVersion,
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
+  def hasNoPendingHtlcsOrFeeUpdate: Boolean =
+    remoteNextCommitInfo.isRight &&
+      localCommit.spec.htlcs.isEmpty &&
+      remoteCommit.spec.htlcs.isEmpty &&
+      (localChanges.signed ++ localChanges.acked ++ remoteChanges.signed ++ remoteChanges.acked).collectFirst { case _: UpdateFee => true }.isEmpty
+
   def hasPendingOrProposedHtlcs: Boolean = !hasNoPendingHtlcs ||
     localChanges.all.exists(_.isInstanceOf[UpdateAddHtlc]) ||
     remoteChanges.all.exists(_.isInstanceOf[UpdateAddHtlc])
@@ -514,6 +520,10 @@ object Commitments {
   def localHasUnsignedOutgoingHtlcs(commitments: Commitments): Boolean = commitments.localChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
 
   def remoteHasUnsignedOutgoingHtlcs(commitments: Commitments): Boolean = commitments.remoteChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
+
+  def localHasUnsignedOutgoingUpdateFee(commitments: Commitments): Boolean = commitments.localChanges.proposed.collectFirst { case u: UpdateFee => u }.isDefined
+
+  def remoteHasUnsignedOutgoingUpdateFee(commitments: Commitments): Boolean = commitments.remoteChanges.proposed.collectFirst { case u: UpdateFee => u }.isDefined
 
   def localHasChanges(commitments: Commitments): Boolean = commitments.remoteChanges.acked.nonEmpty || commitments.localChanges.proposed.nonEmpty
 

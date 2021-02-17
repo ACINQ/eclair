@@ -24,8 +24,8 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
 import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -39,7 +39,7 @@ import scala.concurrent.{Future, Promise}
  * Created by PM on 05/07/2016.
  */
 
-class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
@@ -52,6 +52,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val aliceNodeParams = Alice.nodeParams
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
+      .modify(_.maxRemoteDustLimit).setToIf(test.tags.contains("high-remote-dust-limit"))(15000 sat)
     val aliceParams = Alice.channelParams
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
 
@@ -98,7 +99,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (invalid dust limit)", Tag("mainnet")) { f =>
+  test("recv AcceptChannel (dust limit too low)", Tag("mainnet")) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // we don't want their dust limit to be below 546
@@ -106,6 +107,16 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage))
+    awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv AcceptChannel (dust limit too high)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    val highDustLimitSatoshis = 2000.sat
+    alice ! accept.copy(dustLimitSatoshis = highDustLimitSatoshis)
+    val error = alice2bob.expectMsgType[Error]
+    assert(error === Error(accept.temporaryChannelId, DustLimitTooLarge(accept.temporaryChannelId, highDustLimitSatoshis, Alice.nodeParams.maxRemoteDustLimit).getMessage))
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -151,7 +162,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv AcceptChannel (dust limit above our reserve)") { f =>
+  test("recv AcceptChannel (dust limit above our reserve)", Tag("high-remote-dust-limit")) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     val open = alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].lastSent

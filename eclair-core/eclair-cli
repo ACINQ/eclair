@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# default script values, can be overriden for convenience.
+# default script values, can be overridden for convenience.
 api_url='http://localhost:8080'
 # uncomment the line below if you don't want to provide a password each time you call eclair-cli
 # api_password='your_api_password'

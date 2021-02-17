@@ -45,23 +45,29 @@ object Sync {
 
   def handleSendChannelQuery(d: Data, s: SendChannelQuery)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    // ask for everything
-    // we currently send only one query_channel_range message per peer, when we just (re)connected to it, so we don't
-    // have to worry about sending a new query_channel_range when another query is still in progress
-    val query = QueryChannelRange(s.chainHash, firstBlockNum = 0L, numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toList))
-    log.info("sending query_channel_range={}", query)
-    s.to ! query
+    // we currently send query_channel_range when:
+    //  * we just (re)connected to a peer with whom we have channels
+    //  * we validate our first channel with a peer
+    // we must ensure we don't send a new query_channel_range while another query is still in progress
+    if (s.replacePrevious || !d.sync.contains(s.remoteNodeId)) {
+      // ask for everything
+      val query = QueryChannelRange(s.chainHash, firstBlockNum = 0L, numberOfBlocks = Int.MaxValue.toLong, TlvStream(s.flags_opt.toList))
+      log.info("sending query_channel_range={}", query)
+      s.to ! query
 
-    // we also set a pass-all filter for now (we can update it later) for the future gossip messages, by setting
-    // the first_timestamp field to the current date/time and timestamp_range to the maximum value
-    // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
-    // that (i.e. the whole routing table)
-    val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = System.currentTimeMillis.milliseconds.toSeconds, timestampRange = Int.MaxValue)
-    s.to ! filter
+      // we also set a pass-all filter for now (we can update it later) for the future gossip messages, by setting
+      // the first_timestamp field to the current date/time and timestamp_range to the maximum value
+      // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
+      // that (i.e. the whole routing table)
+      val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = System.currentTimeMillis.milliseconds.toSeconds, timestampRange = Int.MaxValue)
+      s.to ! filter
 
-    // clean our sync state for this peer: we receive a SendChannelQuery just when we connect/reconnect to a peer and
-    // will start a new complete sync process
-    d.copy(sync = d.sync - s.remoteNodeId)
+      // reset our sync state for this peer: we create an entry to ensure we reject duplicate queries and unsolicited reply_channel_range
+      d.copy(sync = d.sync + (s.remoteNodeId -> Syncing(Nil, 0)))
+    } else {
+      log.info("not sending query_channel_range: sync already in progress")
+      d
+    }
   }
 
   def handleQueryChannelRange(channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
@@ -74,8 +80,9 @@ object Sync {
     log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlockNum, q.numberOfBlocks)
     val chunks = split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
     Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
-    chunks.foreach { chunk =>
-      val reply = buildReplyChannelRange(chunk, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
+    chunks.zipWithIndex.foreach { case (chunk, i) =>
+      val syncComplete = i == chunks.size - 1
+      val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
       origin.peerConnection ! reply
       Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
       Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
@@ -86,59 +93,70 @@ object Sync {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(r)
 
-    Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.numberOfBlocks)
-    Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.shortChannelIds.array.size)
+    d.sync.get(origin.nodeId) match {
+      case None =>
+        log.info("received unsolicited reply_channel_range with {} channels", r.shortChannelIds.array.size)
+        d // we didn't request a sync from this node, ignore
+      case Some(currentSync) if currentSync.remainingQueries.isEmpty && r.shortChannelIds.array.isEmpty =>
+        // NB: this case deals with peers who don't return any sync data. We're currently not correctly detecting the end
+        // of a stream of reply_channel_range, but it's not an issue in practice (we instead rely on the remaining query_short_channel_ids).
+        // We should fix that once https://github.com/lightningnetwork/lightning-rfc/pull/826 is deployed.
+        log.info("received empty reply_channel_range, sync is complete")
+        d.copy(sync = d.sync - origin.nodeId)
+      case Some(currentSync) =>
+        Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.numberOfBlocks)
+        Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Incoming).record(r.shortChannelIds.array.size)
 
-    @tailrec
-    def loop(ids: List[ShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
-      ids match {
-        case Nil => acc.reverse
-        case head :: tail =>
-          val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, routerConf.requestNodeAnnouncements)
-          // 0 means nothing to query, just don't include it
-          val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
-          loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
-      }
+        @tailrec
+        def loop(ids: List[ShortChannelId], timestamps: List[ReplyChannelRangeTlv.Timestamps], checksums: List[ReplyChannelRangeTlv.Checksums], acc: List[ShortChannelIdAndFlag] = List.empty[ShortChannelIdAndFlag]): List[ShortChannelIdAndFlag] = {
+          ids match {
+            case Nil => acc.reverse
+            case head :: tail =>
+              val flag = computeFlag(d.channels)(head, timestamps.headOption, checksums.headOption, routerConf.requestNodeAnnouncements)
+              // 0 means nothing to query, just don't include it
+              val acc1 = if (flag != 0) ShortChannelIdAndFlag(head, flag) :: acc else acc
+              loop(tail, timestamps.drop(1), checksums.drop(1), acc1)
+          }
+        }
+
+        val timestamps_opt = r.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
+        val checksums_opt = r.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
+        val shortChannelIdAndFlags = loop(r.shortChannelIds.array, timestamps_opt, checksums_opt)
+        val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
+          case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
+            val c1 = c + (if (QueryShortChannelIdsTlv.QueryFlagType.includeChannelAnnouncement(flag)) 1 else 0)
+            val u1 = u + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate1(flag)) 1 else 0) + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate2(flag)) 1 else 0)
+            (c1, u1)
+        }
+        log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", r.shortChannelIds.array.size, channelCount, updatesCount, r.shortChannelIds.encoding)
+        Metrics.ReplyChannelRange.NewChannelAnnouncements.withoutTags().record(channelCount)
+        Metrics.ReplyChannelRange.NewChannelUpdates.withoutTags().record(updatesCount)
+
+        def buildQuery(chunk: List[ShortChannelIdAndFlag]): QueryShortChannelIds = {
+          // always encode empty lists as UNCOMPRESSED
+          val encoding = if (chunk.isEmpty) EncodingType.UNCOMPRESSED else r.shortChannelIds.encoding
+          val flags: TlvStream[QueryShortChannelIdsTlv] = if (r.timestamps_opt.isDefined || r.checksums_opt.isDefined) {
+            TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(encoding, chunk.map(_.flag)))
+          } else {
+            TlvStream.empty
+          }
+          QueryShortChannelIds(r.chainHash, EncodedShortChannelIds(encoding, chunk.map(_.shortChannelId)), flags)
+        }
+
+        // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
+        val replies = shortChannelIdAndFlags
+          .grouped(routerConf.channelQueryChunkSize)
+          .map(buildQuery)
+          .toList
+
+        val (sync1, replynow_opt) = addToSync(d.sync, currentSync, origin.nodeId, replies)
+        // we only send a reply right away if there were no pending requests
+        replynow_opt.foreach(origin.peerConnection ! _)
+        val progress = syncProgress(sync1)
+        ctx.system.eventStream.publish(progress)
+        ctx.self ! progress
+        d.copy(sync = sync1)
     }
-
-    val timestamps_opt = r.timestamps_opt.map(_.timestamps).getOrElse(List.empty[ReplyChannelRangeTlv.Timestamps])
-    val checksums_opt = r.checksums_opt.map(_.checksums).getOrElse(List.empty[ReplyChannelRangeTlv.Checksums])
-    val shortChannelIdAndFlags = loop(r.shortChannelIds.array, timestamps_opt, checksums_opt)
-    val (channelCount, updatesCount) = shortChannelIdAndFlags.foldLeft((0, 0)) {
-      case ((c, u), ShortChannelIdAndFlag(_, flag)) =>
-        val c1 = c + (if (QueryShortChannelIdsTlv.QueryFlagType.includeChannelAnnouncement(flag)) 1 else 0)
-        val u1 = u + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate1(flag)) 1 else 0) + (if (QueryShortChannelIdsTlv.QueryFlagType.includeUpdate2(flag)) 1 else 0)
-        (c1, u1)
-    }
-    log.info(s"received reply_channel_range with {} channels, we're missing {} channel announcements and {} updates, format={}", r.shortChannelIds.array.size, channelCount, updatesCount, r.shortChannelIds.encoding)
-    Metrics.ReplyChannelRange.NewChannelAnnouncements.withoutTags().record(channelCount)
-    Metrics.ReplyChannelRange.NewChannelUpdates.withoutTags().record(updatesCount)
-
-    def buildQuery(chunk: List[ShortChannelIdAndFlag]): QueryShortChannelIds = {
-      // always encode empty lists as UNCOMPRESSED
-      val encoding = if (chunk.isEmpty) EncodingType.UNCOMPRESSED else r.shortChannelIds.encoding
-      QueryShortChannelIds(r.chainHash,
-        shortChannelIds = EncodedShortChannelIds(encoding, chunk.map(_.shortChannelId)),
-        if (r.timestamps_opt.isDefined || r.checksums_opt.isDefined)
-          TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(encoding, chunk.map(_.flag)))
-        else
-          TlvStream.empty
-      )
-    }
-
-    // we update our sync data to this node (there may be multiple channel range responses and we can only query one set of ids at a time)
-    val replies = shortChannelIdAndFlags
-      .grouped(routerConf.channelQueryChunkSize)
-      .map(buildQuery)
-      .toList
-
-    val (sync1, replynow_opt) = addToSync(d.sync, origin.nodeId, replies)
-    // we only send a reply right away if there were no pending requests
-    replynow_opt.foreach(origin.peerConnection ! _)
-    val progress = syncProgress(sync1)
-    ctx.system.eventStream.publish(progress)
-    ctx.self ! progress
-    d.copy(sync = sync1)
   }
 
   def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[ShortChannelId, PublicChannel], origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
@@ -176,18 +194,18 @@ object Sync {
   def handleReplyShortChannelIdsEnd(d: Data, origin: RemoteGossip, r: ReplyShortChannelIdsEnd)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     ctx.sender ! TransportHandler.ReadAck(r)
-    // have we more channels to ask this peer?
+    // do we have more channels to request from this peer?
     val sync1 = d.sync.get(origin.nodeId) match {
       case Some(sync) =>
-        sync.pending match {
+        sync.remainingQueries match {
           case nextRequest +: rest =>
-            log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.pending.size}/${sync.total})")
+            log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.remainingQueries.size}/${sync.totalQueries})")
             origin.peerConnection ! nextRequest
-            d.sync + (origin.nodeId -> sync.copy(pending = rest))
+            d.sync + (origin.nodeId -> sync.copy(remainingQueries = rest))
           case Nil =>
             // we received reply_short_channel_ids_end for our last query and have not sent another one, we can now remove
             // the remote peer from our map
-            log.info(s"sync complete (total=${sync.total})")
+            log.info(s"sync complete (total=${sync.totalQueries})")
             d.sync - origin.nodeId
         }
       case _ => d.sync
@@ -343,7 +361,7 @@ object Sync {
   def syncProgress(sync: Map[PublicKey, Syncing]): SyncProgress = {
     // NB: progress is in terms of requests, not individual channels
     val (pending, total) = sync.foldLeft((0, 0)) {
-      case ((p, t), (_, sync)) => (p + sync.pending.size, t + sync.total)
+      case ((p, t), (_, sync)) => (p + sync.remainingQueries.size, t + sync.totalQueries)
     }
     if (total == 0) {
       SyncProgress(1)
@@ -375,12 +393,13 @@ object Sync {
 
   case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId]) {
     /**
-     *
      * @param maximumSize maximum size of the short channel ids list
      * @return a chunk with at most `maximumSize` ids
      */
-    def enforceMaximumSize(maximumSize: Int) = {
-      if (shortChannelIds.size <= maximumSize) this else {
+    def enforceMaximumSize(maximumSize: Int): ShortChannelIdsChunk = {
+      if (shortChannelIds.size <= maximumSize) {
+        this
+      } else {
         // we use a random offset here, so even if shortChannelIds.size is much bigger than maximumSize (which should
         // not happen) peers will eventually receive info about all channels in this chunk
         val offset = Random.nextInt(shortChannelIds.size - maximumSize + 1)
@@ -463,7 +482,7 @@ object Sync {
    * @param channels        channels map
    * @return a ReplyChannelRange object
    */
-  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
+  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
     val encoding = if (chunk.shortChannelIds.isEmpty) EncodingType.UNCOMPRESSED else defaultEncoding
     val (timestamps, checksums) = queryFlags_opt match {
       case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
@@ -475,24 +494,23 @@ object Sync {
       case _ => (None, None)
     }
     ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
-      complete = 1,
+      syncComplete = if (syncComplete) 1 else 0,
       shortChannelIds = EncodedShortChannelIds(encoding, chunk.shortChannelIds),
       timestamps = timestamps,
       checksums = checksums)
   }
 
-  def addToSync(syncMap: Map[PublicKey, Syncing], remoteNodeId: PublicKey, pending: List[RoutingMessage]): (Map[PublicKey, Syncing], Option[RoutingMessage]) = {
+  def addToSync(syncMap: Map[PublicKey, Syncing], current: Syncing, remoteNodeId: PublicKey, pending: List[QueryShortChannelIds]): (Map[PublicKey, Syncing], Option[QueryShortChannelIds]) = {
     pending match {
       case head +: rest =>
         // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
         // send another query_short_channel_ids query if they're still processing one
-        syncMap.get(remoteNodeId) match {
-          case None =>
-            // we don't have a pending query with this peer, let's send it
-            (syncMap + (remoteNodeId -> Syncing(rest, pending.size)), Some(head))
-          case Some(sync) =>
-            // we already have a pending query with this peer, add missing ids to our "sync" state
-            (syncMap + (remoteNodeId -> Syncing(sync.pending ++ pending, sync.total + pending.size)), None)
+        if (current.started) {
+          // we already have a pending query with this peer, add missing ids to our "sync" state
+          (syncMap + (remoteNodeId -> Syncing(current.remainingQueries ++ pending, current.totalQueries + pending.size)), None)
+        } else {
+          // we don't have a pending query with this peer, let's send it
+          (syncMap + (remoteNodeId -> Syncing(rest, pending.size)), Some(head))
         }
       case Nil =>
         // there is nothing to send

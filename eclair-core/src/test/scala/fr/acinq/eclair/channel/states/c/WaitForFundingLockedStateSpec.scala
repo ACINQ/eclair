@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.Outcome
@@ -33,7 +33,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
 
   val initialRelayFees = (1000 msat, 100)
 

@@ -58,6 +58,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       dustLimit: Satoshi,
+                      maxRemoteDustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
@@ -250,6 +251,7 @@ object NodeParams extends Logging {
       val featuresErr = Features.validateFeatureGraph(features)
       require(featuresErr.isEmpty, featuresErr.map(_.message))
       require(features.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
+      require(!features.hasFeature(Features.InitialRoutingSync), s"${Features.InitialRoutingSync.rfcName} is not supported anymore, use ${Features.ChannelRangeQueries.rfcName} instead")
     }
 
     val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
@@ -322,6 +324,7 @@ object NodeParams extends Logging {
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
+      maxRemoteDustLimit = Satoshi(config.getLong("max-remote-dust-limit-satoshis")),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,

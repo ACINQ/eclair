@@ -22,7 +22,7 @@ import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
@@ -35,7 +35,7 @@ import scodec.bits.ByteVector
 import scala.concurrent.duration._
 import scala.util.Random
 
-class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
 
   type FixtureParam = SetupFixture
 

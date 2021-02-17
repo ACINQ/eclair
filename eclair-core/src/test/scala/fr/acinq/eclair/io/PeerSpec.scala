@@ -28,11 +28,10 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.wire._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{Outcome, Tag}
+import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 import scodec.bits.ByteVector
 
 import java.net.{InetAddress, ServerSocket, Socket}
@@ -40,7 +39,7 @@ import java.util.concurrent.Executors
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
 
   val fakeIPAddress: NodeAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
 
@@ -313,8 +312,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTe
     awaitCond(peer.stateData.channels.nonEmpty)
 
     val channelCreated = probe.expectMsgType[ChannelCreated]
-    assert(channelCreated.initialFeeratePerKw == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.commitmentBlockTarget))
-    assert(channelCreated.fundingTxFeeratePerKw.get == peer.feeEstimator.getFeeratePerKw(peer.feeTargets.fundingBlockTarget))
+    assert(channelCreated.initialFeeratePerKw == nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget))
+    assert(channelCreated.fundingTxFeeratePerKw.get == nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
 
     peer.stateData.channels.foreach { case (_, channelRef) =>
       probe.send(channelRef, CMD_GETINFO(probe.ref))

@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.channel
 
-import java.util.UUID
-import java.util.concurrent.CountDownLatch
-
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
@@ -26,12 +23,12 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.states.StateTestsBase
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
@@ -39,6 +36,8 @@ import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
+import java.util.UUID
+import java.util.concurrent.CountDownLatch
 import scala.collection.immutable.Nil
 import scala.concurrent.duration._
 import scala.util.Random
@@ -47,7 +46,7 @@ import scala.util.Random
  * Created by PM on 05/07/2016.
  */
 
-class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods with Logging {
+class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase with Logging {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
 

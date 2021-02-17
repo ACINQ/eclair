@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
-
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
@@ -34,6 +32,7 @@ import fr.acinq.eclair.{wire, _}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
+import java.net.InetSocketAddress
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -136,29 +135,12 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         } else {
           Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
-
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected)
 
-          def localHasFeature(f: Feature): Boolean = d.localInit.features.hasFeature(f)
-
-          def remoteHasFeature(f: Feature): Boolean = remoteInit.features.hasFeature(f)
-
-          val canUseChannelRangeQueries = localHasFeature(Features.ChannelRangeQueries) && remoteHasFeature(Features.ChannelRangeQueries)
-          val canUseChannelRangeQueriesEx = localHasFeature(Features.ChannelRangeQueriesExtended) && remoteHasFeature(Features.ChannelRangeQueriesExtended)
-          if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
-            // if they support channel queries we don't send routing info yet, if they want it they will query us
-            // we will query them, using extended queries if supported
-            val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
-            if (d.doSync) {
-              log.info(s"sending sync channel range query with flags_opt=$flags_opt")
-              router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, flags_opt = flags_opt)
-            } else {
-              log.info("not syncing with this peer")
-            }
-          } else if (remoteHasFeature(Features.InitialRoutingSync)) {
-            // "old" nodes, do as before
-            log.info("peer requested a full routing table dump")
-            router ! GetRoutingState
+          if (d.doSync) {
+            self ! DoSync(replacePrevious = true)
+          } else {
+            log.info("not syncing with this peer")
           }
 
           // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
@@ -358,6 +340,16 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         }
         stay using d.copy(behavior = behavior1)
 
+      case Event(DoSync(replacePrevious), d: ConnectedData) =>
+        val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueries)
+        val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueriesExtended)
+        if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
+          val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
+          log.info(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
+          router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
+        }
+        stay
+
       case Event(ResumeAnnouncements, d: ConnectedData) =>
         log.info(s"resuming processing of network announcements for peer")
         stay using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
@@ -472,6 +464,7 @@ object PeerConnection {
   case object InitTimeout
   case object SendPing
   case object ResumeAnnouncements
+  case class DoSync(replacePrevious: Boolean)
   // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes

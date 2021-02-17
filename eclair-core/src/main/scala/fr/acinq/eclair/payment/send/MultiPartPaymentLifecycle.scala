@@ -116,7 +116,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
-        stay using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures)
+        val assistedRoutes1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.assistedRoutes)
+        stay using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
       }
 
     // The recipient released the preimage without receiving the full payment amount.
@@ -137,11 +138,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures :+ failure, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
+        val assistedRoutes1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.assistedRoutes)
         val stillPending = d.pending - pf.id
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, stillPending.values)
         log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
-        val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures)
+        val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d1, cfg)
         goto(WAIT_FOR_ROUTES) using d1
       }

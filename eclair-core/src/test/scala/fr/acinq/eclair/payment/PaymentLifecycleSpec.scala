@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
-import fr.acinq.eclair.channel.Register.ForwardShortId
+import fr.acinq.eclair.channel.Register.{ForwardShortId, ForwardShortIdFailure}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
@@ -266,15 +266,33 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val request = SendPayment(sender.ref, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 2)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
-
-    val WaitingForRoute(_, Nil, _) = paymentFSM.stateData
-    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg))
+    routerForwarder.expectMsgType[RouteRequest]
     routerForwarder.forward(routerFixture.router)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
-    val WaitingForComplete(_, cmd1, Nil, _, _, _) = paymentFSM.stateData
 
+    val WaitingForComplete(_, cmd1, Nil, _, _, _) = paymentFSM.stateData
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
     sender.send(paymentFSM, RES_ADD_FAILED(cmd1, ChannelUnavailable(ByteVector32.Zeroes), None))
+
+    // then the payment lifecycle will ask for a new route excluding the channel
+    routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab, a, b)))))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending)) // payment is still pending because the error is recoverable
+  }
+
+  test("payment failed (register error)") { routerFixture =>
+    val payFixture = createPaymentLifecycle()
+    import payFixture._
+    import cfg._
+
+    val request = SendPayment(sender.ref, d, FinalLegacyPayload(defaultAmountMsat, defaultExpiry), 2)
+    sender.send(paymentFSM, request)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE && nodeParams.db.payments.getOutgoingPayment(id).exists(_.status === OutgoingPaymentStatus.Pending))
+    routerForwarder.expectMsgType[RouteRequest]
+    routerForwarder.forward(routerFixture.router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+
+    val fwd = register.expectMsgType[ForwardShortId[CMD_ADD_HTLC]]
+    register.send(paymentFSM, ForwardShortIdFailure(fwd))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab, a, b)))))

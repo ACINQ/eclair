@@ -177,6 +177,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
         port = config.getInt("bitcoind.rpcport")) {
         override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
           case "getbalances" => Future(JObject("mine" -> JObject("trusted" -> apiAmount, "untrusted_pending" -> apiAmount)))(ec)
+          case "getmempoolinfo" => Future(JObject("mempoolminfee" -> JDecimal(0.0002)))(ec)
           case "fundrawtransaction" => Future(JObject(List("hex" -> JString(hexOut), "changepos" -> JInt(1), "fee" -> apiAmount)))(ec)
           case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))
         }
@@ -244,11 +245,11 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
 
     val fundingTxes = for (_ <- 0 to 3) yield {
       val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
-      wallet.makeFundingTx(pubkeyScript, MilliBtc(50), FeeratePerKw(200 sat)).pipeTo(sender.ref) // create a tx with an invalid feerate (too little)
-      val belowFeeFundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
-      extendedClient.publishTransaction(belowFeeFundingTx).pipeTo(sender.ref) // try publishing the tx
-      assert(sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error.message.contains("min relay fee not met"))
-      wallet.rollback(belowFeeFundingTx).pipeTo(sender.ref) // rollback the locked outputs
+      wallet.makeFundingTx(pubkeyScript, Satoshi(500), FeeratePerKw(250 sat)).pipeTo(sender.ref)
+      val fundingTx = sender.expectMsgType[MakeFundingTxResponse].fundingTx
+      extendedClient.publishTransaction(fundingTx.copy(txIn = Nil)).pipeTo(sender.ref) // try publishing an invalid version of the tx
+      sender.expectMsgType[Failure]
+      wallet.rollback(fundingTx).pipeTo(sender.ref) // rollback the locked outputs
       assert(sender.expectMsgType[Boolean])
 
       // now fund a tx with correct feerate
@@ -324,6 +325,24 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
 
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
+  }
+
+  test("ensure feerate is always above min-relay-fee") {
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"))
+    val wallet = new BitcoinCoreWallet(bitcoinClient)
+    val sender = TestProbe()
+
+    val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+    // 200 sat/kw is below the min-relay-fee
+    wallet.makeFundingTx(pubkeyScript, MilliBtc(5), FeeratePerKw(200 sat)).pipeTo(sender.ref)
+    val MakeFundingTxResponse(fundingTx, _, _) = sender.expectMsgType[MakeFundingTxResponse]
+
+    wallet.commit(fundingTx).pipeTo(sender.ref)
+    sender.expectMsg(true)
   }
 
   test("getReceivePubkey should return the raw pubkey for the receive address") {

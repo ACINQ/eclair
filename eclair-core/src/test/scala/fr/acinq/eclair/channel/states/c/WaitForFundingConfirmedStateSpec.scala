@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
@@ -34,7 +34,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
 
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 

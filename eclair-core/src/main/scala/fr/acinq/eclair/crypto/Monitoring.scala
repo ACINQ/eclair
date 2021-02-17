@@ -22,10 +22,21 @@ object Monitoring {
 
   object Metrics {
     val OnionPayloadFormat = Kamon.counter("crypto.sphinx.onion-payload-format")
+    val SignTxCount = Kamon.counter("crypto.keymanager.sign.count")
+    val SignTxDuration = Kamon.timer("crypto.keymanager.sign.duration")
   }
 
   object Tags {
     val LegacyOnion = "legacy"
+    val TxOwner = "txOwner"
+    val TxType = "txType"
+
+    object TxTypes {
+      val CommitTx = "commit"
+      val HtlcTx = "htlc"
+      val RevokedTx = "revoked"
+    }
+
   }
 
 }

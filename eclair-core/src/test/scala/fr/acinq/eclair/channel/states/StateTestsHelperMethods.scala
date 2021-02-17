@@ -24,7 +24,6 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
@@ -39,7 +38,29 @@ import scala.concurrent.duration._
 /**
  * Created by PM on 23/08/2016.
  */
-trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with ParallelTestExecution {
+trait StateTestsBase extends StateTestsHelperMethods with FixtureTestSuite with ParallelTestExecution {
+
+  implicit class ChannelWithTestFeeConf(a: TestFSMRef[State, Data, Channel]) {
+    // @formatter:off
+    def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
+    def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
+    // @formatter:on
+  }
+
+}
+
+object StateTestsTags {
+  /** If set, channels will use option_static_remotekey. */
+  val StaticRemoteKey = "static_remotekey"
+  /** If set, channels will use option_anchor_outputs. */
+  val AnchorOutputs = "anchor_outputs"
+  /** If set, channels will be public (otherwise we don't announce them by default). */
+  val ChannelsPublic = "channels_public"
+  /** If set, no amount will be pushed when opening a channel (by default we push a small amount). */
+  val NoPushMsat = "no_push_msat"
+}
+
+trait StateTestsHelperMethods extends TestKitBase {
 
   case class SetupFixture(alice: TestFSMRef[State, Data, Channel],
                           bob: TestFSMRef[State, Data, Channel],
@@ -77,12 +98,12 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
 
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
     import setup._
-    val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val pushMsat = if (tags.contains("no_push_msat")) 0.msat else TestConstants.pushMsat
-    val (aliceParams, bobParams, channelVersion) = if (tags.contains("anchor_outputs")) {
+    val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
+    val pushMsat = if (tags.contains(StateTestsTags.NoPushMsat)) 0.msat else TestConstants.pushMsat
+    val (aliceParams, bobParams, channelVersion) = if (tags.contains(StateTestsTags.AnchorOutputs)) {
       val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
       (Alice.channelParams.copy(features = features), Bob.channelParams.copy(features = features), ChannelVersion.ANCHOR_OUTPUTS)
-    } else if (tags.contains("static_remotekey")) {
+    } else if (tags.contains(StateTestsTags.StaticRemoteKey)) {
       val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
       val aliceParams = Alice.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
       val bobParams = Bob.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
@@ -240,19 +261,19 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
     s2blockchain.expectMsgAllOf(localCommitPublished.claimHtlcDelayedTxs.map(PublishAsap): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
-    assert(s2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(commitTx))
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => assert(s2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx)))
-    assert(localCommitPublished.claimHtlcDelayedTxs.map(_ => s2blockchain.expectMsgType[WatchConfirmed].event).toSet === localCommitPublished.claimHtlcDelayedTxs.map(BITCOIN_TX_CONFIRMED).toSet)
+    assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(commitTx))
+    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(tx)))
+    assert(localCommitPublished.claimHtlcDelayedTxs.map(_ => s2blockchain.expectMsgType[WatchConfirmed].event).toSet == localCommitPublished.claimHtlcDelayedTxs.map(BITCOIN_TX_CONFIRMED).toSet)
 
     // we watch outputs of the commitment tx that both parties may spend
     val htlcOutputIndexes = (localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs).map(tx => tx.txIn.head.outPoint.index)
     val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchSpent])
-    spentWatches.foreach(ws => assert(ws.event === BITCOIN_OUTPUT_SPENT))
-    spentWatches.foreach(ws => assert(ws.txId === commitTx.txid))
-    assert(spentWatches.map(_.outputIndex).toSet === htlcOutputIndexes.toSet)
+    spentWatches.foreach(ws => assert(ws.event == BITCOIN_OUTPUT_SPENT))
+    spentWatches.foreach(ws => assert(ws.txId == commitTx.txid))
+    assert(spentWatches.map(_.outputIndex).toSet == htlcOutputIndexes.toSet)
     s2blockchain.expectNoMsg(1 second)
 
-    // s is now in CLOSING state with txes pending for confirmation before going in CLOSED state
+    // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
     s.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
   }
 
@@ -274,38 +295,26 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
       s2blockchain.expectMsg(PublishAsap(tx))
     })
     // all htlcs success/timeout should be claimed
-    val claimHtlcTxes = remoteCommitPublished.claimHtlcSuccessTxs ++ remoteCommitPublished.claimHtlcTimeoutTxs
-    claimHtlcTxes.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    s2blockchain.expectMsgAllOf(claimHtlcTxes.map(PublishAsap): _*)
+    val claimHtlcTxs = remoteCommitPublished.claimHtlcSuccessTxs ++ remoteCommitPublished.claimHtlcTimeoutTxs
+    claimHtlcTxs.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(PublishAsap): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
-    assert(s2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(rCommitTx))
-    remoteCommitPublished.claimMainOutputTx.foreach(tx => assert(s2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx)))
+    assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(rCommitTx))
+    remoteCommitPublished.claimMainOutputTx.foreach(tx => assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(tx)))
 
     // we watch outputs of the commitment tx that both parties may spend
-    val htlcOutputIndexes = claimHtlcTxes.map(tx => tx.txIn.head.outPoint.index)
+    val htlcOutputIndexes = claimHtlcTxs.map(tx => tx.txIn.head.outPoint.index)
     val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchSpent])
-    spentWatches.foreach(ws => assert(ws.event === BITCOIN_OUTPUT_SPENT))
-    spentWatches.foreach(ws => assert(ws.txId === rCommitTx.txid))
-    assert(spentWatches.map(_.outputIndex).toSet === htlcOutputIndexes.toSet)
+    spentWatches.foreach(ws => assert(ws.event == BITCOIN_OUTPUT_SPENT))
+    spentWatches.foreach(ws => assert(ws.txId == rCommitTx.txid))
+    assert(spentWatches.map(_.outputIndex).toSet == htlcOutputIndexes.toSet)
     s2blockchain.expectNoMsg(1 second)
 
-    // s is now in CLOSING state with txes pending for confirmation before going in CLOSED state
+    // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
     getRemoteCommitPublished(s.stateData.asInstanceOf[DATA_CLOSING]).get
   }
 
   def channelId(a: TestFSMRef[State, Data, Channel]): ByteVector32 = a.stateData.channelId
-
-  // @formatter:off
-  implicit class ChannelWithTestFeeConf(a: TestFSMRef[State, Data, Channel]) {
-    def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
-    def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
-  }
-
-  implicit class PeerWithTestFeeConf(a: TestFSMRef[Peer.State, Peer.Data, Peer]) {
-    def feeEstimator: TestFeeEstimator = a.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
-    def feeTargets: FeeTargets = a.underlyingActor.nodeParams.onChainFeeConf.feeTargets
-  }
-  // @formatter:on
 
 }

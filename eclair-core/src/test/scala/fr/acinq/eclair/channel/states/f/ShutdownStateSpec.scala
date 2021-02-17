@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, Script
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
@@ -41,7 +41,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsHelperMethods {
+class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
 
   type FixtureParam = SetupFixture
 

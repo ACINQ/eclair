@@ -146,8 +146,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
         log.info(s"subscribing listener=$listener to network events")
         context.system.eventStream.subscribe(listener, classOf[NetworkEvent])
         context.watch(listener)
+
         override def receive: Receive = {
-          case Terminated(actor) if actor == listener=>
+          case Terminated(actor) if actor == listener =>
             log.warning(s"unsubscribing listener=$listener to network events")
             context.system.eventStream.unsubscribe(listener)
             context stop self
@@ -519,7 +520,7 @@ object Router {
   // @formatter:on
 
   // @formatter:off
-  case class SendChannelQuery(chainHash: ByteVector32, remoteNodeId: PublicKey, to: ActorRef, flags_opt: Option[QueryChannelRangeTlv]) extends RemoteTypes
+  case class SendChannelQuery(chainHash: ByteVector32, remoteNodeId: PublicKey, to: ActorRef, replacePrevious: Boolean, flags_opt: Option[QueryChannelRangeTlv]) extends RemoteTypes
   case object GetNetworkStats
   case class GetNetworkStatsResponse(stats: Option[NetworkStats])
   case object GetRoutingState
@@ -566,7 +567,13 @@ object Router {
 
   case class ShortChannelIdAndFlag(shortChannelId: ShortChannelId, flag: Long)
 
-  case class Syncing(pending: List[RoutingMessage], total: Int)
+  /**
+   * @param remainingQueries remaining queries to send, the next one will be popped after we receive a [[ReplyShortChannelIdsEnd]]
+   * @param totalQueries     total number of *queries* (not channels) that will be sent during this syncing session
+   */
+  case class Syncing(remainingQueries: List[RoutingMessage], totalQueries: Int) {
+    def started: Boolean = totalQueries > 0
+  }
 
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: SortedMap[ShortChannelId, PublicChannel],

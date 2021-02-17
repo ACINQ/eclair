@@ -154,7 +154,6 @@ object TestConstants {
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       features = Features(
         Set(
-          ActivatedFeature(InitialRoutingSync, Optional),
           ActivatedFeature(OptionDataLossProtect, Optional),
           ActivatedFeature(ChannelRangeQueries, Optional),
           ActivatedFeature(ChannelRangeQueriesExtended, Optional),
@@ -168,6 +167,7 @@ object TestConstants {
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
+      maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
@@ -261,7 +261,6 @@ object TestConstants {
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
       features = Features(Set(
-        ActivatedFeature(InitialRoutingSync, Optional),
         ActivatedFeature(OptionDataLossProtect, Optional),
         ActivatedFeature(ChannelRangeQueries, Optional),
         ActivatedFeature(ChannelRangeQueriesExtended, Optional),
@@ -273,6 +272,7 @@ object TestConstants {
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1000 sat,
+      maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
