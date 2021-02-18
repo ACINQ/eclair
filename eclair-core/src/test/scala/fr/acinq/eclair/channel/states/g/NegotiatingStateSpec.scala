@@ -21,10 +21,11 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -100,11 +101,12 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val initialState = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
     bob2alice.forward(alice)
     val aliceCloseSig2 = alice2bob.expectMsgType[ClosingSigned]
-    // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
+    // BOLT 2: If the receiver doesn't agree with the fee it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
     assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig1.feeSatoshis)
     awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.map(_.localClosingSigned) == initialState.closingTxProposed.last.map(_.localClosingSigned) :+ aliceCloseSig2)
     val Some(closingTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
     assert(closingTx.txOut.length === 2) // NB: in the anchor outputs case, anchors are removed from the closing tx
+    assert(aliceCloseSig2.feeSatoshis > Transactions.weight2fee(FeeEstimator.AnchorOutputMaxCommitFeerate, closingTx.weight())) // NB: closing fee is allowed to be higher than commit tx fee when using anchor outputs
   }
 
   test("recv ClosingSigned (theirCloseFee != ourCloseFee)") {
