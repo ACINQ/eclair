@@ -676,11 +676,11 @@ object Helpers {
      *
      * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
      */
-    def claimRevokedRemoteCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, db: ChannelsDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
+    def claimRevokedRemoteCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, commitTx: Transaction, db: ChannelsDb, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
       import commitments._
-      require(tx.txIn.size == 1, "commitment tx should have 1 input")
+      require(commitTx.txIn.size == 1, "commitment tx should have 1 input")
       val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
-      val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
+      val obscuredTxNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
       val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
       // this tx has been published by remote, so we need to invert local/remote params
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localPaymentPoint)
@@ -707,13 +707,13 @@ object Helpers {
               log.info(s"channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
               None
             case v if v.hasAnchorOutputs => generateTx("claim-remote-delayed-output") {
-              Transactions.makeClaimRemoteDelayedOutputTx(tx, localParams.dustLimit, localPaymentPoint, localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+              Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(claimMain, sig)
               })
             }
             case _ => generateTx("claim-p2wpkh-output") {
-              Transactions.makeClaimP2WPKHOutputTx(tx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
+              Transactions.makeClaimP2WPKHOutputTx(commitTx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain).right.map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(claimMain, localPaymentPubkey, sig)
               })
@@ -722,7 +722,7 @@ object Helpers {
 
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty") {
-            Transactions.makeMainPenaltyTx(tx, localParams.dustLimit, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).right.map(txinfo => {
+            Transactions.makeMainPenaltyTx(commitTx, localParams.dustLimit, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).right.map(txinfo => {
               val sig = keyManager.sign(txinfo, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
               Transactions.addSigs(txinfo, sig)
             })
@@ -739,10 +739,10 @@ object Helpers {
             .toMap
 
           // and finally we steal the htlc outputs
-          val htlcPenaltyTxs = tx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+          val htlcPenaltyTxs = commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
             val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
             generateTx("htlc-penalty") {
-              Transactions.makeHtlcPenaltyTx(tx, outputIndex, htlcRedeemScript, localParams.dustLimit, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).right.map(htlcPenalty => {
+              Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).right.map(htlcPenalty => {
                 val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
               })
@@ -750,7 +750,7 @@ object Helpers {
           }.toList.flatten
 
           RevokedCommitPublished(
-            commitTx = tx,
+            commitTx = commitTx,
             claimMainOutputTx = mainTx.map(_.tx),
             mainPenaltyTx = mainPenaltyTx.map(_.tx),
             htlcPenaltyTxs = htlcPenaltyTxs.map(_.tx),
@@ -776,8 +776,8 @@ object Helpers {
         log.info(s"looks like txid=${htlcTx.txid} could be a 2nd level htlc tx spending revoked commit txid=${revokedCommitPublished.commitTx.txid}")
         // Let's assume that htlcTx is an HtlcSuccessTx or HtlcTimeoutTx and try to generate a tx spending its output using a revocation key
         import commitments._
-        val tx = revokedCommitPublished.commitTx
-        val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn.head.sequence, tx.lockTime)
+        val commitTx = revokedCommitPublished.commitTx
+        val obscuredTxNumber = Transactions.decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
         val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
         val localPaymentPoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
         // this tx has been published by remote, so we need to invert local/remote params
@@ -1115,7 +1115,7 @@ object Helpers {
     }
 
     /**
-     * This helper function tells if the utxo consumed by the given transaction has already been irrevocably spent (possibly by this very transaction)
+     * This helper function tells if some of the utxos consumed by the given transaction have already been irrevocably spent (possibly by this very transaction).
      *
      * It can be useful to:
      *   - not attempt to publish this tx when we know this will fail
@@ -1127,14 +1127,11 @@ object Helpers {
      * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
      */
     def inputsAlreadySpent(tx: Transaction, irrevocablySpent: Map[OutPoint, ByteVector32]): Boolean = {
-      require(tx.txIn.size == 1, "only tx with one input is supported")
-      val outPoint = tx.txIn.head.outPoint
-      irrevocablySpent.contains(outPoint)
+      tx.txIn.exists(txIn => irrevocablySpent.contains(txIn.outPoint))
     }
 
     /**
      * This helper function returns the fee paid by the given transaction.
-     *
      * It relies on the current channel data to find the parent tx and compute the fee, and also provides a description.
      *
      * @param tx a tx for which we want to compute the fee
@@ -1142,10 +1139,12 @@ object Helpers {
      * @return if the parent tx is found, a tuple (fee, description)
      */
     def networkFeePaid(tx: Transaction, d: DATA_CLOSING): Option[(Satoshi, String)] = {
-      // only funder pays the fee
-      if (d.commitments.localParams.isFunder) {
-        // we build a map with all known txes (that's not particularly efficient, but it doesn't really matter)
-        val txes: Map[ByteVector32, (Transaction, String)] = (
+      val isCommitTx = tx.txIn.map(_.outPoint).contains(d.commitments.commitInput.outPoint)
+      // only the funder pays the fee for the commit tx, but 2nd-stage and 3rd-stage tx fees are paid by their recipients
+      // we can compute the fees only for transactions with a single parent for which we know the output amount
+      if (tx.txIn.size == 1 && (d.commitments.localParams.isFunder || !isCommitTx)) {
+        // we build a map with all known txs (that's not particularly efficient, but it doesn't really matter)
+        val txs: Map[ByteVector32, (Transaction, String)] = (
           d.mutualClosePublished.map(_ -> "mutual") ++
             d.localCommitPublished.map(_.commitTx).map(_ -> "local-commit").toSeq ++
             d.localCommitPublished.flatMap(_.claimMainDelayedOutputTx).map(_ -> "local-main-delayed") ++
@@ -1169,20 +1168,15 @@ object Helpers {
           .map { case (tx, desc) => tx.txid -> (tx, desc) } // will allow easy lookup of parent transaction
           .toMap
 
-        def fee(child: Transaction): Option[Satoshi] = {
-          require(child.txIn.size == 1, "transaction must have exactly one input")
-          val outPoint = child.txIn.head.outPoint
-          val parentTxOut_opt = if (outPoint == d.commitments.commitInput.outPoint) {
-            Some(d.commitments.commitInput.txOut)
-          }
-          else {
-            txes.get(outPoint.txid) map { case (parent, _) => parent.txOut(outPoint.index.toInt) }
-          }
-          parentTxOut_opt map (parentTxOut => parentTxOut.amount - child.txOut.map(_.amount).sum)
-        }
-
-        txes.get(tx.txid) flatMap {
-          case (_, desc) => fee(tx).map(_ -> desc)
+        txs.get(tx.txid).flatMap {
+          case (_, desc) =>
+            val parentTxOut_opt = if (isCommitTx) {
+              Some(d.commitments.commitInput.txOut)
+            } else {
+              val outPoint = tx.txIn.head.outPoint
+              txs.get(outPoint.txid).map { case (parent, _) => parent.txOut(outPoint.index.toInt) }
+            }
+            parentTxOut_opt.map(parentTxOut => parentTxOut.amount - tx.txOut.map(_.amount).sum).map(_ -> desc)
         }
       } else {
         None

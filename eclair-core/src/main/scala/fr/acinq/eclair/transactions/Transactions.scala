@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.transactions
 
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
@@ -29,6 +27,7 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import scodec.bits.ByteVector
 
+import java.nio.ByteOrder
 import scala.util.Try
 
 /**
@@ -224,11 +223,11 @@ object Transactions {
    */
   def obscuredCommitTxNumber(commitTxNumber: Long, isFunder: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
     // from BOLT 3: SHA256(payment-basepoint from open_channel || payment-basepoint from accept_channel)
-    val h = if (isFunder)
+    val h = if (isFunder) {
       Crypto.sha256(localPaymentBasePoint.value ++ remotePaymentBasePoint.value)
-    else
+    } else {
       Crypto.sha256(remotePaymentBasePoint.value ++ localPaymentBasePoint.value)
-
+    }
     val blind = Protocol.uint64((h.takeRight(6).reverse ++ ByteVector.fromValidHex("0000")).toArray, ByteOrder.LITTLE_ENDIAN)
     commitTxNumber ^ blind
   }
@@ -241,6 +240,7 @@ object Transactions {
    * @return the actual commit tx number that was blinded and stored in locktime and sequence fields
    */
   def getCommitTxNumber(commitTx: Transaction, isFunder: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
+    require(commitTx.txIn.size == 1, "commitment tx should have 1 input")
     val blind = obscuredCommitTxNumber(0, isFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val obscured = decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
     obscured ^ blind
@@ -735,7 +735,8 @@ object Transactions {
   }
 
   def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
-    require(txinfo.tx.txIn.lengthCompare(1) == 0, "only one input allowed")
+    // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
+    // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
     sign(txinfo.tx, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sighashType)
   }
 
@@ -806,8 +807,10 @@ object Transactions {
     closingTx.copy(tx = closingTx.tx.updateWitness(0, witness))
   }
 
-  def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
-    Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn.head.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+  def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] = {
+    // NB: we don't verify the other inputs as they should only be wallet inputs used to RBF the transaction
+    Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.input.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+  }
 
   def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
     val sighash = txinfo.sighash(txOwner, commitmentFormat)
