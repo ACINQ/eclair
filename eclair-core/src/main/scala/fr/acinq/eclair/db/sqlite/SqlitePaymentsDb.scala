@@ -18,13 +18,13 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, ResultSet, Statement}
 import java.util.UUID
+
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
-import fr.acinq.eclair.io.Peer.Nothing
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.CommonCodecs
 import grizzled.slf4j.Logging
