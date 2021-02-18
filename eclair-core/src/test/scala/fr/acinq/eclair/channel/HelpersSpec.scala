@@ -60,7 +60,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
         mutualClosePublished = tx2 :: tx3 :: Nil,
         localCommitPublished = None,
@@ -75,7 +75,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -97,7 +97,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -121,7 +121,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -149,7 +149,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -179,7 +179,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments.copy(remoteNextCommitInfo = Left(WaitingForRevocation(commitments.remoteCommit, null, 7L))),
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = tx1 :: Nil,
         mutualClosePublished = tx1 :: Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -215,7 +215,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -236,7 +236,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = None,
@@ -259,7 +259,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
@@ -306,7 +306,7 @@ class HelpersSpec extends AnyFunSuite {
       DATA_CLOSING(
         commitments = commitments,
         fundingTx = None,
-        waitingSince = 0,
+        waitingSinceBlock = 0,
         mutualCloseProposed = Nil,
         mutualClosePublished = Nil,
         localCommitPublished = Some(LocalCommitPublished(
