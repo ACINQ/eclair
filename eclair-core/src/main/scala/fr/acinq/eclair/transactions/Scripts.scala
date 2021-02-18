@@ -93,22 +93,31 @@ object Scripts {
       0
     }
 
-  /**
-   * @return the number of confirmations of the tx parent before which it can be published
-   */
-  def csvTimeout(tx: Transaction): Long = {
-    def sequenceToBlockHeight(sequence: Long): Long = {
-      if ((sequence & TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0) 0
-      else {
-        require((sequence & TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG) == 0, "CSV timeout must use block heights, not block times")
-        sequence & TxIn.SEQUENCE_LOCKTIME_MASK
-      }
-    }
-
-    if (tx.version < 2) {
+  private def sequenceToBlockHeight(sequence: Long): Long = {
+    if ((sequence & TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0) {
       0
     } else {
-      tx.txIn.map(_.sequence).map(sequenceToBlockHeight).max
+      require((sequence & TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG) == 0, "CSV timeout must use block heights, not block times")
+      sequence & TxIn.SEQUENCE_LOCKTIME_MASK
+    }
+  }
+
+  /**
+   * @return the number of confirmations of each parent before which the given transaction can be published.
+   */
+  def csvTimeouts(tx: Transaction): Map[ByteVector32, Long] = {
+    if (tx.version < 2) {
+      Map.empty
+    } else {
+      tx.txIn.foldLeft(Map.empty[ByteVector32, Long]) { case (current, txIn) =>
+        val csvTimeout = sequenceToBlockHeight(txIn.sequence)
+        if (csvTimeout > 0) {
+          val maxCsvTimeout = math.max(csvTimeout, current.getOrElse(txIn.outPoint.txid, 0L))
+          current + (txIn.outPoint.txid -> maxCsvTimeout)
+        } else {
+          current
+        }
+      }
     }
   }
 
