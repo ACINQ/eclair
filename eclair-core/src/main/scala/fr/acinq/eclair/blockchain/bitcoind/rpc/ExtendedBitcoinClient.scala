@@ -19,10 +19,13 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.json4s.Formats
 import org.json4s.JsonAST._
+import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
@@ -37,6 +40,8 @@ import scala.util.Try
  * [[fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet]].
  */
 class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
+
+  import ExtendedBitcoinClient._
 
   implicit val formats: Formats = org.json4s.DefaultFormats
 
@@ -84,6 +89,40 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       index = txs.indexOf(JString(txid.toHex))
     } yield (height.toInt, index)
 
+  def fundTransaction(tx: Transaction, options: FundTransactionOptions)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
+    rpcClient.invoke("fundrawtransaction", tx.toString(), options).map(json => {
+      val JString(hex) = json \ "hex"
+      val JInt(changePos) = json \ "changepos"
+      val JDecimal(fee) = json \ "fee"
+      val fundedTx = Transaction.read(hex)
+      val changePos_opt = if (changePos >= 0) Some(changePos.intValue) else None
+      FundTransactionResponse(fundedTx, toSatoshi(fee), changePos_opt)
+    })
+  }
+
+  /**
+   * @return the public key hash of a bech32 raw change address.
+   */
+  def getChangeAddress()(implicit ec: ExecutionContext): Future[ByteVector] = {
+    rpcClient.invoke("getrawchangeaddress", "bech32").collect {
+      case JString(changeAddress) =>
+        val (_, _, pubkeyHash) = Bech32.decodeWitnessAddress(changeAddress)
+        pubkeyHash
+    }
+  }
+
+  def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx])(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
+    rpcClient.invoke("signrawtransactionwithwallet", tx.toString(), previousTxs).map(json => {
+      val JString(hex) = json \ "hex"
+      val JBool(complete) = json \ "complete"
+      if (!complete) {
+        val message = (json \ "errors" \\ classOf[JString]).mkString(",")
+        throw JsonRPCError(Error(-1, message))
+      }
+      SignTransactionResponse(Transaction.read(hex), complete)
+    })
+  }
+
   /**
    * Publish a transaction on the bitcoin network.
    *
@@ -101,7 +140,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         Future.successful(tx.txid)
       case e@JsonRPCError(Error(-25, _)) =>
         // "missing inputs (code: -25)": it may be that the tx has already been published and its output spent.
-        getRawTransaction(tx.txid).map { _ => tx.txid }.recoverWith { case _ => Future.failed(e) }
+        getRawTransaction(tx.txid).map(_ => tx.txid).recoverWith { case _ => Future.failed(e) }
     }
 
   def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
@@ -162,6 +201,21 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       txs <- Future.sequence(txids.map(getTransaction(_)))
     } yield txs
 
+  def getMempoolTx(txid: ByteVector32)(implicit ec: ExecutionContext): Future[MempoolTx] = {
+    rpcClient.invoke("getmempoolentry", txid).map(json => {
+      val JInt(vsize) = json \ "vsize"
+      val JInt(weight) = json \ "weight"
+      val JInt(ancestorCount) = json \ "ancestorcount"
+      val JInt(descendantCount) = json \ "descendantcount"
+      val JDecimal(fees) = json \ "fees" \ "base"
+      val JDecimal(ancestorFees) = json \ "fees" \ "ancestor"
+      val JDecimal(descendantFees) = json \ "fees" \ "descendant"
+      val JBool(replaceable) = json \ "bip125-replaceable"
+      // NB: bitcoind counts the transaction itself as its own ancestor and descendant, which is confusing: we fix that by decrementing these counters.
+      MempoolTx(vsize.toLong, weight.toLong, replaceable, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees))
+    })
+  }
+
   def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
     rpcClient.invoke("getblockcount").collect {
       case JInt(count) => count.toLong
@@ -187,5 +241,52 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
   } recover {
     case t: Throwable => ValidateResult(c, Left(t))
   }
+
+}
+
+object ExtendedBitcoinClient {
+
+  case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int])
+
+  object FundTransactionOptions {
+    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, lockUtxos: Boolean = false, changePosition: Option[Int] = None): FundTransactionOptions = {
+      FundTransactionOptions(BigDecimal(FeeratePerKB(feerate).toLong).bigDecimal.scaleByPowerOfTen(-8), replaceable, lockUtxos, changePosition)
+    }
+  }
+
+  case class FundTransactionResponse(tx: Transaction, fee: Satoshi, changePosition: Option[Int]) {
+    val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
+  }
+
+  case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
+
+  object PreviousTx {
+    def apply(inputInfo: Transactions.InputInfo, witness: ScriptWitness): PreviousTx = PreviousTx(
+      inputInfo.outPoint.txid,
+      inputInfo.outPoint.index,
+      inputInfo.txOut.publicKeyScript.toHex,
+      inputInfo.redeemScript.toHex,
+      ScriptWitness.write(witness).toHex,
+      inputInfo.txOut.amount.toBtc.toBigDecimal
+    )
+  }
+
+  case class SignTransactionResponse(tx: Transaction, complete: Boolean)
+
+  /**
+   * Information about a transaction currently in the mempool.
+   *
+   * @param vsize           virtual transaction size as defined in BIP 141.
+   * @param weight          transaction weight as defined in BIP 141.
+   * @param replaceable     Whether this transaction could be replaced with RBF (BIP125).
+   * @param fees            transaction fees.
+   * @param ancestorCount   number of unconfirmed parent transactions.
+   * @param ancestorFees    transactions fees for the package consisting of this transaction and its unconfirmed parents.
+   * @param descendantCount number of unconfirmed child transactions.
+   * @param descendantFees  transactions fees for the package consisting of this transaction and its unconfirmed children (without its unconfirmed parents).
+   */
+  case class MempoolTx(vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi)
+
+  def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
 }
