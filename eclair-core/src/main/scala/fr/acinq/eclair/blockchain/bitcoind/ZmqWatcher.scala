@@ -140,7 +140,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
           }
           Keep
 
-        case WatchSpent(_, txid, outputIndex, _, _) =>
+        case WatchSpent(_, txid, outputIndex, _, _, _) =>
           // first let's see if the parent tx was published or not
           client.getTxConfirmations(txid).collect {
             case Some(_) =>

@@ -78,7 +78,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
     case watch: Watch if watches.contains(watch) => ()
 
-    case watch@WatchSpent(_, txid, outputIndex, publicKeyScript, _) =>
+    case watch@WatchSpent(_, txid, outputIndex, publicKeyScript, _, _) =>
       val scriptHash = computeScriptHash(publicKeyScript)
       log.info(s"added watch-spent on output=$txid:$outputIndex scriptHash=$scriptHash")
       client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
@@ -121,7 +121,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
     case ElectrumClient.GetTransactionResponse(tx, Some(item: ElectrumClient.TransactionHistoryItem)) =>
       // this is for WatchSpent/WatchSpentBasic
       val watchSpentTriggered = tx.txIn.map(_.outPoint).flatMap(outPoint => watches.collect {
-        case WatchSpent(channel, txid, pos, _, event) if txid == outPoint.txid && pos == outPoint.index.toInt =>
+        case WatchSpent(channel, txid, pos, _, event, _) if txid == outPoint.txid && pos == outPoint.index.toInt =>
           log.info(s"output $txid:$pos spent by transaction ${tx.txid}")
           channel ! WatchEventSpent(event, tx)
           // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
