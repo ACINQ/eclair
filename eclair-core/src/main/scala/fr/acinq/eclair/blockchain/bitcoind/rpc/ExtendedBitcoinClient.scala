@@ -95,9 +95,8 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       val JInt(changePos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
       val fundedTx = Transaction.read(hex)
-      val amountIn = toSatoshi(fee) + fundedTx.txOut.map(_.amount).sum
       val changePos_opt = if (changePos >= 0) Some(changePos.intValue) else None
-      FundTransactionResponse(fundedTx, amountIn, changePos_opt)
+      FundTransactionResponse(fundedTx, toSatoshi(fee), changePos_opt)
     })
   }
 
@@ -255,8 +254,8 @@ object ExtendedBitcoinClient {
     }
   }
 
-  case class FundTransactionResponse(tx: Transaction, amountIn: Satoshi, changePosition: Option[Int]) {
-    val fee: Satoshi = amountIn - tx.txOut.map(_.amount).sum
+  case class FundTransactionResponse(tx: Transaction, fee: Satoshi, changePosition: Option[Int]) {
+    val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
   }
 
   case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
