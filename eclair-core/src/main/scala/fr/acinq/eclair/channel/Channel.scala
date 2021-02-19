@@ -239,7 +239,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
           if (closing.waitingSinceBlock > 1500000) {
-            goto(CLOSING) using closing.copy(waitingSinceBlock = nodeParams.currentBlockHeight)
+            // we were using timestamps instead of block heights when the channel was created: we reset it *and* we use block heights
+            goto(CLOSING) using closing.copy(waitingSinceBlock = nodeParams.currentBlockHeight) storing()
           } else {
             goto(CLOSING) using closing
           }
@@ -285,8 +286,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // we make sure that the funding tx has been published
           blockchain ! GetTxWithMeta(funding.commitments.commitInput.outPoint.txid)
           if (funding.waitingSinceBlock > 1500000) {
-            // we were using timestamps instead of block heights when the channel was created: we reset it to use block heights
-            goto(OFFLINE) using funding.copy(waitingSinceBlock = nodeParams.currentBlockHeight)
+            // we were using timestamps instead of block heights when the channel was created: we reset it *and* we use block heights
+            goto(OFFLINE) using funding.copy(waitingSinceBlock = nodeParams.currentBlockHeight) storing()
           } else {
             goto(OFFLINE) using funding
           }
@@ -1275,7 +1276,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Left(cause) => handleCommandError(cause, c)
       }
 
-    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_CLOSING) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSinceBlock, d.fundingTx)
+    case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_CLOSING) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid =>
+      // NB: waitingSinceBlock contains the block at which closing was initiated, not the block at which funding was initiated.
+      // That means we're lenient with our peer and give its funding tx more time to confirm, to avoid having to store two distinct
+      // waitingSinceBlock (e.g. closingWaitingSinceBlock and fundingWaitingSinceBlock).
+      handleGetFundingTx(getTxResponse, d.waitingSinceBlock, d.fundingTx)
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_CLOSING) => handleFundingPublishFailed(d)
 
