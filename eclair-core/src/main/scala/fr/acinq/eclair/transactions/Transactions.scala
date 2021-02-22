@@ -17,11 +17,13 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
@@ -114,6 +116,23 @@ object Transactions {
   case class HtlcPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClosingTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
 
+  trait TransactionSigningKit {
+    def keyManager: ChannelKeyManager
+    def commitmentFormat: CommitmentFormat
+  }
+  object TransactionSigningKit {
+    case class ClaimAnchorOutputSigningKit(keyManager: ChannelKeyManager, commitmentFormat: CommitmentFormat, txWithInput: ClaimAnchorOutputTx, localFundingPubKey: ExtendedPublicKey) extends TransactionSigningKit
+
+    sealed trait HtlcTxSigningKit extends TransactionSigningKit {
+      def txWithInput: HtlcTx
+      def localHtlcBasepoint: ExtendedPublicKey
+      def localPerCommitmentPoint: PublicKey
+      def remoteSig: ByteVector64
+    }
+    case class HtlcSuccessSigningKit(keyManager: ChannelKeyManager, commitmentFormat: CommitmentFormat, txWithInput: HtlcSuccessTx, localHtlcBasepoint: ExtendedPublicKey, localPerCommitmentPoint: PublicKey, remoteSig: ByteVector64, preimage: ByteVector32) extends HtlcTxSigningKit
+    case class HtlcTimeoutSigningKit(keyManager: ChannelKeyManager, commitmentFormat: CommitmentFormat, txWithInput: HtlcTimeoutTx, localHtlcBasepoint: ExtendedPublicKey, localPerCommitmentPoint: PublicKey, remoteSig: ByteVector64) extends HtlcTxSigningKit
+  }
+
   sealed trait TxGenerationSkipped
   case object OutputNotFound extends TxGenerationSkipped { override def toString = "output not found (probably trimmed)" }
   case object AmountBelowDustLimit extends TxGenerationSkipped { override def toString = "amount is below dust limit" }
@@ -150,8 +169,12 @@ object Transactions {
   /**
    * these values are specific to us (not defined in the specification) and used to estimate fees
    */
+  val claimP2WPKHOutputWitnessWeight = 109
   val claimP2WPKHOutputWeight = 438
-  val claimAnchorOutputWeight = 321
+  // The smallest transaction that spends an anchor contains 2 inputs (the commit tx output and a wallet input to set the feerate)
+  // and 1 output (change). If we're using P2WPKH wallet inputs/outputs with 72 bytes signatures, this results in a weight of 717.
+  // We round it down to 700 to allow for some error margin (e.g. signatures smaller than 72 bytes).
+  val claimAnchorOutputMinWeight = 700
   val claimHtlcDelayedWeight = 483
   val claimHtlcSuccessWeight = 571
   val claimHtlcTimeoutWeight = 545
