@@ -79,11 +79,6 @@ final case class WatchSpent(replyTo: ActorRef, txId: ByteVector32, outputIndex: 
 object WatchSpent {
   // if we have the entire transaction, we can get the publicKeyScript from the relevant output
   def apply(replyTo: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent, hints: Seq[ByteVector32]): WatchSpent = WatchSpent(replyTo, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event, hints)
-
-  def watchFundingTx(channel: ActorRef, commitments: Commitments): WatchSpent = {
-    val knownSpendingTxs = commitments.localCommit.publishableTxs.commitTx.tx.txid +: commitments.remoteCommit.txid +: commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit.txid)
-    WatchSpent(channel, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT, knownSpendingTxs)
-  }
 }
 
 /**
