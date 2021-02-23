@@ -222,7 +222,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               doPublish(c.revokedCommitPublished)
             case None =>
               // in all other cases we need to be ready for any type of closing
-              watchFundingTx(data.commitments)
+              watchFundingTx(data.commitments, closing.spendingTxes.map(_.txid))
               closing.mutualClosePublished.foreach(doPublish)
               closing.localCommitPublished.foreach(doPublish)
               closing.remoteCommitPublished.foreach(doPublish)
@@ -1936,9 +1936,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     stay
   }
 
-  def watchFundingTx(commitments: Commitments): Unit = {
+  def watchFundingTx(commitments: Commitments, additionalKnownSpendingTxs: Seq[ByteVector32] = Nil): Unit = {
     // TODO: should we wait for an acknowledgment from the watcher?
-    val knownSpendingTxs = commitments.localCommit.publishableTxs.commitTx.tx.txid +: commitments.remoteCommit.txid +: commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit.txid)
+    val knownSpendingTxs: Seq[ByteVector32] = List(commitments.localCommit.publishableTxs.commitTx.tx.txid, commitments.remoteCommit.txid) ++ commitments.remoteNextCommitInfo.left.toSeq.map(_.nextRemoteCommit.txid) ++ additionalKnownSpendingTxs
     blockchain ! WatchSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT, knownSpendingTxs)
     // TODO: implement this? (not needed if we use a reasonable min_depth)
     //blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
