@@ -72,11 +72,13 @@ object WatchConfirmed {
  * @param outputIndex     index of the outpoint to watch.
  * @param publicKeyScript electrum requires us to specify a public key script; the script of the outpoint must be provided.
  * @param event           channel event related to the outpoint.
+ * @param hints           txids of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
+ *                        This argument can safely be ignored by watcher implementations.
  */
-final case class WatchSpent(replyTo: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent) extends Watch
+final case class WatchSpent(replyTo: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent, hints: Set[ByteVector32]) extends Watch
 object WatchSpent {
   // if we have the entire transaction, we can get the publicKeyScript from the relevant output
-  def apply(replyTo: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent): WatchSpent = WatchSpent(replyTo, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event)
+  def apply(replyTo: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent, hints: Set[ByteVector32]): WatchSpent = WatchSpent(replyTo, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event, hints)
 }
 
 /**
