@@ -682,7 +682,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
-          handleCommandError(cause, c) acking(d.channelId, c)
+          handleCommandError(cause, c).acking(d.channelId, c)
       }
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_NORMAL) =>
@@ -702,7 +702,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
-          handleCommandError(cause, c) acking(d.channelId, c)
+          handleCommandError(cause, c).acking(d.channelId, c)
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_NORMAL) =>
@@ -713,7 +713,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
-          handleCommandError(cause, c) acking(d.channelId, c)
+          handleCommandError(cause, c).acking(d.channelId, c)
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
@@ -1034,7 +1034,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fulfill
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
-          handleCommandError(cause, c) acking(d.channelId, c)
+          handleCommandError(cause, c).acking(d.channelId, c)
       }
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_SHUTDOWN) =>
@@ -1053,7 +1053,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
-          handleCommandError(cause, c) acking(d.channelId, c)
+          handleCommandError(cause, c).acking(d.channelId, c)
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_SHUTDOWN) =>
@@ -1063,7 +1063,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fail
         case Left(cause) =>
           // we acknowledge the command right away in case of failure
-          handleCommandError(cause, c) acking(d.channelId, c)
+          handleCommandError(cause, c).acking(d.channelId, c)
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_SHUTDOWN) =>
