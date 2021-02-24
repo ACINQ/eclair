@@ -231,13 +231,16 @@ object Transactions {
   def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, commitmentFormat)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, commitmentFormat)
+    val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
+    val fee = weight2feeMsat(spec.feeratePerKw, weight)
+    // When using anchor outputs, the funder pays for *both* anchors all the time, even if only one anchor is present.
+    // This is not technically a fee (it doesn't go to miners) but it has to be deduced from the funder's main output,
+    // so for simplicity we deduce it here.
     val anchorsCost = commitmentFormat match {
       case DefaultCommitmentFormat => Satoshi(0)
-      // the funder pays for both anchors all the time, even if only one anchor is present
       case AnchorOutputsCommitmentFormat => AnchorOutputsCommitmentFormat.anchorAmount * 2
     }
-    val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
-    weight2feeMsat(spec.feeratePerKw, weight) + anchorsCost
+    fee + anchorsCost
   }
 
   def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxFeeMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
