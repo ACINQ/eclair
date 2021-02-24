@@ -179,7 +179,7 @@ object ElectrumClientPool {
 
   val MAX_CONNECTION_COUNT = 3
 
-  case class ElectrumServerAddress(adress: InetSocketAddress, ssl: SSL)
+  case class ElectrumServerAddress(address: InetSocketAddress, ssl: SSL)
 
   /**
     * Parses default electrum server list and extract addresses
@@ -222,7 +222,7 @@ object ElectrumClientPool {
     * @return a random address that we're not connected to yet
     */
   def pickAddress(serverAddresses: Set[ElectrumServerAddress], usedAddresses: Set[InetSocketAddress]): Option[ElectrumServerAddress] = {
-    Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.adress)).toSeq).headOption
+    Random.shuffle(serverAddresses.filterNot(a => usedAddresses.contains(a.address)).toSeq).headOption
   }
 
   // @formatter:off

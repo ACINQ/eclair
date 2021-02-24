@@ -243,30 +243,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2blockchain.expectMsgType[WatchConfirmed] // claim-main-delayed
 
     // test starts here
-    bob.setState(stateData = bob.stateData.asInstanceOf[DATA_CLOSING].copy(waitingSince = System.currentTimeMillis.milliseconds.toSeconds - 15.days.toSeconds))
+    bob.setState(stateData = bob.stateData.asInstanceOf[DATA_CLOSING].copy(waitingSinceBlock = bob.underlyingActor.nodeParams.currentBlockHeight - Channel.FUNDING_TIMEOUT_FUNDEE - 1))
     bob ! GetTxWithMetaResponse(fundingTx.txid, None, System.currentTimeMillis.milliseconds.toSeconds)
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMsg(200 millis)
     assert(bob.stateName == CLOSED)
-  }
-
-  test("recv GetTxResponse (fundee, tx not found, timeout, blockchain lags)", Tag("funding_unconfirmed")) { f =>
-    import f._
-    val sender = TestProbe()
-    val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    bob ! CMD_FORCECLOSE(sender.ref)
-    awaitCond(bob.stateName == CLOSING)
-    bob2alice.expectMsgType[Error]
-    bob2blockchain.expectMsgType[PublishAsap]
-    bob2blockchain.expectMsgType[PublishAsap] // claim-main-delayed
-    bob2blockchain.expectMsgType[WatchConfirmed] // commitment
-    bob2blockchain.expectMsgType[WatchConfirmed] // claim-main-delayed
-
-    // test starts here
-    bob ! GetTxWithMetaResponse(fundingTx.txid, None, System.currentTimeMillis.milliseconds.toSeconds - 3.hours.toSeconds)
-    bob2alice.expectNoMsg(200 millis)
-    bob2blockchain.expectNoMsg(200 millis)
-    assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
   }
 
   test("recv CMD_ADD_HTLC") { f =>

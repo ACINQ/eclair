@@ -108,7 +108,7 @@ on-chain-fees {
 ```
 
 We do not recommend changing these values unless you really know what you're doing.
-But if you have a trust relationship with some specific peers and know they will never try to cheat you, you can increase the tolerance specifically for those peers.
+However, if you have a trust relationship with some specific peers, and you know they will never try to cheat you, you can increase the tolerance specifically for those peers.
 On the other hand, if you have channels with peers you suspect may try to attack you, you can decrease the tolerance specifically for those peers.
 
 ```conf
@@ -173,4 +173,4 @@ To make your node public, add a public ip:
 eclair.server.public-ips=[x.x.x.x]
 ```
 
-You'll also have to make sure that the node is accessible from the outside world (port forwarding, firewall,...).
+You'll also have to make sure the node is accessible from the outside world (port forwarding, firewall,...).

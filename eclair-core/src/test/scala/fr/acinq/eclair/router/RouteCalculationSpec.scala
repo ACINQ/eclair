@@ -1027,8 +1027,10 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, balance_opt = Some(15000 msat)),
       makeEdge(2L, a, b, 15 msat, 10, minHtlc = 1 msat, balance_opt = Some(0 msat)),
       makeEdge(3L, a, b, 1 msat, 50, minHtlc = 1 msat, balance_opt = None, capacity = 15 sat),
-      makeEdge(4L, a, b, 100 msat, 20, minHtlc = 1 msat, balance_opt = Some(10000 msat)),
-      makeEdge(5L, a, d, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(45000 msat)),
+      makeEdge(4L, a, b, 1 msat, 0, minHtlc = 0 msat, balance_opt = Some(0 msat)),
+      makeEdge(5L, a, b, 100 msat, 20, minHtlc = 1 msat, balance_opt = Some(10000 msat)),
+      makeEdge(6L, a, d, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(45000 msat)),
+      makeEdge(7L, a, d, 0 msat, 0, minHtlc = 0 msat, balance_opt = Some(0 msat)),
     ))
 
     {
@@ -1194,7 +1196,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val g = DirectedGraph(List(
       edge_ab,
       makeEdge(2L, b, d, 15 msat, 0, minHtlc = 1 msat, capacity = 25 sat),
-      makeEdge(3L, d, e, 15 msat, 0, minHtlc = 1 msat, capacity = 20 sat),
+      makeEdge(3L, d, e, 15 msat, 0, minHtlc = 0 msat, capacity = 20 sat),
       makeEdge(4L, a, c, 1 msat, 50, minHtlc = 1 msat, balance_opt = Some(10000 msat)),
       makeEdge(5L, a, c, 1 msat, 50, minHtlc = 1 msat, balance_opt = Some(8000 msat)),
       makeEdge(6L, c, e, 50 msat, 30, minHtlc = 1 msat, capacity = 20 sat),
@@ -1338,7 +1340,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     //  +----- B --xxx-- C -----+
     //  | +-------- D --------+ |
     //  | |                   | |
-    // +---+     (empty)     +---+
+    // +---+    (empty x2)   +---+
     // | A | --------------- | F |
     // +---+                 +---+
     //  | |    (not empty)    | |
@@ -1352,16 +1354,17 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, a, d, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(85000 msat)),
       makeEdge(5L, d, f, 1 msat, 0, minHtlc = 1 msat, capacity = 300 sat),
       makeEdge(6L, a, f, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(0 msat)),
-      makeEdge(7L, a, f, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(10000 msat)),
-      makeEdge(8L, a, e, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(18000 msat)),
-      makeEdge(9L, e, f, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
+      makeEdge(7L, a, f, 0 msat, 0, minHtlc = 0 msat, balance_opt = Some(0 msat)),
+      makeEdge(8L, a, f, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(10000 msat)),
+      makeEdge(9L, a, e, 1 msat, 0, minHtlc = 1 msat, balance_opt = Some(18000 msat)),
+      makeEdge(10L, e, f, 1 msat, 0, minHtlc = 1 msat, capacity = 15 sat),
     ))
 
     val ignoredNodes = Set(d)
     val ignoredChannels = Set(ChannelDesc(ShortChannelId(2L), b, c))
     val Success(routes) = findMultiPartRoute(g, a, f, amount, maxFee, ignoredEdges = ignoredChannels, ignoredVertices = ignoredNodes, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     checkRouteAmounts(routes, amount, maxFee)
-    assert(routes2Ids(routes) === Set(Seq(7L), Seq(8L, 9L)))
+    assert(routes2Ids(routes) === Set(Seq(8L), Seq(9L, 10L)))
   }
 
   test("calculate multipart route to remote node (restricted htlc_minimum_msat and htlc_maximum_msat)") {

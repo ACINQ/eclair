@@ -50,10 +50,10 @@ class ElectrumClientPoolSpec extends TestKitBaseClass with AnyFunSuiteLike with 
   import concurrent.ExecutionContext.Implicits.global
 
   test("pick a random, unused server address") {
-    val usedAddresses = Random.shuffle(serverAddresses.toSeq).take(serverAddresses.size / 2).map(_.adress).toSet
+    val usedAddresses = Random.shuffle(serverAddresses.toSeq).take(serverAddresses.size / 2).map(_.address).toSet
     for (_ <- 1 to 10) {
       val Some(pick) = ElectrumClientPool.pickAddress(serverAddresses, usedAddresses)
-      assert(!usedAddresses.contains(pick.adress))
+      assert(!usedAddresses.contains(pick.address))
     }
   }
 

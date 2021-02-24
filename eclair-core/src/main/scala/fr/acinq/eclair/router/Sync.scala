@@ -80,8 +80,9 @@ object Sync {
     log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlockNum, q.numberOfBlocks)
     val chunks = split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
     Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
-    chunks.foreach { chunk =>
-      val reply = buildReplyChannelRange(chunk, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
+    chunks.zipWithIndex.foreach { case (chunk, i) =>
+      val syncComplete = i == chunks.size - 1
+      val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
       origin.peerConnection ! reply
       Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
       Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
@@ -392,12 +393,13 @@ object Sync {
 
   case class ShortChannelIdsChunk(firstBlock: Long, numBlocks: Long, shortChannelIds: List[ShortChannelId]) {
     /**
-     *
      * @param maximumSize maximum size of the short channel ids list
      * @return a chunk with at most `maximumSize` ids
      */
-    def enforceMaximumSize(maximumSize: Int) = {
-      if (shortChannelIds.size <= maximumSize) this else {
+    def enforceMaximumSize(maximumSize: Int): ShortChannelIdsChunk = {
+      if (shortChannelIds.size <= maximumSize) {
+        this
+      } else {
         // we use a random offset here, so even if shortChannelIds.size is much bigger than maximumSize (which should
         // not happen) peers will eventually receive info about all channels in this chunk
         val offset = Random.nextInt(shortChannelIds.size - maximumSize + 1)
@@ -480,7 +482,7 @@ object Sync {
    * @param channels        channels map
    * @return a ReplyChannelRange object
    */
-  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
+  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
     val encoding = if (chunk.shortChannelIds.isEmpty) EncodingType.UNCOMPRESSED else defaultEncoding
     val (timestamps, checksums) = queryFlags_opt match {
       case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
@@ -492,7 +494,7 @@ object Sync {
       case _ => (None, None)
     }
     ReplyChannelRange(chainHash, chunk.firstBlock, chunk.numBlocks,
-      complete = 1,
+      syncComplete = if (syncComplete) 1 else 0,
       shortChannelIds = EncodedShortChannelIds(encoding, chunk.shortChannelIds),
       timestamps = timestamps,
       checksums = checksums)

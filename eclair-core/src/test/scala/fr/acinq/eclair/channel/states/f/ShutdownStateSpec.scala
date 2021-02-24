@@ -20,9 +20,9 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateTestsBase
+import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
@@ -30,8 +30,8 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
-import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -52,7 +52,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(setup)
+      reachNormal(setup, test.tags)
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val h1 = Crypto.sha256(r1)
@@ -645,10 +645,26 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(alice.feeTargets.commitmentBlockTarget)))
   }
 
+  test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+    val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
+    alice ! CurrentFeerates(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate / 2))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, FeeEstimator.AnchorOutputMaxCommitFeerate / 2))
+  }
+
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
     import f._
     val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
     alice ! event
+    alice2bob.expectNoMsg(500 millis)
+  }
+
+  test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+    val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
+    alice ! CurrentFeerates(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate * 2))
     alice2bob.expectNoMsg(500 millis)
   }
 

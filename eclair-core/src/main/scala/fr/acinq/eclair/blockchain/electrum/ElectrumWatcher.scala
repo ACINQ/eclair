@@ -173,13 +173,15 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
     case PublishAsap(tx) =>
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
-      val csvTimeout = Scripts.csvTimeout(tx)
-      if (csvTimeout > 0) {
-        require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
-        val parentTxid = tx.txIn.head.outPoint.txid
-        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx={}", tx)
-        val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.head.witness)
-        self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+      val csvTimeouts = Scripts.csvTimeouts(tx)
+      if (csvTimeouts.nonEmpty) {
+        // watcher supports txs with multiple csv-delayed inputs: we watch all delayed parents and try to publish every
+        // time a parent's relative delays are satisfied, so we will eventually succeed.
+        csvTimeouts.foreach { case (parentTxId, csvTimeout) =>
+          log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", tx)
+          val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.find(_.outPoint.txid == parentTxId).get.witness)
+          self ! WatchConfirmed(self, parentTxId, parentPublicKeyScript, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(tx))
+        }
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
@@ -189,15 +191,13 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
         context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
 
-    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _, _) =>
+    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), _, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
-      val csvTimeout = Scripts.csvTimeout(tx)
-      val absTimeout = math.max(blockHeight + csvTimeout, cltvTimeout)
-      if (absTimeout > blockCount) {
-        log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
-        val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
+      if (cltvTimeout > blockCount) {
+        log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
+        val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
         context become running(height, tip, watches, scriptHashStatus, block2tx1, sent)
       } else {
         publish(tx)

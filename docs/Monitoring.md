@@ -39,7 +39,7 @@ When starting eclair, you should enable the Kanela agent:
 eclair.sh -with-kanela
 ```
 
-And your eclair node will start exporting monitoring data to Kamon.
+Your eclair node will start exporting monitoring data to Kamon.
 You can then start creating dashboards, graphs and alerts directly on Kamon's website.
 
 ## Enabling monitoring with a different backend
