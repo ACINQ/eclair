@@ -93,7 +93,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(RES_ADD_FAILED(_, t: ChannelException, _), d: WaitingForComplete) =>
       handleLocalFail(d, t, isFatal = false)
 
-    case Event(_: Register.ForwardShortIdFailure[CMD_ADD_HTLC], d: WaitingForComplete) =>
+    case Event(_: Register.ForwardShortIdFailure[_], d: WaitingForComplete) =>
       handleLocalFail(d, DisconnectedException, isFatal = false)
 
     case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
