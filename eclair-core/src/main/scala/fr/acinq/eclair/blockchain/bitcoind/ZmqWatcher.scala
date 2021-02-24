@@ -254,22 +254,18 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
   def publish(p: PublishAsap): Future[ByteVector32] = {
     p.strategy match {
       case PublishStrategy.SetFeerate(currentFeerate, targetFeerate, dustLimit, signingKit) =>
-        val spentOutpoint = signingKit match {
-          case signingKit: TransactionSigningKit.ClaimAnchorOutputSigningKit => signingKit.txWithInput.input.outPoint
-          case signingKit: TransactionSigningKit.HtlcTxSigningKit => signingKit.txWithInput.input.outPoint
-        }
-        log.info("publishing tx: input={}:{} txid={} tx={}", spentOutpoint.txid, spentOutpoint.index, p.tx.txid, p.tx)
+        log.info("publishing tx: input={}:{} txid={} tx={}", signingKit.spentOutpoint.txid, signingKit.spentOutpoint.index, p.tx.txid, p.tx)
         val publishF = signingKit match {
           case signingKit: TransactionSigningKit.ClaimAnchorOutputSigningKit => publishCommitWithAnchor(p.tx, currentFeerate, targetFeerate, dustLimit, signingKit)
           case signingKit: TransactionSigningKit.HtlcTxSigningKit => publishHtlcTx(currentFeerate, targetFeerate, dustLimit, signingKit)
         }
         publishF.recoverWith {
           case t: Throwable if t.getMessage.contains("(code: -4)") || t.getMessage.contains("(code: -6)") =>
-            log.warning("not enough funds to publish tx, will retry next block: reason={} input={}:{} txid={}", t.getMessage, spentOutpoint.txid, spentOutpoint.index, p.tx.txid)
+            log.warning("not enough funds to publish tx, will retry next block: reason={} input={}:{} txid={}", t.getMessage, signingKit.spentOutpoint.txid, signingKit.spentOutpoint.index, p.tx.txid)
             self ! PublishNextBlock(p)
             Future.failed(t)
           case t: Throwable =>
-            log.error("cannot publish tx: reason={} input={}:{} txid={}", t.getMessage, spentOutpoint.txid, spentOutpoint.index, p.tx.txid)
+            log.error("cannot publish tx: reason={} input={}:{} txid={}", t.getMessage, signingKit.spentOutpoint.txid, signingKit.spentOutpoint.index, p.tx.txid)
             Future.failed(t)
         }
       case PublishStrategy.JustPublish =>

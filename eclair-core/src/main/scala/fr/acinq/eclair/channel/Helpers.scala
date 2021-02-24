@@ -21,8 +21,8 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
+import fr.acinq.eclair.blockchain.{EclairWallet, PublishAsap, PublishStrategy}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -563,6 +563,7 @@ object Helpers {
 
     /**
      * Claim the output of a 2nd-stage HTLC transaction and replace the obsolete HTLC transaction in our local commit.
+     * Currently only used in the context of the anchor output commit format. If the provided transaction isn't an htlc, this will be a no-op.
      */
     def claimLocalCommitHtlcTxOutput(localCommitPublished: LocalCommitPublished, keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): (LocalCommitPublished, Option[Transaction]) = {
       import commitments._
@@ -582,8 +583,10 @@ object Helpers {
         }
 
         def updateHtlcTx(newTx: Transaction, previousTxs: List[Transaction]): List[Transaction] = {
-          val replaceAt = previousTxs.indexWhere(_.txIn.head.outPoint == newTx.txIn.head.outPoint)
-          if (replaceAt >= 0) previousTxs.updated(replaceAt, newTx) else previousTxs
+          previousTxs.map {
+            case previousTx if previousTx.txIn.head.outPoint == newTx.txIn.head.outPoint => newTx
+            case previousTx => previousTx
+          }
         }
 
         val localCommitPublished1 = localCommitPublished.copy(
@@ -595,6 +598,43 @@ object Helpers {
       } else {
         (localCommitPublished, None)
       }
+    }
+
+    /**
+     * Create tx publishing strategy (target feerate) for our local commit tx and its HTLC txs. Only used for anchor outputs.
+     */
+    def createLocalCommitAnchorPublishStrategy(keyManager: ChannelKeyManager, commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets): (PublishAsap, List[PublishAsap]) = {
+      val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
+      val currentFeerate = commitments.localCommit.spec.feeratePerKw
+      val targetFeerate = feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
+      val localFundingPubKey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
+      val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelVersion)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index)
+      val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
+
+      // If we have an anchor output available, we will use it to CPFP the commit tx.
+      val publishCommitTx = Transactions.makeClaimAnchorOutputTx(commitTx, localFundingPubKey.publicKey).map(claimAnchorOutputTx => {
+        TransactionSigningKit.ClaimAnchorOutputSigningKit(keyManager, claimAnchorOutputTx, localFundingPubKey)
+      }) match {
+        case Left(_) => PublishAsap(commitTx, PublishStrategy.JustPublish)
+        case Right(signingKit) => PublishAsap(commitTx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
+      }
+
+      // HTLC txs will use RBF to add wallet inputs to reach the targeted feerate.
+      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
+      val htlcTxs = commitments.localCommit.publishableTxs.htlcTxsAndSigs.collect {
+        case HtlcTxAndSigs(htlcSuccess: Transactions.HtlcSuccessTx, localSig, remoteSig) if preimages.contains(htlcSuccess.paymentHash) =>
+          val preimage = preimages(htlcSuccess.paymentHash)
+          val signedTx = Transactions.addSigs(htlcSuccess, localSig, remoteSig, preimage, commitments.commitmentFormat)
+          val signingKit = TransactionSigningKit.HtlcSuccessSigningKit(keyManager, commitments.commitmentFormat, signedTx, localHtlcBasepoint, localPerCommitmentPoint, remoteSig, preimage)
+          PublishAsap(signedTx.tx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
+        case HtlcTxAndSigs(htlcTimeout: Transactions.HtlcTimeoutTx, localSig, remoteSig) =>
+          val signedTx = Transactions.addSigs(htlcTimeout, localSig, remoteSig, commitments.commitmentFormat)
+          val signingKit = TransactionSigningKit.HtlcTimeoutSigningKit(keyManager, commitments.commitmentFormat, signedTx, localHtlcBasepoint, localPerCommitmentPoint, remoteSig)
+          PublishAsap(signedTx.tx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
+      }
+
+      (publishCommitTx, htlcTxs)
     }
 
     /**
@@ -624,14 +664,14 @@ object Helpers {
       val feeratePerKwHtlc = feeEstimator.getFeeratePerKw(target = 2)
 
       // those are the preimages to existing received htlcs
-      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
+      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
 
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       val txes = remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly.
         // NB: we are looking at the remote's commitment, from its point of view it's an outgoing htlc.
-        case OutgoingHtlc(add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success") {
-          val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
+        case OutgoingHtlc(add: UpdateAddHtlc) if preimages.contains(add.paymentHash) => generateTx("claim-htlc-success") {
+          val preimage = preimages(add.paymentHash)
           Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputs, localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat).right.map(txinfo => {
             val sig = keyManager.sign(txinfo, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
             Transactions.addSigs(txinfo, sig, preimage)

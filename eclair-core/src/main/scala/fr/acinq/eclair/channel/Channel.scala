@@ -20,7 +20,7 @@ import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorSt
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -32,7 +32,7 @@ import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentSettlingOnChain
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.transactions.Transactions.{TransactionSigningKit, TxOwner}
+import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import scodec.bits.ByteVector
@@ -2197,32 +2197,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         val txs = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTxs
         txs.map(tx => PublishAsap(tx, PublishStrategy.JustPublish))
       case Transactions.AnchorOutputsCommitmentFormat =>
-        val currentFeerate = commitments.localCommit.spec.feeratePerKw
-        val targetFeerate = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-        val localFundingPubKey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
-        val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelVersion)
-        val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index)
-        val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
-        // If we have an anchor output available, we will use it to CPFP the commit tx.
-        val publishCommitTx = Transactions.makeClaimAnchorOutputTx(commitTx, localFundingPubKey.publicKey).map(claimAnchorOutputTx => {
-          TransactionSigningKit.ClaimAnchorOutputSigningKit(keyManager, commitments.commitmentFormat, claimAnchorOutputTx, localFundingPubKey)
-        }) match {
-          case Left(_) => PublishAsap(commitTx, PublishStrategy.JustPublish)
-          case Right(signingKit) => PublishAsap(commitTx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
-        }
-        // HTLC txs will use RBF to add wallet inputs to reach the targeted feerate.
-        val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
-        val htlcTxs = commitments.localCommit.publishableTxs.htlcTxsAndSigs.collect {
-          case HtlcTxAndSigs(htlcSuccess: Transactions.HtlcSuccessTx, localSig, remoteSig) if preimages.exists(r => Crypto.sha256(r) == htlcSuccess.paymentHash) =>
-            val preimage = preimages.find(r => Crypto.sha256(r) == htlcSuccess.paymentHash).get
-            val signedTx = Transactions.addSigs(htlcSuccess, localSig, remoteSig, preimage, commitments.commitmentFormat)
-            val signingKit = TransactionSigningKit.HtlcSuccessSigningKit(keyManager, commitments.commitmentFormat, signedTx, localHtlcBasepoint, localPerCommitmentPoint, remoteSig, preimage)
-            PublishAsap(signedTx.tx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
-          case HtlcTxAndSigs(htlcTimeout: Transactions.HtlcTimeoutTx, localSig, remoteSig) =>
-            val signedTx = Transactions.addSigs(htlcTimeout, localSig, remoteSig, commitments.commitmentFormat)
-            val signingKit = TransactionSigningKit.HtlcTimeoutSigningKit(keyManager, commitments.commitmentFormat, signedTx, localHtlcBasepoint, localPerCommitmentPoint, remoteSig)
-            PublishAsap(signedTx.tx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
-        }
+        val (publishCommitTx, htlcTxs) = Helpers.Closing.createLocalCommitAnchorPublishStrategy(keyManager, commitments, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
         // NB: we don't publish the claimHtlcDelayedTxs: we will publish them once their parent htlc tx confirms.
         List(publishCommitTx) ++ claimMainDelayedOutputTx.map(tx => PublishAsap(tx, PublishStrategy.JustPublish)) ++ htlcTxs
     }

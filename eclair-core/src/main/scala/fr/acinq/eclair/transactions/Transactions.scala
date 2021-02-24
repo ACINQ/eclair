@@ -119,12 +119,17 @@ object Transactions {
   trait TransactionSigningKit {
     def keyManager: ChannelKeyManager
     def commitmentFormat: CommitmentFormat
+    def spentOutpoint: OutPoint
   }
   object TransactionSigningKit {
-    case class ClaimAnchorOutputSigningKit(keyManager: ChannelKeyManager, commitmentFormat: CommitmentFormat, txWithInput: ClaimAnchorOutputTx, localFundingPubKey: ExtendedPublicKey) extends TransactionSigningKit
+    case class ClaimAnchorOutputSigningKit(keyManager: ChannelKeyManager, txWithInput: ClaimAnchorOutputTx, localFundingPubKey: ExtendedPublicKey) extends TransactionSigningKit {
+      override val commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
+      override val spentOutpoint  = txWithInput.input.outPoint
+    }
 
     sealed trait HtlcTxSigningKit extends TransactionSigningKit {
       def txWithInput: HtlcTx
+      override def spentOutpoint  = txWithInput.input.outPoint
       def localHtlcBasepoint: ExtendedPublicKey
       def localPerCommitmentPoint: PublicKey
       def remoteSig: ByteVector64
