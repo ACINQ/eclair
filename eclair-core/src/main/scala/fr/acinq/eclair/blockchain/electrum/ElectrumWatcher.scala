@@ -170,7 +170,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
     case ElectrumClient.ServerError(ElectrumClient.GetTransaction(txid, Some(origin: ActorRef)), _) => origin ! GetTxWithMetaResponse(txid, None, tip.time)
 
-    case PublishAsap(tx) =>
+    case PublishAsap(tx, _) =>
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeouts = Scripts.csvTimeouts(tx)
@@ -180,7 +180,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
         csvTimeouts.foreach { case (parentTxId, csvTimeout) =>
           log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", tx)
           val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.find(_.outPoint.txid == parentTxId).get.witness)
-          self ! WatchConfirmed(self, parentTxId, parentPublicKeyScript, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(tx))
+          self ! WatchConfirmed(self, parentTxId, parentPublicKeyScript, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(PublishAsap(tx, PublishStrategy.JustPublish)))
         }
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
@@ -191,7 +191,7 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
         context become running(height, tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
 
-    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), _, _, _) =>
+    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(PublishAsap(tx, _)), _, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
@@ -214,8 +214,8 @@ class ElectrumWatcher(blockCount: AtomicLong, client: ActorRef) extends Actor wi
 
     case ElectrumClient.ElectrumDisconnected =>
       // we remember watches and keep track of tx that have not yet been published
-      // we also re-send the txes that we previously sent but hadn't yet received the confirmation
-      context become disconnected(watches, sent.map(PublishAsap), block2tx, Queue.empty)
+      // we also re-send the txs that we previously sent but hadn't yet received the confirmation
+      context become disconnected(watches, sent.map(tx => PublishAsap(tx, PublishStrategy.JustPublish)), block2tx, Queue.empty)
   }
 
   def publish(tx: Transaction): Unit = {
