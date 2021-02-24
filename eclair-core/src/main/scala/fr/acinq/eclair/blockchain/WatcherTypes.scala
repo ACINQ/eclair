@@ -75,10 +75,10 @@ object WatchConfirmed {
  * @param hints           txids of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
  *                        This argument can safely be ignored by watcher implementations.
  */
-final case class WatchSpent(replyTo: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent, hints: Seq[ByteVector32]) extends Watch
+final case class WatchSpent(replyTo: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent, hints: Set[ByteVector32]) extends Watch
 object WatchSpent {
   // if we have the entire transaction, we can get the publicKeyScript from the relevant output
-  def apply(replyTo: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent, hints: Seq[ByteVector32]): WatchSpent = WatchSpent(replyTo, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event, hints)
+  def apply(replyTo: ActorRef, tx: Transaction, outputIndex: Int, event: BitcoinEvent, hints: Set[ByteVector32]): WatchSpent = WatchSpent(replyTo, tx.txid, outputIndex, tx.txOut(outputIndex).publicKeyScript, event, hints)
 }
 
 /**
