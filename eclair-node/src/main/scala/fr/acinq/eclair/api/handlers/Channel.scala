@@ -32,8 +32,7 @@ trait Channel {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?,
-      "fundingFeerateSatByte".as[FeeratePerByte].?, "feeBaseMsat".as[MilliSatoshi].?,
+    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "fundingFeerateSatByte".as[FeeratePerByte].?, "feeBaseMsat".as[MilliSatoshi].?,
       "feeProportionalMillionths".as[Int].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
       (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, feeBase, feeProportional, channelFlags, openTimeout_opt) =>
         if (feeBase.nonEmpty && feeProportional.isEmpty || feeBase.isEmpty && feeProportional.nonEmpty) {
@@ -46,13 +45,10 @@ trait Channel {
             case _ => None
           }
           complete {
-            eclairApi.open(
-              nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, initialRelayFees, channelFlags, openTimeout_opt
-            )
+            eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, initialRelayFees, channelFlags, openTimeout_opt)
           }
         }
     }
-
   }
 
   val close: Route = postRequest("close") { implicit t =>
@@ -69,20 +65,26 @@ trait Channel {
     }
   }
 
-  val channels: Route = postRequest("channels") { implicit t =>
-    formFields(nodeIdFormParam.?) { toRemoteNodeId_opt =>
-      complete(eclairApi.channelsInfo(toRemoteNodeId_opt))
-    }
-  }
-
   val channel: Route = postRequest("channel") { implicit t =>
     withChannelIdentifier { channel =>
       complete(eclairApi.channelInfo(channel))
     }
   }
 
+  val channels: Route = postRequest("channels") { implicit t =>
+    formFields(nodeIdFormParam.?) { toRemoteNodeId_opt =>
+      complete(eclairApi.channelsInfo(toRemoteNodeId_opt))
+    }
+  }
+
   val allChannels: Route = postRequest("allchannels") { implicit t =>
     complete(eclairApi.allChannels())
+  }
+
+  val allUpdates: Route = postRequest("allupdates") { implicit t =>
+    formFields(nodeIdFormParam.?) { nodeId_opt =>
+      complete(eclairApi.allUpdates(nodeId_opt))
+    }
   }
 
   val channelStats: Route = postRequest("channelstats") { implicit t =>
@@ -91,6 +93,6 @@ trait Channel {
     }
   }
 
-  val channelRoutes: Route = open ~ close ~ forceClose ~ channels ~ channel ~ allChannels ~ channelStats
+  val channelRoutes: Route = open ~ close ~ forceClose ~ channel ~ channels ~ allChannels ~ allUpdates ~ channelStats
 
 }

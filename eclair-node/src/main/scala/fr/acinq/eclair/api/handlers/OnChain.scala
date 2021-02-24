@@ -27,11 +27,19 @@ trait OnChain {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
+  val getNewAddress: Route = postRequest("getnewaddress") { implicit t =>
+    complete(eclairApi.newAddress())
+  }
+
   val sendOnChain: Route = postRequest("sendonchain") { implicit t =>
     formFields("address".as[String], "amountSatoshis".as[Satoshi], "confirmationTarget".as[Long]) {
       (address, amount, confirmationTarget) =>
         complete(eclairApi.sendOnChain(address, amount, confirmationTarget))
     }
+  }
+
+  val onChainBalance: Route = postRequest("onchainbalance") { implicit t =>
+    complete(eclairApi.onChainBalance())
   }
 
   val onChainTransactions: Route = postRequest("onchaintransactions") { implicit t =>
@@ -40,6 +48,6 @@ trait OnChain {
     }
   }
 
-  val onChainRoutes: Route = sendOnChain ~ onChainTransactions
+  val onChainRoutes: Route = getNewAddress ~ sendOnChain ~ onChainBalance ~ onChainTransactions
 
 }

@@ -24,11 +24,11 @@ import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.handlers._
 import grizzled.slf4j.Logging
 
-trait Service extends EclairDirectives with WebSocket with Node with Channel
-  with Invoice with Payment with Fees with OnChain with Balance with Message with Logging {
+trait Service extends EclairDirectives with WebSocket with Node with Channel with Fees with PathFinding with Invoice with Payment with Message with OnChain with Logging {
 
   /**
    * Allows router access to the API password as configured in eclair.conf
+   *
    * @return
    */
   def password: String
@@ -53,7 +53,6 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel
    * http request router of the API service.
    */
   val route: Route = securedPublicHandler {
-    nodeRoutes ~ channelRoutes ~ invoiceRoutes ~ paymentRoutes ~
-    feeRoutes ~ onChainRoutes ~ balanceRoutes ~ messageRoutes ~ webSocket
+    nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
   }
 }

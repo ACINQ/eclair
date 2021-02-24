@@ -33,7 +33,6 @@ and COMMAND is one of the available commands:
     - connect
     - disconnect
     - peers
-    - nodes
     - audit
 
   === Channel ===
@@ -45,6 +44,8 @@ and COMMAND is one of the available commands:
     - allchannels
     - allupdates
     - channelstats
+
+  === Fees ===
     - networkfees
     - updaterelayfee
 
@@ -53,6 +54,7 @@ and COMMAND is one of the available commands:
     - findroutetonode
     - findroutebetweennodes
     - networkstats
+    - nodes
 
   === Invoice ===
     - createinvoice
@@ -62,15 +64,21 @@ and COMMAND is one of the available commands:
     - parseinvoice
 
   === Payment ===
-    - getnewaddress
     - usablebalances
-    - onchainbalance
     - payinvoice
     - sendtonode
     - sendtoroute
-    - sendonchain
     - getsentinfo
     - getreceivedinfo
+
+  === Message ===
+    - signmessage
+    - verifymessage
+
+  === OnChain ===
+    - getnewaddress
+    - sendonchain
+    - onchainbalance
     - onchaintransactions
 
 Examples

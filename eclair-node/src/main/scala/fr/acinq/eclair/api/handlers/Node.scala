@@ -32,10 +32,6 @@ trait Node {
     complete(eclairApi.getInfo())
   }
 
-  val peers: Route = postRequest("peers") { implicit t =>
-    complete(eclairApi.peers())
-  }
-
   val connect: Route = postRequest("connect") { implicit t =>
     formFields("uri".as[NodeURI]) { uri =>
       complete(eclairApi.connect(Left(uri)))
@@ -56,27 +52,15 @@ trait Node {
     }
   }
 
-  val findRouteToNode: Route = postRequest("findroutetonode") { implicit t =>
-    formFields(nodeIdFormParam, amountMsatFormParam) { (nodeId, amount) =>
-      complete(eclairApi.findRoute(nodeId, amount))
+  val peers: Route = postRequest("peers") { implicit t =>
+    complete(eclairApi.peers())
+  }
+
+  val audit: Route = postRequest("audit") { implicit t =>
+    formFields(fromFormParam.?, toFormParam.?) { (from_opt, to_opt) =>
+      complete(eclairApi.audit(from_opt, to_opt))
     }
   }
 
-  val networkStats: Route = postRequest("networkstats") { implicit t =>
-    complete(eclairApi.networkStats())
-  }
-
-  val nodes: Route = postRequest("nodes") { implicit t =>
-    formFields(nodeIdsFormParam.?) { nodeIds_opt =>
-      complete(eclairApi.nodes(nodeIds_opt.map(_.toSet)))
-    }
-  }
-
-  val allUpdates: Route = postRequest("allupdates") { implicit t =>
-    formFields(nodeIdFormParam.?) { nodeId_opt =>
-      complete(eclairApi.allUpdates(nodeId_opt))
-    }
-  }
-
-  val nodeRoutes: Route = getInfo ~ peers ~ connect ~ disconnect ~ networkStats ~ findRouteToNode ~ nodes ~ allUpdates
+  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ audit
 }

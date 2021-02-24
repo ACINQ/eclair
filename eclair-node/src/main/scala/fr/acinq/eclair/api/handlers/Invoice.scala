@@ -28,31 +28,6 @@ trait Invoice {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
-  val parseInvoice: Route = postRequest("parseinvoice") { implicit t =>
-    formFields(invoiceFormParam) { invoice =>
-      complete(invoice)
-    }
-  }
-
-  val payInvoice: Route = postRequest("payinvoice") { implicit t =>
-    formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?,
-      "maxFeePct".as[Double].?, "externalId".?) {
-      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
-        complete(eclairApi.send(
-          externalId_opt, nodeId, amount, invoice.paymentHash, Some(invoice),
-          maxAttempts, feeThresholdSat_opt, maxFeePct_opt
-        ))
-      case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
-        complete(eclairApi.send(
-          externalId_opt, invoice.nodeId, overrideAmount, invoice.paymentHash,
-          Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt
-        ))
-      case _ => reject(MalformedFormFieldRejection(
-        "invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"
-      ))
-    }
-  }
-
   val createInvoice: Route = postRequest("createinvoice") { implicit t =>
     formFields("description".as[String], amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?,
       "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) {
@@ -79,6 +54,12 @@ trait Invoice {
     }
   }
 
-  val invoiceRoutes: Route = parseInvoice ~ payInvoice ~ createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices
+  val parseInvoice: Route = postRequest("parseinvoice") { implicit t =>
+    formFields(invoiceFormParam) { invoice =>
+      complete(invoice)
+    }
+  }
+
+  val invoiceRoutes: Route =  createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ parseInvoice
 
 }

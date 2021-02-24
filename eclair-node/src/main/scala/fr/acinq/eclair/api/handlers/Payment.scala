@@ -34,21 +34,30 @@ trait Payment {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
-  val findRoute: Route = postRequest("findroute") { implicit t =>
-    formFields(invoiceFormParam, amountMsatFormParam.?) {
-      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
-        complete(eclairApi.findRoute(nodeId, amount, invoice.routingInfo))
-      case (invoice, Some(overrideAmount)) =>
-        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
+  val usableBalances: Route = postRequest("usablebalances") { implicit t =>
+    complete(eclairApi.usableBalances())
+  }
+
+  val payInvoice: Route = postRequest("payinvoice") { implicit t =>
+    formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?) {
+      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
+        complete(eclairApi.send(
+          externalId_opt, nodeId, amount, invoice.paymentHash, Some(invoice),
+          maxAttempts, feeThresholdSat_opt, maxFeePct_opt
+        ))
+      case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
+        complete(eclairApi.send(
+          externalId_opt, invoice.nodeId, overrideAmount, invoice.paymentHash,
+          Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt
+        ))
       case _ => reject(MalformedFormFieldRejection(
-        "invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"
+        "invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"
       ))
     }
   }
 
   val sendToNode: Route = postRequest("sendtonode") { implicit t =>
-    formFields(amountMsatFormParam, nodeIdFormParam, paymentHashFormParam.?, "maxAttempts".as[Int].?,
-      "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "keysend".as[Boolean].?) {
+    formFields(amountMsatFormParam, nodeIdFormParam, paymentHashFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "keysend".as[Boolean].?) {
       case (amountMsat, nodeId, Some(paymentHash), maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, keySend) =>
         keySend match {
           case Some(true) => reject(MalformedFormFieldRejection(
@@ -78,19 +87,15 @@ trait Payment {
 
   val sendToRoute: Route = postRequest("sendtoroute") { implicit t =>
     withRoute { hops =>
-      formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam,
-        "finalCltvExpiry".as[Int], "externalId".?, "parentId".as[UUID].?, "trampolineSecret".as[ByteVector32].?,
-        "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?,
-        "trampolineNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?) {
-        (amountMsat, recipientAmountMsat_opt, invoice, finalCltvExpiry, externalId_opt, parentId_opt,
-         trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) => {
+      formFields(amountMsatFormParam, "recipientAmountMsat".as[MilliSatoshi].?, invoiceFormParam, "finalCltvExpiry".as[Int], "externalId".?, "parentId".as[UUID].?,
+        "trampolineSecret".as[ByteVector32].?, "trampolineFeesMsat".as[MilliSatoshi].?, "trampolineCltvExpiry".as[Int].?, "trampolineNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?) {
+        (amountMsat, recipientAmountMsat_opt, invoice, finalCltvExpiry, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFeesMsat_opt, trampolineCltvExpiry_opt, trampolineNodes_opt) => {
           val route = hops match {
             case Left(shortChannelIds) => PredefinedChannelRoute(invoice.nodeId, shortChannelIds)
             case Right(nodeIds) => PredefinedNodeRoute(nodeIds)
           }
           complete(eclairApi.sendToRoute(
-            amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice,
-            CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt,
+            amountMsat, recipientAmountMsat_opt, externalId_opt, parentId_opt, invoice, CltvExpiryDelta(finalCltvExpiry), route, trampolineSecret_opt, trampolineFeesMsat_opt,
             trampolineCltvExpiry_opt.map(CltvExpiryDelta), trampolineNodes_opt.getOrElse(Nil)
           ))
         }
@@ -106,7 +111,6 @@ trait Payment {
     }
   }
 
-
   val getReceivedInfo: Route = postRequest("getreceivedinfo") { implicit t =>
     formFields(paymentHashFormParam) { paymentHash =>
       completeOrNotFound(eclairApi.receivedInfo(paymentHash))
@@ -115,16 +119,6 @@ trait Payment {
     }
   }
 
-  val audit: Route = postRequest("audit") { implicit t =>
-    formFields(fromFormParam.?, toFormParam.?) { (from_opt, to_opt) =>
-      complete(eclairApi.audit(from_opt, to_opt))
-    }
-  }
-
-  val getNewAddress: Route = postRequest("getnewaddress") { implicit t =>
-    complete(eclairApi.newAddress())
-  }
-
-  val paymentRoutes: Route = findRoute ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ audit ~ getNewAddress
+  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo
 
 }
