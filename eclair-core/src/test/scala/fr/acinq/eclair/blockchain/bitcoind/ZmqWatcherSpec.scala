@@ -618,7 +618,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       bitcoinClient.getTransaction(htlcSuccessTx.txid).pipeTo(probe.ref)
       assert(probe.expectMsgType[Transaction].txIn.length > 2) // we added more than 1 wallet input
       val htlcSuccessTargetFee = Transactions.weight2fee(TestConstants.feeratePerKw, htlcSuccessTx.weight.toInt)
-      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.1, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
+      assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
 
       // The HTLC-timeout tx will be published once its absolute timeout is satisfied.
       generateBlocks(144)
@@ -626,7 +626,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       bitcoinClient.getTransaction(htlcTimeoutTx.txid).pipeTo(probe.ref)
       assert(probe.expectMsgType[Transaction].txIn.length > 2) // we added more than 1 wallet input
       val htlcTimeoutTargetFee = Transactions.weight2fee(TestConstants.feeratePerKw, htlcTimeoutTx.weight.toInt)
-      assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.1, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcTimeoutTargetFee")
+      assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.4, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcTimeoutTargetFee")
     })
   }
 

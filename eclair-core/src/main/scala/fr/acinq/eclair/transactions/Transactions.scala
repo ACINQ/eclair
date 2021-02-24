@@ -180,6 +180,10 @@ object Transactions {
   // and 1 output (change). If we're using P2WPKH wallet inputs/outputs with 72 bytes signatures, this results in a weight of 717.
   // We round it down to 700 to allow for some error margin (e.g. signatures smaller than 72 bytes).
   val claimAnchorOutputMinWeight = 700
+  // The biggest htlc input is an HTLC-success with anchor outputs:
+  // 143 bytes (accepted_htlc_script) + 327 bytes (success_witness) + 41 bytes (commitment_input) = 511 bytes
+  // See https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#expected-weight-of-htlc-timeout-and-htlc-success-transactions
+  val htlcInputMaxWeight = 511
   val claimHtlcDelayedWeight = 483
   val claimHtlcSuccessWeight = 571
   val claimHtlcTimeoutWeight = 545

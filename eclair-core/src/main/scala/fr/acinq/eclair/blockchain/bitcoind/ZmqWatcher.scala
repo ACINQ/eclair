@@ -285,6 +285,9 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
     }
   }
 
+  /**
+   * Publish the commit tx, and optionally an anchor tx that spends from the commit tx and helps get it confirmed with CPFP.
+   */
   def publishCommitWithAnchor(commitTx: Transaction, currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi, signingKit: TransactionSigningKit.ClaimAnchorOutputSigningKit): Future[ByteVector32] = {
     import signingKit._
     if (targetFeerate <= currentFeerate) {
@@ -339,6 +342,9 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
     }
   }
 
+  /**
+   * Publish an htlc tx, and optionally RBF it before by adding new inputs/outputs to help get it confirmed.
+   */
   def publishHtlcTx(currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi, signingKit: TransactionSigningKit.HtlcTxSigningKit): Future[ByteVector32] = {
     import signingKit._
     if (targetFeerate <= currentFeerate) {
@@ -348,16 +354,28 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
       client.publishTransaction(signedHtlcTx.tx)(singleThreadExecutionContext)
     } else {
       log.info("publishing htlc tx with additional inputs: commit input={}:{} target feerate={}", txWithInput.input.outPoint.txid, txWithInput.input.outPoint.index, targetFeerate)
+      // NB: fundrawtransaction doesn't support non-wallet inputs, so we clear the input and re-add it later.
       val txNotFunded = txWithInput.tx.copy(txIn = Nil, txOut = txWithInput.tx.txOut.head.copy(amount = dustLimit) :: Nil)
       val htlcTxWeight = signingKit match {
         case _: TransactionSigningKit.HtlcSuccessSigningKit => commitmentFormat.htlcSuccessWeight
         case _: TransactionSigningKit.HtlcTimeoutSigningKit => commitmentFormat.htlcTimeoutWeight
       }
-      // NB: bitcoind will add at least one P2WPKH input.
-      val weightRatio = htlcTxWeight.toDouble / (txNotFunded.weight() + Transactions.claimP2WPKHOutputWeight)
+      // We want the feerate of our final HTLC tx to equal targetFeerate. However, we removed the HTLC input from what we
+      // send to fundrawtransaction, so bitcoind will not know the total weight of the final tx. In order to make up for
+      // this difference, we need to tell bitcoind to target a higher feerate that takes into account the weight of the
+      // input we removed.
+      // That feerate will satisfy the following equality:
+      // feerate * weight_seen_by_bitcoind = target_feerate * (weight_seen_by_bitcoind + htlc_input_weight)
+      // So: feerate = target_feerate * (1 + htlc_input_weight / weight_seen_by_bitcoind)
+      // Because bitcoind will add at least one P2WPKH input, weight_seen_by_bitcoind >= htlc_tx_weight + p2wpkh_weight
+      // Thus: feerate <= target_feerate * (1 + htlc_input_weight / (htlc_tx_weight + p2wpkh_weight))
+      // NB: we don't take into account the fee paid by our HTLC input: we will take it into account when we adjust the
+      // change output amount (unless bitcoind didn't add any change output, in that case we will overpay the fee slightly).
+      val weightRatio = 1.0 + (Transactions.htlcInputMaxWeight.toDouble / (htlcTxWeight + Transactions.claimP2WPKHOutputWeight))
       client.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, lockUtxos = true, changePosition = Some(1)))(singleThreadExecutionContext).map(fundTxResponse => {
         log.info(s"added ${fundTxResponse.tx.txIn.length} wallet input(s) and ${fundTxResponse.tx.txOut.length - 1} wallet output(s) to htlc tx spending commit input=${txWithInput.input.outPoint.txid}:${txWithInput.input.outPoint.index}")
         // We add the HTLC input (from the commit tx) and restore the HTLC output.
+        // NB: we can't modify them because they are signed by our peer (with SIGHASH_SINGLE | SIGHASH_ANYONECANPAY).
         val txWithHtlcInput = fundTxResponse.tx.copy(
           txIn = txWithInput.tx.txIn ++ fundTxResponse.tx.txIn,
           txOut = txWithInput.tx.txOut ++ fundTxResponse.tx.txOut.tail
@@ -481,7 +499,11 @@ object ZmqWatcher {
     }
   }
 
-  /** Adjust the amount of the change output of an anchor tx to match our target feerate. */
+  /**
+   * Adjust the amount of the change output of an anchor tx to match our target feerate.
+   * We need this because fundrawtransaction doesn't allow us to leave non-wallet inputs, so we have to add them
+   * afterwards which may bring the resulting feerate below our target.
+   */
   def adjustAnchorOutputChange(unsignedTx: Transactions.ClaimAnchorOutputTx, commitTx: Transaction, amountIn: Satoshi, currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi): Transactions.ClaimAnchorOutputTx = {
     require(unsignedTx.tx.txOut.size == 1, "funded transaction should have a single change output")
     // We take into account witness weight and adjust the fee to match our desired feerate.
@@ -502,7 +524,11 @@ object ZmqWatcher {
     }
   }
 
-  /** Adjust the change output of an htlc tx to match our target feerate. */
+  /**
+   * Adjust the change output of an htlc tx to match our target feerate.
+   * We need this because fundrawtransaction doesn't allow us to leave non-wallet inputs, so we have to add them
+   * afterwards which may bring the resulting feerate below our target.
+   */
   def adjustHtlcTxChange(unsignedTx: Transactions.HtlcTx, amountIn: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, signingKit: TransactionSigningKit.HtlcTxSigningKit): Transactions.HtlcTx = {
     require(unsignedTx.tx.txOut.size <= 2, "funded transaction should have at most one change output")
     val dummySignedTx = addHtlcTxSigs(unsignedTx, Transactions.PlaceHolderSig, signingKit)
