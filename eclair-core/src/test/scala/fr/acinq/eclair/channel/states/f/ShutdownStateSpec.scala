@@ -183,7 +183,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! fulfill
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 2
@@ -198,7 +198,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! UpdateFulfillHtlc(ByteVector32.Zeroes, 42, ByteVector32.Zeroes)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 2
@@ -291,7 +291,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! UpdateFailHtlc(ByteVector32.Zeroes, 42, ByteVector.fill(152)(0))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 2
@@ -316,7 +316,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val error = alice2bob.expectMsgType[Error]
     assert(new String(error.data.toArray) === InvalidFailureCode(ByteVector32.Zeroes).getMessage)
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 2
@@ -386,7 +386,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -397,7 +397,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -453,7 +453,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     bob2blockchain.expectMsgType[PublishAsap] // htlc success
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
@@ -467,7 +467,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32), PrivateKey(randomBytes32).publicKey)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 2
@@ -557,7 +557,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(12000 sat))
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 2
@@ -576,7 +576,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missing = 72120000L sat, reserve = 20000L sat, fees = 72400000L sat).getMessage)
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     //bob2blockchain.expectMsgType[PublishAsap] // main delayed (removed because of the high fees)
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -588,7 +588,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === "local/remote feerates are too different: remoteFeeratePerKw=65000 localFeeratePerKw=10000")
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -600,7 +600,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === "remote fee rate is too small: remoteFeeratePerKw=252")
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -627,7 +627,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
     val aliceCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
     alice ! CurrentBlockCount(400145)
-    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
+    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx, PublishStrategy.JustPublish)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout 2
@@ -814,7 +814,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
-    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx, PublishStrategy.JustPublish))
     assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
 
     // alice can claim both htlc after a timeout

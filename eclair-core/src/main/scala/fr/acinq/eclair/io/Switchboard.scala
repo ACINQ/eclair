@@ -41,7 +41,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
     // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
     // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
     // Closed channels will be removed, other channels will be restored.
-    val (channels, closedChannels) = nodeParams.db.channels.listLocalChannels().partition(c => Closing.isClosed(c, None).isEmpty)
+    val (channels, closedChannels) = nodeParams.db.channels.listLocalChannels().partition(c => Closing.isClosed(nodeParams.channelKeyManager, c, None).isEmpty)
     closedChannels.foreach(c => {
       log.info(s"closing channel ${c.channelId}")
       nodeParams.db.channels.removeChannel(c.channelId)

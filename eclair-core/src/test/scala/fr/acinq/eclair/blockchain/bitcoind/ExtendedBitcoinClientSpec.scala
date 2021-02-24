@@ -123,18 +123,26 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
       bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(400000 sat, Script.pay2wpkh(randomKey.publicKey))), 0), opts).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       val txWithNonWalletInput = fundTxResponse.tx.copy(txIn = TxIn(OutPoint(txToRemote, 0), ByteVector.empty, 0) +: fundTxResponse.tx.txIn)
+
       // bitcoind returns an error if there are unsigned non-wallet input.
       bitcoinClient.signTransaction(txWithNonWalletInput, Nil).pipeTo(sender.ref)
       val Failure(JsonRPCError(error)) = sender.expectMsgType[Failure]
       assert(error.message.contains(txToRemote.txid.toHex))
-      // but if these inputs are signed, bitcoind signs the remaining wallet inputs.
+
+      // we can ignore that error with allowIncomplete = true, and in that case bitcoind signs the wallet inputs.
+      bitcoinClient.signTransaction(txWithNonWalletInput, Nil, allowIncomplete = true).pipeTo(sender.ref)
+      val signTxResponse1 = sender.expectMsgType[SignTransactionResponse]
+      assert(!signTxResponse1.complete)
+      signTxResponse1.tx.txIn.tail.foreach(walletTxIn => assert(walletTxIn.witness.stack.nonEmpty))
+
+      // if the non-wallet inputs are signed, bitcoind signs the remaining wallet inputs.
       val nonWalletSig = Transaction.signInput(txWithNonWalletInput, 0, Script.pay2pkh(nonWalletKey.publicKey), SIGHASH_ALL, txToRemote.txOut.head.amount, SIGVERSION_WITNESS_V0, nonWalletKey)
       val nonWalletWitness = ScriptWitness(Seq(nonWalletSig, nonWalletKey.publicKey.value))
       val txWithSignedNonWalletInput = txWithNonWalletInput.updateWitness(0, nonWalletWitness)
       bitcoinClient.signTransaction(txWithSignedNonWalletInput, Nil).pipeTo(sender.ref)
-      val signTxResponse = sender.expectMsgType[SignTransactionResponse]
-      assert(signTxResponse.complete)
-      Transaction.correctlySpends(signTxResponse.tx, Seq(txToRemote), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      val signTxResponse2 = sender.expectMsgType[SignTransactionResponse]
+      assert(signTxResponse2.complete)
+      Transaction.correctlySpends(signTxResponse2.tx, Seq(txToRemote), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
     {
       // bitcoind does not sign inputs that have already been confirmed.

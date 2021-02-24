@@ -482,12 +482,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
 
-    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
@@ -542,7 +542,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice is funder
     alice ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx, PublishStrategy.JustPublish))
     } else {
       alice2blockchain.expectNoMsg()
     }
@@ -651,7 +651,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob is fundee
     bob ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+      bob2blockchain.expectMsg(PublishAsap(bobCommitTx, PublishStrategy.JustPublish))
     } else {
       bob2blockchain.expectNoMsg()
     }
