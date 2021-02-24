@@ -297,13 +297,19 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
       // If we use the smallest weight possible for the anchor tx, the feerate we use will thus be greater than what we want,
       // and we can adjust it afterwards by raising the change output amount.
       val anchorFeerate = targetFeerate + FeeratePerKw(targetFeerate.feerate - currentFeerate.feerate) * commitTx.weight() / Transactions.claimAnchorOutputMinWeight
-      // NB: bitcoind requires txs to have at least one output, but we'll remove it later to keep a single change output.
-      // In case we have the perfect set of utxo amounts and no change output is added, we need the amount to be greater
-      // than the fee because we may need to deduce the fee from that output.
+      // NB: fundrawtransaction requires at least one output, and may add at most one additional change output.
+      // Since the purpose of this transaction is just to do a CPFP, the resulting tx should have a single change output
+      // (note that bitcoind doesn't let us publish a transaction with no outputs).
+      // To work around these limitations, we start with a dummy output and later merge that dummy output with the optional
+      // change output added by bitcoind.
+      // NB: fundrawtransaction doesn't support non-wallet inputs, so we have to remove our anchor input and re-add it later.
+      // That means bitcoind will not take our anchor input's weight into account when adding inputs to set the fee.
+      // That's ok, we can increase the fee later by decreasing the output amount. But we need to ensure we'll have enough
+      // to cover the weight of our anchor input, which is why we set it to the following value.
       val dummyChangeAmount = Transactions.weight2fee(anchorFeerate, Transactions.claimAnchorOutputMinWeight) + dustLimit
       publish(commitTx, isRetry = false).flatMap(commitTxId => {
         val txNotFunded = Transaction(2, Nil, TxOut(dummyChangeAmount, Script.pay2wpkh(Transactions.PlaceHolderPubKey)) :: Nil, 0)
-        client.fundTransaction(txNotFunded, FundTransactionOptions(anchorFeerate))(singleThreadExecutionContext)
+        client.fundTransaction(txNotFunded, FundTransactionOptions(anchorFeerate, lockUtxos = true))(singleThreadExecutionContext)
       }).flatMap(fundTxResponse => {
         // We merge the outputs if there's more than one.
         fundTxResponse.changePosition match {
@@ -349,7 +355,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
       }
       // NB: bitcoind will add at least one P2WPKH input.
       val weightRatio = htlcTxWeight.toDouble / (txNotFunded.weight() + Transactions.claimP2WPKHOutputWeight)
-      client.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, changePosition = Some(1)))(singleThreadExecutionContext).map(fundTxResponse => {
+      client.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, lockUtxos = true, changePosition = Some(1)))(singleThreadExecutionContext).map(fundTxResponse => {
         log.info(s"added ${fundTxResponse.tx.txIn.length} wallet input(s) and ${fundTxResponse.tx.txOut.length - 1} wallet output(s) to htlc tx spending commit input=${txWithInput.input.outPoint.txid}:${txWithInput.input.outPoint.index}")
         // We add the HTLC input (from the commit tx) and restore the HTLC output.
         val txWithHtlcInput = fundTxResponse.tx.copy(
