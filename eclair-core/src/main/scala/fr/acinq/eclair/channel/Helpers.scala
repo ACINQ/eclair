@@ -954,8 +954,8 @@ object Helpers {
       val remoteCommit = d.commitments.remoteCommit
       val nextRemoteCommit_opt = d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
-        // our commit got confirmed, so any htlc that is in their commitment but not ours will never reach the chain
-        val htlcsInRemoteCommit = remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)
+        // our commit got confirmed, so any htlc that is in their commitment but not in ours will never reach the chain
+        val htlcsInRemoteCommit = remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.flatMap(_.spec.htlcs)
         // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
         htlcsInRemoteCommit.collect(incoming) -- localCommit.spec.htlcs.collect(outgoing)
       } else if (remoteCommit.txid == tx.txid) {
