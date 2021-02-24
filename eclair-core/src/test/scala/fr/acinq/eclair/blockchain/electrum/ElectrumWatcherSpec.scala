@@ -86,7 +86,7 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
     // create a tx that spends the previous output
     val spendingTx = createSpendP2WPKH(tx, priv, priv.publicKey, 1000 sat, TxIn.SEQUENCE_FINAL, 0)
     val outpointIndex = spendingTx.txIn.head.outPoint.index.toInt
-    probe.send(watcher, WatchSpent(listener.ref, tx.txid, outpointIndex, tx.txOut(outpointIndex).publicKeyScript, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchSpent(listener.ref, tx.txid, outpointIndex, tx.txOut(outpointIndex).publicKeyScript, BITCOIN_FUNDING_SPENT, hints = Set.empty))
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", spendingTx.toString))
     probe.expectMsgType[JValue]
@@ -125,7 +125,7 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
     // then set watches
     probe.send(watcher, WatchConfirmed(listener.ref, tx2, 0, BITCOIN_FUNDING_DEPTHOK))
     assert(listener.expectMsgType[WatchEventConfirmed].tx === tx2)
-    probe.send(watcher, WatchSpent(listener.ref, tx1, 0, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchSpent(listener.ref, tx1, 0, BITCOIN_FUNDING_SPENT, hints = Set.empty))
     listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2))
     system.stop(watcher)
   }
@@ -144,7 +144,7 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
     val (tx1, tx2) = createUnspentTxChain(tx, priv)
 
     // here we set watches * before * we publish our transactions
-    probe.send(watcher, WatchSpent(listener.ref, tx1, 0, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchSpent(listener.ref, tx1, 0, BITCOIN_FUNDING_SPENT, hints = Set.empty))
     probe.send(watcher, WatchConfirmed(listener.ref, tx1, 0, BITCOIN_FUNDING_DEPTHOK))
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", tx1.toString()))
     probe.expectMsgType[JValue]
@@ -183,11 +183,11 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
 
     // spend tx1 with an absolute delay but no relative delay
     val spend1 = createSpendP2WPKH(tx1, priv1, recipient, 5000 sat, sequence = 0, lockTime = blockCount.get + 1)
-    probe.send(watcher, WatchSpent(listener.ref, tx1, spend1.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchSpent(listener.ref, tx1, spend1.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT, hints = Set.empty))
     probe.send(watcher, PublishAsap(spend1))
     // spend tx2 with a relative delay but no absolute delay
     val spend2 = createSpendP2WPKH(tx2, priv2, recipient, 3000 sat, sequence = 1, lockTime = 0)
-    probe.send(watcher, WatchSpent(listener.ref, tx2, spend2.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchSpent(listener.ref, tx2, spend2.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT, hints = Set.empty))
     probe.send(watcher, PublishAsap(spend2))
 
     generateBlocks(1)
@@ -219,7 +219,7 @@ class ElectrumWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bit
 
     // spend tx with both relative and absolute delays
     val spend = createSpendP2WPKH(tx, priv, recipient, 6000 sat, sequence = 1, lockTime = blockCount.get + 2)
-    probe.send(watcher, WatchSpent(listener.ref, tx, spend.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchSpent(listener.ref, tx, spend.txIn.head.outPoint.index.toInt, BITCOIN_FUNDING_SPENT, hints = Set.empty))
     probe.send(watcher, PublishAsap(spend))
     generateBlocks(2)
     listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, spend))
