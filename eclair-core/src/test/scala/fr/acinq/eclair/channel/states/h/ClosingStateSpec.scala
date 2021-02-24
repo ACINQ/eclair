@@ -517,6 +517,39 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingState.claimHtlcDelayedTxs.size === 1)
   }
 
+  test("recv BITCOIN_TX_CONFIRMED (local commit with fail not acked by remote)") { f =>
+    import f._
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
+    val (_, htlc) = addHtlc(25000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    failHtlc(htlc.id, bob, alice, bob2alice, alice2bob)
+    bob ! CMD_SIGN()
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    // note that alice doesn't receive the last revocation
+    // then we make alice unilaterally close the channel
+    val closingState = localClose(alice, alice2blockchain)
+    assert(closingState.commitTx.txOut.length === 2) // htlc has been removed
+
+    // actual test starts here
+    channelUpdateListener.expectMsgType[LocalChannelDown]
+    assert(closingState.htlcSuccessTxs.isEmpty && closingState.htlcTimeoutTxs.isEmpty && closingState.claimHtlcDelayedTxs.isEmpty)
+    // when the commit tx is confirmed, alice knows that the htlc will never reach the chain
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.commitTx), 0, 0, closingState.commitTx)
+    // so she fails it
+    val origin = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.originChannels(htlc.id)
+    relayerA.expectMsg(RES_ADD_SETTLED(origin, htlc, HtlcResult.OnChainFail(HtlcOverriddenByLocalCommit(channelId(alice), htlc))))
+    // the htlc will not settle on chain
+    listener.expectNoMsg(2 seconds)
+    relayerA.expectNoMsg(100 millis)
+  }
+
   test("recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)") { f =>
     import f._
     val listener = TestProbe()
