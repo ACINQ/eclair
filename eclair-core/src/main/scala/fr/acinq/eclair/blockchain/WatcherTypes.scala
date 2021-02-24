@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Script, ScriptWitness, Transaction}
-import fr.acinq.eclair.channel.{BITCOIN_FUNDING_SPENT, BitcoinEvent, Commitments}
+import fr.acinq.eclair.channel.BitcoinEvent
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import scodec.bits.ByteVector
 
