@@ -963,8 +963,9 @@ object Helpers {
       val nextRemoteCommit_opt = d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
       if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that we signed but they didn't sign will never reach the chain
+        val mostRecentRemoteCommit = nextRemoteCommit_opt.getOrElse(remoteCommit)
         // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs
-        d.commitments.latestRemoteCommit.spec.htlcs.collect(incoming) -- localCommit.spec.htlcs.collect(outgoing)
+        mostRecentRemoteCommit.spec.htlcs.collect(incoming) -- localCommit.spec.htlcs.collect(outgoing)
       } else if (remoteCommit.txid == tx.txid) {
         // their commit got confirmed
         nextRemoteCommit_opt match {

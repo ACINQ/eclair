@@ -93,7 +93,7 @@ case class Commitments(channelVersion: ChannelVersion,
 
     localCommit.spec.htlcs.collect(outgoing).filter(expired) ++
       remoteCommit.spec.htlcs.collect(incoming).filter(expired) ++
-      latestRemoteCommit.spec.htlcs.collect(incoming).filter(expired)
+      remoteNextCommitInfo.left.toSeq.flatMap(_.nextRemoteCommit.spec.htlcs.collect(incoming).filter(expired).toSet)
   }
 
   /**
