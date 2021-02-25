@@ -230,6 +230,11 @@ trait Service extends ExtraDirectives with Logging {
                             complete(eclairApi.findRoute(nodeId, amount))
                           }
                         } ~
+                        path("findroutebetweennodes") {
+                          formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam) {
+                            (sourceNodeId, targetNodeId, amount) => complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount))
+                          }
+                        } ~
                         path("parseinvoice") {
                           formFields(invoiceFormParam) { invoice =>
                             complete(invoice)

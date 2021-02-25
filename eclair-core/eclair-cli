@@ -18,7 +18,7 @@ on <$api_url>.
 
 Usage
 -----
-\e[93meclair-cli\e[39m [\e[93mOPTIONS\e[39m]... <\e[93mCOMMAND\e[39m> [--command-param=command-value]...
+\x1b[93meclair-cli\x1b[39m [\x1b[93mOPTIONS\x1b[39m]... <\x1b[93mCOMMAND\x1b[39m> [--command-param=command-value]...
 
 where OPTIONS can be:
   -p <password>         API's password
@@ -51,6 +51,7 @@ and COMMAND is one of the available commands:
   === Path-finding ===
     - findroute
     - findroutetonode
+    - findroutebetweennodes
     - networkstats
 
   === Invoice ===

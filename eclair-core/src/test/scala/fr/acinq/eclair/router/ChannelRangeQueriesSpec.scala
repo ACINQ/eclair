@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
+import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
 import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
 import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
 import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId, randomKey}
@@ -83,7 +84,6 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
   }
 
   test("compute flag tests") {
-
     val now = System.currentTimeMillis / 1000
 
     val a = randomKey.publicKey
@@ -96,7 +96,6 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     val d = randomKey.publicKey
     val cd = RouteCalculationSpec.makeChannel(451312L, c, d)
     val ucd1 = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, 0 msat, 0, timestamp = now)
-    val ucd2 = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId2, cd.nodeId1, 0 msat, 0, timestamp = now)
 
     val e = randomKey.publicKey
     val f = randomKey.publicKey
@@ -107,30 +106,28 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
       cd.shortChannelId -> PublicChannel(cd, ByteVector32.Zeroes, 0 sat, Some(ucd1), None, None)
     )
 
-    import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
-
     assert(getChannelDigestInfo(channels)(ab.shortChannelId) == (Timestamps(now, now), Checksums(1697591108L, 3692323747L)))
 
     // no extended info but we know the channel: we ask for the updates
-    assert(computeFlag(channels)(ab.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
-    assert(computeFlag(channels)(ab.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, None, None, includeNodeAnnouncements = false) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
+    assert(computeFlag(channels)(ab.shortChannelId, None, None, includeNodeAnnouncements = true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     // same checksums, newer timestamps: we don't ask anything
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(1697591108L, 3692323747L)), true) === 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(1697591108L, 3692323747L)), includeNodeAnnouncements = true) === 0)
     // different checksums, newer timestamps: we ask for the updates
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 3692323747L)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(1697591108L, 45664546)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546 + 6)), true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now)), Some(Checksums(154654604, 3692323747L)), includeNodeAnnouncements = true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now + 1)), Some(Checksums(1697591108L, 45664546)), includeNodeAnnouncements = true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now + 1, now + 1)), Some(Checksums(154654604, 45664546 + 6)), includeNodeAnnouncements = true) === (INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
     // different checksums, older timestamps: we don't ask anything
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 3692323747L)), true) === 0)
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(1697591108L, 45664546)), true) === 0)
-    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546)), true) === 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now)), Some(Checksums(154654604, 3692323747L)), includeNodeAnnouncements = true) === 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now, now - 1)), Some(Checksums(1697591108L, 45664546)), includeNodeAnnouncements = true) === 0)
+    assert(computeFlag(channels)(ab.shortChannelId, Some(Timestamps(now - 1, now - 1)), Some(Checksums(154654604, 45664546)), includeNodeAnnouncements = true) === 0)
 
     // missing channel update: we ask for it
-    assert(computeFlag(channels)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(3297511804L, 3297511804L)), true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(cd.shortChannelId, Some(Timestamps(now, now)), Some(Checksums(3297511804L, 3297511804L)), includeNodeAnnouncements = true) === (INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
 
     // unknown channel: we ask everything
-    assert(computeFlag(channels)(ef.shortChannelId, None, None, false) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
-    assert(computeFlag(channels)(ef.shortChannelId, None, None, true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
+    assert(computeFlag(channels)(ef.shortChannelId, None, None, includeNodeAnnouncements = false) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2))
+    assert(computeFlag(channels)(ef.shortChannelId, None, None, includeNodeAnnouncements = true) === (INCLUDE_CHANNEL_ANNOUNCEMENT | INCLUDE_CHANNEL_UPDATE_1 | INCLUDE_CHANNEL_UPDATE_2 | INCLUDE_NODE_ANNOUNCEMENT_1 | INCLUDE_NODE_ANNOUNCEMENT_2))
   }
 
   def makeShortChannelIds(height: Int, count: Int): List[ShortChannelId] = {
@@ -149,7 +146,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     output.toList
   }
 
-  def validate(chunk: ShortChannelIdsChunk) = {
+  def validate(chunk: ShortChannelIdsChunk): Unit = {
     require(chunk.shortChannelIds.forall(keep(chunk.firstBlock, chunk.numBlocks, _)))
   }
 
@@ -326,9 +323,9 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
 
   test("enforce maximum size of short channel lists") {
 
-    def makeChunk(startBlock: Int, count: Int) = ShortChannelIdsChunk(startBlock, count, makeShortChannelIds(startBlock, count))
+    def makeChunk(startBlock: Int, count: Int): ShortChannelIdsChunk = ShortChannelIdsChunk(startBlock, count, makeShortChannelIds(startBlock, count))
 
-    def validate(before: ShortChannelIdsChunk, after: ShortChannelIdsChunk) = {
+    def validate(before: ShortChannelIdsChunk, after: ShortChannelIdsChunk): Unit = {
       require(before.shortChannelIds.containsSlice(after.shortChannelIds))
       require(after.shortChannelIds.size <= Sync.MAXIMUM_CHUNK_SIZE)
     }
@@ -353,7 +350,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     {
       val chunks = collection.mutable.ArrayBuffer.empty[ShortChannelIdsChunk]
       // we select parameters to make sure that some chunks will have too many ids
-      for (i <- 0 until 100) chunks += makeChunk(0, Sync.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
+      for (_ <- 0 until 100) chunks += makeChunk(0, Sync.MAXIMUM_CHUNK_SIZE - 500 + Random.nextInt(1000))
       val pruned = enforceMaximumSize(chunks.toList)
       validateChunks(chunks.toList, pruned)
     }
@@ -361,20 +358,20 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
 
   test("do not encode empty lists as COMPRESSED_ZLIB") {
     {
-      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_ALL)), SortedMap())
-      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0L, 42L, 1.toByte, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, Nil)), Some(EncodedChecksums(Nil))))
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = true, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_ALL)), SortedMap())
+      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, Nil)), Some(EncodedChecksums(Nil))))
     }
     {
-      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_TIMESTAMPS)), SortedMap())
-      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0L, 42L, 1.toByte, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, Nil)), None))
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = false, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_TIMESTAMPS)), SortedMap())
+      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, Nil)), None))
     }
     {
-      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_CHECKSUMS)), SortedMap())
-      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0L, 42L, 1.toByte, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, Some(EncodedChecksums(Nil))))
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = false, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_CHECKSUMS)), SortedMap())
+      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, Some(EncodedChecksums(Nil))))
     }
     {
-      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, None, SortedMap())
-      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0L, 42L, 1.toByte, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, None))
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = true, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, None, SortedMap())
+      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, None))
     }
   }
 }

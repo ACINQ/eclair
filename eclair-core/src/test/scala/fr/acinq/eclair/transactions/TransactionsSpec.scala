@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, SatoshiLong, Script, Transaction, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
@@ -53,6 +53,27 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   val toLocalDelay = CltvExpiryDelta(144)
   val localDustLimit = Satoshi(546)
   val feeratePerKw = FeeratePerKw(22000 sat)
+
+  test("extract csv and cltv timeouts") {
+    val parentTxId1 = randomBytes32
+    val parentTxId2 = randomBytes32
+    val parentTxId3 = randomBytes32
+    val txIn = Seq(
+      TxIn(OutPoint(parentTxId1.reverse, 3), Nil, 3),
+      TxIn(OutPoint(parentTxId2.reverse, 1), Nil, 4),
+      TxIn(OutPoint(parentTxId3.reverse, 0), Nil, 5),
+      TxIn(OutPoint(randomBytes32, 4), Nil, 0),
+      TxIn(OutPoint(parentTxId1.reverse, 2), Nil, 5),
+    )
+    val tx = Transaction(2, txIn, Nil, 10)
+    val expected = Map(
+      parentTxId1 -> 5,
+      parentTxId2 -> 4,
+      parentTxId3 -> 5,
+    )
+    assert(expected === Scripts.csvTimeouts(tx))
+    assert(10 === Scripts.cltvTimeout(tx))
+  }
 
   test("encode/decode sequence and locktime (one example)") {
     val txnumber = 0x11F71FB268DL
@@ -177,10 +198,17 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
       val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx, localFundingPriv.publicKey)
+      assert(claimAnchorOutputTx.tx.txOut.isEmpty)
+      // we will always add at least one input and one output to be able to set our desired feerate
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimAnchorOutputTx, PlaceHolderSig).tx)
-      assert(claimAnchorOutputWeight == weight)
-      assert(claimAnchorOutputTx.fee >= claimAnchorOutputTx.minRelayFee)
+      val p2wpkhWitness = ScriptWitness(Seq(Scripts.der(PlaceHolderSig), PlaceHolderPubKey.value))
+      val claimAnchorOutputTxWithFees = claimAnchorOutputTx.copy(tx = claimAnchorOutputTx.tx.copy(
+        txIn = claimAnchorOutputTx.tx.txIn :+ TxIn(OutPoint(randomBytes32, 3), ByteVector.empty, 0, p2wpkhWitness),
+        txOut = Seq(TxOut(1500 sat, Script.pay2wpkh(randomKey.publicKey)))
+      ))
+      val weight = Transaction.weight(addSigs(claimAnchorOutputTxWithFees, PlaceHolderSig).tx)
+      assert(weight === 717)
+      assert(weight >= claimAnchorOutputMinWeight)
     }
   }
 

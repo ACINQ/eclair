@@ -100,7 +100,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }, max = 20 seconds, interval = 1 second)
 
     // confirming the funding tx
-    generateBlocks(bitcoincli, 2)
+    generateBlocks(2)
 
     within(60 seconds) {
       var count = 0
@@ -131,7 +131,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
   test("wait for network announcements") {
     // generating more blocks so that all funding txes are buried under at least 6 blocks
-    generateBlocks(bitcoincli, 4)
+    generateBlocks(4)
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
@@ -642,11 +642,11 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val channels = for (i <- 0 until 242) yield {
       // let's generate a block every 10 txs so that we can compute short ids
       if (i % 10 == 0) {
-        generateBlocks(bitcoincli, 1, Some(address))
+        generateBlocks(1, Some(address))
       }
       AnnouncementsBatchValidationSpec.simulateChannel
     }
-    generateBlocks(bitcoincli, 1, Some(address))
+    generateBlocks(1, Some(address))
     logger.info(s"simulated ${channels.size} channels")
 
     val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey

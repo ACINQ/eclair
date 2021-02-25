@@ -16,12 +16,8 @@
 
 package fr.acinq.eclair.blockchain
 
-import akka.actor.{ActorRef, ActorSystem}
-import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Base58, OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
-import org.json4s.JsonAST.{JString, JValue}
+import fr.acinq.bitcoin.{OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 /**
@@ -45,35 +41,6 @@ class WatcherSpec extends AnyFunSuiteLike {
 }
 
 object WatcherSpec {
-
-  /**
-   * Create a new address and dumps its private key.
-   */
-  def getNewAddress(bitcoincli: ActorRef)(implicit system: ActorSystem): (String, PrivateKey) = {
-    val probe = TestProbe()
-    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
-    val JString(address) = probe.expectMsgType[JValue]
-
-    probe.send(bitcoincli, BitcoinReq("dumpprivkey", address))
-    val JString(wif) = probe.expectMsgType[JValue]
-    val (priv, true) = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
-    (address, priv)
-  }
-
-  /**
-   * Send to a given address, without generating blocks to confirm.
-   *
-   * @return the corresponding transaction.
-   */
-  def sendToAddress(bitcoincli: ActorRef, address: String, amount: Double)(implicit system: ActorSystem): Transaction = {
-    val probe = TestProbe()
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address, amount))
-    val JString(txid) = probe.expectMsgType[JValue]
-
-    probe.send(bitcoincli, BitcoinReq("getrawtransaction", txid))
-    val JString(hex) = probe.expectMsgType[JValue]
-    Transaction.read(hex)
-  }
 
   /**
    * Create a transaction that spends a p2wpkh output from an input transaction and sends it to the same address.

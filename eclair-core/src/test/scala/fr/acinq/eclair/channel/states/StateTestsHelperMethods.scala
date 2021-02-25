@@ -22,11 +22,12 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.FeeTargets
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{FeatureSupport, Features, NodeParams, TestConstants, randomBytes32, _}
@@ -111,10 +112,15 @@ trait StateTestsHelperMethods extends TestKitBase {
     } else {
       (Alice.channelParams, Bob.channelParams, ChannelVersion.STANDARD)
     }
+    val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) {
+      FeeEstimator.AnchorOutputMaxCommitFeerate
+    } else {
+      TestConstants.feeratePerKw
+    }
 
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
@@ -247,18 +253,27 @@ trait StateTestsHelperMethods extends TestKitBase {
     // an error occurs and s publishes its commit tx
     val commitTx = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
-    s2blockchain.expectMsg(PublishAsap(commitTx))
+    assert(s2blockchain.expectMsgType[PublishAsap].tx == commitTx)
     awaitCond(s.stateName == CLOSING)
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
 
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishAsap(tx)))
-    // all htlcs success/timeout should be published
-    s2blockchain.expectMsgAllOf((localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs).map(PublishAsap): _*)
-    // and their outputs should be claimed
-    s2blockchain.expectMsgAllOf(localCommitPublished.claimHtlcDelayedTxs.map(PublishAsap): _*)
+    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)))
+    s.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat match {
+      case Transactions.DefaultCommitmentFormat =>
+        // all htlcs success/timeout should be published
+        s2blockchain.expectMsgAllOf((localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs).map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
+        // and their outputs should be claimed
+        s2blockchain.expectMsgAllOf(localCommitPublished.claimHtlcDelayedTxs.map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
+      case Transactions.AnchorOutputsCommitmentFormat =>
+        // all htlcs success/timeout should be published, but their outputs should not be claimed yet
+        val htlcTxs = localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs
+        val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[PublishAsap])
+        assert(publishedTxs.map(_.tx).toSet == htlcTxs.toSet)
+        publishedTxs.foreach(p => p.strategy.isInstanceOf[PublishStrategy.SetFeerate])
+    }
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(commitTx))
@@ -292,12 +307,12 @@ trait StateTestsHelperMethods extends TestKitBase {
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(tx => {
       Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      s2blockchain.expectMsg(PublishAsap(tx))
+      s2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     })
     // all htlcs success/timeout should be claimed
     val claimHtlcTxs = remoteCommitPublished.claimHtlcSuccessTxs ++ remoteCommitPublished.claimHtlcTimeoutTxs
     claimHtlcTxs.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(PublishAsap): _*)
+    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(rCommitTx))

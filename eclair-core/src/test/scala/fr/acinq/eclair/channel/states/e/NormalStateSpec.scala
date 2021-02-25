@@ -25,7 +25,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerByte, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
@@ -144,22 +144,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    // It's usually dangerous for Bob to accept HTLCs that are expiring soon. However it's not Alice's decision to reject
-    // them when she's asked to relay; she should forward those HTLCs to Bob, and Bob will choose whether to fail them
-    // or fulfill them (Bob could be #reckless and fulfill HTLCs with a very low expiry delta).
-    val expiryTooSmall = CltvExpiry(currentBlockHeight + 3)
+    val expiryTooSmall = CltvExpiry(currentBlockHeight)
     val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, randomBytes32, expiryTooSmall, TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add
-    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
-    val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
-    assert(htlc.id === 0)
-    assert(htlc.cltvExpiry === expiryTooSmall)
-    awaitCond(alice.stateData == initialState.copy(
-      commitments = initialState.commitments.copy(
-        localNextHtlcId = 1,
-        localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
-        originChannels = Map(0L -> add.origin)
-      )))
+    val error = ExpiryTooSmall(channelId(alice), CltvExpiry(currentBlockHeight), expiryTooSmall, currentBlockHeight)
+    sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
+    alice2bob.expectNoMsg(200 millis)
   }
 
   test("recv CMD_ADD_HTLC (expiry too big)") { f =>
@@ -228,7 +218,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val add = CMD_ADD_HTLC(sender.ref, initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add
 
-    val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 20000 sat, fees = 13620 sat)
+    val error = InsufficientFunds(channelId(alice), amount = add.amount, missing = 0 sat, reserve = 20000 sat, fees = 3900 sat)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     alice2bob.expectNoMsg(200 millis)
   }
@@ -453,7 +443,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === UnexpectedHtlcId(channelId(bob), expected = 4, actual = 42).getMessage)
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -468,7 +458,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -483,7 +473,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -495,11 +485,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 1, 300000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
     alice2bob.forward(bob, UpdateAddHtlc(ByteVector32.Zeroes, 2, 100000000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amount = 100000000 msat, missing = 37060 sat, reserve = 20000 sat, fees = 17060 sat).getMessage)
+    assert(new String(error.data.toArray) === InsufficientFunds(channelId(bob), amount = 100000000 msat, missing = 24760 sat, reserve = 20000 sat, fees = 4760 sat).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx === tx)
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -516,7 +506,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -532,7 +522,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -546,7 +536,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -564,7 +554,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -878,7 +868,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -893,7 +883,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
     awaitCond(bob.stateName == CLOSING)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -912,7 +902,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! badCommitSig
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === HtlcSigCountMismatch(channelId(bob), expected = 1, actual = 2).getMessage)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -931,7 +921,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! badCommitSig
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid htlc signature"))
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1043,7 +1033,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1057,7 +1047,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1297,7 +1287,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1310,7 +1300,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1328,7 +1318,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
     alice2blockchain.expectMsgType[PublishAsap] // htlc delayed
@@ -1499,7 +1489,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val error = alice2bob.expectMsgType[Error]
     assert(new String(error.data.toArray) === InvalidFailureCode(ByteVector32.Zeroes).getMessage)
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
     alice2blockchain.expectMsgType[PublishAsap] // htlc delayed
@@ -1519,7 +1509,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1532,7 +1522,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1600,7 +1590,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv UpdateFee (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(8000 sat))
+    assert(initialData.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
+    val fee = UpdateFee(ByteVector32.Zeroes, FeeEstimator.AnchorOutputMaxCommitFeerate * 0.8)
     bob ! fee
     awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee), remoteNextHtlcId = 0)))
   }
@@ -1623,7 +1614,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1640,38 +1631,33 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)) // commit tx
     //bob2blockchain.expectMsgType[PublishAsap] // main delayed (removed because of the high fees)
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
-  test("recv UpdateFee (sender can't afford it) (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv UpdateFee (sender can't afford it, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     // This feerate is just above the threshold: (800000 (alice balance) - 20000 (reserve) - 660 (anchors)) / 1124 (commit tx weight) = 693363
-    val fee = UpdateFee(ByteVector32.Zeroes, FeeratePerKw(693364 sat))
-    // we first update the feerates so that we don't trigger a 'fee too different' error
-    bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
-    bob ! fee
+    bob ! UpdateFee(ByteVector32.Zeroes, FeeratePerKw(693364 sat))
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missing = 1 sat, reserve = 20000 sat, fees = 780001 sat).getMessage)
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
-    //bob2blockchain.expectMsgType[PublishAsap] // main delayed (removed because of the high fees)
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx === tx) // commit tx
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
     import f._
 
-    bob.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(500 sat), FeeratePerKw(1000 sat), FeeratePerKw(2000 sat), FeeratePerKw(6000 sat), FeeratePerKw(12000 sat), FeeratePerKw(36000 sat), FeeratePerKw(72000 sat), FeeratePerKw(140000 sat), FeeratePerKw(160000 sat)))
-    val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val localFeerate = bob.feeEstimator.getFeeratePerKw(bob.feeTargets.commitmentBlockTarget)
-    assert(localFeerate === FeeratePerKw(2000 sat))
-    val remoteFeerate = FeeratePerKw(4000 sat)
-    bob ! UpdateFee(ByteVector32.Zeroes, remoteFeerate)
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val commitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === TestConstants.feeratePerKw)
+    alice2bob.send(bob, UpdateFee(ByteVector32.Zeroes, TestConstants.feeratePerKw * 3))
     bob2alice.expectNoMsg(250 millis) // we don't close because the commitment doesn't contain any HTLC
 
     // when we try to add an HTLC, we still disagree on the feerate so we close
@@ -1681,7 +1667,49 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(commitTx, PublishStrategy.JustPublish))
+    bob2blockchain.expectMsgType[PublishAsap]
+    bob2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv UpdateFee (remote feerate is too high, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val commitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
+    alice2bob.send(bob, UpdateFee(initialState.channelId, FeeEstimator.AnchorOutputMaxCommitFeerate * 3))
+    bob2alice.expectNoMsg(250 millis) // we don't close because the commitment doesn't contain any HTLC
+
+    // when we try to add an HTLC, we still disagree on the feerate so we close
+    alice2bob.send(bob, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray).contains("local/remote feerates are too different"))
+    awaitCond(bob.stateName == CLOSING)
+    // channel should be advertised as down
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx === commitTx)
+    bob2blockchain.expectMsgType[PublishAsap]
+    bob2blockchain.expectMsgType[WatchConfirmed]
+  }
+
+  test("recv UpdateFee (remote feerate is too small, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    val commitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
+    alice2bob.send(bob, UpdateFee(initialState.channelId, FeeratePerKw(FeeratePerByte(2 sat))))
+    bob2alice.expectNoMsg(250 millis) // we don't close because the commitment doesn't contain any HTLC
+
+    // when we try to add an HTLC, we still disagree on the feerate so we close
+    alice2bob.send(bob, UpdateAddHtlc(ByteVector32.Zeroes, 0, 2500000 msat, randomBytes32, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray).contains("local/remote feerates are too different"))
+    awaitCond(bob.stateName == CLOSING)
+    // channel should be advertised as down
+    assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
+    assert(bob2blockchain.expectMsgType[PublishAsap].tx === commitTx)
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1698,7 +1726,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
-    bob2blockchain.expectMsg(PublishAsap(tx))
+    bob2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
   }
@@ -1812,6 +1840,23 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NORMAL)
   }
 
+  test("recv CMD_CLOSE (with unsigned fee update)") { f =>
+    import f._
+    val sender = TestProbe()
+    alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), commit = false)
+    alice2bob.expectMsgType[UpdateFee]
+    alice ! CMD_CLOSE(sender.ref, None)
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, CannotCloseWithUnsignedOutgoingUpdateFee]]
+    alice2bob.expectNoMsg(100 millis)
+    // once alice signs, the channel can be closed
+    alice ! CMD_SIGN()
+    alice2bob.expectMsgType[CommitSig]
+    alice ! CMD_CLOSE(sender.ref, None)
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    alice2bob.expectMsgType[Shutdown]
+    awaitCond(alice.stateName == NORMAL)
+  }
+
   def testShutdown(f: FixtureParam): Unit = {
     import f._
     alice ! Shutdown(ByteVector32.Zeroes, Bob.channelParams.defaultFinalScriptPubKey)
@@ -1861,6 +1906,34 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv Shutdown (with unsigned fee update)") { f =>
+    import f._
+    val sender = TestProbe()
+    alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), commit = true)
+    alice2bob.expectMsgType[UpdateFee]
+    alice2bob.forward(bob)
+    val sig = alice2bob.expectMsgType[CommitSig]
+    // Bob initiates a close before receiving the signature.
+    bob ! CMD_CLOSE(sender.ref, None)
+    bob2alice.expectMsgType[Shutdown]
+    bob2alice.forward(alice)
+    alice2bob.forward(bob, sig)
+    alice2bob.expectMsgType[Shutdown]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+    // Once the fee update has been signed, shutdown resumes.
+    alice2bob.expectMsgType[ClosingSigned]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[ClosingSigned]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateName == CLOSING)
   }
 
   test("recv Shutdown (with invalid final script)") { f =>
@@ -1983,7 +2056,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
     alice ! CurrentBlockCount(400145)
-    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx, PublishStrategy.JustPublish))
 
     alice2blockchain.expectMsgType[PublishAsap] // main delayed
     alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
@@ -2018,7 +2091,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
@@ -2052,7 +2125,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
@@ -2090,7 +2163,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    bob2blockchain.expectMsg(PublishAsap(initialCommitTx))
+    bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
     bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
@@ -2106,10 +2179,26 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(Alice.nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)))
   }
 
+  test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
+    alice ! CurrentFeerates(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate / 2))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, FeeEstimator.AnchorOutputMaxCommitFeerate / 2))
+  }
+
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
     import f._
     val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10010 sat)))
     alice ! event
+    alice2bob.expectNoMsg(500 millis)
+  }
+
+  test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
+    alice ! CurrentFeerates(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate * 2))
     alice2bob.expectNoMsg(500 millis)
   }
 
@@ -2128,6 +2217,30 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
     val event = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(14000 sat)))
+    bob ! event
+    bob2alice.expectMsgType[Error]
+    bob2blockchain.expectMsgType[PublishAsap] // commit tx
+    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    bob2blockchain.expectMsgType[WatchConfirmed]
+    awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different, with HTLCs, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    // We start with a feerate lower than the 10 sat/byte threshold.
+    alice.feeEstimator.setFeerate(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate / 2))
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate / 2))
+    alice ! CMD_UPDATE_FEE(FeeEstimator.AnchorOutputMaxCommitFeerate / 2)
+    alice2bob.expectMsgType[UpdateFee]
+    alice2bob.forward(bob)
+    addHtlc(10000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate / 2)
+
+    // The network fees spike, so Bob closes the channel.
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate * 2))
+    val event = CurrentFeerates(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate * 2))
     bob ! event
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishAsap] // commit tx
@@ -2408,7 +2521,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
-    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+    alice2blockchain.expectMsg(PublishAsap(aliceCommitTx, PublishStrategy.JustPublish))
     assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
 
     // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
@@ -2459,7 +2572,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // an error occurs and alice publishes her commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     bob ! Error(ByteVector32.Zeroes, "oops")
-    bob2blockchain.expectMsg(PublishAsap(bobCommitTx))
+    bob2blockchain.expectMsg(PublishAsap(bobCommitTx, PublishStrategy.JustPublish))
     assert(bobCommitTx.txOut.size == 1) // only one main output
     alice2blockchain.expectNoMsg(1 second)
 

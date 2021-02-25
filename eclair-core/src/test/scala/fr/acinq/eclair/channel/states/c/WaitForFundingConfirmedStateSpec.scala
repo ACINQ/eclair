@@ -106,11 +106,52 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_FUNDING_TIMEOUT") { f =>
+  test("recv BITCOIN_FUNDING_TIMEOUT (funder)") { f =>
     import f._
     alice ! BITCOIN_FUNDING_TIMEOUT
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSED)
+  }
+
+  test("recv BITCOIN_FUNDING_TIMEOUT (fundee)") { f =>
+    import f._
+    bob ! BITCOIN_FUNDING_TIMEOUT
+    bob2alice.expectMsgType[Error]
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("recv CurrentBlockCount (funder)") { f =>
+    import f._
+    val initialState = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+    alice ! CurrentBlockCount(initialState.waitingSinceBlock + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
+    alice2bob.expectNoMsg(100 millis)
+  }
+
+  test("recv CurrentBlockCount (funding timeout not reached)") { f =>
+    import f._
+    val initialState = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+    bob ! CurrentBlockCount(initialState.waitingSinceBlock + Channel.FUNDING_TIMEOUT_FUNDEE - 1)
+    bob2alice.expectNoMsg(100 millis)
+  }
+
+  test("recv CurrentBlockCount (funding timeout reached)") { f =>
+    import f._
+    val initialState = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
+    bob ! CurrentBlockCount(initialState.waitingSinceBlock + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
+    bob2alice.expectMsgType[Error]
+    awaitCond(bob.stateName == CLOSED)
+  }
+
+  test("migrate waitingSince to waitingSinceBlocks") { f =>
+    import f._
+    // Before version 0.5.1, eclair used an absolute timestamp instead of a block height for funding timeouts.
+    val beforeMigration = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].copy(waitingSinceBlock = System.currentTimeMillis().milliseconds.toSeconds)
+    bob.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    bob ! INPUT_RESTORED(beforeMigration)
+    awaitCond(bob.stateName == OFFLINE)
+    // We reset the waiting period to the current block height when starting up after updating eclair.
+    val currentBlockHeight = bob.underlyingActor.nodeParams.currentBlockHeight
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSinceBlock === currentBlockHeight)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>
@@ -128,7 +169,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, Transaction(0, Nil, Nil, 0))
     alice2bob.expectMsgType[Error]
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
   }
 
@@ -137,7 +178,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap] // claim-main-delayed
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
   }
@@ -156,7 +197,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx))
+    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     alice2blockchain.expectMsgType[PublishAsap] // claim-main-delayed
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
   }

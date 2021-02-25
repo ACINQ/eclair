@@ -66,10 +66,10 @@ import scala.util.{Failure, Success}
  *
  * Created by PM on 25/01/2016.
  *
- * @param datadir       directory where eclair-core will write/read its data.
- * @param pluginParams  parameters for all configured plugins.
- * @param seeds_opt     optional seeds, if set eclair will use them instead of generating them and won't create a node_seed.dat and channel_seed.dat files.
- * @param db            optional databases to use, if not set eclair will create the necessary databases
+ * @param datadir      directory where eclair-core will write/read its data.
+ * @param pluginParams parameters for all configured plugins.
+ * @param seeds_opt    optional seeds, if set eclair will use them instead of generating them and won't create a node_seed.dat and channel_seed.dat files.
+ * @param db           optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
             pluginParams: Seq[PluginParams],
@@ -185,6 +185,8 @@ class Setup(datadir: File,
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
+      logger.info(s"current blockchain height=$blocks")
+      blockCount.set(blocks)
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {

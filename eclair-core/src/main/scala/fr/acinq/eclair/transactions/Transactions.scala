@@ -16,19 +16,20 @@
 
 package fr.acinq.eclair.transactions
 
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import scodec.bits.ByteVector
 
+import java.nio.ByteOrder
 import scala.util.Try
 
 /**
@@ -115,6 +116,28 @@ object Transactions {
   case class HtlcPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClosingTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
 
+  trait TransactionSigningKit {
+    def keyManager: ChannelKeyManager
+    def commitmentFormat: CommitmentFormat
+    def spentOutpoint: OutPoint
+  }
+  object TransactionSigningKit {
+    case class ClaimAnchorOutputSigningKit(keyManager: ChannelKeyManager, txWithInput: ClaimAnchorOutputTx, localFundingPubKey: ExtendedPublicKey) extends TransactionSigningKit {
+      override val commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
+      override val spentOutpoint  = txWithInput.input.outPoint
+    }
+
+    sealed trait HtlcTxSigningKit extends TransactionSigningKit {
+      def txWithInput: HtlcTx
+      override def spentOutpoint  = txWithInput.input.outPoint
+      def localHtlcBasepoint: ExtendedPublicKey
+      def localPerCommitmentPoint: PublicKey
+      def remoteSig: ByteVector64
+    }
+    case class HtlcSuccessSigningKit(keyManager: ChannelKeyManager, commitmentFormat: CommitmentFormat, txWithInput: HtlcSuccessTx, localHtlcBasepoint: ExtendedPublicKey, localPerCommitmentPoint: PublicKey, remoteSig: ByteVector64, preimage: ByteVector32) extends HtlcTxSigningKit
+    case class HtlcTimeoutSigningKit(keyManager: ChannelKeyManager, commitmentFormat: CommitmentFormat, txWithInput: HtlcTimeoutTx, localHtlcBasepoint: ExtendedPublicKey, localPerCommitmentPoint: PublicKey, remoteSig: ByteVector64) extends HtlcTxSigningKit
+  }
+
   sealed trait TxGenerationSkipped
   case object OutputNotFound extends TxGenerationSkipped { override def toString = "output not found (probably trimmed)" }
   case object AmountBelowDustLimit extends TxGenerationSkipped { override def toString = "amount is below dust limit" }
@@ -151,8 +174,16 @@ object Transactions {
   /**
    * these values are specific to us (not defined in the specification) and used to estimate fees
    */
+  val claimP2WPKHOutputWitnessWeight = 109
   val claimP2WPKHOutputWeight = 438
-  val claimAnchorOutputWeight = 321
+  // The smallest transaction that spends an anchor contains 2 inputs (the commit tx output and a wallet input to set the feerate)
+  // and 1 output (change). If we're using P2WPKH wallet inputs/outputs with 72 bytes signatures, this results in a weight of 717.
+  // We round it down to 700 to allow for some error margin (e.g. signatures smaller than 72 bytes).
+  val claimAnchorOutputMinWeight = 700
+  // The biggest htlc input is an HTLC-success with anchor outputs:
+  // 143 bytes (accepted_htlc_script) + 327 bytes (success_witness) + 41 bytes (commitment_input) = 511 bytes
+  // See https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#expected-weight-of-htlc-timeout-and-htlc-success-transactions
+  val htlcInputMaxWeight = 511
   val claimHtlcDelayedWeight = 483
   val claimHtlcSuccessWeight = 571
   val claimHtlcTimeoutWeight = 545
@@ -204,13 +235,16 @@ object Transactions {
   def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, commitmentFormat)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, commitmentFormat)
+    val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
+    val fee = weight2feeMsat(spec.feeratePerKw, weight)
+    // When using anchor outputs, the funder pays for *both* anchors all the time, even if only one anchor is present.
+    // This is not technically a fee (it doesn't go to miners) but it has to be deduced from the funder's main output,
+    // so for simplicity we deduce it here.
     val anchorsCost = commitmentFormat match {
       case DefaultCommitmentFormat => Satoshi(0)
-      // the funder pays for both anchors all the time, even if only one anchor is present
       case AnchorOutputsCommitmentFormat => AnchorOutputsCommitmentFormat.anchorAmount * 2
     }
-    val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
-    weight2feeMsat(spec.feeratePerKw, weight) + anchorsCost
+    fee + anchorsCost
   }
 
   def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxFeeMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
@@ -224,11 +258,11 @@ object Transactions {
    */
   def obscuredCommitTxNumber(commitTxNumber: Long, isFunder: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
     // from BOLT 3: SHA256(payment-basepoint from open_channel || payment-basepoint from accept_channel)
-    val h = if (isFunder)
+    val h = if (isFunder) {
       Crypto.sha256(localPaymentBasePoint.value ++ remotePaymentBasePoint.value)
-    else
+    } else {
       Crypto.sha256(remotePaymentBasePoint.value ++ localPaymentBasePoint.value)
-
+    }
     val blind = Protocol.uint64((h.takeRight(6).reverse ++ ByteVector.fromValidHex("0000")).toArray, ByteOrder.LITTLE_ENDIAN)
     commitTxNumber ^ blind
   }
@@ -241,6 +275,7 @@ object Transactions {
    * @return the actual commit tx number that was blinded and stored in locktime and sequence fields
    */
   def getCommitTxNumber(commitTx: Transaction, isFunder: Boolean, localPaymentBasePoint: PublicKey, remotePaymentBasePoint: PublicKey): Long = {
+    require(commitTx.txIn.size == 1, "commitment tx should have 1 input")
     val blind = obscuredCommitTxNumber(0, isFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val obscured = decodeTxNumber(commitTx.txIn.head.sequence, commitTx.lockTime)
     obscured ^ blind
@@ -735,7 +770,8 @@ object Transactions {
   }
 
   def sign(txinfo: TransactionWithInputInfo, key: PrivateKey, sighashType: Int): ByteVector64 = {
-    require(txinfo.tx.txIn.lengthCompare(1) == 0, "only one input allowed")
+    // NB: the tx may have multiple inputs, we will only sign the one provided in txinfo.input. Bear in mind that the
+    // signature will be invalidated if other inputs are added *afterwards* and sighashType was SIGHASH_ALL.
     sign(txinfo.tx, txinfo.input.redeemScript, txinfo.input.txOut.amount, key, sighashType)
   }
 
@@ -806,8 +842,10 @@ object Transactions {
     closingTx.copy(tx = closingTx.tx.updateWitness(0, witness))
   }
 
-  def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
-    Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn.head.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+  def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] = {
+    // NB: we don't verify the other inputs as they should only be wallet inputs used to RBF the transaction
+    Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.input.outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+  }
 
   def checkSig(txinfo: TransactionWithInputInfo, sig: ByteVector64, pubKey: PublicKey, txOwner: TxOwner, commitmentFormat: CommitmentFormat): Boolean = {
     val sighash = txinfo.sighash(txOwner, commitmentFormat)

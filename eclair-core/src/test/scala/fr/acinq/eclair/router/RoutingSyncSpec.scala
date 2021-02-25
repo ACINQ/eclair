@@ -92,6 +92,8 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     val rcrs = pipe.receiveWhile() {
       case rcr: ReplyChannelRange => rcr
     }
+    rcrs.dropRight(1).foreach(rcr => assert(rcr.syncComplete == 0))
+    assert(rcrs.last.syncComplete == 1)
     pipe.expectMsgType[Data]
     rcrs.foreach(rcr => pipe.send(src, PeerRoutingMessage(pipe.ref, tgtId, rcr)))
     // then src will now query announcements
@@ -297,7 +299,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     assert(!router.stateData.sync.contains(remoteNodeId))
 
     // we didn't send a corresponding query_channel_range, but peer sends us a reply_channel_range
-    val unsolicitedBlocks = ReplyChannelRange(params.chainHash, 10, 5, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(5).keys.toList), None, None)
+    val unsolicitedBlocks = ReplyChannelRange(params.chainHash, 10, 5, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(5).keys.toList), None, None)
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, unsolicitedBlocks))
 
     // it will be simply ignored
