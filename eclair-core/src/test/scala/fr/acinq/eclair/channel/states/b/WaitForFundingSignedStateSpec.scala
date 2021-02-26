@@ -17,15 +17,17 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64}
+import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
-import org.scalatest.Outcome
+import fr.acinq.eclair.{ActivatedFeature, Features, TestConstants, TestKitBaseClass}
+import org.scalatest.{Outcome, Tag}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
@@ -39,13 +41,30 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   case class FixtureParam(alice: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val setup = init()
+    import com.softwaremill.quicklens._
+    val aliceNodeParams = Alice.nodeParams
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("wumbo"))(Btc(100))
+    val aliceParams = Alice.channelParams
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
+    val bobNodeParams = Bob.nodeParams
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("wumbo"))(Btc(100))
+    val bobParams = Bob.channelParams
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
+
+    val (fundingSatoshis, pushMsat) = if (test.tags.contains("wumbo")) {
+      (Btc(5).toSatoshi, TestConstants.pushMsat)
+    } else {
+      (TestConstants.fundingSatoshis, TestConstants.pushMsat)
+    }
+
+    val setup = init(aliceNodeParams, bobNodeParams)
+
     import setup._
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, ChannelVersion.STANDARD)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, ChannelVersion.STANDARD)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
@@ -63,7 +82,20 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     alice2blockchain.expectMsgType[WatchSpent]
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed]
+    // when we are funder, we keep our regular min depth even for wumbo channels
+    assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
+  }
+
+  test("recv FundingSigned with valid signature (wumbo)", Tag("wumbo")) { f =>
+    import f._
+    bob2alice.expectMsgType[FundingSigned]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
+    alice2blockchain.expectMsgType[WatchSpent]
+    val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed]
+
+    assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }
 
   test("recv FundingSigned with invalid signature") { f =>
