@@ -105,14 +105,15 @@ trait StateTestsHelperMethods extends TestKitBase {
       if (tags.contains(StateTestsTags.AnchorOutputs)) ChannelVersion.ANCHOR_OUTPUTS else ChannelVersion.ZEROES,
       if (tags.contains(StateTestsTags.StaticRemoteKey)) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.ZEROES,
     ).reduce(_ | _)
+
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val aliceParams = Alice.channelParams
-      .modify(_.features).setToIf(channelVersion.hasAnchorOutputs)(Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional))))
-      .modify(_.features).setToIf(channelVersion.hasStaticRemotekey)(Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional))))
+      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
+      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val bobParams = Bob.channelParams
-      .modify(_.features).setToIf(channelVersion.hasAnchorOutputs)(Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional))))
-      .modify(_.features).setToIf(channelVersion.hasStaticRemotekey)(Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional))))
+      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
+      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) {
       FeeEstimator.AnchorOutputMaxCommitFeerate
