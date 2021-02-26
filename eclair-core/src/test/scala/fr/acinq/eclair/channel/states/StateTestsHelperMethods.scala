@@ -98,29 +98,37 @@ trait StateTestsHelperMethods extends TestKitBase {
   }
 
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
+    import com.softwaremill.quicklens._
     import setup._
+    val channelVersion = List(
+      ChannelVersion.STANDARD,
+      if (tags.contains(StateTestsTags.AnchorOutputs)) ChannelVersion.ANCHOR_OUTPUTS else ChannelVersion.ZEROES,
+      if (tags.contains(StateTestsTags.StaticRemoteKey)) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.ZEROES,
+    ).reduce(_ | _)
+
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val pushMsat = if (tags.contains(StateTestsTags.NoPushMsat)) 0.msat else TestConstants.pushMsat
-    val (aliceParams, bobParams, channelVersion) = if (tags.contains(StateTestsTags.AnchorOutputs)) {
-      val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
-      (Alice.channelParams.copy(features = features), Bob.channelParams.copy(features = features), ChannelVersion.ANCHOR_OUTPUTS)
-    } else if (tags.contains(StateTestsTags.StaticRemoteKey)) {
-      val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
-      val aliceParams = Alice.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      val bobParams = Bob.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      (aliceParams, bobParams, ChannelVersion.STATIC_REMOTEKEY)
-    } else {
-      (Alice.channelParams, Bob.channelParams, ChannelVersion.STANDARD)
-    }
+    val aliceParams = Alice.channelParams
+      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
+      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+    val bobParams = Bob.channelParams
+      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
+      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) {
       FeeEstimator.AnchorOutputMaxCommitFeerate
     } else {
       TestConstants.feeratePerKw
     }
+    val (fundingSatoshis, pushMsat) = if (tags.contains(StateTestsTags.NoPushMsat)) {
+      (TestConstants.fundingSatoshis, 0.msat)
+    } else {
+      (TestConstants.fundingSatoshis, TestConstants.pushMsat)
+    }
 
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
