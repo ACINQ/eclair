@@ -78,6 +78,8 @@ object EclairInternalsSerializer {
       ("pingDisconnect" | bool(8)) ::
       ("maxRebroadcastDelay" | finiteDurationCodec)).as[PeerConnection.Conf]
 
+  val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
+
   val peerConnectionKillReasonCodec: Codec[PeerConnection.KillReason] = discriminated[PeerConnection.KillReason].by(uint16)
     .typecase(0, provide(PeerConnection.KillReason.UserRequest))
     .typecase(1, provide(PeerConnection.KillReason.NoRemainingChannel))
@@ -179,5 +181,6 @@ object EclairInternalsSerializer {
     .typecase(50, lengthPrefixedChannelUpdateCodec.as[GossipDecision.RelatedChannelPruned])
     .typecase(51, lengthPrefixedChannelAnnouncementCodec.as[GossipDecision.ChannelClosed])
     .typecase(52, peerConnectionKillCodec)
+    .typecase(53, peerConnectionDoSyncCodec)
 
 }

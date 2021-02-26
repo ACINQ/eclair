@@ -464,7 +464,7 @@ object PeerConnection {
   case object InitTimeout
   case object SendPing
   case object ResumeAnnouncements
-  case class DoSync(replacePrevious: Boolean)
+  case class DoSync(replacePrevious: Boolean) extends RemoteTypes
   // @formatter:on
 
   val IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD: FiniteDuration = 5 minutes
