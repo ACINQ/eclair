@@ -83,7 +83,6 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     alice2blockchain.expectMsgType[WatchSpent]
     val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed]
-    // when we are funder, we keep our regular min depth even for wumbo channels
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }
 
@@ -94,7 +93,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     alice2blockchain.expectMsgType[WatchSpent]
     val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed]
-
+    // when we are funder, we keep our regular min depth even for wumbo channels
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }
 
