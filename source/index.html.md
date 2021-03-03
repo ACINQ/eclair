@@ -349,7 +349,13 @@ eclair-cli updaterelayfee \
 
 ```shell
 {
-  "<channel>": "ok"
+  "<channel>": {
+    "cmd": {
+      "feeBase": <feebase>,
+      "feeProportionalMillionths": <feeProportionalMillionths>
+    },
+    "channelId":"<channel>"
+  }
 }
 ```
 
@@ -1804,6 +1810,40 @@ Parameter  | Description                                 | Optional | Type
 ---------- | ------------------------------------------- | -------- | ---------------------------
 nodeId     | The destination of the route                | No       | 33-bytes-HexString (String)
 amountMsat | The amount that should go through the route | No       | Millisatoshi (Integer)
+
+## FindRouteBetweenNodes
+
+```shell
+curl -u :<eclair_api_password> -X POST -F sourceNodeId=<some_node> -F targetNodeId=<some_node> \
+     -F amountMsat=<some_amount> "http://localhost:8080/findroutebetweennodes"
+
+# with eclair-cli
+eclair-cli --sourceNodeId=<some_node> --targetNodeId=<some_node> --amountMsat=<some_amount>
+```
+
+> The above command returns:
+
+```json
+[
+  "036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96",
+  "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
+  "03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"
+]
+```
+
+Finds a route between two nodes.
+
+### HTTP Request
+
+`POST http://localhost:8080/findroutebetweennodes`
+
+### Parameters
+
+Parameter    | Description                                 | Optional | Type
+------------ | ------------------------------------------- | -------- | ---------------------------
+sourceNodeId | The start of the route                      | No       | 33-bytes-HexString (String)
+targetNodeId | The destination of the route                | No       | 33-bytes-HexString (String)
+amountMsat   | The amount that should go through the route | No       | Millisatoshi (Integer)
 
 # On-Chain
 
