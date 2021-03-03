@@ -356,6 +356,9 @@
                   <li>
                     <a href="#findroutetonode" class="toc-h2 toc-link" data-title="FindRouteToNode">FindRouteToNode</a>
                   </li>
+                  <li>
+                    <a href="#findroutebetweennodes" class="toc-h2 toc-link" data-title="FindRouteBetweenNodes">FindRouteBetweenNodes</a>
+                  </li>
               </ul>
           </li>
           <li>
@@ -826,7 +829,13 @@ eclair-cli updaterelayfee <span class="se">\</span>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight shell tab-shell"><code><span class="o">{</span>
-  <span class="s2">"&lt;channel&gt;"</span>: <span class="s2">"ok"</span>
+  <span class="s2">"&lt;channel&gt;"</span>: <span class="o">{</span>
+    <span class="s2">"cmd"</span>: <span class="o">{</span>
+      <span class="s2">"feeBase"</span>: &lt;feebase&gt;,
+      <span class="s2">"feeProportionalMillionths"</span>: &lt;feeProportionalMillionths&gt;
+    <span class="o">}</span>,
+    <span class="s2">"channelId"</span>:<span class="s2">"&lt;channel&gt;"</span>
+  <span class="o">}</span>
 <span class="o">}</span>
 </code></pre>
 <p>Updates the fee policy for the specified <em>channelId</em>, a new update for this channel will be broadcasted to the network.
@@ -2458,6 +2467,52 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 <td>Millisatoshi (Integer)</td>
 </tr>
 </tbody></table>
+<h2 id='findroutebetweennodes'>FindRouteBetweenNodes</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">sourceNodeId</span><span class="o">=</span>&lt;some_node&gt; -F <span class="nv">targetNodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
+     -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;some_amount&gt; <span class="s2">"http://localhost:8080/findroutebetweennodes"</span>
+
+<span class="c"># with eclair-cli</span>
+eclair-cli --sourceNodeId<span class="o">=</span>&lt;some_node&gt; --targetNodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span class="o">=</span>&lt;some_amount&gt;
+</code></pre>
+<blockquote>
+<p>The above command returns:</p>
+</blockquote>
+<pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
+  </span><span class="s2">"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre>
+<p>Finds a route between two nodes.</p>
+<h3 id='http-request-28'>HTTP Request</h3>
+<p><code>POST http://localhost:8080/findroutebetweennodes</code></p>
+<h3 id='parameters-25'>Parameters</h3>
+<table><thead>
+<tr>
+<th>Parameter</th>
+<th>Description</th>
+<th>Optional</th>
+<th>Type</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>sourceNodeId</td>
+<td>The start of the route</td>
+<td>No</td>
+<td>33-bytes-HexString (String)</td>
+</tr>
+<tr>
+<td>targetNodeId</td>
+<td>The destination of the route</td>
+<td>No</td>
+<td>33-bytes-HexString (String)</td>
+</tr>
+<tr>
+<td>amountMsat</td>
+<td>The amount that should go through the route</td>
+<td>No</td>
+<td>Millisatoshi (Integer)</td>
+</tr>
+</tbody></table>
 <h1 id='on-chain'>On-Chain</h1><h2 id='getnewaddress'>GetNewAddress</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/getnewaddress"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -2471,7 +2526,7 @@ eclair-cli getnewaddress
 <p>Get a new on-chain address from the wallet, this can be used to deposit funds that will later be used
 to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
 depend on the configured address-type in <code>bitcoin.conf</code>.</p>
-<h3 id='http-request-28'>HTTP Request</h3>
+<h3 id='http-request-29'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getnewaddress</code></p>
 <h2 id='sendonchain'>SendOnChain</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">address</span><span class="o">=</span>&lt;bitcoin_address&gt; <span class="se">\</span>
      -F <span class="nv">amountSatoshis</span><span class="o">=</span>&lt;amount&gt; -F <span class="nv">confirmationTarget</span><span class="o">=</span>&lt;number_of_blocks&gt; <span class="s2">"http://localhost:8080/sendonchain"</span>
@@ -2486,9 +2541,9 @@ eclair-cli sendonchain --address<span class="o">=</span>2NEDjKwa56LFcFVjPefuwkN3
 </span></code></pre>
 <p>Send an on-chain transaction to the given address. The API is only available with the bitcoin-core watcher type.
 The API returns the txid of the bitcoin transaction sent.</p>
-<h3 id='http-request-29'>HTTP Request</h3>
+<h3 id='http-request-30'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendonchain</code></p>
-<h3 id='parameters-25'>Parameters</h3>
+<h3 id='parameters-26'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2561,9 +2616,9 @@ eclair-cli onchaintransactions --count<span class="o">=</span>2 --skip<span clas
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the latest on-chain transactions made by our Bitcoin wallet (most recent transactions first).</p>
-<h3 id='http-request-30'>HTTP Request</h3>
+<h3 id='http-request-31'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/onchaintransactions</code></p>
-<h3 id='parameters-26'>Parameters</h3>
+<h3 id='parameters-27'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2600,9 +2655,9 @@ eclair-cli signmessage --msg<span class="o">=</span><span class="k">$(</span><sp
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Sign a base64-encoded message with the node&#39;s private key.</p>
-<h3 id='http-request-31'>HTTP Request</h3>
+<h3 id='http-request-32'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/signmessage</code></p>
-<h3 id='parameters-27'>Parameters</h3>
+<h3 id='parameters-28'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2635,9 +2690,9 @@ eclair-cli verifymessage --msg<span class="o">=</span><span class="k">$(</span><
 </span></code></pre>
 <p>Verify a base64-encoded message signature.
 The public key of the signing node will be identified and returned.</p>
-<h3 id='http-request-32'>HTTP Request</h3>
+<h3 id='http-request-33'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/verifymessage</code></p>
-<h3 id='parameters-28'>Parameters</h3>
+<h3 id='parameters-29'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2753,9 +2808,9 @@ eclair-cli audit
 </span></code></pre>
 <p>Retrieves information about payments handled by this node such as: sent, received and relayed payments.
 All monetary values are expressed in millisatoshi.</p>
-<h3 id='http-request-33'>HTTP Request</h3>
+<h3 id='http-request-34'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/audit</code></p>
-<h3 id='parameters-29'>Parameters</h3>
+<h3 id='parameters-30'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2797,9 +2852,9 @@ eclair-cli networkfees
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about on-chain fees paid during channel operations, currency values are in Satoshis.</p>
-<h3 id='http-request-34'>HTTP Request</h3>
+<h3 id='http-request-35'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/networkfees</code></p>
-<h3 id='parameters-30'>Parameters</h3>
+<h3 id='parameters-31'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2866,9 +2921,9 @@ eclair-cli channelstats
 </span></code></pre>
 <p>Retrieves information about local channels, the information is then aggregated in order to display
 statistics about the routing activity of the channels. Values are in Satoshis.</p>
-<h3 id='http-request-35'>HTTP Request</h3>
+<h3 id='http-request-36'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/channelstats</code></p>
-<h3 id='parameters-31'>Parameters</h3>
+<h3 id='parameters-32'>Parameters</h3>
 <table><thead>
 <tr>
 <th>Parameter</th>
@@ -2909,7 +2964,7 @@ eclair-cli usablebalances
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
 <p>Retrieves information about the available balance of local channels.</p>
-<h3 id='http-request-36'>HTTP Request</h3>
+<h3 id='http-request-37'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/usablebalances</code></p>
 <h1 id='websocket'>Websocket</h1><h2 id='ws'>WS</h2>
 <p>This is a simple <a href="https://tools.ietf.org/html/rfc6455">websocket</a> that will output payment related events, it supports
@@ -3069,7 +3124,7 @@ several types covering all the possible outcomes. All monetary values are expres
 <td>A channel has been closed</td>
 </tr>
 </tbody></table>
-<h3 id='http-request-37'>HTTP Request</h3>
+<h3 id='http-request-38'>HTTP Request</h3>
 <p><code>GET ws://localhost:8080/ws</code></p>
 <h1 id='errors'>Errors</h1>
 <blockquote>
