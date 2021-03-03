@@ -26,9 +26,9 @@ import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{ActivatedFeature, Features, TestConstants, TestKitBaseClass}
-import org.scalatest.{Outcome, Tag}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, Tag}
 
 import scala.concurrent.duration._
 
@@ -45,11 +45,11 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val aliceNodeParams = Alice.nodeParams
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("wumbo"))(Btc(100))
     val aliceParams = Alice.channelParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
     val bobNodeParams = Bob.nodeParams
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("wumbo"))(Btc(100))
     val bobParams = Bob.channelParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
 
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("wumbo")) {
       (Btc(5).toSatoshi, TestConstants.pushMsat)

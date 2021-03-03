@@ -108,12 +108,12 @@ trait StateTestsHelperMethods extends TestKitBase {
 
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val aliceParams = Alice.channelParams
-      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
-      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
+      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
+      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory).updated(Features.AnchorOutputs, FeatureSupport.Optional))
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val bobParams = Bob.channelParams
-      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
-      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
+      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
+      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory).updated(Features.AnchorOutputs, FeatureSupport.Optional))
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) {
       FeeEstimator.AnchorOutputMaxCommitFeerate

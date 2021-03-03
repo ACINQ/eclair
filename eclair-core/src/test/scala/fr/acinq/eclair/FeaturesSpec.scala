@@ -39,7 +39,7 @@ class FeaturesSpec extends AnyFunSuite {
   }
 
   test("'initial_routing_sync', 'data_loss_protect' and 'variable_length_onion' features") {
-    val features = Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(OptionDataLossProtect, Optional), ActivatedFeature(VariableLengthOnion, Mandatory)))
+    val features = Features(InitialRoutingSync -> Optional, OptionDataLossProtect -> Optional, VariableLengthOnion -> Mandatory)
     assert(features.toByteVector == hex"010a")
     assert(features.hasFeature(OptionDataLossProtect))
     assert(features.hasFeature(InitialRoutingSync, None))
@@ -114,87 +114,87 @@ class FeaturesSpec extends AnyFunSuite {
       ),
       TestCase(
         Features.empty,
-        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(InitialRoutingSync -> Optional, VariableLengthOnion -> Optional),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
       ),
       TestCase(
         Features.empty,
-        Features(Set.empty, Set(UnknownFeature(101), UnknownFeature(103))),
+        Features(activated = Map.empty, Set(UnknownFeature(101), UnknownFeature(103))),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
       ),
       // Same feature set
       TestCase(
-        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
-        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        Features(InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
+        Features(InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
       ),
       // Many optional features
       TestCase(
-        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(PaymentSecret, Optional))),
-        Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(ChannelRangeQueriesExtended, Optional))),
+        Features(InitialRoutingSync -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueries -> Optional, PaymentSecret -> Optional),
+        Features(VariableLengthOnion -> Optional, ChannelRangeQueries -> Optional, ChannelRangeQueriesExtended -> Optional),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
       ),
       // We support their mandatory features
       TestCase(
-        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
-        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        Features(VariableLengthOnion -> Optional),
+        Features(InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
       ),
       // They support our mandatory features
       TestCase(
-        Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory))),
-        Features(Set(ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(VariableLengthOnion -> Mandatory),
+        Features(InitialRoutingSync -> Optional, VariableLengthOnion -> Optional),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
       ),
       // They have unknown optional features
       TestCase(
-        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
-        Features(Set(ActivatedFeature(VariableLengthOnion, Optional)), Set(UnknownFeature(141))),
+        Features(VariableLengthOnion -> Optional),
+        Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(141))),
         oursSupportTheirs = true,
         theirsSupportOurs = true,
         compatible = true
       ),
       // They have unknown mandatory features
       TestCase(
-        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
-        Features(Set(ActivatedFeature(VariableLengthOnion, Optional)), Set(UnknownFeature(142))),
+        Features(VariableLengthOnion -> Optional),
+        Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional), Set(UnknownFeature(142))),
         oursSupportTheirs = false,
         theirsSupportOurs = true,
         compatible = false
       ),
       // We don't support one of their mandatory features
       TestCase(
-        Features(Set(ActivatedFeature(ChannelRangeQueries, Optional))),
-        Features(Set(ActivatedFeature(ChannelRangeQueries, Mandatory), ActivatedFeature(VariableLengthOnion, Mandatory))),
+        Features(ChannelRangeQueries -> Optional),
+        Features(ChannelRangeQueries -> Mandatory, VariableLengthOnion -> Mandatory),
         oursSupportTheirs = false,
         theirsSupportOurs = true,
         compatible = false
       ),
       // They don't support one of our mandatory features
       TestCase(
-        Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory), ActivatedFeature(PaymentSecret, Mandatory))),
-        Features(Set(ActivatedFeature(VariableLengthOnion, Optional))),
+        Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory),
+        Features(VariableLengthOnion -> Optional),
         oursSupportTheirs = true,
         theirsSupportOurs = false,
         compatible = false
       ),
       // nonreg testing of future features (needs to be updated with every new supported mandatory bit)
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(22))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(23))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
-      TestCase(Features.empty, Features(Set.empty, Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true)
+      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(22))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(23))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true)
     )
 
     for (testCase <- testCases) {
@@ -207,10 +207,10 @@ class FeaturesSpec extends AnyFunSuite {
   test("features to bytes") {
     val testCases = Map(
       hex"" -> Features.empty,
-      hex"0100" -> Features(Set(ActivatedFeature(VariableLengthOnion, Mandatory))),
-      hex"028a8a" -> Features(Set(ActivatedFeature(OptionDataLossProtect, Optional), ActivatedFeature(InitialRoutingSync, Optional), ActivatedFeature(ChannelRangeQueries, Optional), ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(ChannelRangeQueriesExtended, Optional), ActivatedFeature(PaymentSecret, Optional), ActivatedFeature(BasicMultiPartPayment, Optional))),
-      hex"09004200" -> Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Mandatory)), Set(UnknownFeature(24), UnknownFeature(27))),
-      hex"52000000" -> Features(Set.empty, Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
+      hex"0100" -> Features(VariableLengthOnion -> Mandatory),
+      hex"028a8a" -> Features(OptionDataLossProtect -> Optional, InitialRoutingSync -> Optional, ChannelRangeQueries -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueriesExtended -> Optional, PaymentSecret -> Optional, BasicMultiPartPayment -> Optional),
+      hex"09004200" -> Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Mandatory), Set(UnknownFeature(24), UnknownFeature(27))),
+      hex"52000000" -> Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
     )
 
     for ((bin, features) <- testCases) {

@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ActivatedFeature, Features, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -46,11 +46,11 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val aliceNodeParams = Alice.nodeParams
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("wumbo"))(Btc(100))
     val aliceParams = Alice.channelParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
     val bobNodeParams = Bob.nodeParams
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("wumbo"))(Btc(100))
     val bobParams = Bob.channelParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
 
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
       (1000100 sat, (1000000 sat).toMilliSatoshi) // toLocal = 100 satoshis

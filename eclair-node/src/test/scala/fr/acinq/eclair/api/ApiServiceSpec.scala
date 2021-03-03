@@ -177,7 +177,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     eclair.getInfo()(any[Timeout]) returns Future.successful(GetInfoResponse(
       version = "1.0.0-SNAPSHOT-e3f1ec0",
       color = Color(0.toByte, 1.toByte, 2.toByte).toString,
-      features = Features(Set(ActivatedFeature(OptionDataLossProtect, Mandatory), ActivatedFeature(ChannelRangeQueriesExtended, Optional))),
+      features = Features(OptionDataLossProtect -> Mandatory, ChannelRangeQueriesExtended -> Optional),
       nodeId = aliceNodeId,
       alias = "alice",
       chainHash = ByteVector32(hex"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),

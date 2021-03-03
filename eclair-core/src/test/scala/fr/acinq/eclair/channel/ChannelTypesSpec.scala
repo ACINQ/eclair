@@ -7,7 +7,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.{CommitSig, RevokeAndAck, UpdateAddHtlc}
-import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
+import fr.acinq.eclair.{Feature, FeatureSupport, MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -34,18 +34,18 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
 
   test("pick channel version based on local and remote features") {
     import fr.acinq.eclair.FeatureSupport._
+    import fr.acinq.eclair.Features
     import fr.acinq.eclair.Features._
-    import fr.acinq.eclair.{ActivatedFeature, Features}
 
     case class TestCase(localFeatures: Features, remoteFeatures: Features, expectedChannelVersion: ChannelVersion)
     val testCases = Seq(
       TestCase(Features.empty, Features.empty, ChannelVersion.STANDARD),
-      TestCase(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), Features.empty, ChannelVersion.STANDARD),
-      TestCase(Features.empty, Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), ChannelVersion.STANDARD),
-      TestCase(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), ChannelVersion.STATIC_REMOTEKEY),
-      TestCase(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), Features(Set(ActivatedFeature(StaticRemoteKey, Mandatory))), ChannelVersion.STATIC_REMOTEKEY),
-      TestCase(Features(Set(ActivatedFeature(StaticRemoteKey, Optional), ActivatedFeature(AnchorOutputs, Optional))), Features(Set(ActivatedFeature(StaticRemoteKey, Optional))), ChannelVersion.STATIC_REMOTEKEY),
-      TestCase(Features(Set(ActivatedFeature(StaticRemoteKey, Mandatory), ActivatedFeature(AnchorOutputs, Optional))), Features(Set(ActivatedFeature(StaticRemoteKey, Optional), ActivatedFeature(AnchorOutputs, Optional))), ChannelVersion.ANCHOR_OUTPUTS)
+      TestCase(Features(StaticRemoteKey -> Optional), Features.empty, ChannelVersion.STANDARD),
+      TestCase(Features.empty, Features(StaticRemoteKey -> Optional), ChannelVersion.STANDARD),
+      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Optional), ChannelVersion.STATIC_REMOTEKEY),
+      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Mandatory), ChannelVersion.STATIC_REMOTEKEY),
+      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelVersion.STATIC_REMOTEKEY),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelVersion.ANCHOR_OUTPUTS)
     )
 
     for (testCase <- testCases) {

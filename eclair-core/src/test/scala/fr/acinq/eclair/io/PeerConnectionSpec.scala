@@ -28,8 +28,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.wire._
-import org.scalatest.{Outcome, ParallelTestExecution}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits._
 
 import java.net.{Inet4Address, InetSocketAddress}
@@ -165,7 +165,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[TransportHandler.Listener]
     transport.expectMsgType[wire.Init]
     // remote activated MPP but forgot payment secret
-    transport.send(peerConnection, Init(Features(Set(ActivatedFeature(BasicMultiPartPayment, Optional), ActivatedFeature(VariableLengthOnion, Optional)))))
+    transport.send(peerConnection, Init(Features(BasicMultiPartPayment -> Optional, VariableLengthOnion -> Optional)))
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("basic_mpp is set but is missing a dependency (payment_secret)"))
@@ -189,7 +189,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("sync when requested") { f =>
     import f._
-    val remoteInit = wire.Init(Features(Set(ActivatedFeature(ChannelRangeQueries, Optional))))
+    val remoteInit = wire.Init(Features(ChannelRangeQueries -> Optional))
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, doSync = true)
   }
 

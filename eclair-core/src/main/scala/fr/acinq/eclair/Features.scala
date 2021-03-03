@@ -18,7 +18,6 @@ package fr.acinq.eclair
 
 import com.typesafe.config.Config
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{BasicMultiPartPayment, PaymentSecret}
 import scodec.bits.{BitVector, ByteVector}
 
 /**
@@ -40,8 +39,8 @@ trait Feature {
   def optional: Int = mandatory + 1
 
   def supportBit(support: FeatureSupport): Int = support match {
-    case FeatureSupport.Mandatory => mandatory
-    case FeatureSupport.Optional => optional
+    case Mandatory => mandatory
+    case Optional => optional
   }
 
   override def toString = rfcName
@@ -49,15 +48,13 @@ trait Feature {
 }
 // @formatter:on
 
-case class ActivatedFeature(feature: Feature, support: FeatureSupport)
-
 case class UnknownFeature(bitIndex: Int)
 
-case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeature] = Set.empty) {
+case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[UnknownFeature] = Set.empty) {
 
   def hasFeature(feature: Feature, support: Option[FeatureSupport] = None): Boolean = support match {
-    case Some(s) => activated.contains(ActivatedFeature(feature, s))
-    case None => hasFeature(feature, Some(Optional)) || hasFeature(feature, Some(Mandatory))
+    case Some(s) => activated.get(feature).contains(s)
+    case None => activated.contains(feature)
   }
 
   def hasPluginFeature(feature: UnknownFeature): Boolean = unknown.contains(feature)
@@ -68,14 +65,14 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
     val unknownFeaturesOk = remoteFeatures.unknown.forall(_.bitIndex % 2 == 1)
     // we verify that we activated every mandatory feature they require
     val knownFeaturesOk = remoteFeatures.activated.forall {
-      case ActivatedFeature(_, Optional) => true
-      case ActivatedFeature(feature, Mandatory) => hasFeature(feature)
+      case (_, Optional) => true
+      case (feature, Mandatory) => hasFeature(feature)
     }
     unknownFeaturesOk && knownFeaturesOk
   }
 
   def toByteVector: ByteVector = {
-    val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case ActivatedFeature(f, s) => f.supportBit(s) })
+    val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature.supportBit(support) }.toSet)
     val unknownFeatureBytes = toByteVectorFromIndex(unknown.map(_.bitIndex))
     val maxSize = activatedFeatureBytes.size.max(unknownFeatureBytes.size)
     activatedFeatureBytes.padLeft(maxSize) | unknownFeatureBytes.padLeft(maxSize)
@@ -85,14 +82,12 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
     if (indexes.isEmpty) return ByteVector.empty
     // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
     var buf = BitVector.fill(indexes.max + 1)(high = false).bytes.bits
-    indexes.foreach { i =>
-      buf = buf.set(i)
-    }
+    indexes.foreach { i => buf = buf.set(i) }
     buf.reverse.bytes
   }
 
   override def toString: String = {
-    val a = activated.map(f => f.feature.rfcName + ":" + f.support).mkString(",")
+    val a = activated.map { case (feature, support) => feature.rfcName + ":" + support }.mkString(",")
     val u = unknown.map(_.bitIndex).mkString(",")
     s"$a" + (if (unknown.nonEmpty) s" (unknown=$u)" else "")
   }
@@ -100,20 +95,20 @@ case class Features(activated: Set[ActivatedFeature], unknown: Set[UnknownFeatur
 
 object Features {
 
-  def empty = Features(Set.empty[ActivatedFeature])
+  def empty = Features(Map.empty[Feature, FeatureSupport])
 
-  def apply(features: Set[ActivatedFeature]): Features = Features(activated = features)
+  def apply(features: (Feature, FeatureSupport)*): Features = Features(Map.from(features))
 
   def apply(bytes: ByteVector): Features = apply(bytes.bits)
 
   def apply(bits: BitVector): Features = {
     val all = bits.toIndexedSeq.reverse.zipWithIndex.collect {
-      case (true, idx) if knownFeatures.exists(_.optional == idx) => Right(ActivatedFeature(knownFeatures.find(_.optional == idx).get, Optional))
-      case (true, idx) if knownFeatures.exists(_.mandatory == idx) => Right(ActivatedFeature(knownFeatures.find(_.mandatory == idx).get, Mandatory))
+      case (true, idx) if knownFeatures.exists(_.optional == idx) => Right((knownFeatures.find(_.optional == idx).get, Optional))
+      case (true, idx) if knownFeatures.exists(_.mandatory == idx) => Right((knownFeatures.find(_.mandatory == idx).get, Mandatory))
       case (true, idx) => Left(UnknownFeature(idx))
     }
     Features(
-      activated = all.collect { case Right(af) => af }.toSet,
+      activated = all.collect { case Right((feature, support)) => feature -> support }.toMap,
       unknown = all.collect { case Left(inf) => inf }.toSet
     )
   }
@@ -123,15 +118,16 @@ object Features {
     knownFeatures.flatMap {
       feature =>
         getFeature(config, feature.rfcName) match {
-          case Some(support) => Some(ActivatedFeature(feature, support))
+          case Some(support) => Some(feature -> support)
           case _ => None
         }
-    })
+    }.toMap)
 
   /** tries to extract the given feature name from the config, if successful returns its feature support */
   private def getFeature(config: Config, name: String): Option[FeatureSupport] = {
-    if (!config.hasPath(s"features.$name")) None
-    else {
+    if (!config.hasPath(s"features.$name")) {
+      None
+    } else {
       config.getString(s"features.$name") match {
         case support if support == Mandatory.toString => Some(Mandatory)
         case support if support == Optional.toString => Some(Optional)
