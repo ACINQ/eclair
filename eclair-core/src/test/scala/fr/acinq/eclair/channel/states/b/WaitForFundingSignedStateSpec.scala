@@ -18,15 +18,13 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64}
-import fr.acinq.eclair.FeatureSupport.Optional
-import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateTestsBase
+import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{Feature, FeatureSupport, Features, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -42,16 +40,12 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
-    val aliceNodeParams = Alice.nodeParams
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("wumbo"))(Btc(100))
-    val aliceParams = Alice.channelParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
-    val bobNodeParams = Bob.nodeParams
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("wumbo"))(Btc(100))
-    val bobParams = Bob.channelParams
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
+    val aliceNodeParams = Alice.nodeParams.modify(_.maxFundingSatoshis).setToIf(test.tags.contains(StateTestsTags.Wumbo))(Btc(100))
+    val aliceParams = setChannelFeatures(Alice.channelParams, test.tags)
+    val bobNodeParams = Bob.nodeParams.modify(_.maxFundingSatoshis).setToIf(test.tags.contains(StateTestsTags.Wumbo))(Btc(100))
+    val bobParams = setChannelFeatures(Bob.channelParams, test.tags)
 
-    val (fundingSatoshis, pushMsat) = if (test.tags.contains("wumbo")) {
+    val (fundingSatoshis, pushMsat) = if (test.tags.contains(StateTestsTags.Wumbo)) {
       (Btc(5).toSatoshi, TestConstants.pushMsat)
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
@@ -86,7 +80,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }
 
-  test("recv FundingSigned with valid signature (wumbo)", Tag("wumbo")) { f =>
+  test("recv FundingSigned with valid signature (wumbo)", Tag(StateTestsTags.Wumbo)) { f =>
     import f._
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
