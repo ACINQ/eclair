@@ -148,6 +148,10 @@ case class Commitments(channelVersion: ChannelVersion,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
+  /** Latest commitment we signed. Be careful when using it:
+   *   - sometimes we may want to ignore it because the previous commitment is not revoked yet
+   *   - sometimes we may want to take both remote commitments into account
+   */
   val latestRemoteCommit: RemoteCommit = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
 
   val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
