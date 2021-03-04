@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair
 
-import java.util.UUID
-import java.util.concurrent.atomic.AtomicLong
-
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -29,6 +26,8 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
 import scala.jdk.CollectionConverters._
 import scala.util.Try
 
@@ -145,7 +144,7 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
     val perNodeFeatures = nodeParams.featuresFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
-    assert(perNodeFeatures === Features(Set(ActivatedFeature(VariableLengthOnion, Optional), ActivatedFeature(PaymentSecret, Mandatory), ActivatedFeature(BasicMultiPartPayment, Mandatory))))
+    assert(perNodeFeatures === Features(VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory))
   }
 
   test("override feerate mismatch tolerance") {

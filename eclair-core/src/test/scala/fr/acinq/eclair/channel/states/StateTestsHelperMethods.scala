@@ -51,6 +51,8 @@ trait StateTestsBase extends StateTestsHelperMethods with FixtureTestSuite with 
 }
 
 object StateTestsTags {
+  /** If set, channels will use option_support_large_channel. */
+  val Wumbo = "wumbo"
   /** If set, channels will use option_static_remotekey. */
   val StaticRemoteKey = "static_remotekey"
   /** If set, channels will use option_anchor_outputs. */
@@ -97,9 +99,19 @@ trait StateTestsHelperMethods extends TestKitBase {
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
   }
 
+  def setChannelFeatures(defaultChannelParams: LocalParams, tags: Set[String]): LocalParams = {
+    import com.softwaremill.quicklens._
+
+    defaultChannelParams
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+  }
+
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
     import com.softwaremill.quicklens._
     import setup._
+
     val channelVersion = List(
       ChannelVersion.STANDARD,
       if (tags.contains(StateTestsTags.AnchorOutputs)) ChannelVersion.ANCHOR_OUTPUTS else ChannelVersion.ZEROES,
@@ -107,14 +119,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     ).reduce(_ | _)
 
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val aliceParams = Alice.channelParams
-      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
-      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
-    val bobParams = Bob.channelParams
-      .modify(_.features.activated).usingIf(channelVersion.hasStaticRemotekey)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
-      .modify(_.features.activated).usingIf(channelVersion.hasAnchorOutputs)(_ ++ Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+    val aliceParams = setChannelFeatures(Alice.channelParams, tags).modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+    val bobParams = setChannelFeatures(Bob.channelParams, tags).modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
     val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) {
       FeeEstimator.AnchorOutputMaxCommitFeerate
     } else {

@@ -415,9 +415,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
         .replace(""""version":0,""", "")
-        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"8a"""")
-        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"81"""")
-        .replace(""""features":{"activated":[],"unknown":[]}""", """"features":""""")
+        .replace(""""features":{"activated":{"option_data_loss_protect":{},"initial_routing_sync":{},"gossip_queries":{}},"unknown":[]}""", """"features":"8a"""")
+        .replace(""""features":{"activated":{"option_data_loss_protect":{},"gossip_queries":{}},"unknown":[]}""", """"features":"81"""")
+        .replace(""""features":{"activated":{},"unknown":[]}""", """"features":""""")
 
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
@@ -429,9 +429,9 @@ class ChannelCodecsSpec extends AnyFunSuite {
         .replace(""""toRemote"""", """"toRemoteMsat"""")
         .replace("fundingKeyPath", "channelKeyPath")
         .replace(""""version":0,""", "")
-        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"8a"""")
-        .replace(""""features":{"activated":[{"feature":{},"support":{}},{"feature":{},"support":{}}],"unknown":[]}""", """"features":"81"""")
-        .replace(""""features":{"activated":[],"unknown":[]}""", """"features":""""")
+        .replace(""""features":{"activated":{"option_data_loss_protect":{},"initial_routing_sync":{},"gossip_queries":{}},"unknown":[]}""", """"features":"8a"""")
+        .replace(""""features":{"activated":{"option_data_loss_protect":{},"gossip_queries":{}},"unknown":[]}""", """"features":"81"""")
+        .replace(""""features":{"activated":{},"unknown":[]}""", """"features":""""")
 
       assert(oldjson === refjson)
       assert(newjson === refjson)
@@ -639,6 +639,12 @@ object ChannelCodecsSpec {
       case x: OutPoint => s"${x.txid}:${x.index}"
     }))
 
+    class FeatureKeySerializer extends CustomKeySerializer[Feature](_ => ( {
+      null
+    }, {
+      case f: Feature => f.toString
+    }))
+
     class InputInfoSerializer extends CustomSerializer[InputInfo](_ => ( {
       null
     }, {
@@ -665,6 +671,7 @@ object ChannelCodecsSpec {
       new InetSocketAddressSerializer +
       new OutPointSerializer +
       new OutPointKeySerializer +
+      new FeatureKeySerializer +
       new ChannelVersionSerializer +
       new InputInfoSerializer
   }

@@ -153,13 +153,13 @@ object TestConstants {
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       features = Features(
-        Set(
-          ActivatedFeature(OptionDataLossProtect, Optional),
-          ActivatedFeature(ChannelRangeQueries, Optional),
-          ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-          ActivatedFeature(VariableLengthOnion, Optional),
-          ActivatedFeature(PaymentSecret, Optional),
-          ActivatedFeature(BasicMultiPartPayment, Optional)
+        Map[Feature, FeatureSupport](
+          OptionDataLossProtect -> Optional,
+          ChannelRangeQueries -> Optional,
+          ChannelRangeQueriesExtended -> Optional,
+          VariableLengthOnion -> Optional,
+          PaymentSecret -> Optional,
+          BasicMultiPartPayment -> Optional
         ),
         Set(UnknownFeature(TestFeature.optional))
       ),
@@ -260,14 +260,14 @@ object TestConstants {
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
-      features = Features(Set(
-        ActivatedFeature(OptionDataLossProtect, Optional),
-        ActivatedFeature(ChannelRangeQueries, Optional),
-        ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-        ActivatedFeature(VariableLengthOnion, Optional),
-        ActivatedFeature(PaymentSecret, Optional),
-        ActivatedFeature(BasicMultiPartPayment, Optional)
-      )),
+      features = Features(
+        OptionDataLossProtect -> Optional,
+        ChannelRangeQueries -> Optional,
+        ChannelRangeQueriesExtended -> Optional,
+        VariableLengthOnion -> Optional,
+        PaymentSecret -> Optional,
+        BasicMultiPartPayment -> Optional
+      ),
       pluginParams = Nil,
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,

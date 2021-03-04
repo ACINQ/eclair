@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, Protocol, SatoshiLong}
 import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -382,7 +382,7 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("supported payment request features") {
-    val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(knownFeatures.map(ActivatedFeature(_, FeatureSupport.Optional))))
+    val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(knownFeatures.map(f => f -> FeatureSupport.Optional).toMap))
     case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule"
     val featureBits = Map(
       PaymentRequestFeatures(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
@@ -419,8 +419,8 @@ class PaymentRequestSpec extends AnyFunSuite {
       (bin"  01000000000000110", hex"  8006"),
       (bin" 001000000000000000", hex"  8000"),
       (bin" 101000000000000000", hex"028000"),
-      (bin"0101110000000000110", hex"02e006"),
-      (bin"1001110000000000110", hex"04e006")
+      (bin"0101010000000000110", hex"02a006"),
+      (bin"1000110000000000110", hex"046006")
     )
 
     for ((bitmask, featureBytes) <- testCases) {
