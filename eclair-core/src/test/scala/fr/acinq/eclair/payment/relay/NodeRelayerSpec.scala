@@ -87,26 +87,45 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
     val probe = TestProbe[Any]
 
-    val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, router.ref.toClassic, register.ref.toClassic))
-    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
-    probe.expectMessage(Map.empty)
+    {
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, router.ref.toClassic, register.ref.toClassic))
+      parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+      probe.expectMessage(Map.empty)
+    }
+    {
+      val (paymentHash1, child1) = (randomBytes32, TestProbe[NodeRelay.Command])
+      val (paymentHash2, child2) = (randomBytes32, TestProbe[NodeRelay.Command])
+      val children = Map(paymentHash1 -> child1.ref, paymentHash2 -> child2.ref)
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, router.ref.toClassic, register.ref.toClassic, children))
+      parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+      probe.expectMessage(children)
 
-    parentRelayer ! NodeRelayer.Relay(incomingMultiPart.head)
-    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
-    val pending1 = probe.expectMessageType[Map[ByteVector32, ActorRef[NodeRelay.Command]]]
-    assert(pending1.size === 1)
-    assert(pending1.head._1 === paymentHash)
+      parentRelayer ! NodeRelayer.RelayComplete(child1.ref, paymentHash1)
+      child1.expectMessage(NodeRelay.Stop)
+      parentRelayer ! NodeRelayer.RelayComplete(child1.ref, paymentHash1)
+      child1.expectMessage(NodeRelay.Stop)
+      parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+      probe.expectMessage(children - paymentHash1)
+    }
+    {
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, router.ref.toClassic, register.ref.toClassic))
+      parentRelayer ! NodeRelayer.Relay(incomingMultiPart.head)
+      parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+      val pending1 = probe.expectMessageType[Map[ByteVector32, ActorRef[NodeRelay.Command]]]
+      assert(pending1.size === 1)
+      assert(pending1.head._1 === paymentHash)
 
-    parentRelayer ! NodeRelayer.RelayComplete(pending1.head._2, paymentHash)
-    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
-    probe.expectMessage(Map.empty)
+      parentRelayer ! NodeRelayer.RelayComplete(pending1.head._2, paymentHash)
+      parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+      probe.expectMessage(Map.empty)
 
-    parentRelayer ! NodeRelayer.Relay(incomingMultiPart.head)
-    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
-    val pending2 = probe.expectMessageType[Map[ByteVector32, ActorRef[NodeRelay.Command]]]
-    assert(pending2.size === 1)
-    assert(pending2.head._1 === paymentHash)
-    assert(pending2.head._2 !== pending1.head._2)
+      parentRelayer ! NodeRelayer.Relay(incomingMultiPart.head)
+      parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+      val pending2 = probe.expectMessageType[Map[ByteVector32, ActorRef[NodeRelay.Command]]]
+      assert(pending2.size === 1)
+      assert(pending2.head._1 === paymentHash)
+      assert(pending2.head._2 !== pending1.head._2)
+    }
   }
 
   test("fail to relay when incoming multi-part payment times out") { f =>

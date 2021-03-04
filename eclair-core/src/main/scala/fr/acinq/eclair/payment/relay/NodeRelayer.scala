@@ -68,7 +68,7 @@ object NodeRelayer {
                 apply(nodeParams, router, register, children + (paymentHash -> handler))
             }
           case RelayComplete(childHandler, paymentHash) =>
-            context.stop(childHandler)
+            childHandler ! NodeRelay.Stop
             apply(nodeParams, router, register, children - paymentHash)
           case GetPendingPayments(replyTo) =>
             replyTo ! children
