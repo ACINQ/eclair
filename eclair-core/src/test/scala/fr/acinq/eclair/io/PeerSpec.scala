@@ -26,7 +26,7 @@ import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{AnchorOutputs, StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer._
@@ -335,11 +335,11 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
     val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
-    feeEstimator.setFeerate(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate * 2))
+    feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
 
     val channelCreated = probe.expectMsgType[ChannelCreated]
-    assert(channelCreated.initialFeeratePerKw == FeeEstimator.AnchorOutputMaxCommitFeerate)
+    assert(channelCreated.initialFeeratePerKw == TestConstants.anchorOutputsFeeratePerKw)
     assert(channelCreated.fundingTxFeeratePerKw.get == feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
   }
 
