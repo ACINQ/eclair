@@ -55,9 +55,9 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
-      .modify(_.features).setToIf(test.tags.contains("static_remotekey"))(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))))
-      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Set(ActivatedFeature(Wumbo, Optional))))
-      .modify(_.features).setToIf(test.tags.contains("anchor_outputs"))(Features(Set(ActivatedFeature(StaticRemoteKey, Optional), ActivatedFeature(AnchorOutputs, Optional))))
+      .modify(_.features).setToIf(test.tags.contains("static_remotekey"))(Features(StaticRemoteKey -> Optional))
+      .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
+      .modify(_.features).setToIf(test.tags.contains("anchor_outputs"))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
@@ -293,7 +293,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val fundingAmountBig = Btc(1).toSatoshi
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Set(ActivatedFeature(Wumbo, Optional))))) // Bob supports wumbo
+    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
@@ -331,7 +331,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Set(ActivatedFeature(StaticRemoteKey, Optional), ActivatedFeature(AnchorOutputs, Optional)))))
+    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)))
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
     val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
@@ -347,7 +347,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Set(ActivatedFeature(StaticRemoteKey, Optional))))) // Bob supports option_static_remotekey
+    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(StaticRemoteKey -> Optional))) // Bob supports option_static_remotekey
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
     peer.stateData.channels.foreach { case (_, channelRef) =>

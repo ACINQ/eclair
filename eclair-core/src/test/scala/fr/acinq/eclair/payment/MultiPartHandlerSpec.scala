@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire.Onion.FinalTlvPayload
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -44,21 +44,21 @@ import scala.concurrent.duration._
 
 class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
-  val featuresWithoutMpp = Features(Set(
-    ActivatedFeature(VariableLengthOnion, Optional),
-    ActivatedFeature(PaymentSecret, Optional),
-  ))
+  val featuresWithoutMpp = Features(
+    VariableLengthOnion -> Optional,
+    PaymentSecret -> Optional,
+  )
 
-  val featuresWithMpp = Features(Set(
-    ActivatedFeature(VariableLengthOnion, Optional),
-    ActivatedFeature(PaymentSecret, Optional),
-    ActivatedFeature(BasicMultiPartPayment, Optional)
-  ))
+  val featuresWithMpp = Features(
+    VariableLengthOnion -> Optional,
+    PaymentSecret -> Optional,
+    BasicMultiPartPayment -> Optional
+  )
 
-  val featuresWithKeySend = Features(Set(
-    ActivatedFeature(VariableLengthOnion, Optional),
-    ActivatedFeature(KeySend, Optional)
-  ))
+  val featuresWithKeySend = Features(
+    VariableLengthOnion -> Optional,
+    KeySend -> Optional
+  )
 
   case class FixtureParam(nodeParams: NodeParams, defaultExpiry: CltvExpiry, register: TestProbe, eventListener: TestProbe, sender: TestProbe) {
     lazy val handlerWithoutMpp = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams.copy(features = featuresWithoutMpp), register.ref))
