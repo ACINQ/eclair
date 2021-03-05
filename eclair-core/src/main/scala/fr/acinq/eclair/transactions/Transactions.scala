@@ -232,14 +232,13 @@ object Transactions {
    * If you are adding multiple fees together for example, you should always add them in MilliSatoshi and then round
    * down to Satoshi.
    */
-  def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
+  def toDeduceFromFunderOutputMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, commitmentFormat)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, commitmentFormat)
     val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
     val fee = weight2feeMsat(spec.feeratePerKw, weight)
     // When using anchor outputs, the funder pays for *both* anchors all the time, even if only one anchor is present.
-    // This is not technically a fee (it doesn't go to miners) but it has to be deduced from the funder's main output,
-    // so for simplicity we deduce it here.
+    // This is not technically a fee (it doesn't go to miners) but it also has to be deduced from the funder's main output.
     val anchorsCost = commitmentFormat match {
       case DefaultCommitmentFormat => Satoshi(0)
       case AnchorOutputsCommitmentFormat => AnchorOutputsCommitmentFormat.anchorAmount * 2
@@ -247,7 +246,7 @@ object Transactions {
     fee + anchorsCost
   }
 
-  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxFeeMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
+  def toDeduceFromFunderOutput(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = toDeduceFromFunderOutputMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
 
   /**
    * @param commitTxNumber         commit tx number
@@ -351,9 +350,9 @@ object Transactions {
     val hasHtlcs = outputs.nonEmpty
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (spec.toLocal.truncateToSatoshi - commitTxFee(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
+      (spec.toLocal.truncateToSatoshi - toDeduceFromFunderOutput(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
     } else {
-      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitTxFee(localDustLimit, spec, commitmentFormat))
+      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - toDeduceFromFunderOutput(localDustLimit, spec, commitmentFormat))
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     if (toLocalAmount >= localDustLimit) {

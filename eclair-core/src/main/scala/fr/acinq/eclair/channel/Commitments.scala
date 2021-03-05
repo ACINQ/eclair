@@ -191,9 +191,9 @@ case class Commitments(channelVersion: ChannelVersion,
     val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve).max(0 msat)
     if (localParams.isFunder) {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
-      val commitFees = commitTxFeeMsat(remoteParams.dustLimit, reduced, commitmentFormat)
+      val commitFees = toDeduceFromFunderOutputMsat(remoteParams.dustLimit, reduced, commitmentFormat)
       // the funder needs to keep a "funder fee buffer" (see explanation above)
-      val funderFeeBuffer = commitTxFeeMsat(remoteParams.dustLimit, reduced.copy(feeratePerKw = reduced.feeratePerKw * 2), commitmentFormat) + htlcOutputFee(reduced.feeratePerKw * 2, commitmentFormat)
+      val funderFeeBuffer = toDeduceFromFunderOutputMsat(remoteParams.dustLimit, reduced.copy(feeratePerKw = reduced.feeratePerKw * 2), commitmentFormat) + htlcOutputFee(reduced.feeratePerKw * 2, commitmentFormat)
       val amountToReserve = commitFees.max(funderFeeBuffer)
       if (balanceNoFees - amountToReserve < offeredHtlcTrimThreshold(remoteParams.dustLimit, reduced, commitmentFormat)) {
         // htlc will be trimmed
@@ -220,9 +220,9 @@ case class Commitments(channelVersion: ChannelVersion,
       balanceNoFees
     } else {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can receive.
-      val commitFees = commitTxFeeMsat(localParams.dustLimit, reduced, commitmentFormat)
+      val commitFees = toDeduceFromFunderOutputMsat(localParams.dustLimit, reduced, commitmentFormat)
       // we expected the funder to keep a "funder fee buffer" (see explanation above)
-      val funderFeeBuffer = commitTxFeeMsat(localParams.dustLimit, reduced.copy(feeratePerKw = reduced.feeratePerKw * 2), commitmentFormat) + htlcOutputFee(reduced.feeratePerKw * 2, commitmentFormat)
+      val funderFeeBuffer = toDeduceFromFunderOutputMsat(localParams.dustLimit, reduced.copy(feeratePerKw = reduced.feeratePerKw * 2), commitmentFormat) + htlcOutputFee(reduced.feeratePerKw * 2, commitmentFormat)
       val amountToReserve = commitFees.max(funderFeeBuffer)
       if (balanceNoFees - amountToReserve < receivedHtlcTrimThreshold(localParams.dustLimit, reduced, commitmentFormat)) {
         // htlc will be trimmed
@@ -306,10 +306,10 @@ object Commitments {
     val outgoingHtlcs = reduced.htlcs.collect(incoming)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
-    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
+    val fees = toDeduceFromFunderOutput(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
     // the funder needs to keep an extra buffer to be able to handle a x2 feerate increase and an additional htlc to avoid
     // getting the channel stuck (see https://github.com/lightningnetwork/lightning-rfc/issues/728).
-    val funderFeeBuffer = commitTxFeeMsat(commitments1.remoteParams.dustLimit, reduced.copy(feeratePerKw = reduced.feeratePerKw * 2), commitments.commitmentFormat) + htlcOutputFee(reduced.feeratePerKw * 2, commitments.commitmentFormat)
+    val funderFeeBuffer = toDeduceFromFunderOutputMsat(commitments1.remoteParams.dustLimit, reduced.copy(feeratePerKw = reduced.feeratePerKw * 2), commitments.commitmentFormat) + htlcOutputFee(reduced.feeratePerKw * 2, commitments.commitmentFormat)
     // NB: increasing the feerate can actually remove htlcs from the commit tx (if they fall below the trim threshold)
     // which may result in a lower commit tx fee; this is why we take the max of the two.
     val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees.max(funderFeeBuffer.truncateToSatoshi) else 0.sat)
@@ -365,7 +365,7 @@ object Commitments {
     val incomingHtlcs = reduced.htlcs.collect(incoming)
 
     // note that the funder pays the fee, so if sender != funder, both sides will have to afford this payment
-    val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
+    val fees = toDeduceFromFunderOutput(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
     // NB: we don't enforce the funderFeeReserve (see sendAdd) because it would confuse a remote funder that doesn't have this mitigation in place
     // We could enforce it once we're confident a large portion of the network implements it.
     val missingForSender = reduced.toRemote - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
@@ -484,7 +484,7 @@ object Commitments {
 
       // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
       // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-      val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
+      val fees = toDeduceFromFunderOutput(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
       val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
       if (missing < 0.sat) {
         Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
@@ -517,7 +517,7 @@ object Commitments {
         val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
         // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-        val fees = commitTxFee(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
+        val fees = toDeduceFromFunderOutput(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
         val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
         if (missing < 0.sat) {
           Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))

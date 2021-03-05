@@ -104,7 +104,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 800000 msat, ByteVector32.Zeroes, CltvExpiry(551), TestConstants.emptyOnionPacket))
     )
     val spec = CommitmentSpec(htlcs, feeratePerKw = FeeratePerKw(5000 sat), toLocal = 0 msat, toRemote = 0 msat)
-    val fee = Transactions.commitTxFee(546 sat, spec, DefaultCommitmentFormat)
+    val fee = Transactions.toDeduceFromFunderOutput(546 sat, spec, DefaultCommitmentFormat)
     assert(fee === 5340.sat)
   }
 
@@ -214,7 +214,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment with some outputs that don't materialize (default commitment format)") {
     val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
-    val commitFee = commitTxFee(localDustLimit, spec, DefaultCommitmentFormat)
+    val commitFee = toDeduceFromFunderOutput(localDustLimit, spec, DefaultCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
     val belowDustWithFee = (localDustLimit + commitFee * 0.9).toMilliSatoshi
 
@@ -426,7 +426,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment with some outputs that don't materialize (anchor outputs)") {
     val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
-    val commitFee = commitTxFee(localDustLimit, spec, AnchorOutputsCommitmentFormat)
+    val commitFee = toDeduceFromFunderOutput(localDustLimit, spec, AnchorOutputsCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
     val belowDustWithFeeAndAnchors = (localDustLimit + commitFee * 0.9).toMilliSatoshi
 
@@ -787,7 +787,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     assert(tests.size === 30, "there were 15 tests at b201efe0546120c14bf154ce5f4e18da7243fe7a") // simple non-reg to make sure we are not missing tests
     tests.foreach(test => {
       logger.info(s"running BOLT 3 test: '${test.name}'")
-      val fee = commitTxFee(dustLimit, test.spec, DefaultCommitmentFormat)
+      val fee = toDeduceFromFunderOutput(dustLimit, test.spec, DefaultCommitmentFormat)
       assert(fee === test.expectedFee)
     })
   }
