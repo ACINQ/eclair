@@ -424,9 +424,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       TestSetup(name, dustLimit, CommitmentSpec(htlcs = htlcs, feeratePerKw = feerate_per_kw.toLong, toLocal = MilliSatoshi(to_local_msat.toLong), toRemote = MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
     }).toSeq
 
-    // simple non-reg test making sure we are not missing tests
-    assert(tests.size === 15, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f")
-
+    assert(tests.size === 30, "there were 15 tests at b201efe0546120c14bf154ce5f4e18da7243fe7a") // simple non-reg to make sure we are not missing tests
     tests.foreach(test => {
       logger.info(s"running BOLT 2 test: '${test.name}'")
       val fee = commitTxFee(test.dustLimit, test.spec)
