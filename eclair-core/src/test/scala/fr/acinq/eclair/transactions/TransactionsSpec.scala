@@ -859,7 +859,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       """.*base commitment transaction fee = ([0-9]+)\n""" +
       """[^$]+""").r
     // this regex extracts htlc direction and amounts
-    val htlcRegex = """.*HTLC [0-9] ([a-z]+) amount ([0-9]+).*""".r
+    val htlcRegex = """.*HTLC #[0-9] ([a-z]+) amount ([0-9]+).*""".r
     val tests = testRegex.findAllIn(bolt3).map(s => {
       val testRegex(name, to_local_msat, to_remote_msat, feerate_per_kw, fee) = s
       val htlcs = htlcRegex.findAllIn(s).map(l => {
