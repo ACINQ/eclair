@@ -46,7 +46,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     Source.fromInputStream(classOf[TestVectorsSpec].getResourceAsStream(filename)).getLines().toArray.map(s => s.dropWhile(_.isWhitespace)).foreach(line => {
       if (line.startsWith("name: ")) {
         val Array(_, n) = line.split(": ")
-        if (!name.isEmpty) tests.put(name, current.toMap)
+        if (name.nonEmpty) tests.put(name, current.toMap)
         name = n
         current.clear()
       } else {
@@ -222,7 +222,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         case 34 =>
           val index = htlcScripts.indexWhere(s => Script.write(Script.pay2wsh(s)) == txOut.publicKeyScript)
           if (index == -1) logger.info(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(Local.revocation_pubkey, Local.toSelfDelay, Local.delayed_payment_privkey.publicKey))}")
-          else logger.info(s"# HTLC ${if (htlcs(index).isInstanceOf[OutgoingHtlc]) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
+          else logger.info(s"# HTLC #${if (htlcs(index).isInstanceOf[OutgoingHtlc]) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
       }
     })
 
@@ -242,38 +242,29 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val htlcTxs: Seq[TransactionWithInputInfo] = unsignedHtlcTxs.sortBy(_.input.outPoint.index)
     logger.info(s"num_htlcs: ${htlcTxs.length}")
 
-    htlcTxs.collect {
-      case tx: HtlcSuccessTx =>
-        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
-        logger.info(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
-        logger.info(s"remote_htlc_signature: ${Scripts.der(remoteSig).dropRight(1).toHex}")
-      case tx: HtlcTimeoutTx =>
-        val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
-        logger.info(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
-        logger.info(s"remote_htlc_signature: ${Scripts.der(remoteSig).dropRight(1).toHex}")
-    }
-
-    val signedTxs = htlcTxs collect {
+    val signedTxs = htlcTxs.collect {
       case tx: HtlcSuccessTx =>
         val localSig = Transactions.sign(tx, Local.htlc_privkey, TxOwner.Local, commitmentFormat)
         val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
+        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
-        logger.info(s"# local_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
-        logger.info(s"output htlc_success_tx $htlcIndex: ${tx1.tx}")
+        logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-success for htlc #$htlcIndex)")
+        logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
+        logger.info(s"# local_htlc_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
+        logger.info(s"htlc_success_tx (htlc #$htlcIndex): ${tx1.tx}")
         tx1
       case tx: HtlcTimeoutTx =>
         val localSig = Transactions.sign(tx, Local.htlc_privkey, TxOwner.Local, commitmentFormat)
         val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
+        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        logger.info(s"# local_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
-        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
-        logger.info(s"output htlc_timeout_tx $htlcIndex: ${tx1.tx}")
+        logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-timeout for htlc #$htlcIndex)")
+        logger.info(s"remote_htlc_signature = ${Scripts.der(remoteSig).dropRight(1).toHex}")
+        logger.info(s"# local_htlc_signature = ${Scripts.der(localSig).dropRight(1).toHex}")
+        logger.info(s"htlc_timeout_tx (htlc #$htlcIndex): ${tx1.tx}")
         tx1
     }
 
@@ -282,7 +273,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
   def verifyHtlcTxs(name: String, htlcTxs: Seq[TransactionWithInputInfo]): Unit = {
     val check = (0 to 4).flatMap(i =>
-      tests(name).get(s"output htlc_success_tx $i").toSeq ++ tests(name).get(s"output htlc_timeout_tx $i").toSeq
+      tests(name).get(s"htlc_success_tx (htlc #$i)").toSeq ++ tests(name).get(s"htlc_timeout_tx (htlc #$i)").toSeq
     ).toSet.map((tx: String) => Transaction.read(tx))
     assert(htlcTxs.map(_.tx).toSet === check)
   }
@@ -391,7 +382,6 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     verifyHtlcTxs(name, htlcTxs)
   }
 
-  // Added to the spec in https://github.com/lightningnetwork/lightning-rfc/pull/539
   test("commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage") {
     val name = "commitment tx with 3 htlc outputs, 2 offered having the same amount and preimage"
     val someHtlcs = Seq(htlcs(1), htlcs(6), htlcs(5))
@@ -399,9 +389,9 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     assert(commitTx.tx == Transaction.read(tests(name)("output commit_tx")))
 
     assert(htlcTxs.size == 3) // one htlc-success-tx + two htlc-timeout-tx
-    assert(htlcTxs(0).tx == Transaction.read(tests(name)("output htlc_success_tx 0")))
-    assert(htlcTxs(1).tx == Transaction.read(tests(name)("output htlc_timeout_tx 1")))
-    assert(htlcTxs(2).tx == Transaction.read(tests(name)("output htlc_timeout_tx 2")))
+    assert(htlcTxs(0).tx == Transaction.read(tests(name)("htlc_success_tx (htlc #1)")))
+    assert(htlcTxs(1).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #5)")))
+    assert(htlcTxs(2).tx == Transaction.read(tests(name)("htlc_timeout_tx (htlc #6)")))
   }
 
 }
