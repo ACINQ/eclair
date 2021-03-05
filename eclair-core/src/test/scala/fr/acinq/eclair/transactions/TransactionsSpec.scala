@@ -104,8 +104,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 800000 msat, ByteVector32.Zeroes, CltvExpiry(551), TestConstants.emptyOnionPacket))
     )
     val spec = CommitmentSpec(htlcs, feeratePerKw = FeeratePerKw(5000 sat), toLocal = 0 msat, toRemote = 0 msat)
-    val fee = Transactions.toDeduceFromFunderOutput(546 sat, spec, DefaultCommitmentFormat)
-    assert(fee === 5340.sat)
+    val fee = commitTxFeeMsat(546 sat, spec, DefaultCommitmentFormat)
+    assert(fee === 5340000.msat)
   }
 
   test("check pre-computed transaction weights") {
@@ -426,16 +426,16 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment with some outputs that don't materialize (anchor outputs)") {
     val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
-    val commitFee = toDeduceFromFunderOutput(localDustLimit, spec, AnchorOutputsCommitmentFormat)
+    val commitFeeAndAnchorCost = toDeduceFromFunderOutput(localDustLimit, spec, AnchorOutputsCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
-    val belowDustWithFeeAndAnchors = (localDustLimit + commitFee * 0.9).toMilliSatoshi
+    val belowDustWithFeeAndAnchors = (localDustLimit + commitFeeAndAnchorCost * 0.9).toMilliSatoshi
 
     {
       val outputs = makeCommitTxOutputs(localIsFunder = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, AnchorOutputsCommitmentFormat)
       assert(outputs.map(_.commitmentOutput).toSet === Set(CommitmentOutput.ToLocal, CommitmentOutput.ToRemote, CommitmentOutput.ToLocalAnchor, CommitmentOutput.ToRemoteAnchor))
       assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocalAnchor).get.output.amount === anchorAmount)
       assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemoteAnchor).get.output.amount === anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocal).get.output.amount.toMilliSatoshi === spec.toLocal - commitFee)
+      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocal).get.output.amount.toMilliSatoshi === spec.toLocal - commitFeeAndAnchorCost)
       assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemote).get.output.amount.toMilliSatoshi === spec.toRemote)
     }
     {
@@ -443,7 +443,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val outputs = makeCommitTxOutputs(localIsFunder = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, toRemoteFundeeBelowDust, AnchorOutputsCommitmentFormat)
       assert(outputs.map(_.commitmentOutput).toSet === Set(CommitmentOutput.ToLocal, CommitmentOutput.ToLocalAnchor))
       assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocalAnchor).get.output.amount === anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocal).get.output.amount.toMilliSatoshi === spec.toLocal - commitFee)
+      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToLocal).get.output.amount.toMilliSatoshi === spec.toLocal - commitFeeAndAnchorCost)
     }
     {
       val toLocalFunderBelowDust = spec.copy(toLocal = belowDustWithFeeAndAnchors)
@@ -464,7 +464,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val outputs = makeCommitTxOutputs(localIsFunder = false, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, toLocalFundeeBelowDust, AnchorOutputsCommitmentFormat)
       assert(outputs.map(_.commitmentOutput).toSet === Set(CommitmentOutput.ToRemote, CommitmentOutput.ToRemoteAnchor))
       assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemoteAnchor).get.output.amount === anchorAmount)
-      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemote).get.output.amount.toMilliSatoshi === spec.toRemote - commitFee)
+      assert(outputs.find(_.commitmentOutput == CommitmentOutput.ToRemote).get.output.amount.toMilliSatoshi === spec.toRemote - commitFeeAndAnchorCost)
     }
     {
       val allBelowDust = spec.copy(toLocal = belowDust, toRemote = belowDust)

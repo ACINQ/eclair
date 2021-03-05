@@ -208,7 +208,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val baseFee = Transactions.toDeduceFromFunderOutput(Local.dustLimit, spec, commitmentFormat)
+    val baseFee = Transactions.commitTxFeeMsat(Local.dustLimit, spec, commitmentFormat)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
