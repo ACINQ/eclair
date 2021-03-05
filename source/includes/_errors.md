@@ -8,7 +8,7 @@
 }
 ```
 
-The Eclair API responds in an uniform way to all errors, HTTP codes are mapped to the following meaning:
+The Eclair API responds in a uniform way to all errors. HTTP codes are mapped to the following meaning:
 
 Error Code | Error Name | Description
 ---------- | -------- | ----------

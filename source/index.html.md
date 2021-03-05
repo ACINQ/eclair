@@ -17,13 +17,13 @@ search: true
 
 Welcome to the Eclair API, this website contains documentation and code examples about how to interact with the Eclair lightning node via its API.
 Feel free to suggest improvements and fixes to this documentation by submitting a pull request to the [repo](https://github.com/ACINQ/eclair).
-The API uses [HTTP form data](https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms) and returns JSON encoded object or simple strings if no object is being returned, all errors are handled with a JSON response more info [here](#errors).
+The API uses [HTTP form data](https://en.wikipedia.org/wiki/POST_(HTTP)#Use_for_submitting_web_forms) and returns JSON-encoded objects or simple strings if no objects are being returned. All errors are handled with a JSON response (more info [here](#errors)).
 All monetary values are in millisatoshi unless stated otherwise.
 
 # Authentication
 
 Eclair uses HTTP Basic authentication and expects to receive the correct header with every request.
-To set an API password use the [configuration](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf).
+To set an API password, use the [configuration](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf).
 The rest of this document will use '21satoshi' as password which encoded as _base64_ results in `OjIxc2F0b3NoaQ==`.
 
 <aside class="notice">
@@ -118,8 +118,8 @@ eclair-cli connect --uri=<target_uri>
 connected
 ```
 
-Connect to another lightning node, this will perform a connection but no channel will be opened.
-Note in the _URI_ the port is optional and if missing the default (9735) will be used.
+Connect to another lightning node. This will perform a connection but no channels will be opened.
+Note that in the _URI_, the port is optional, and if missing, the default port (9735) will be used.
 
 ### HTTP Request
 
@@ -146,7 +146,7 @@ eclair-cli connect --nodeId=<node_id> --host=<host>
 connected
 ```
 
-Connect to another lightning node, this will perform a connection but no channel will be opened.
+Connect to another lightning node. This will perform a connection but no channels will be opened.
 
 ### HTTP Request
 
@@ -175,9 +175,9 @@ eclair-cli connect --nodeId=<nodeId>
 connected
 ```
 
-Connect to another lightning node, this will perform a connection but no channel will be opened.
-This API does not require a target address, instead eclair will use one of the addresses published
-by the remote peer in his `node_announcement` messages.
+Connect to another lightning node. This will perform a connection but no channels will be opened.
+This API does not require a target address. Instead, eclair will use one of the addresses published
+by the remote peer in its `node_announcement` messages.
 
 ### HTTP Request
 
@@ -236,8 +236,8 @@ eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis> --feeBas
 created channel e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 ```
 
-Open a channel to another lightning node, you must specify the target nodeId and the funding satoshis for the new channel. Optionally
-you can send to the remote a _pushMsat_ value and you can specify wether this should be a public or private channel (default is set in the config).
+Open a channel to another lightning node. You must specify the target **nodeId** and the funding satoshis for the new channel. Optionally
+you can send to the remote a _pushMsat_ value and you can specify whether this should be a public or private channel (default is set in the config).
 
 You can optionally set the initial routing fees that this channel will use (_feeBaseMsat_ and _feeProportionalMillionths_).
 
@@ -249,7 +249,7 @@ You can optionally set the initial routing fees that this channel will use (_fee
 
 Parameter                 | Description                                                     | Optional | Type
 --------------------------| --------------------------------------------------------------- | -------- | ---------------------------
-nodeId                    | The nodeId of the node you want to connect to                   | No       | 33-bytes-HexString (String)
+nodeId                    | The **nodeId** of the node you want to open a channel with      | No       | 33-bytes-HexString (String)
 fundingSatoshis           | Amount of satoshis to spend in the funding of the channel       | No       | Satoshis (Integer)
 pushMsat                  | Amount of millisatoshi to unilaterally push to the counterparty | Yes      | Millisatoshis (Integer)
 feeBaseMsat               | The base fee to use when relaying payments                      | Yes      | Millisatoshi (Integer)
@@ -277,9 +277,9 @@ eclair-cli close --channelId=<channel>
 }
 ```
 
-Initiates a cooperative close for given channels that belong to this eclair node, the API returns once the _funding_signed_ message has been negotiated.
+Initiates a cooperative close for given channels that belong to this eclair node. The API returns once the _funding_signed_ message has been negotiated.
 If you specified a scriptPubKey then the closing transaction will spend to that address.
-The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channel you can use the parameters `channelIds` or `shortChannelIds` below.
+The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channels, you can use the parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -312,9 +312,9 @@ eclair-cli forceclose --channelId=<channel>
 }
 ```
 
-Initiates an unilateral close for given channels that belong to this eclair node, once the commitment has been broadcasted the API returns its
+Initiates a unilateral close for given channels that belong to this eclair node. Once the commitment has been broadcast, the API returns its
 transaction id.
-The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channel you can use the parameters `channelIds` or `shortChannelIds` below.
+The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channels, you can use the parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -359,8 +359,8 @@ eclair-cli updaterelayfee \
 }
 ```
 
-Updates the fee policy for the specified _channelId_, a new update for this channel will be broadcasted to the network.
-The endpoint supports receiving multiple channel id(s) or short channel id(s); to update multiple channel you can use the parameters `channelIds` or `shortChannelIds` below.
+Updates the fee policy for the specified _channelId_. A new update for this channel will be broadcast to the network.
+The endpoint supports receiving multiple channel id(s) or short channel id(s); to update multiple channels, you can use the parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
 
@@ -617,9 +617,9 @@ Returns the list of local channels, optionally filtered by remote node.
 
 ### Parameters
 
-Parameter | Description                                              | Optional | Type
---------- | -------------------------------------------------------- | -------- | ---------------------------
-nodeId    | The remote node id to be used as filter for the channels | Yes      | 33-bytes-HexString (String)
+Parameter | Description                                                 | Optional | Type
+--------- | ----------------------------------------------------------- | -------- | ---------------------------
+nodeId    | The remote **nodeId** to be used as filter for the channels | Yes      | 33-bytes-HexString (String)
 
 ## Channel
 
@@ -828,7 +828,7 @@ channelId | The channel id of the requested channel | No       | 32-bytes-HexStr
 
 # Network
 
-A set of API to query the network view of eclair.
+A set of API methods to query the network view of eclair.
 
 ## Nodes
 
@@ -931,9 +931,9 @@ Returns information about public nodes on the lightning network; this informatio
 
 ### Parameters
 
-Parameter | Description                         | Optional | Type
---------- | ----------------------------------- | -------- | -----------------------------------------------
-nodeIds   | The node ids of the nodes to return | Yes      | CSV or JSON list of 33-bytes-HexString (String)
+Parameter | Description                            | Optional | Type
+--------- | -------------------------------------- | -------- | -----------------------------------------------
+nodeIds   | The **nodeIds** of the nodes to return | Yes      | CSV or JSON list of 33-bytes-HexString (String)
 
 ## AllChannels
 
@@ -961,7 +961,7 @@ eclair-cli allchannels
 ]
 ```
 
-Returns non detailed information about all public channels in the network.
+Returns non-detailed information about all public channels in the network.
 
 ## AllUpdates
 
@@ -1019,9 +1019,9 @@ The allupdates API is CPU intensive for eclair and might slow down the applicati
 
 ### Parameters
 
-Parameter | Description                                                  | Optional | Type
---------- | ------------------------------------------------------------ | -------- | ---------------------------
-nodeId    | The node id of the node to be used as filter for the updates | Yes      | 33-bytes-HexString (String)
+Parameter | Description                                                     | Optional | Type
+--------- | --------------------------------------------------------------- | -------- | ---------------------------
+nodeId    | The **nodeId** of the node to be used as filter for the updates | Yes      | 33-bytes-HexString (String)
 
 ## NetworkStats
 
@@ -1213,8 +1213,8 @@ eclair-cli payinvoice --invoice=<some_invoice>
 "e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
-Pays a **BOLT11** invoice, in case of failure the payment will be retried up to `maxAttempts` times,
-default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
+Pays a **BOLT11** invoice. In case of failure, the payment will be retried up to `maxAttempts` times.
+Default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
 the unique identifier for this payment attempt is immediately returned to the caller. It's possible to add an
 extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
@@ -1249,9 +1249,9 @@ eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<
 "e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
-Sends money to a node, in case of failure the payment will be retried up to `maxAttempts` times,
-default number of attempts is read from the configuration.The API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller.It's possible to add an
+Sends money to a node. In case of failure, the payment will be retried up to `maxAttempts` times.
+Default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
+the unique identifier for this payment attempt is immediately returned to the caller. It's possible to add an
 extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
 ### HTTP Request
@@ -1303,7 +1303,7 @@ eclair-cli sendtoroute --shortChannelIds=42x1x0,56x7x3 --amountMsat=<amount> --p
 
 Sends money to a node forcing the payment to go through the given route. The API works in a fire-and-forget fashion where
 the unique identifier for this payment attempt is immediately returned to the caller. The route parameter can either be
-a list of nodeIds that the payment will traverse or a list of shortChannelIds. If nodeIds are specified, a suitable channel
+a list of **nodeIds** that the payment will traverse or a list of shortChannelIds. If **nodeIds** are specified, a suitable channel
 will be automatically selected for each hop (note that in that case, the specified nodes need to have public channels between
 them).
 
@@ -1322,7 +1322,7 @@ Go to the [wiki](https://github.com/ACINQ/eclair/wiki) for details on how to do 
 Parameter           | Description                                                         | Optional | Type
 ------------------- | ------------------------------------------------------------------- | -------- | ---------------------------
 invoice             | The invoice you want to pay                                         | No       | String
-nodeIds             | A list of nodeIds from source to destination of the payment         | Yes (*)  | List of nodeIds
+nodeIds             | A list of **nodeIds** from source to destination of the payment     | Yes (*)  | List of nodeIds
 shortChannelIds     | A list of shortChannelIds from source to destination of the payment | Yes (*)  | List of shortChannelIds
 amountMsat          | Amount to pay                                                       | No       | Millisatoshi (Integer)
 paymentHash         | The payment hash for this payment                                   | No       | 32-bytes-HexString (String)
@@ -1469,10 +1469,10 @@ The API can be queried by `paymentHash` OR by `uuid`.
 
 ### Parameters
 
-Parameter   | Description                                                    | Optional | Type
------------ | -------------------------------------------------------------- | -------- | ---------------------------
-paymentHash | The payment hash common to all payment attepts to be retrieved | No       | 32-bytes-HexString (String)
-id          | The unique id of the payment attempt                           | Yes      | Java's UUID (String)
+Parameter   | Description                                                     | Optional | Type
+----------- | --------------------------------------------------------------  | -------- | ---------------------------
+paymentHash | The payment hash common to all payment attempts to be retrieved | No       | 32-bytes-HexString (String)
+id          | The unique id of the payment attempt                            | Yes      | Java's UUID (String)
 
 ## GetReceivedInfo
 
@@ -1525,7 +1525,7 @@ eclair-cli getreceivedinfo --paymentHash=<some_hash>
 }
 ```
 
-Check whether a payment corresponding to the given `paymentHash` has been received, it is possible to use a BOLT11 invoice
+Checks whether a payment corresponding to the given `paymentHash` has been received. It is possible to use a **BOLT11** invoice
 as parameter instead of the `paymentHash` but at least one of the two must be specified.
 
 ### HTTP Request
@@ -1580,7 +1580,7 @@ eclair-cli getinvoice --paymentHash=<some_hash>
 }
 ```
 
-Queries the payment DB for a stored invoice with the given `paymentHash`, if none is found it responds HTTP 404.
+Queries the payment DB for a stored invoice with the given `paymentHash`. If none is found, it responds HTTP 404.
 
 ### HTTP Request
 
@@ -1729,7 +1729,7 @@ eclair-cli listpendinginvoices
 ]
 ```
 
-Returns all non paid, non expired **BOLT11** invoices stored, the result can be filtered by dates and is outputted in descending
+Returns all non-paid, non-expired **BOLT11** invoices stored. The invoices can be filtered by date and are outputted in descending
 order.
 
 ### HTTP Request
@@ -1764,7 +1764,7 @@ eclair-cli findroute --invoice=<some_bolt11invoice>
 ]
 ```
 
-Finds a route to the node specified by the invoice, if the invoice does not specify an amount
+Finds a route to the node specified by the invoice. If the invoice does not specify an amount,
 you must do so via the `amountMsat` parameter.
 
 ### HTTP Request
@@ -1862,7 +1862,7 @@ eclair-cli getnewaddress
 "2MsRZ1asG6k94m6GYUufDGaZJMoJ4EV5JKs"
 ```
 
-Get a new on-chain address from the wallet, this can be used to deposit funds that will later be used
+Get a new on-chain address from the wallet. This can be used to deposit funds that will later be used
 to fund channels. The API is only available with the bitcoin-core watcher type, and the resulting addresses
 depend on the configured address-type in `bitcoin.conf`.
 
@@ -2031,10 +2031,10 @@ The public key of the signing node will be identified and returned.
 
 ### Parameters
 
-Parameter | Description                    | Optional | Type
---------- | ------------------------------ | -------- | ---------------
-msg       | Base64-encoded message to sign | No       | String (Base64)
-sig       | Message signature              | No       | String (Hex)
+Parameter | Description                      | Optional | Type
+--------- | -------------------------------- | -------- | ---------------
+msg       | Base64-encoded message to verify | No       | String (Base64)
+sig       | Message signature                | No       | String (Hex)
 
 # Miscellaneous
 
@@ -2173,7 +2173,7 @@ eclair-cli networkfees
 ]
 ```
 
-Retrieves information about on-chain fees paid during channel operations, currency values are in Satoshis.
+Retrieves information about on-chain fees paid during channel operations (currency values are in Satoshis).
 
 ### HTTP Request
 
@@ -2234,7 +2234,7 @@ eclair-cli channelstats
 ]
 ```
 
-Retrieves information about local channels, the information is then aggregated in order to display
+Retrieves information about local channels. The information is then aggregated in order to display
 statistics about the routing activity of the channels. Values are in Satoshis.
 
 ### HTTP Request
@@ -2277,11 +2277,11 @@ Retrieves information about the available balance of local channels.
 
 `POST http://localhost:8080/usablebalances`
 
-# Websocket
+# WebSocket
 
 ## WS
 
-This is a simple [websocket](https://tools.ietf.org/html/rfc6455) that will output payment related events, it supports
+This is a simple [WebSocket](https://tools.ietf.org/html/rfc6455) that will output payment related events. It supports
 several types covering all the possible outcomes. All monetary values are expressed in millisatoshi.
 
 > Payment relayed event
