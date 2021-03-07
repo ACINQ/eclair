@@ -52,7 +52,6 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
    * Collect routes from all sub-routers here. This is the main entrypoint for the global
    * http request router of the API service.
    */
-  val route: Route = securedPublicHandler {
-    nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
-  }
+  val route: Route = nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
+
 }

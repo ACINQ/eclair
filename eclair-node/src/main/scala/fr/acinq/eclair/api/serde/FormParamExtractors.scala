@@ -22,7 +22,7 @@ import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import JsonSupport._
+import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentRequest
@@ -31,7 +31,6 @@ import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.Try
-
 
 object FormParamExtractors {
 

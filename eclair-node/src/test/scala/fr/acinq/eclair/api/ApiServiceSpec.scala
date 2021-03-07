@@ -89,6 +89,16 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
+  test("API returns not found for broken getinfo") {
+    Post("/getinf") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockApi().route) ~>
+      check {
+        assert(handled)
+        assert(status == NotFound)
+      }
+  }
+
   test("API returns unauthorized with invalid credentials") {
     Post("/getinfo") ~>
       addCredentials(BasicHttpCredentials("", mockApi().password + "what!")) ~>
@@ -111,6 +121,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("API returns invalid channelId on invalid channelId form data") {
     Post("/channel", FormData(Map("channelId" -> "hey")).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockApi().channel) ~>
       check {
         assert(handled)
@@ -122,6 +133,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("API should return bad request error on connect with missing uri") {
     Post("/connect", FormData("urb" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockApi().connect) ~>
       check {
         assert(handled)
@@ -146,6 +158,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val mockService = mockApi(eclair)
     Post("/peers") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.peers) ~>
       check {
         assert(handled)
@@ -165,6 +178,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val mockService = mockApi(eclair)
     Post("/usablebalances") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.usableBalances) ~>
       check {
         assert(handled)
@@ -192,6 +206,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     ))
 
     Post("/getinfo") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.getInfo) ~>
       check {
         assert(handled)
@@ -212,6 +227,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100000").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.open) ~>
       check {
@@ -222,6 +238,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "50000", "feeBaseMsat" -> "100", "feeProportionalMillionths" -> "10").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.open) ~>
       check {
@@ -247,6 +264,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     Post("/close", FormData("shortChannelId" -> shortChannelIdSerialized).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.close) ~>
       check {
@@ -258,6 +276,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/close", FormData("channelId" -> channelIdSerialized).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.close) ~>
       check {
@@ -269,6 +288,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/close", FormData("channelIds" -> channelIdSerialized, "shortChannelIds" -> "42000x27x3,42000x561x1").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.close) ~>
       check {
@@ -289,6 +309,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     Post("/connect", FormData("nodeId" -> remoteNodeId.toString()).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.connect) ~>
       check {
         assert(handled)
@@ -298,6 +319,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/connect", FormData("uri" -> remoteUri.toString).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.connect) ~>
       check {
         assert(handled)
@@ -315,6 +337,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
 
     Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.payInvoice) ~>
       check {
         assert(handled)
@@ -333,6 +356,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.payInvoice) ~>
       check {
         assert(handled)
@@ -341,6 +365,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123", "feeThresholdSat" -> "112233", "maxFeePct" -> "2.34", "externalId" -> "42").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.payInvoice) ~>
       check {
         assert(handled)
@@ -364,6 +389,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     Post("/getreceivedinfo", FormData("paymentHash" -> notFound.toHex).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.getReceivedInfo) ~>
       check {
         assert(handled)
@@ -374,6 +400,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/getreceivedinfo", FormData("paymentHash" -> pending.toHex).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.getReceivedInfo) ~>
       check {
         assert(handled)
@@ -384,6 +411,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/getreceivedinfo", FormData("paymentHash" -> expired.toHex).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.getReceivedInfo) ~>
       check {
         assert(handled)
@@ -394,6 +422,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/getreceivedinfo", FormData("paymentHash" -> received.toHex).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.getReceivedInfo) ~>
       check {
         assert(handled)
@@ -416,6 +445,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     Post("/getsentinfo", FormData("id" -> pending.toString).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.getSentInfo) ~>
       check {
         assert(handled)
@@ -426,6 +456,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/getsentinfo", FormData("id" -> failed.toString).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.getSentInfo) ~>
       check {
         assert(handled)
@@ -436,6 +467,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     Post("/getsentinfo", FormData("id" -> sent.toString).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.getSentInfo) ~>
       check {
         assert(handled)
@@ -460,6 +492,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = new MockService(eclair)
 
     Post("/sendtoroute", FormData("nodeIds" -> jsonNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "externalId" -> externalId, "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.sendToRoute) ~>
       check {
@@ -471,6 +504,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     // this test uses CSV encoded route
     Post("/sendtoroute", FormData("nodeIds" -> csvNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.sendToRoute) ~>
       check {
@@ -493,6 +527,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     eclair.networkStats()(any[Timeout]) returns Future.successful(Some(networkStats))
 
     Post("/networkstats") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.networkStats) ~>
       check {
         assert(handled)
@@ -509,6 +544,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val wsClient = WSProbe()
 
     WS("/ws", wsClient.flow) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       mockService.webSocket ~>
       check {
         val pf = PaymentFailed(fixedUUID, ByteVector32.Zeroes, failures = Seq.empty, timestamp = 1553784963659L)
