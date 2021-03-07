@@ -22,7 +22,7 @@ import akka.testkit.TestProbe
 import com.google.common.net.HostAndPort
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BtcDouble, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, SatoshiLong, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, BtcDouble, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel._
@@ -89,6 +89,15 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
       bitcoinClient.getTxConfirmations(txid).pipeTo(sender.ref)
       val confirmed = sender.expectMsgType[Option[Int]].nonEmpty
       inMempool || confirmed
+    }, max = 30 seconds, interval = 1 second)
+  }
+
+  /** Wait for the given outpoint to be spent (either by a mempool or confirmed transaction). */
+  def waitForOutputSpent(outpoint: OutPoint, bitcoinClient: ExtendedBitcoinClient, sender: TestProbe): Unit = {
+    awaitCond({
+      bitcoinClient.isTransactionOutputSpendable(outpoint.txid, outpoint.index.toInt, includeMempool = true).pipeTo(sender.ref)
+      val isSpendable = sender.expectMsgType[Boolean]
+      !isSpendable
     }, max = 30 seconds, interval = 1 second)
   }
 
@@ -249,7 +258,13 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(3, Some(minerAddress))
     // we wait until the htlc-timeout has been broadcast
-    waitForTxBroadcastOrConfirmed(localCommit.htlcTimeoutTxs.head.txid, bitcoinClient, sender)
+    commitmentFormat match {
+      case Transactions.DefaultCommitmentFormat =>
+        waitForTxBroadcastOrConfirmed(localCommit.htlcTimeoutTxs.head.txid, bitcoinClient, sender)
+      case Transactions.AnchorOutputsCommitmentFormat =>
+        // we don't know the txid of the HTLC-timeout, so we just check that the corresponding output has been spent
+        waitForOutputSpent(localCommit.htlcTimeoutTxs.head.txIn.head.outPoint, bitcoinClient, sender)
+    }
     // we generate more blocks for the htlc-timeout to reach enough confirmations
     generateBlocks(3, Some(minerAddress))
     // this will fail the htlc
@@ -271,7 +286,6 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(2, Some(minerAddress))
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 60 seconds)
-    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 60 seconds)
     awaitAnnouncements(1)
   }
 
@@ -322,7 +336,6 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(2, Some(minerAddress))
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 60 seconds)
-    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 60 seconds)
     awaitAnnouncements(1)
   }
 
@@ -678,6 +691,8 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     val stateListener = TestProbe()
     nodes("C").system.eventStream.subscribe(stateListener.ref, classOf[ChannelStateChanged])
 
+    // we kill the connection between C and F to ensure the close can only be detected on-chain
+    disconnectCF(channelId, sender)
     // now let's force close the channel and check the toRemote is what we had at the beginning
     sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_FORCECLOSE(sender.ref)))
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]

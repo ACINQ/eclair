@@ -36,7 +36,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.Onion.{FinalLegacyPayload, FinalTlvPayload}
 import fr.acinq.eclair.wire.OnionTlv.{AmountToForward, OutgoingCltv}
 import fr.acinq.eclair.wire.{Onion, OnionCodecs, OnionTlv, TrampolineFeeInsufficient, _}
-import fr.acinq.eclair.{ActivatedFeature, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
@@ -52,16 +52,16 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
-  val featuresWithoutMpp = Features(Set(
-    ActivatedFeature(VariableLengthOnion, Optional),
-    ActivatedFeature(PaymentSecret, Optional)
-  ))
+  val featuresWithoutMpp = Features(
+    VariableLengthOnion -> Optional,
+    PaymentSecret -> Optional
+  )
 
-  val featuresWithMpp = Features(Set(
-    ActivatedFeature(VariableLengthOnion, Optional),
-    ActivatedFeature(PaymentSecret, Optional),
-    ActivatedFeature(BasicMultiPartPayment, Optional),
-  ))
+  val featuresWithMpp = Features(
+    VariableLengthOnion -> Optional,
+    PaymentSecret -> Optional,
+    BasicMultiPartPayment -> Optional,
+  )
 
   override def withFixture(test: OneArgTest): Outcome = {
     val features = if (test.tags.contains("mpp_disabled")) featuresWithoutMpp else featuresWithMpp

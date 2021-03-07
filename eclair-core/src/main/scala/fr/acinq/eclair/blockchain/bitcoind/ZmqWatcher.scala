@@ -23,14 +23,20 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransactionOptions, FundTransactionResponse}
+import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
-import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
-import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.channel.{BITCOIN_PARENT_TX_CONFIRMED, Commitments}
+import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
+import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionSigningKit, TransactionWithInputInfo, weight2fee}
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import org.json4s.JsonAST.{JArray, JBool, JDecimal, JInt, JString}
 import scodec.bits.ByteVector
 
@@ -62,6 +68,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
   self ! TickNewBlock
 
   // @formatter:off
+  private case class PublishNextBlock(p: PublishAsap)
   private case class TriggerEvent(w: Watch, e: WatchEvent)
 
   private sealed trait AddWatchResult
@@ -71,7 +78,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
 
   def receive: Receive = watching(Set(), Map(), SortedMap(), None)
 
-  def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
+  def watching(watches: Set[Watch], watchedUtxos: Map[OutPoint, Set[Watch]], block2tx: SortedMap[Long, Seq[PublishAsap]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
       log.debug("analyzing txid={} tx={}", tx.txid, tx)
@@ -140,27 +147,40 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
           }
           Keep
 
-        case WatchSpent(_, txid, outputIndex, _, _) =>
+        case WatchSpent(_, txid, outputIndex, _, _, hints) =>
           // first let's see if the parent tx was published or not
           client.getTxConfirmations(txid).collect {
             case Some(_) =>
               // parent tx was published, we need to make sure this particular output has not been spent
               client.isTransactionOutputSpendable(txid, outputIndex, includeMempool = true).collect {
                 case false =>
-                  log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
-                  client.getMempool().map { mempoolTxs =>
-                    mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
-                      case Nil =>
-                        log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                        client.lookForSpendingTx(None, txid, outputIndex).map { tx =>
-                          log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
-                          self ! NewTransaction(tx)
+                  // the output has been spent, let's find the spending tx
+                  // if we know some potential spending txs, we try to fetch them directly
+                  Future.sequence(hints.map(txid => client.getTransaction(txid).map(Some(_)).recover { case _ => None }))
+                    .map(_
+                      .flatten // filter out errors
+                      .find(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
+                      case Some(spendingTx) =>
+                        // there can be only one spending tx for an utxo
+                        log.info(s"$txid:$outputIndex has already been spent by a tx provided in hints: txid=${spendingTx.txid}")
+                        self ! NewTransaction(spendingTx)
+                      case None =>
+                        // no luck, we have to do it the hard way...
+                        log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
+                        client.getMempool().map { mempoolTxs =>
+                          mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
+                            case Nil =>
+                              log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
+                              client.lookForSpendingTx(None, txid, outputIndex).map { tx =>
+                                log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
+                                self ! NewTransaction(tx)
+                              }
+                            case txs =>
+                              log.info(s"found ${txs.size} txs spending $txid:$outputIndex in the mempool: txids=${txs.map(_.txid).mkString(",")}")
+                              txs.foreach(tx => self ! NewTransaction(tx))
+                          }
                         }
-                      case txs =>
-                        log.info(s"found ${txs.size} txs spending $txid:$outputIndex in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                        txs.foreach(tx => self ! NewTransaction(tx))
-                    }
-                  }
+                    })
               }
           }
           Keep
@@ -180,7 +200,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
         case Ignore => ()
       }
 
-    case PublishAsap(tx) =>
+    case p@PublishAsap(tx, _) =>
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeouts = Scripts.csvTimeouts(tx)
@@ -190,23 +210,28 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
         csvTimeouts.foreach { case (parentTxId, csvTimeout) =>
           log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", tx)
           val parentPublicKeyScript = Script.write(Script.pay2wsh(tx.txIn.find(_.outPoint.txid == parentTxId).get.witness.stack.last))
-          self ! WatchConfirmed(self, parentTxId, parentPublicKeyScript, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(tx))
+          self ! WatchConfirmed(self, parentTxId, parentPublicKeyScript, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
         }
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
-        val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
+        val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[PublishAsap]) :+ p)
         context become watching(watches, watchedUtxos, block2tx1, nextTick)
-      } else publish(tx)
+      } else publish(p)
 
-    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), _, _, _) =>
+    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(p@PublishAsap(tx, _)), _, _, _) =>
       log.info(s"parent tx of txid=${tx.txid} has been confirmed")
       val blockCount = this.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
-        val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
+        val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[PublishAsap]) :+ p)
         context become watching(watches, watchedUtxos, block2tx1, nextTick)
-      } else publish(tx)
+      } else publish(p)
+
+    case PublishNextBlock(p) =>
+      val nextBlockCount = this.blockCount.get() + 1
+      val block2tx1 = block2tx.updated(nextBlockCount, block2tx.getOrElse(nextBlockCount, Seq.empty[PublishAsap]) :+ p)
+      context become watching(watches, watchedUtxos, block2tx1, nextTick)
 
     case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
 
@@ -226,13 +251,152 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
-  def publish(tx: Transaction, isRetry: Boolean = false): Unit = {
-    log.info(s"publishing tx (isRetry=$isRetry): txid=${tx.txid} tx={}", tx)
-    client.publishTransaction(tx)(singleThreadExecutionContext).recover {
+  def publish(p: PublishAsap): Future[ByteVector32] = {
+    p.strategy match {
+      case PublishStrategy.SetFeerate(currentFeerate, targetFeerate, dustLimit, signingKit) =>
+        log.info("publishing tx: input={}:{} txid={} tx={}", signingKit.spentOutpoint.txid, signingKit.spentOutpoint.index, p.tx.txid, p.tx)
+        val publishF = signingKit match {
+          case signingKit: TransactionSigningKit.ClaimAnchorOutputSigningKit => publishCommitWithAnchor(p.tx, currentFeerate, targetFeerate, dustLimit, signingKit)
+          case signingKit: TransactionSigningKit.HtlcTxSigningKit => publishHtlcTx(currentFeerate, targetFeerate, dustLimit, signingKit)
+        }
+        publishF.recoverWith {
+          case t: Throwable if t.getMessage.contains("(code: -4)") || t.getMessage.contains("(code: -6)") =>
+            log.warning("not enough funds to publish tx, will retry next block: reason={} input={}:{} txid={}", t.getMessage, signingKit.spentOutpoint.txid, signingKit.spentOutpoint.index, p.tx.txid)
+            self ! PublishNextBlock(p)
+            Future.failed(t)
+          case t: Throwable =>
+            log.error("cannot publish tx: reason={} input={}:{} txid={}", t.getMessage, signingKit.spentOutpoint.txid, signingKit.spentOutpoint.index, p.tx.txid)
+            Future.failed(t)
+        }
+      case PublishStrategy.JustPublish =>
+        log.info("publishing tx: txid={} tx={}", p.tx.txid, p.tx)
+        publish(p.tx, isRetry = false)
+    }
+  }
+
+  def publish(tx: Transaction, isRetry: Boolean): Future[ByteVector32] = {
+    client.publishTransaction(tx)(singleThreadExecutionContext).recoverWith {
       case t: Throwable if t.getMessage.contains("(code: -25)") && !isRetry => // we retry only once
         import akka.pattern.after
-        after(3 seconds, context.system.scheduler)(Future.successful({})).map(_ => publish(tx, isRetry = true))
-      case t: Throwable => log.error("cannot publish tx: reason={} txid={} tx={}", t.getMessage, tx.txid, tx)
+        after(3 seconds, context.system.scheduler)(Future.successful({})).flatMap(_ => publish(tx, isRetry = true))
+      case t: Throwable =>
+        log.error("cannot publish tx: reason={} txid={}", t.getMessage, tx.txid)
+        Future.failed(t)
+    }
+  }
+
+  /**
+   * Publish the commit tx, and optionally an anchor tx that spends from the commit tx and helps get it confirmed with CPFP.
+   */
+  def publishCommitWithAnchor(commitTx: Transaction, currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi, signingKit: TransactionSigningKit.ClaimAnchorOutputSigningKit): Future[ByteVector32] = {
+    import signingKit._
+    if (targetFeerate <= currentFeerate) {
+      log.info(s"publishing commit tx without the anchor (current feerate=$currentFeerate): txid=${commitTx.txid}")
+      publish(commitTx, isRetry = false)
+    } else {
+      log.info(s"publishing commit tx with the anchor (target feerate=$targetFeerate): txid=${commitTx.txid}")
+      // We want the feerate of the package (commit tx + tx spending anchor) to equal targetFeerate.
+      // Thus we have: anchorFeerate = targetFeerate + (weight-commit-tx / weight-anchor-tx) * (targetFeerate - commitTxFeerate)
+      // If we use the smallest weight possible for the anchor tx, the feerate we use will thus be greater than what we want,
+      // and we can adjust it afterwards by raising the change output amount.
+      val anchorFeerate = targetFeerate + FeeratePerKw(targetFeerate.feerate - currentFeerate.feerate) * commitTx.weight() / Transactions.claimAnchorOutputMinWeight
+      // NB: fundrawtransaction requires at least one output, and may add at most one additional change output.
+      // Since the purpose of this transaction is just to do a CPFP, the resulting tx should have a single change output
+      // (note that bitcoind doesn't let us publish a transaction with no outputs).
+      // To work around these limitations, we start with a dummy output and later merge that dummy output with the optional
+      // change output added by bitcoind.
+      // NB: fundrawtransaction doesn't support non-wallet inputs, so we have to remove our anchor input and re-add it later.
+      // That means bitcoind will not take our anchor input's weight into account when adding inputs to set the fee.
+      // That's ok, we can increase the fee later by decreasing the output amount. But we need to ensure we'll have enough
+      // to cover the weight of our anchor input, which is why we set it to the following value.
+      val dummyChangeAmount = Transactions.weight2fee(anchorFeerate, Transactions.claimAnchorOutputMinWeight) + dustLimit
+      publish(commitTx, isRetry = false).flatMap(commitTxId => {
+        val txNotFunded = Transaction(2, Nil, TxOut(dummyChangeAmount, Script.pay2wpkh(Transactions.PlaceHolderPubKey)) :: Nil, 0)
+        client.fundTransaction(txNotFunded, FundTransactionOptions(anchorFeerate, lockUtxos = true))(singleThreadExecutionContext)
+      }).flatMap(fundTxResponse => {
+        // We merge the outputs if there's more than one.
+        fundTxResponse.changePosition match {
+          case Some(changePos) =>
+            val changeOutput = fundTxResponse.tx.txOut(changePos.toInt)
+            val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(changeOutput.copy(amount = changeOutput.amount + dummyChangeAmount)))
+            Future.successful(fundTxResponse.copy(tx = txSingleOutput))
+          case None =>
+            client.getChangeAddress()(singleThreadExecutionContext).map(pubkeyHash => {
+              val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(TxOut(dummyChangeAmount, Script.pay2wpkh(pubkeyHash))))
+              fundTxResponse.copy(tx = txSingleOutput)
+            })
+        }
+      }).map(fundTxResponse => {
+        require(fundTxResponse.tx.txOut.size == 1, "funded transaction should have a single change output")
+        // NB: we insert the anchor input in the *first* position because our signing helpers only sign input #0.
+        val unsignedTx = txWithInput.copy(tx = fundTxResponse.tx.copy(txIn = txWithInput.tx.txIn.head +: fundTxResponse.tx.txIn))
+        adjustAnchorOutputChange(unsignedTx, commitTx, fundTxResponse.amountIn + Transactions.AnchorOutputsCommitmentFormat.anchorAmount, currentFeerate, targetFeerate, dustLimit)
+      }).flatMap(claimAnchorTx => {
+        val claimAnchorSig = keyManager.sign(claimAnchorTx, localFundingPubKey, Transactions.TxOwner.Local, commitmentFormat)
+        val signedClaimAnchorTx = Transactions.addSigs(claimAnchorTx, claimAnchorSig)
+        val commitInfo = ExtendedBitcoinClient.PreviousTx(signedClaimAnchorTx.input, signedClaimAnchorTx.tx.txIn.head.witness)
+        client.signTransaction(signedClaimAnchorTx.tx, Seq(commitInfo))(singleThreadExecutionContext)
+      }).flatMap(signTxResponse => {
+        client.publishTransaction(signTxResponse.tx)(singleThreadExecutionContext)
+      })
+    }
+  }
+
+  /**
+   * Publish an htlc tx, and optionally RBF it before by adding new inputs/outputs to help get it confirmed.
+   */
+  def publishHtlcTx(currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi, signingKit: TransactionSigningKit.HtlcTxSigningKit): Future[ByteVector32] = {
+    import signingKit._
+    if (targetFeerate <= currentFeerate) {
+      val localSig = keyManager.sign(txWithInput, localHtlcBasepoint, localPerCommitmentPoint, Transactions.TxOwner.Local, commitmentFormat)
+      val signedHtlcTx = addHtlcTxSigs(txWithInput, localSig, signingKit)
+      log.info("publishing htlc tx without adding inputs: txid={}", signedHtlcTx.tx.txid)
+      client.publishTransaction(signedHtlcTx.tx)(singleThreadExecutionContext)
+    } else {
+      log.info("publishing htlc tx with additional inputs: commit input={}:{} target feerate={}", txWithInput.input.outPoint.txid, txWithInput.input.outPoint.index, targetFeerate)
+      // NB: fundrawtransaction doesn't support non-wallet inputs, so we clear the input and re-add it later.
+      val txNotFunded = txWithInput.tx.copy(txIn = Nil, txOut = txWithInput.tx.txOut.head.copy(amount = dustLimit) :: Nil)
+      val htlcTxWeight = signingKit match {
+        case _: TransactionSigningKit.HtlcSuccessSigningKit => commitmentFormat.htlcSuccessWeight
+        case _: TransactionSigningKit.HtlcTimeoutSigningKit => commitmentFormat.htlcTimeoutWeight
+      }
+      // We want the feerate of our final HTLC tx to equal targetFeerate. However, we removed the HTLC input from what we
+      // send to fundrawtransaction, so bitcoind will not know the total weight of the final tx. In order to make up for
+      // this difference, we need to tell bitcoind to target a higher feerate that takes into account the weight of the
+      // input we removed.
+      // That feerate will satisfy the following equality:
+      // feerate * weight_seen_by_bitcoind = target_feerate * (weight_seen_by_bitcoind + htlc_input_weight)
+      // So: feerate = target_feerate * (1 + htlc_input_weight / weight_seen_by_bitcoind)
+      // Because bitcoind will add at least one P2WPKH input, weight_seen_by_bitcoind >= htlc_tx_weight + p2wpkh_weight
+      // Thus: feerate <= target_feerate * (1 + htlc_input_weight / (htlc_tx_weight + p2wpkh_weight))
+      // NB: we don't take into account the fee paid by our HTLC input: we will take it into account when we adjust the
+      // change output amount (unless bitcoind didn't add any change output, in that case we will overpay the fee slightly).
+      val weightRatio = 1.0 + (Transactions.htlcInputMaxWeight.toDouble / (htlcTxWeight + Transactions.claimP2WPKHOutputWeight))
+      client.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, lockUtxos = true, changePosition = Some(1)))(singleThreadExecutionContext).map(fundTxResponse => {
+        log.info(s"added ${fundTxResponse.tx.txIn.length} wallet input(s) and ${fundTxResponse.tx.txOut.length - 1} wallet output(s) to htlc tx spending commit input=${txWithInput.input.outPoint.txid}:${txWithInput.input.outPoint.index}")
+        // We add the HTLC input (from the commit tx) and restore the HTLC output.
+        // NB: we can't modify them because they are signed by our peer (with SIGHASH_SINGLE | SIGHASH_ANYONECANPAY).
+        val txWithHtlcInput = fundTxResponse.tx.copy(
+          txIn = txWithInput.tx.txIn ++ fundTxResponse.tx.txIn,
+          txOut = txWithInput.tx.txOut ++ fundTxResponse.tx.txOut.tail
+        )
+        val unsignedTx = signingKit match {
+          case htlcSuccess: TransactionSigningKit.HtlcSuccessSigningKit => htlcSuccess.txWithInput.copy(tx = txWithHtlcInput)
+          case htlcTimeout: TransactionSigningKit.HtlcTimeoutSigningKit => htlcTimeout.txWithInput.copy(tx = txWithHtlcInput)
+        }
+        adjustHtlcTxChange(unsignedTx, fundTxResponse.amountIn + unsignedTx.input.txOut.amount, targetFeerate, dustLimit, signingKit)
+      }).flatMap(unsignedTx => {
+        val localSig = keyManager.sign(unsignedTx, localHtlcBasepoint, localPerCommitmentPoint, Transactions.TxOwner.Local, commitmentFormat)
+        val signedHtlcTx = addHtlcTxSigs(unsignedTx, localSig, signingKit)
+        val inputInfo = ExtendedBitcoinClient.PreviousTx(signedHtlcTx.input, signedHtlcTx.tx.txIn.head.witness)
+        client.signTransaction(signedHtlcTx.tx, Seq(inputInfo), allowIncomplete = true)(singleThreadExecutionContext).flatMap(signTxResponse => {
+          // NB: bitcoind messes up the witness stack for our htlc input, so we need to restore it.
+          // See https://github.com/bitcoin/bitcoin/issues/21151
+          val completeTx = signedHtlcTx.tx.copy(txIn = signedHtlcTx.tx.txIn.head +: signTxResponse.tx.txIn.tail)
+          log.info("publishing bumped htlc tx: commit input={}:{} txid={} tx={}", txWithInput.input.outPoint.txid, txWithInput.input.outPoint.index, completeTx.txid, completeTx)
+          client.publishTransaction(completeTx)(singleThreadExecutionContext)
+        })
+      })
     }
   }
 
@@ -312,7 +476,7 @@ object ZmqWatcher {
     }
 
   /**
-   * The resulting map allows checking spent txes in constant time wrt number of watchers
+   * The resulting map allows checking spent txs in constant time wrt number of watchers
    */
   def addWatchedUtxos(m: Map[OutPoint, Set[Watch]], w: Watch): Map[OutPoint, Set[Watch]] = {
     utxo(w) match {
@@ -332,6 +496,56 @@ object ZmqWatcher {
         case None => m
       }
       case None => m
+    }
+  }
+
+  /**
+   * Adjust the amount of the change output of an anchor tx to match our target feerate.
+   * We need this because fundrawtransaction doesn't allow us to leave non-wallet inputs, so we have to add them
+   * afterwards which may bring the resulting feerate below our target.
+   */
+  def adjustAnchorOutputChange(unsignedTx: Transactions.ClaimAnchorOutputTx, commitTx: Transaction, amountIn: Satoshi, currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi): Transactions.ClaimAnchorOutputTx = {
+    require(unsignedTx.tx.txOut.size == 1, "funded transaction should have a single change output")
+    // We take into account witness weight and adjust the fee to match our desired feerate.
+    val dummySignedClaimAnchorTx = Transactions.addSigs(unsignedTx, Transactions.PlaceHolderSig)
+    // NB: we assume that our bitcoind wallet uses only P2WPKH inputs when funding txs.
+    val estimatedWeight = commitTx.weight() + dummySignedClaimAnchorTx.tx.weight() + Transactions.claimP2WPKHOutputWitnessWeight * (dummySignedClaimAnchorTx.tx.txIn.size - 1)
+    val targetFee = Transactions.weight2fee(targetFeerate, estimatedWeight) - Transactions.weight2fee(currentFeerate, commitTx.weight())
+    val amountOut = dustLimit.max(amountIn - targetFee)
+    unsignedTx.copy(tx = unsignedTx.tx.copy(txOut = unsignedTx.tx.txOut.head.copy(amount = amountOut) :: Nil))
+  }
+
+  def addHtlcTxSigs(unsignedHtlcTx: Transactions.HtlcTx, localSig: ByteVector64, signingKit: TransactionSigningKit.HtlcTxSigningKit): Transactions.HtlcTx = {
+    signingKit match {
+      case htlcSuccess: TransactionSigningKit.HtlcSuccessSigningKit =>
+        Transactions.addSigs(unsignedHtlcTx.asInstanceOf[HtlcSuccessTx], localSig, signingKit.remoteSig, htlcSuccess.preimage, signingKit.commitmentFormat)
+      case htlcTimeout: TransactionSigningKit.HtlcTimeoutSigningKit =>
+        Transactions.addSigs(unsignedHtlcTx.asInstanceOf[HtlcTimeoutTx], localSig, signingKit.remoteSig, signingKit.commitmentFormat)
+    }
+  }
+
+  /**
+   * Adjust the change output of an htlc tx to match our target feerate.
+   * We need this because fundrawtransaction doesn't allow us to leave non-wallet inputs, so we have to add them
+   * afterwards which may bring the resulting feerate below our target.
+   */
+  def adjustHtlcTxChange(unsignedTx: Transactions.HtlcTx, amountIn: Satoshi, targetFeerate: FeeratePerKw, dustLimit: Satoshi, signingKit: TransactionSigningKit.HtlcTxSigningKit): Transactions.HtlcTx = {
+    require(unsignedTx.tx.txOut.size <= 2, "funded transaction should have at most one change output")
+    val dummySignedTx = addHtlcTxSigs(unsignedTx, Transactions.PlaceHolderSig, signingKit)
+    // We adjust the change output to obtain the targeted feerate.
+    val estimatedWeight = dummySignedTx.tx.weight() + Transactions.claimP2WPKHOutputWitnessWeight * (dummySignedTx.tx.txIn.size - 1)
+    val targetFee = Transactions.weight2fee(targetFeerate, estimatedWeight)
+    val changeAmount = amountIn - dummySignedTx.tx.txOut.head.amount - targetFee
+    if (dummySignedTx.tx.txOut.length == 2 && changeAmount >= dustLimit) {
+      unsignedTx match {
+        case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = htlcSuccess.tx.copy(txOut = Seq(htlcSuccess.tx.txOut.head, htlcSuccess.tx.txOut(1).copy(amount = changeAmount))))
+        case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = htlcTimeout.tx.copy(txOut = Seq(htlcTimeout.tx.txOut.head, htlcTimeout.tx.txOut(1).copy(amount = changeAmount))))
+      }
+    } else {
+      unsignedTx match {
+        case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = htlcSuccess.tx.copy(txOut = Seq(htlcSuccess.tx.txOut.head)))
+        case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = htlcTimeout.tx.copy(txOut = Seq(htlcTimeout.tx.txOut.head)))
+      }
     }
   }
 

@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
@@ -198,10 +198,17 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
       val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx, localFundingPriv.publicKey)
+      assert(claimAnchorOutputTx.tx.txOut.isEmpty)
+      // we will always add at least one input and one output to be able to set our desired feerate
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(claimAnchorOutputTx, PlaceHolderSig).tx)
-      assert(claimAnchorOutputWeight == weight)
-      assert(claimAnchorOutputTx.fee >= claimAnchorOutputTx.minRelayFee)
+      val p2wpkhWitness = ScriptWitness(Seq(Scripts.der(PlaceHolderSig), PlaceHolderPubKey.value))
+      val claimAnchorOutputTxWithFees = claimAnchorOutputTx.copy(tx = claimAnchorOutputTx.tx.copy(
+        txIn = claimAnchorOutputTx.tx.txIn :+ TxIn(OutPoint(randomBytes32, 3), ByteVector.empty, 0, p2wpkhWitness),
+        txOut = Seq(TxOut(1500 sat, Script.pay2wpkh(randomKey.publicKey)))
+      ))
+      val weight = Transaction.weight(addSigs(claimAnchorOutputTxWithFees, PlaceHolderSig).tx)
+      assert(weight === 717)
+      assert(weight >= claimAnchorOutputMinWeight)
     }
   }
 
@@ -777,7 +784,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       TestVector(name, CommitmentSpec(htlcs, FeeratePerKw(feerate_per_kw.toLong.sat), MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
     }).toSeq
 
-    assert(tests.size === 15, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f") // simple non-reg to make sure we are not missing tests
+    assert(tests.size === 30, "there were 15 tests at b201efe0546120c14bf154ce5f4e18da7243fe7a") // simple non-reg to make sure we are not missing tests
     tests.foreach(test => {
       logger.info(s"running BOLT 3 test: '${test.name}'")
       val fee = commitTxFee(dustLimit, test.spec, DefaultCommitmentFormat)

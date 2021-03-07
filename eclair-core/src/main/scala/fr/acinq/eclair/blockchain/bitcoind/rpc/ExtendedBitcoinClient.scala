@@ -111,12 +111,20 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     }
   }
 
-  def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx])(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
+  def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
     rpcClient.invoke("signrawtransactionwithwallet", tx.toString(), previousTxs).map(json => {
       val JString(hex) = json \ "hex"
       val JBool(complete) = json \ "complete"
-      if (!complete) {
-        val message = (json \ "errors" \\ classOf[JString]).mkString(",")
+      // TODO: remove allowIncomplete once https://github.com/bitcoin/bitcoin/issues/21151 is fixed
+      if (!complete && !allowIncomplete) {
+        val JArray(errors) = json \ "errors"
+        val message = errors.map(error => {
+          val JString(txid) = error \ "txid"
+          val JInt(vout) = error \ "vout"
+          val JString(scriptSig) = error \ "scriptSig"
+          val JString(message) = error \ "error"
+          s"txid=$txid vout=$vout scriptSig=$scriptSig error=$message"
+        }).mkString(", ")
         throw JsonRPCError(Error(-1, message))
       }
       SignTransactionResponse(Transaction.read(hex), complete)
@@ -212,7 +220,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       val JDecimal(descendantFees) = json \ "fees" \ "descendant"
       val JBool(replaceable) = json \ "bip125-replaceable"
       // NB: bitcoind counts the transaction itself as its own ancestor and descendant, which is confusing: we fix that by decrementing these counters.
-      MempoolTx(vsize.toLong, weight.toLong, replaceable, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees))
+      MempoolTx(txid, vsize.toLong, weight.toLong, replaceable, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees))
     })
   }
 
@@ -276,6 +284,7 @@ object ExtendedBitcoinClient {
   /**
    * Information about a transaction currently in the mempool.
    *
+   * @param txid            transaction id.
    * @param vsize           virtual transaction size as defined in BIP 141.
    * @param weight          transaction weight as defined in BIP 141.
    * @param replaceable     Whether this transaction could be replaced with RBF (BIP125).
@@ -285,7 +294,7 @@ object ExtendedBitcoinClient {
    * @param descendantCount number of unconfirmed child transactions.
    * @param descendantFees  transactions fees for the package consisting of this transaction and its unconfirmed children (without its unconfirmed parents).
    */
-  case class MempoolTx(vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi)
+  case class MempoolTx(txid: ByteVector32, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi)
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
