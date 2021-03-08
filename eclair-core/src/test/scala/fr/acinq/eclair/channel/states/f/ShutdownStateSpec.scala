@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.protocol.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire.protocol.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
@@ -787,6 +787,48 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(mainPenaltyTx.txOut.head.amount === 195160.sat)
     assert(htlc1PenaltyTx.txOut.head.amount === 194540.sat)
     assert(htlc2PenaltyTx.txOut.head.amount === 294540.sat)
+
+    awaitCond(alice.stateName == CLOSING)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
+  }
+
+  test("recv BITCOIN_FUNDING_SPENT (revoked tx with updated commitment)") { f =>
+    import f._
+    val initialCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+    assert(initialCommitTx.txOut.size === 4) // two main outputs + 2 htlc
+
+    // bob fulfills one of the pending htlc (commitment update while in shutdown state)
+    fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+    assert(revokedTx.txOut.size === 3) // two main outputs + 1 htlc
+
+    // bob fulfills the second pending htlc (and revokes the previous commitment)
+    fulfillHtlc(1, r2, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    alice2bob.expectMsgType[ClosingSigned] // no more htlcs in the commitment
+
+    // bob published the revoked tx
+    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedTx)
+    alice2bob.expectMsgType[Error]
+
+    val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
+    val mainPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
+    val htlcPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
+    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
+    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc-penalty
+    alice2blockchain.expectNoMsg(1 second)
+
+    Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(mainPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    // two main outputs are 300 000 and 200 000, htlcs are 300 000 and 200 000
+    assert(mainTx.txOut(0).amount === 286660.sat)
+    assert(mainPenaltyTx.txOut(0).amount === 495160.sat)
+    assert(htlcPenaltyTx.txOut(0).amount === 194540.sat)
 
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

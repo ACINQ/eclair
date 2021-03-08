@@ -147,7 +147,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val expiryTooSmall = CltvExpiry(currentBlockHeight)
     val add = CMD_ADD_HTLC(sender.ref, 500000000 msat, randomBytes32, expiryTooSmall, TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add
-    val error = ExpiryTooSmall(channelId(alice), CltvExpiry(currentBlockHeight), expiryTooSmall, currentBlockHeight)
+    val error = ExpiryTooSmall(channelId(alice), CltvExpiry(currentBlockHeight + 3), expiryTooSmall, currentBlockHeight)
     sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
     alice2bob.expectNoMsg(200 millis)
   }
