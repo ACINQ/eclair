@@ -48,6 +48,7 @@ object TestConstants {
   val fundingSatoshis = 1000000L sat
   val pushMsat = 200000000L msat
   val feeratePerKw = FeeratePerKw(10000 sat)
+  val anchorOutputsFeeratePerKw = FeeratePerKw(2500 sat)
   val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
   class TestFeeEstimator extends FeeEstimator {
@@ -173,7 +174,7 @@ object TestConstants {
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
-        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0),
+        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw),
         perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
@@ -278,7 +279,7 @@ object TestConstants {
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
-        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5),
+        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw),
         perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs

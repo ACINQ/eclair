@@ -106,7 +106,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.map(_.localClosingSigned) == initialState.closingTxProposed.last.map(_.localClosingSigned) :+ aliceCloseSig2)
     val Some(closingTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
     assert(closingTx.txOut.length === 2) // NB: in the anchor outputs case, anchors are removed from the closing tx
-    assert(aliceCloseSig2.feeSatoshis > Transactions.weight2fee(FeeEstimator.AnchorOutputMaxCommitFeerate, closingTx.weight())) // NB: closing fee is allowed to be higher than commit tx fee when using anchor outputs
+    assert(aliceCloseSig2.feeSatoshis > Transactions.weight2fee(TestConstants.anchorOutputsFeeratePerKw, closingTx.weight())) // NB: closing fee is allowed to be higher than commit tx fee when using anchor outputs
   }
 
   test("recv ClosingSigned (theirCloseFee != ourCloseFee)") {

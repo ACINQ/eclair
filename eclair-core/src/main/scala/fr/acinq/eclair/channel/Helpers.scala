@@ -116,8 +116,8 @@ object Helpers {
     }
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
-    val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(channelVersion, open.fundingSatoshis, None)
-    if (nodeParams.onChainFeeConf.maxFeerateMismatchFor(remoteNodeId).isFeeDiffTooHigh(channelVersion, localFeeratePerKw, open.feeratePerKw)) return Left(FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw))
+    val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelVersion, open.fundingSatoshis, None)
+    if (nodeParams.onChainFeeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(channelVersion, localFeeratePerKw, open.feeratePerKw)) return Left(FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw))
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) return Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT))

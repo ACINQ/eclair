@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.channel.ChannelVersion
 
@@ -28,14 +28,9 @@ trait FeeEstimator {
   // @formatter:on
 }
 
-object FeeEstimator {
-  /** When using anchor outputs, we only need to set a feerate that allows the tx to propagate: we will use CPFP to speed up confirmation if needed. */
-  val AnchorOutputMaxCommitFeerate = FeeratePerKw(FeeratePerByte(10 sat))
-}
-
 case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)
 
-case class FeerateTolerance(ratioLow: Double, ratioHigh: Double) {
+case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMaxCommitFeerate: FeeratePerKw) {
   /**
    * @param channelVersion  channel version
    * @param networkFeerate  reference fee rate (value we estimate from our view of the network)
@@ -44,7 +39,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double) {
    */
   def isFeeDiffTooHigh(channelVersion: ChannelVersion, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
     if (channelVersion.hasAnchorOutputs) {
-      proposedFeerate < networkFeerate * ratioLow || FeeEstimator.AnchorOutputMaxCommitFeerate * ratioHigh < proposedFeerate
+      proposedFeerate < networkFeerate * ratioLow || anchorOutputMaxCommitFeerate * ratioHigh < proposedFeerate
     } else {
       proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
     }
@@ -53,7 +48,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double) {
 
 case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, closeOnOfflineMismatch: Boolean, updateFeeMinDiffRatio: Double, private val defaultFeerateTolerance: FeerateTolerance, private val perNodeFeerateTolerance: Map[PublicKey, FeerateTolerance]) {
 
-  def maxFeerateMismatchFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
+  def feerateToleranceFor(nodeId: PublicKey): FeerateTolerance = perNodeFeerateTolerance.getOrElse(nodeId, defaultFeerateTolerance)
 
   /** To avoid spamming our peers with fee updates every time there's a small variation, we only update the fee when the difference exceeds a given ratio. */
   def shouldUpdateFee(currentFeeratePerKw: FeeratePerKw, nextFeeratePerKw: FeeratePerKw): Boolean =
@@ -64,16 +59,17 @@ case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, cl
    *  - if we're using anchor outputs, we use a feerate that allows network propagation of the commit tx: we will use CPFP to speed up confirmation if needed
    *  - otherwise we use a feerate that should get the commit tx confirmed within the configured block target
    *
+   * @param remoteNodeId        nodeId of our channel peer
    * @param channelVersion      channel version
    * @param currentFeerates_opt if provided, will be used to compute the most up-to-date network fee, otherwise we rely on the fee estimator
    */
-  def getCommitmentFeerate(channelVersion: ChannelVersion, channelCapacity: Satoshi, currentFeerates_opt: Option[CurrentFeerates]): FeeratePerKw = {
+  def getCommitmentFeerate(remoteNodeId: PublicKey, channelVersion: ChannelVersion, channelCapacity: Satoshi, currentFeerates_opt: Option[CurrentFeerates]): FeeratePerKw = {
     val networkFeerate = currentFeerates_opt match {
       case Some(currentFeerates) => currentFeerates.feeratesPerKw.feePerBlock(feeTargets.commitmentBlockTarget)
       case None => feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
     }
     if (channelVersion.hasAnchorOutputs) {
-      networkFeerate.min(FeeEstimator.AnchorOutputMaxCommitFeerate)
+      networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
     } else {
       networkFeerate
     }

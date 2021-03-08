@@ -1625,7 +1625,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
           if (d.commitments.localParams.isFunder && !shutdownInProgress) {
             val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
-            val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(d.commitments.channelVersion, d.commitments.capacity, None)
+            val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelVersion, d.commitments.capacity, None)
             if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
               self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
             }
@@ -1880,11 +1880,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
    private def handleCurrentFeerate(c: CurrentFeerates, d: HasCommitments) = {
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(d.commitments.channelVersion, d.commitments.capacity, Some(c))
+    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelVersion, d.commitments.capacity, Some(c))
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     val shouldUpdateFee = d.commitments.localParams.isFunder && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
     val shouldClose = !d.commitments.localParams.isFunder &&
-      nodeParams.onChainFeeConf.maxFeerateMismatchFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.channelVersion, networkFeeratePerKw, currentFeeratePerKw) &&
+      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.channelVersion, networkFeeratePerKw, currentFeeratePerKw) &&
       d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldUpdateFee) {
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
@@ -1904,11 +1904,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    * @return
    */
   private def handleOfflineFeerate(c: CurrentFeerates, d: HasCommitments) = {
-    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(d.commitments.channelVersion, d.commitments.capacity, Some(c))
+    val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelVersion, d.commitments.capacity, Some(c))
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     // if the network fees are too high we risk to not be able to confirm our current commitment
     val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
-      nodeParams.onChainFeeConf.maxFeerateMismatchFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.channelVersion, networkFeeratePerKw, currentFeeratePerKw) &&
+      nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.channelVersion, networkFeeratePerKw, currentFeeratePerKw) &&
       d.commitments.hasPendingOrProposedHtlcs // we close only if we have HTLCs potentially at risk
     if (shouldClose) {
       if (nodeParams.onChainFeeConf.closeOnOfflineMismatch) {

@@ -536,7 +536,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
-    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatchFor(Bob.nodeParams.nodeId).ratioLow)
+    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
     val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // alice is funder
@@ -562,7 +562,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
-    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatchFor(Bob.nodeParams.nodeId).ratioLow)
+    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
     val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // this time Alice will ignore feerate changes for the offline channel
@@ -645,7 +645,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val currentFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
-    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.maxFeerateMismatchFor(Alice.nodeParams.nodeId).ratioLow)
+    val networkFeeratePerKw = currentFeeratePerKw * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Alice.nodeParams.nodeId).ratioLow)
     val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
     // bob is fundee

@@ -20,7 +20,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
@@ -648,9 +648,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    assert(initialState.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
-    alice ! CurrentFeerates(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate / 2))
-    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, FeeEstimator.AnchorOutputMaxCommitFeerate / 2))
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
+    alice ! CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw / 2))
+    alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw / 2))
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { f =>
@@ -663,8 +663,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    assert(initialState.commitments.localCommit.spec.feeratePerKw === FeeEstimator.AnchorOutputMaxCommitFeerate)
-    alice ! CurrentFeerates(FeeratesPerKw.single(FeeEstimator.AnchorOutputMaxCommitFeerate * 2))
+    assert(initialState.commitments.localCommit.spec.feeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
+    alice ! CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2))
     alice2bob.expectNoMsg(500 millis)
   }
 
