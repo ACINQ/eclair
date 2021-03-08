@@ -32,7 +32,8 @@ import fr.acinq.eclair.payment._
  */
 class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  val db = nodeParams.db.audit
+  val auditDb: AuditDb = nodeParams.db.audit
+  val channelsDb: ChannelsDb = nodeParams.db.channels
 
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
   context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
@@ -46,7 +47,8 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
       PaymentMetrics.PaymentAmount.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.recipientAmount.truncateToSatoshi.toLong)
       PaymentMetrics.PaymentFees.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.feesPaid.truncateToSatoshi.toLong)
       PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.parts.length)
-      db.add(e)
+      auditDb.add(e)
+      e.parts.foreach(p => channelsDb.updateChannelMeta(p.toChannelId, e))
 
     case _: PaymentFailed =>
       PaymentMetrics.PaymentFailed.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).increment()
@@ -54,7 +56,8 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: PaymentReceived =>
       PaymentMetrics.PaymentAmount.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(e.amount.truncateToSatoshi.toLong)
       PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(e.parts.length)
-      db.add(e)
+      auditDb.add(e)
+      e.parts.foreach(p => channelsDb.updateChannelMeta(p.fromChannelId, e))
 
     case e: PaymentRelayed =>
       PaymentMetrics.PaymentAmount
@@ -71,9 +74,9 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
           PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(outgoing.length)
         case _: ChannelPaymentRelayed =>
       }
-      db.add(e)
+      auditDb.add(e)
 
-    case e: NetworkFeePaid => db.add(e)
+    case e: NetworkFeePaid => auditDb.add(e)
 
     case e: ChannelErrorOccurred =>
       e.error match {
@@ -81,7 +84,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
         case LocalError(_) if !e.isFatal => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = false).increment()
         case RemoteError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Remote).increment()
       }
-      db.add(e)
+      auditDb.add(e)
 
     case e: ChannelStateChanged =>
       // NB: order matters!
@@ -89,8 +92,11 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
         case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, Some(commitments: Commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
           val event = ChannelLifecycleEvent.EventType.Created
-          db.add(ChannelLifecycleEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isFunder, !commitments.announceChannel, event))
+          auditDb.add(ChannelLifecycleEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isFunder, !commitments.announceChannel, event))
+          channelsDb.updateChannelMeta(channelId, event)
         case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
+        case ChannelStateChanged(_, channelId, _, _, OFFLINE, SYNCING, _) =>
+          channelsDb.updateChannelMeta(channelId, ChannelLifecycleEvent.EventType.Connected)
         case ChannelStateChanged(_, _, _, _, _, CLOSING, _) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closing).increment()
         case _ => ()
@@ -99,7 +105,8 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: ChannelClosed =>
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
       val event = ChannelLifecycleEvent.EventType.Closed(e.closingType)
-      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
+      auditDb.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
+      channelsDb.updateChannelMeta(e.channelId, event)
 
   }
 
