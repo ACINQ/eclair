@@ -156,7 +156,7 @@ class StartupSpec extends AnyFunSuite {
         |      feerate-tolerance {
         |        ratio-low = 0.1
         |        ratio-high = 15.0
-        |        anchor-output-max-commit-feerate = 10
+        |        anchor-output-max-commit-feerate = 15
         |      }
         |    },
         |    {
@@ -172,9 +172,9 @@ class StartupSpec extends AnyFunSuite {
     )
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) === FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(10 sat))))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) === FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat))))
     assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")) === FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat))))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(15 sat))))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat))))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {
