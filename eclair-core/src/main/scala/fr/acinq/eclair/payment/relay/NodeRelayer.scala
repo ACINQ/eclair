@@ -48,6 +48,10 @@ object NodeRelayer {
     case _: GetPendingPayments => Logs.mdc()
   }
 
+  /**
+   * @param children a map of current in-process payments, indexed by payment hash and purposefully *not* by payment id,
+   *                 because that is how we aggregate payment parts (when the incoming payment uses MPP).
+   */
   def apply(nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, children: Map[ByteVector32, ActorRef[NodeRelay.Command]] = Map.empty): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
@@ -68,6 +72,7 @@ object NodeRelayer {
                 apply(nodeParams, router, register, children + (paymentHash -> handler))
             }
           case RelayComplete(childHandler, paymentHash) =>
+            // we do a back-and-forth between parent and child before stopping the child to prevent a race condition
             childHandler ! NodeRelay.Stop
             apply(nodeParams, router, register, children - paymentHash)
           case GetPendingPayments(replyTo) =>
