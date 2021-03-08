@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2021 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,17 +14,23 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.db
 
 import akka.actor.{Actor, ActorLogging, Props}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.Helpers.Closing._
+import fr.acinq.eclair.channel.Helpers.Closing.{ClosingType, CurrentRemoteClose, LocalClose, MutualClose, NextRemoteClose, RecoveryClose, RevokedClose}
 import fr.acinq.eclair.channel.Monitoring.{Metrics => ChannelMetrics, Tags => ChannelTags}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.ChannelLifecycleEvent
+import fr.acinq.eclair.db.DbEventHandler.ChannelLifecycleEvent
 import fr.acinq.eclair.payment.Monitoring.{Metrics => PaymentMetrics, Tags => PaymentTags}
+import fr.acinq.eclair.payment._
 
-class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
+/**
+ * This actor sits at the interface between our event stream and the database.
+ */
+class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   val db = nodeParams.db.audit
 
@@ -82,7 +88,8 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
       e match {
         case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, Some(commitments: Commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
-          db.add(ChannelLifecycleEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isFunder, !commitments.announceChannel, "created"))
+          val event = ChannelLifecycleEvent.EventType.Created
+          db.add(ChannelLifecycleEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isFunder, !commitments.announceChannel, event))
         case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
         case ChannelStateChanged(_, _, _, _, _, CLOSING, _) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closing).increment()
@@ -91,13 +98,7 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case e: ChannelClosed =>
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
-      val event = e.closingType match {
-        case _: MutualClose => "mutual"
-        case _: LocalClose => "local"
-        case _: RemoteClose => "remote" // can be current or next
-        case _: RecoveryClose => "recovery"
-        case _: RevokedClose => "revoked"
-      }
+      val event = ChannelLifecycleEvent.EventType.Closed(e.closingType)
       db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
 
   }
@@ -106,8 +107,28 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
 }
 
-object Auditor {
+object DbEventHandler {
 
-  def props(nodeParams: NodeParams) = Props(classOf[Auditor], nodeParams)
+  def props(nodeParams: NodeParams): Props = Props(new DbEventHandler(nodeParams))
 
+  // @formatter:off
+  case class ChannelLifecycleEvent(channelId: ByteVector32, remoteNodeId: PublicKey, capacity: Satoshi, isFunder: Boolean, isPrivate: Boolean, event: ChannelLifecycleEvent.EventType)
+  object ChannelLifecycleEvent {
+    sealed trait EventType { def label: String }
+    object EventType {
+      object Created extends EventType { override def label: String = "created" }
+      object Connected extends EventType { override def label: String = "connected" }
+      case class Closed(closingType: ClosingType) extends EventType {
+        override def label: String = closingType match {
+          case _: MutualClose => "mutual"
+          case _: LocalClose => "local"
+          case _: CurrentRemoteClose => "remote"
+          case _: NextRemoteClose => "remote"
+          case _: RecoveryClose => "recovery"
+          case _: RevokedClose => "revoked"
+        }
+      }
+    }
+  }
+  // @formatter:on
 }

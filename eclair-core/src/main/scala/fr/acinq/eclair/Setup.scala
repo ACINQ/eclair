@@ -36,9 +36,8 @@ import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
-import fr.acinq.eclair.db.{Databases, FileBackupHandler}
+import fr.acinq.eclair.db.{DbEventHandler, Databases, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Server, Switchboard}
-import fr.acinq.eclair.payment.Auditor
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
@@ -308,7 +307,7 @@ class Setup(datadir: File,
         logger.warn("database backup is disabled")
         system.deadLetters
       }
-      audit = system.actorOf(SimpleSupervisor.props(Auditor.props(nodeParams), "auditor", SupervisorStrategy.Resume))
+      dbEventHandler = system.actorOf(SimpleSupervisor.props(DbEventHandler.props(nodeParams), "db-event-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
       paymentHandler = system.actorOf(SimpleSupervisor.props(PaymentHandler.props(nodeParams, register), "payment-handler", SupervisorStrategy.Resume))
       relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, router, register, paymentHandler, Some(postRestartCleanUpInitialized)), "relayer", SupervisorStrategy.Resume))

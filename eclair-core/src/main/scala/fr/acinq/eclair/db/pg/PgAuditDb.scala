@@ -19,6 +19,8 @@ package fr.acinq.eclair.db.pg
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
+import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
+import fr.acinq.eclair.db.DbEventHandler.ChannelLifecycleEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
@@ -72,7 +74,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setLong(3, e.capacity.toLong)
         statement.setBoolean(4, e.isFunder)
         statement.setBoolean(5, e.isPrivate)
-        statement.setString(6, e.event)
+        statement.setString(6, e.event.label)
         statement.setLong(7, System.currentTimeMillis)
         statement.executeUpdate()
       }
