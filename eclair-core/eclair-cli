@@ -18,7 +18,7 @@ on <$api_url>.
 
 Usage
 -----
-\e[93meclair-cli\e[39m [\e[93mOPTIONS\e[39m]... <\e[93mCOMMAND\e[39m> [--command-param=command-value]...
+\x1b[93meclair-cli\x1b[39m [\x1b[93mOPTIONS\x1b[39m]... <\x1b[93mCOMMAND\x1b[39m> [--command-param=command-value]...
 
 where OPTIONS can be:
   -p <password>         API's password
@@ -33,7 +33,6 @@ and COMMAND is one of the available commands:
     - connect
     - disconnect
     - peers
-    - nodes
     - audit
 
   === Channel ===
@@ -45,13 +44,17 @@ and COMMAND is one of the available commands:
     - allchannels
     - allupdates
     - channelstats
+
+  === Fees ===
     - networkfees
     - updaterelayfee
 
   === Path-finding ===
     - findroute
     - findroutetonode
+    - findroutebetweennodes
     - networkstats
+    - nodes
 
   === Invoice ===
     - createinvoice
@@ -61,15 +64,21 @@ and COMMAND is one of the available commands:
     - parseinvoice
 
   === Payment ===
-    - getnewaddress
     - usablebalances
-    - onchainbalance
     - payinvoice
     - sendtonode
     - sendtoroute
-    - sendonchain
     - getsentinfo
     - getreceivedinfo
+
+  === Message ===
+    - signmessage
+    - verifymessage
+
+  === OnChain ===
+    - getnewaddress
+    - sendonchain
+    - onchainbalance
     - onchaintransactions
 
 Examples

@@ -72,7 +72,13 @@ object Announcements {
 
   def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: Features, timestamp: Long = System.currentTimeMillis.milliseconds.toSeconds): NodeAnnouncement = {
     require(alias.length <= 32)
-    val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features, nodeAddresses, unknownFields = ByteVector.empty)
+    val sortedAddresses = nodeAddresses.map {
+      case address@(_: IPv4) => (1, address)
+      case address@(_: IPv6) => (2, address)
+      case address@(_: Tor2) => (3, address)
+      case address@(_: Tor3) => (4, address)
+    }.sortBy(_._1).map(_._2)
+    val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features, sortedAddresses, unknownFields = ByteVector.empty)
     val sig = Crypto.sign(witness, nodeSecret)
     NodeAnnouncement(
       signature = sig,
@@ -81,7 +87,7 @@ object Announcements {
       rgbColor = color,
       alias = alias,
       features = features,
-      addresses = nodeAddresses
+      addresses = sortedAddresses
     )
   }
 

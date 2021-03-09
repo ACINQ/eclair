@@ -18,6 +18,7 @@ package fr.acinq.eclair.api
 
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair._
+import fr.acinq.eclair.api.serde.{ByteVectorSerializer, DirectedHtlcSerializer, JsonSupport, NodeAddressSerializer, OriginSerializer, OutPointKeySerializer}
 import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
@@ -100,7 +101,7 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
   test("Payment Request") {
     val ref = "lnbcrt50n1p0fm9cdpp5al3wvsfkc6p7fxy89eu8gm4aww9mseu9syrcqtpa4mvx42qelkwqdq9v9ekgxqrrss9qypqsqsp5wl2t45v0hj4lgud0zjxcnjccd29ts0p2kh4vpw75vnhyyzyjtjtqarpvqg33asgh3z5ghfuvhvtf39xtnu9e7aqczpgxa9quwsxkd9rnwmx06pve9awgeewxqh90dqgrhzgsqc09ek6uejr93z8puafm6gsqgrk0hy"
     val pr = PaymentRequest.read(ref)
-    JsonSupport.serialization.write(pr)(JsonSupport.formats) shouldBe """{"prefix":"lnbcrt","timestamp":1587386125,"nodeId":"03b207771ddba774e318970e9972da2491ff8e54f777ad0528b6526773730248a0","serialized":"lnbcrt50n1p0fm9cdpp5al3wvsfkc6p7fxy89eu8gm4aww9mseu9syrcqtpa4mvx42qelkwqdq9v9ekgxqrrss9qypqsqsp5wl2t45v0hj4lgud0zjxcnjccd29ts0p2kh4vpw75vnhyyzyjtjtqarpvqg33asgh3z5ghfuvhvtf39xtnu9e7aqczpgxa9quwsxkd9rnwmx06pve9awgeewxqh90dqgrhzgsqc09ek6uejr93z8puafm6gsqgrk0hy","description":"asd","paymentHash":"efe2e64136c683e498872e78746ebd738bb867858107802c3daed86aa819fd9c","expiry":3600,"amount":5000,"features":{"activated":[{"name":"var_onion_optin","support":"optional"},{"name":"payment_secret","support":"optional"}],"unknown":[]}}"""
+    JsonSupport.serialization.write(pr)(JsonSupport.formats) shouldBe """{"prefix":"lnbcrt","timestamp":1587386125,"nodeId":"03b207771ddba774e318970e9972da2491ff8e54f777ad0528b6526773730248a0","serialized":"lnbcrt50n1p0fm9cdpp5al3wvsfkc6p7fxy89eu8gm4aww9mseu9syrcqtpa4mvx42qelkwqdq9v9ekgxqrrss9qypqsqsp5wl2t45v0hj4lgud0zjxcnjccd29ts0p2kh4vpw75vnhyyzyjtjtqarpvqg33asgh3z5ghfuvhvtf39xtnu9e7aqczpgxa9quwsxkd9rnwmx06pve9awgeewxqh90dqgrhzgsqc09ek6uejr93z8puafm6gsqgrk0hy","description":"asd","paymentHash":"efe2e64136c683e498872e78746ebd738bb867858107802c3daed86aa819fd9c","expiry":3600,"amount":5000,"features":{"activated":{"var_onion_optin":"optional","payment_secret":"optional"},"unknown":[]}}"""
   }
 
   test("type hints") {

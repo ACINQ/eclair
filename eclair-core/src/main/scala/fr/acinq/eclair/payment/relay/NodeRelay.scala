@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
@@ -41,6 +39,7 @@ import fr.acinq.eclair.router.{BalanceTooLow, RouteCalculation, RouteNotFound}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
 
+import java.util.UUID
 import scala.collection.immutable.Queue
 
 /**
@@ -52,6 +51,7 @@ object NodeRelay {
   // @formatter:off
   sealed trait Command
   case class Relay(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
+  case object Stop extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
   private case class WrappedMultiPartPaymentSucceeded(mppSucceeded: MultiPartPaymentFSM.MultiPartPaymentSucceeded) extends Command
@@ -60,13 +60,13 @@ object NodeRelay {
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef, relayId: UUID, paymentHash: ByteVector32, fsmFactory: FsmFactory = new FsmFactory): Behavior[Command] =
+  def apply(nodeParams: NodeParams, parent: akka.actor.typed.ActorRef[NodeRelayer.Command], router: ActorRef, register: ActorRef, relayId: UUID, paymentHash: ByteVector32, fsmFactory: FsmFactory = new FsmFactory): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
         parentPaymentId_opt = Some(relayId), // for a node relay, we use the same identifier for the whole relay itself, and the outgoing payment
         paymentHash_opt = Some(paymentHash))) {
-        new NodeRelay(nodeParams, router, register, relayId, paymentHash, context, fsmFactory)()
+        new NodeRelay(nodeParams, parent, router, register, relayId, paymentHash, context, fsmFactory)()
       }
     }
 
@@ -136,6 +136,7 @@ object NodeRelay {
  * see https://doc.akka.io/docs/akka/current/typed/style-guide.html#passing-around-too-many-parameters
  */
 class NodeRelay private(nodeParams: NodeParams,
+                        parent: akka.actor.typed.ActorRef[NodeRelayer.Command],
                         router: ActorRef,
                         register: ActorRef,
                         relayId: UUID,
@@ -164,7 +165,7 @@ class NodeRelay private(nodeParams: NodeParams,
           // TODO: @pm: maybe those checks should be done later in the flow (by the mpp FSM?)
           context.log.warn("rejecting htlcId={}: missing payment secret", add.id)
           rejectHtlc(add.id, add.channelId, add.amountMsat)
-          Behaviors.stopped
+          stopping()
         case Some(secret) =>
           import akka.actor.typed.scaladsl.adapter._
           context.log.info("relaying payment relayId={}", relayId)
@@ -205,7 +206,7 @@ class NodeRelay private(nodeParams: NodeParams,
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
         parts.collect { case p: MultiPartPaymentFSM.HtlcPart => rejectHtlc(p.htlc.id, p.htlc.channelId, p.amount, Some(failure)) }
-        Behaviors.stopped
+        stopping()
       case WrappedMultiPartPaymentSucceeded(MultiPartPaymentFSM.MultiPartPaymentSucceeded(_, parts)) =>
         context.log.info("completed incoming multi-part payment with parts={} paidAmount={}", parts.size, parts.map(_.amount).sum)
         val upstream = Upstream.Trampoline(htlcs)
@@ -213,7 +214,7 @@ class NodeRelay private(nodeParams: NodeParams,
           case Some(failure) =>
             context.log.warn(s"rejecting trampoline payment reason=$failure")
             rejectPayment(upstream, Some(failure))
-            Behaviors.stopped
+            stopping()
           case None =>
             doSend(upstream, nextPayload, nextPacket)
         }
@@ -249,16 +250,27 @@ class NodeRelay private(nodeParams: NodeParams,
         case WrappedPaymentSent(paymentSent) =>
           context.log.debug("trampoline payment fully resolved downstream")
           success(upstream, fulfilledUpstream, paymentSent)
-          Behaviors.stopped
-        case WrappedPaymentFailed(PaymentFailed(id, _, failures, _)) =>
+          stopping()
+        case WrappedPaymentFailed(PaymentFailed(_, _, failures, _)) =>
           context.log.debug(s"trampoline payment failed downstream")
           if (!fulfilledUpstream) {
             rejectPayment(upstream, translateError(nodeParams, failures, upstream, nextPayload))
           }
-          Behaviors.stopped
+          stopping()
       }
     }
 
+  /**
+   * Once the downstream payment is settled (fulfilled or failed), we reject new upstream payments while we wait for our parent to stop us.
+   */
+  private def stopping(): Behavior[Command] = {
+    parent ! NodeRelayer.RelayComplete(context.self, paymentHash)
+    Behaviors.receiveMessagePartial {
+      rejectExtraHtlcPartialFunction orElse {
+        case Stop => Behaviors.stopped
+      }
+    }
+  }
 
   private def relay(upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): ActorRef = {
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
@@ -297,11 +309,10 @@ class NodeRelay private(nodeParams: NodeParams,
     case Relay(nodeRelayPacket) =>
       rejectExtraHtlc(nodeRelayPacket.add)
       Behaviors.same
-    // NB: this messages would be sent from the payment FSM which we stopped before going to this state, but all
-    // this is asynchronous
+    // NB: this message would be sent from the payment FSM which we stopped before going to this state, but all this is asynchronous.
     // We always fail extraneous HTLCs. They are a spec violation from the sender, but harmless in the relay case.
     // By failing them fast (before the payment has reached the final recipient) there's a good chance the sender won't lose any money.
-    // We don't expect to relay pay-to-open payments
+    // We don't expect to relay pay-to-open payments.
     case WrappedMultiPartExtraPaymentReceived(extraPaymentReceived) =>
       rejectExtraHtlc(extraPaymentReceived.payment.htlc)
       Behaviors.same

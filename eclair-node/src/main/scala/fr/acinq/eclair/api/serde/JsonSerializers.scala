@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.api
+package fr.acinq.eclair.api.serde
 
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
@@ -407,17 +407,13 @@ object JsonSupport extends Json4sSupport {
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent).withTypeHintFieldName("type")
 
-  def featuresToJson(features: Features) = JObject(
-    JField("activated", JArray(features.activated.map { a =>
-      JObject(
-        JField("name", JString(a.feature.rfcName)),
-        JField("support", JString(a.support.toString))
-      )
+  def featuresToJson(features: Features): JObject = JObject(
+    JField("activated", JObject(features.activated.map { case (feature, support) =>
+      feature.rfcName -> JString(support.toString)
     }.toList)),
     JField("unknown", JArray(features.unknown.map { i =>
-      JObject(
-        JField("featureBit", JInt(i.bitIndex))
-      )
+      JObject(JField("featureBit", JInt(i.bitIndex)))
     }.toList))
   )
+
 }

@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
-import akka.actor.ActorRef
-import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.{ActorRef, Behavior}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.{Logs, NodeParams}
+
+import java.util.UUID
 
 /**
  * Created by t-bast on 10/10/2019.
@@ -38,33 +38,47 @@ object NodeRelayer {
   // @formatter:off
   sealed trait Command
   case class Relay(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
+  case class RelayComplete(childHandler: ActorRef[NodeRelay.Command], paymentHash: ByteVector32) extends Command
+  private[relay] case class GetPendingPayments(replyTo: akka.actor.ActorRef) extends Command
   // @formatter:on
 
   def mdc: Command => Map[String, String] = {
-    case c: Relay => Logs.mdc(
-      paymentHash_opt = Some(c.nodeRelayPacket.add.paymentHash))
+    case c: Relay => Logs.mdc(paymentHash_opt = Some(c.nodeRelayPacket.add.paymentHash))
+    case c: RelayComplete => Logs.mdc(paymentHash_opt = Some(c.paymentHash))
+    case _: GetPendingPayments => Logs.mdc()
   }
 
-  def apply(nodeParams: NodeParams, router: ActorRef, register: ActorRef): Behavior[Command] =
+  /**
+   * @param children a map of current in-process payments, indexed by payment hash and purposefully *not* by payment id,
+   *                 because that is how we aggregate payment parts (when the incoming payment uses MPP).
+   */
+  def apply(nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, children: Map[ByteVector32, ActorRef[NodeRelay.Command]] = Map.empty): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
-          Behaviors.receiveMessage {
-            case Relay(nodeRelayPacket) =>
-              import nodeRelayPacket.add.paymentHash
-              val handler = context.child(paymentHash.toString) match {
-                case Some(handler) =>
-                  // NB: we could also maintain a list of children
-                  handler.unsafeUpcast[NodeRelay.Command] // we know that all children are of type NodeRelay
-                case None =>
-                  val relayId = UUID.randomUUID()
-                  context.log.debug(s"spawning a new handler with relayId=$relayId")
-                  // we index children by paymentHash, not relayId, because there is no concept of individual payment on LN
-                  context.spawn(NodeRelay.apply(nodeParams, router, register, relayId, paymentHash), name = paymentHash.toString)
-              }
-              context.log.debug("forwarding incoming htlc to handler")
-              handler ! NodeRelay.Relay(nodeRelayPacket)
-              Behaviors.same
-          }
+        Behaviors.receiveMessage {
+          case Relay(nodeRelayPacket) =>
+            import nodeRelayPacket.add.paymentHash
+            children.get(paymentHash) match {
+              case Some(handler) =>
+                context.log.debug("forwarding incoming htlc to existing handler")
+                handler ! NodeRelay.Relay(nodeRelayPacket)
+                Behaviors.same
+              case None =>
+                val relayId = UUID.randomUUID()
+                context.log.debug(s"spawning a new handler with relayId=$relayId")
+                val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, router, register, relayId, paymentHash), relayId.toString)
+                context.log.debug("forwarding incoming htlc to new handler")
+                handler ! NodeRelay.Relay(nodeRelayPacket)
+                apply(nodeParams, router, register, children + (paymentHash -> handler))
+            }
+          case RelayComplete(childHandler, paymentHash) =>
+            // we do a back-and-forth between parent and child before stopping the child to prevent a race condition
+            childHandler ! NodeRelay.Stop
+            apply(nodeParams, router, register, children - paymentHash)
+          case GetPendingPayments(replyTo) =>
+            replyTo ! children
+            Behaviors.same
+        }
       }
     }
 }

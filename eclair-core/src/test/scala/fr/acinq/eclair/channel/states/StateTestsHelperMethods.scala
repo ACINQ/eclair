@@ -27,6 +27,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{FeatureSupport, Features, NodeParams, TestConstants, randomBytes32, _}
@@ -50,6 +51,8 @@ trait StateTestsBase extends StateTestsHelperMethods with FixtureTestSuite with 
 }
 
 object StateTestsTags {
+  /** If set, channels will use option_support_large_channel. */
+  val Wumbo = "wumbo"
   /** If set, channels will use option_static_remotekey. */
   val StaticRemoteKey = "static_remotekey"
   /** If set, channels will use option_anchor_outputs. */
@@ -96,25 +99,38 @@ trait StateTestsHelperMethods extends TestKitBase {
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
   }
 
+  def setChannelFeatures(defaultChannelParams: LocalParams, tags: Set[String]): LocalParams = {
+    import com.softwaremill.quicklens._
+
+    defaultChannelParams
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+  }
+
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
+    import com.softwaremill.quicklens._
     import setup._
+
+    val channelVersion = List(
+      ChannelVersion.STANDARD,
+      if (tags.contains(StateTestsTags.AnchorOutputs)) ChannelVersion.ANCHOR_OUTPUTS else ChannelVersion.ZEROES,
+      if (tags.contains(StateTestsTags.StaticRemoteKey)) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.ZEROES,
+    ).reduce(_ | _)
+
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val pushMsat = if (tags.contains(StateTestsTags.NoPushMsat)) 0.msat else TestConstants.pushMsat
-    val (aliceParams, bobParams, channelVersion) = if (tags.contains(StateTestsTags.AnchorOutputs)) {
-      val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Mandatory), ActivatedFeature(Features.AnchorOutputs, FeatureSupport.Optional)))
-      (Alice.channelParams.copy(features = features), Bob.channelParams.copy(features = features), ChannelVersion.ANCHOR_OUTPUTS)
-    } else if (tags.contains(StateTestsTags.StaticRemoteKey)) {
-      val features = Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional)))
-      val aliceParams = Alice.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      val bobParams = Bob.channelParams.copy(features = features, walletStaticPaymentBasepoint = Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      (aliceParams, bobParams, ChannelVersion.STATIC_REMOTEKEY)
+    val aliceParams = setChannelFeatures(Alice.channelParams, tags).modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+    val bobParams = setChannelFeatures(Bob.channelParams, tags).modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+    val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val (fundingSatoshis, pushMsat) = if (tags.contains(StateTestsTags.NoPushMsat)) {
+      (TestConstants.fundingSatoshis, 0.msat)
     } else {
-      (Alice.channelParams, Bob.channelParams, ChannelVersion.STANDARD)
+      (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
 
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
@@ -247,18 +263,27 @@ trait StateTestsHelperMethods extends TestKitBase {
     // an error occurs and s publishes its commit tx
     val commitTx = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
-    s2blockchain.expectMsg(PublishAsap(commitTx))
+    assert(s2blockchain.expectMsgType[PublishAsap].tx == commitTx)
     awaitCond(s.stateName == CLOSING)
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
 
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishAsap(tx)))
-    // all htlcs success/timeout should be published
-    s2blockchain.expectMsgAllOf((localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs).map(PublishAsap): _*)
-    // and their outputs should be claimed
-    s2blockchain.expectMsgAllOf(localCommitPublished.claimHtlcDelayedTxs.map(PublishAsap): _*)
+    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)))
+    s.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat match {
+      case Transactions.DefaultCommitmentFormat =>
+        // all htlcs success/timeout should be published
+        s2blockchain.expectMsgAllOf((localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs).map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
+        // and their outputs should be claimed
+        s2blockchain.expectMsgAllOf(localCommitPublished.claimHtlcDelayedTxs.map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
+      case Transactions.AnchorOutputsCommitmentFormat =>
+        // all htlcs success/timeout should be published, but their outputs should not be claimed yet
+        val htlcTxs = localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs
+        val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[PublishAsap])
+        assert(publishedTxs.map(_.tx).toSet == htlcTxs.toSet)
+        publishedTxs.foreach(p => p.strategy.isInstanceOf[PublishStrategy.SetFeerate])
+    }
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(commitTx))
@@ -292,12 +317,12 @@ trait StateTestsHelperMethods extends TestKitBase {
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(tx => {
       Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      s2blockchain.expectMsg(PublishAsap(tx))
+      s2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
     })
     // all htlcs success/timeout should be claimed
     val claimHtlcTxs = remoteCommitPublished.claimHtlcSuccessTxs ++ remoteCommitPublished.claimHtlcTimeoutTxs
     claimHtlcTxs.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(PublishAsap): _*)
+    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(rCommitTx))

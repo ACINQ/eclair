@@ -16,19 +16,12 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-import java.net.InetSocketAddress
-import java.nio.file.Files
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
-
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.Setup.Seeds
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeerateTolerance, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
@@ -40,6 +33,12 @@ import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
+import java.io.File
+import java.net.InetSocketAddress
+import java.nio.file.Files
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 import scala.jdk.CollectionConverters._
 
@@ -58,6 +57,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       dustLimit: Satoshi,
+                      maxRemoteDustLimit: Satoshi,
                       onChainFeeConf: OnChainFeeConf,
                       maxHtlcValueInFlightMsat: UInt64,
                       maxAcceptedHtlcs: Int,
@@ -323,15 +323,24 @@ object NodeParams extends Logging {
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
       dustLimit = dustLimitSatoshis,
+      maxRemoteDustLimit = Satoshi(config.getLong("max-remote-dust-limit-satoshis")),
       onChainFeeConf = OnChainFeeConf(
         feeTargets = feeTargets,
         feeEstimator = feeEstimator,
         closeOnOfflineMismatch = config.getBoolean("on-chain-fees.close-on-offline-feerate-mismatch"),
         updateFeeMinDiffRatio = config.getDouble("on-chain-fees.update-fee-min-diff-ratio"),
-        defaultFeerateTolerance = FeerateTolerance(config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"), config.getDouble("on-chain-fees.feerate-tolerance.ratio-high")),
+        defaultFeerateTolerance = FeerateTolerance(
+          config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"),
+          config.getDouble("on-chain-fees.feerate-tolerance.ratio-high"),
+          FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate"))))
+        ),
         perNodeFeerateTolerance = config.getConfigList("on-chain-fees.override-feerate-tolerance").asScala.map { e =>
           val nodeId = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-          val tolerance = FeerateTolerance(e.getDouble("feerate-tolerance.ratio-low"), e.getDouble("feerate-tolerance.ratio-high"))
+          val tolerance = FeerateTolerance(
+            e.getDouble("feerate-tolerance.ratio-low"),
+            e.getDouble("feerate-tolerance.ratio-high"),
+            FeeratePerKw(FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate"))))
+          )
           nodeId -> tolerance
         }.toMap
       ),

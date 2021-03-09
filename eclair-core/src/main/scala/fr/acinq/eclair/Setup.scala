@@ -66,10 +66,10 @@ import scala.util.{Failure, Success}
  *
  * Created by PM on 25/01/2016.
  *
- * @param datadir       directory where eclair-core will write/read its data.
- * @param pluginParams  parameters for all configured plugins.
- * @param seeds_opt     optional seeds, if set eclair will use them instead of generating them and won't create a node_seed.dat and channel_seed.dat files.
- * @param db            optional databases to use, if not set eclair will create the necessary databases
+ * @param datadir      directory where eclair-core will write/read its data.
+ * @param pluginParams parameters for all configured plugins.
+ * @param seeds_opt    optional seeds, if set eclair will use them instead of generating them and won't create a node_seed.dat and channel_seed.dat files.
+ * @param db           optional databases to use, if not set eclair will create the necessary databases
  */
 class Setup(datadir: File,
             pluginParams: Seq[PluginParams],
@@ -177,14 +177,16 @@ class Setup(datadir: File,
       } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
       // blocking sanity checks
       val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
-      assert(bitcoinVersion >= 170000, "Eclair requires Bitcoin Core 0.17.0 or higher")
+      assert(bitcoinVersion >= 180000, "Eclair requires Bitcoin Core 0.18.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
       if (chainHash != Block.RegtestGenesisBlock.hash) {
-        assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a p2sh-segwit or bech32 address to use Eclair (check out our README for more details).")
+        assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
       }
       assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
       assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
       assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
+      logger.info(s"current blockchain height=$blocks")
+      blockCount.set(blocks)
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       val addresses = config.hasPath("electrum") match {

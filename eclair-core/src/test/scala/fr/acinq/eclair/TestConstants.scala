@@ -48,6 +48,7 @@ object TestConstants {
   val fundingSatoshis = 1000000L sat
   val pushMsat = 200000000L msat
   val feeratePerKw = FeeratePerKw(10000 sat)
+  val anchorOutputsFeeratePerKw = FeeratePerKw(2500 sat)
   val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
   class TestFeeEstimator extends FeeEstimator {
@@ -153,13 +154,13 @@ object TestConstants {
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       features = Features(
-        Set(
-          ActivatedFeature(OptionDataLossProtect, Optional),
-          ActivatedFeature(ChannelRangeQueries, Optional),
-          ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-          ActivatedFeature(VariableLengthOnion, Optional),
-          ActivatedFeature(PaymentSecret, Optional),
-          ActivatedFeature(BasicMultiPartPayment, Optional)
+        Map[Feature, FeatureSupport](
+          OptionDataLossProtect -> Optional,
+          ChannelRangeQueries -> Optional,
+          ChannelRangeQueriesExtended -> Optional,
+          VariableLengthOnion -> Optional,
+          PaymentSecret -> Optional,
+          BasicMultiPartPayment -> Optional
         ),
         Set(UnknownFeature(TestFeature.optional))
       ),
@@ -167,12 +168,13 @@ object TestConstants {
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1100 sat,
+      maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
-        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0),
+        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw),
         perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64(150000000),
@@ -259,24 +261,25 @@ object TestConstants {
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = NodeAddress.fromParts("localhost", 9732).get :: Nil,
-      features = Features(Set(
-        ActivatedFeature(OptionDataLossProtect, Optional),
-        ActivatedFeature(ChannelRangeQueries, Optional),
-        ActivatedFeature(ChannelRangeQueriesExtended, Optional),
-        ActivatedFeature(VariableLengthOnion, Optional),
-        ActivatedFeature(PaymentSecret, Optional),
-        ActivatedFeature(BasicMultiPartPayment, Optional)
-      )),
+      features = Features(
+        OptionDataLossProtect -> Optional,
+        ChannelRangeQueries -> Optional,
+        ChannelRangeQueriesExtended -> Optional,
+        VariableLengthOnion -> Optional,
+        PaymentSecret -> Optional,
+        BasicMultiPartPayment -> Optional
+      ),
       pluginParams = Nil,
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
       dustLimit = 1000 sat,
+      maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
         feeTargets = FeeTargets(6, 2, 2, 6),
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
-        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5),
+        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw),
         perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
