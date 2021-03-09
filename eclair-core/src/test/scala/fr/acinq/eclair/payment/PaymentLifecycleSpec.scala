@@ -392,7 +392,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // payment lifecycle forwards the embedded channelUpdate to the router
     routerForwarder.expectMsg(update_bc)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
-    routerForwarder.expectMsg(defaultRouteRequest(a, d, cfg))
+    routerForwarder.expectMsg(defaultRouteRequest(a, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(update_bc.shortChannelId, b, c)))))
     routerForwarder.forward(routerFixture.router)
     // we allow 2 tries, so we send a 2nd request to the router
     assert(sender.expectMsgType[PaymentFailed].failures === RemoteFailure(route.hops, Sphinx.DecryptedFailurePacket(b, failure)) :: LocalFailure(Nil, RouteNotFound) :: Nil)

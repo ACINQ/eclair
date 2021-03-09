@@ -22,7 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
-import fr.acinq.eclair.wire.{ChannelUpdate, Node}
+import fr.acinq.eclair.wire.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import java.util.UUID
@@ -158,6 +158,16 @@ object PaymentFailure {
       .collectFirst { case RemoteFailure(_, Sphinx.DecryptedFailurePacket(origin, u: Update)) if origin == nodeId => u.update }
       .isDefined
 
+  /** Ignore the channel outgoing from the given nodeId in the given route. */
+  private def ignoreNodeOutgoingChannel(nodeId: PublicKey, hops: Seq[Hop], ignore: Ignore): Ignore = {
+    hops.collectFirst {
+      case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
+    } match {
+      case Some(faultyChannel) => ignore + faultyChannel
+      case None => ignore
+    }
+  }
+
   /** Update the set of nodes and channels to ignore in retries depending on the failure we received. */
   def updateIgnored(failure: PaymentFailure, ignore: Ignore): Ignore = failure match {
     case RemoteFailure(hops, Sphinx.DecryptedFailurePacket(nodeId, _)) if nodeId == hops.last.nextNodeId =>
@@ -165,22 +175,25 @@ object PaymentFailure {
       ignore
     case RemoteFailure(_, Sphinx.DecryptedFailurePacket(nodeId, _: Node)) =>
       ignore + nodeId
-    case RemoteFailure(_, Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
+    case RemoteFailure(hops, Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
       if (Announcements.checkSig(failureMessage.update, nodeId)) {
-        // We were using an outdated channel update, we should retry with the new one and nobody should be penalized.
-        ignore
+        val shouldIgnore = failureMessage match {
+          case _: TemporaryChannelFailure => true
+          case _: ChannelDisabled => true
+          case _ => false
+        }
+        if (shouldIgnore) {
+          ignoreNodeOutgoingChannel(nodeId, hops, ignore)
+        } else {
+          // We were using an outdated channel update, we should retry with the new one and nobody should be penalized.
+          ignore
+        }
       } else {
         // This node is fishy, it gave us a bad signature, so let's filter it out.
         ignore + nodeId
       }
     case RemoteFailure(hops, Sphinx.DecryptedFailurePacket(nodeId, _)) =>
-      // Let's ignore the channel outgoing from nodeId.
-      hops.collectFirst {
-        case hop: ChannelHop if hop.nodeId == nodeId => ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
-      } match {
-        case Some(faultyChannel) => ignore + faultyChannel
-        case None => ignore
-      }
+      ignoreNodeOutgoingChannel(nodeId, hops, ignore)
     case UnreadableRemoteFailure(hops) =>
       // We don't know which node is sending garbage, let's blacklist all nodes except the one we are directly connected to and the final recipient.
       val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1).toSet
