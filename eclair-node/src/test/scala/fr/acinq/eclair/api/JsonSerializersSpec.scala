@@ -18,6 +18,7 @@ package fr.acinq.eclair.api
 
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair._
+import fr.acinq.eclair.api.serde.{ByteVectorSerializer, DirectedHtlcSerializer, JsonSupport, NodeAddressSerializer, OriginSerializer, OutPointKeySerializer}
 import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
