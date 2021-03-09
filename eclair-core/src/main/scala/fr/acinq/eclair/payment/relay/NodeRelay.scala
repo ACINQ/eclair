@@ -89,6 +89,8 @@ object NodeRelay {
       Some(TrampolineFeeInsufficient)
     } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.expiryDelta) {
       Some(TrampolineExpiryTooSoon)
+    } else if (CltvExpiry(nodeParams.currentBlockHeight) > payloadOut.outgoingCltv) {
+      Some(IncorrectOrUnknownPaymentDetails(upstream.adds.head.amountMsat, nodeParams.currentBlockHeight))
     } else {
       None
     }
