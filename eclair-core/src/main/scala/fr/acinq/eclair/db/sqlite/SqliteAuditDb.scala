@@ -19,6 +19,8 @@ package fr.acinq.eclair.db.sqlite
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
+import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
@@ -107,14 +109,14 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def add(e: ChannelLifecycleEvent): Unit = withMetrics("audit/add-channel-lifecycle") {
+  override def add(e: ChannelEvent): Unit = withMetrics("audit/add-channel-lifecycle") {
     using(sqlite.prepareStatement("INSERT INTO channel_events VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.channelId.toArray)
       statement.setBytes(2, e.remoteNodeId.value.toArray)
       statement.setLong(3, e.capacity.toLong)
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
-      statement.setString(6, e.event)
+      statement.setString(6, e.event.label)
       statement.setLong(7, System.currentTimeMillis)
       statement.executeUpdate()
     }

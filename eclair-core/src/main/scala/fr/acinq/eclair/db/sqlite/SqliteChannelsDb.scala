@@ -16,16 +16,17 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{Connection, Statement}
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
 
+import java.sql.{Connection, Statement}
 import scala.collection.immutable.Queue
 
 class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
@@ -34,7 +35,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   import SqliteUtils._
 
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 2
+  val CURRENT_VERSION = 3
 
   // The SQLite documentation states that "It is not possible to enable or disable foreign key constraints in the middle
   // of a multi-statement transaction (when SQLite is not in autocommit mode).".
@@ -49,13 +50,26 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
     }
 
+    def migration23(statement: Statement) = {
+      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN created_timestamp INTEGER")
+      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_sent_timestamp INTEGER")
+      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_received_timestamp INTEGER")
+      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_connected_timestamp INTEGER")
+      statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed_timestamp INTEGER")
+    }
+
     getVersion(statement, DB_NAME, CURRENT_VERSION) match {
       case 1 =>
         logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
         migration12(statement)
+        migration23(statement)
+        setVersion(statement, DB_NAME, CURRENT_VERSION)
+      case 2 =>
+        logger.warn(s"migrating db $DB_NAME, found version=2 current=$CURRENT_VERSION")
+        migration23(statement)
         setVersion(statement, DB_NAME, CURRENT_VERSION)
       case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
       case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -69,13 +83,36 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
       update.setBytes(1, data)
       update.setBytes(2, state.channelId.toArray)
       if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, 0)")) { statement =>
+        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
           statement.setBytes(1, state.channelId.toArray)
           statement.setBytes(2, data)
           statement.executeUpdate()
         }
       }
     }
+  }
+
+  /**
+   * Helper method to factor updating timestamp columns
+   */
+  private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
+    using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
+      statement.setLong(1, System.currentTimeMillis)
+      statement.setBytes(2, channelId.toArray)
+      statement.executeUpdate()
+    }
+  }
+
+  override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
+    val timestampColumn_opt = event match {
+      case ChannelEvent.EventType.Created => Some("created_timestamp")
+      case ChannelEvent.EventType.Connected => Some("last_connected_timestamp")
+      case ChannelEvent.EventType.PaymentReceived => Some("last_payment_received_timestamp")
+      case ChannelEvent.EventType.PaymentSent => Some("last_payment_sent_timestamp")
+      case _: ChannelEvent.EventType.Closed => Some("closed_timestamp")
+      case _ => None
+    }
+    timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))
   }
 
   override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel") {

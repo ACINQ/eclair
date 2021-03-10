@@ -20,12 +20,14 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
-import javax.sql.DataSource
 
+import java.sql.Statement
+import javax.sql.DataSource
 import scala.collection.immutable.Queue
 
 class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends ChannelsDb with Logging {
@@ -35,13 +37,25 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
   import lock._
 
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 2
+  val CURRENT_VERSION = 3
+
+  def migration23(statement: Statement): Unit = {
+    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN created_timestamp BIGINT")
+    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_sent_timestamp BIGINT")
+    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_received_timestamp BIGINT")
+    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_connected_timestamp BIGINT")
+    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed_timestamp BIGINT")
+  }
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+        case 2 =>
+          logger.warn(s"migrating db $DB_NAME, found version=2 current=$CURRENT_VERSION")
+          migration23(statement)
+          setVersion(statement, DB_NAME, CURRENT_VERSION)
         case CURRENT_VERSION =>
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp BIGINT, last_payment_sent_timestamp BIGINT, last_payment_received_timestamp BIGINT, last_connected_timestamp BIGINT, closed_timestamp BIGINT)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id TEXT NOT NULL, commitment_number TEXT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
         case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -56,7 +70,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
         update.setBytes(1, data)
         update.setString(2, state.channelId.toHex)
         if (update.executeUpdate() == 0) {
-          using(pg.prepareStatement("INSERT INTO local_channels VALUES (?, ?, FALSE)")) { statement =>
+          using(pg.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, FALSE)")) { statement =>
             statement.setString(1, state.channelId.toHex)
             statement.setBytes(2, data)
             statement.executeUpdate()
@@ -64,6 +78,31 @@ class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends Channels
         }
       }
     }
+  }
+
+  /**
+   * Helper method to factor updating timestamp columns
+   */
+  private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
+    inTransaction { pg =>
+      using(pg.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
+        statement.setLong(1, System.currentTimeMillis)
+        statement.setString(2, channelId.toHex)
+        statement.executeUpdate()
+      }
+    }
+  }
+
+  override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
+    val timestampColumn_opt = event match {
+      case ChannelEvent.EventType.Created => Some("created_timestamp")
+      case ChannelEvent.EventType.Connected => Some("last_connected_timestamp")
+      case ChannelEvent.EventType.PaymentReceived => Some("last_payment_received_timestamp")
+      case ChannelEvent.EventType.PaymentSent => Some("last_payment_sent_timestamp")
+      case _: ChannelEvent.EventType.Closed => Some("closed_timestamp")
+      case _ => None
+    }
+    timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))
   }
 
   override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel") {

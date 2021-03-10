@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 ACINQ SAS
+ * Copyright 2021 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,19 +14,26 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.payment
+package fr.acinq.eclair.db
 
 import akka.actor.{Actor, ActorLogging, Props}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.Helpers.Closing._
+import fr.acinq.eclair.channel.Helpers.Closing.{ClosingType, CurrentRemoteClose, LocalClose, MutualClose, NextRemoteClose, RecoveryClose, RevokedClose}
 import fr.acinq.eclair.channel.Monitoring.{Metrics => ChannelMetrics, Tags => ChannelTags}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.ChannelLifecycleEvent
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.Monitoring.{Metrics => PaymentMetrics, Tags => PaymentTags}
+import fr.acinq.eclair.payment._
 
-class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
+/**
+ * This actor sits at the interface between our event stream and the database.
+ */
+class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  val db = nodeParams.db.audit
+  val auditDb: AuditDb = nodeParams.db.audit
+  val channelsDb: ChannelsDb = nodeParams.db.channels
 
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
   context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
@@ -40,7 +47,8 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
       PaymentMetrics.PaymentAmount.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.recipientAmount.truncateToSatoshi.toLong)
       PaymentMetrics.PaymentFees.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.feesPaid.truncateToSatoshi.toLong)
       PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(e.parts.length)
-      db.add(e)
+      auditDb.add(e)
+      e.parts.foreach(p => channelsDb.updateChannelMeta(p.toChannelId, ChannelEvent.EventType.PaymentSent))
 
     case _: PaymentFailed =>
       PaymentMetrics.PaymentFailed.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).increment()
@@ -48,7 +56,8 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: PaymentReceived =>
       PaymentMetrics.PaymentAmount.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(e.amount.truncateToSatoshi.toLong)
       PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(e.parts.length)
-      db.add(e)
+      auditDb.add(e)
+      e.parts.foreach(p => channelsDb.updateChannelMeta(p.fromChannelId, ChannelEvent.EventType.PaymentReceived))
 
     case e: PaymentRelayed =>
       PaymentMetrics.PaymentAmount
@@ -63,11 +72,15 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
         case TrampolinePaymentRelayed(_, incoming, outgoing, _) =>
           PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(incoming.length)
           PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(outgoing.length)
-        case _: ChannelPaymentRelayed =>
+          incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))
+          outgoing.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentSent))
+        case ChannelPaymentRelayed(_, _, _, fromChannelId, toChannelId, _) =>
+          channelsDb.updateChannelMeta(fromChannelId, ChannelEvent.EventType.PaymentReceived)
+          channelsDb.updateChannelMeta(toChannelId, ChannelEvent.EventType.PaymentSent)
       }
-      db.add(e)
+      auditDb.add(e)
 
-    case e: NetworkFeePaid => db.add(e)
+    case e: NetworkFeePaid => auditDb.add(e)
 
     case e: ChannelErrorOccurred =>
       e.error match {
@@ -75,15 +88,19 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
         case LocalError(_) if !e.isFatal => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = false).increment()
         case RemoteError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Remote).increment()
       }
-      db.add(e)
+      auditDb.add(e)
 
     case e: ChannelStateChanged =>
       // NB: order matters!
       e match {
         case ChannelStateChanged(_, channelId, _, remoteNodeId, WAIT_FOR_FUNDING_LOCKED, NORMAL, Some(commitments: Commitments)) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Created).increment()
-          db.add(ChannelLifecycleEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isFunder, !commitments.announceChannel, "created"))
+          val event = ChannelEvent.EventType.Created
+          auditDb.add(ChannelEvent(channelId, remoteNodeId, commitments.capacity, commitments.localParams.isFunder, !commitments.announceChannel, event))
+          channelsDb.updateChannelMeta(channelId, event)
         case ChannelStateChanged(_, _, _, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
+        case ChannelStateChanged(_, channelId, _, _, OFFLINE, SYNCING, _) =>
+          channelsDb.updateChannelMeta(channelId, ChannelEvent.EventType.Connected)
         case ChannelStateChanged(_, _, _, _, _, CLOSING, _) =>
           ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closing).increment()
         case _ => ()
@@ -91,14 +108,9 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case e: ChannelClosed =>
       ChannelMetrics.ChannelLifecycleEvents.withTag(ChannelTags.Event, ChannelTags.Events.Closed).increment()
-      val event = e.closingType match {
-        case _: MutualClose => "mutual"
-        case _: LocalClose => "local"
-        case _: RemoteClose => "remote" // can be current or next
-        case _: RecoveryClose => "recovery"
-        case _: RevokedClose => "revoked"
-      }
-      db.add(ChannelLifecycleEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
+      val event = ChannelEvent.EventType.Closed(e.closingType)
+      auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
+      channelsDb.updateChannelMeta(e.channelId, event)
 
   }
 
@@ -106,8 +118,30 @@ class Auditor(nodeParams: NodeParams) extends Actor with ActorLogging {
 
 }
 
-object Auditor {
+object DbEventHandler {
 
-  def props(nodeParams: NodeParams) = Props(classOf[Auditor], nodeParams)
+  def props(nodeParams: NodeParams): Props = Props(new DbEventHandler(nodeParams))
 
+  // @formatter:off
+  case class ChannelEvent(channelId: ByteVector32, remoteNodeId: PublicKey, capacity: Satoshi, isFunder: Boolean, isPrivate: Boolean, event: ChannelEvent.EventType)
+  object ChannelEvent {
+    sealed trait EventType { def label: String }
+    object EventType {
+      object Created extends EventType { override def label: String = "created" }
+      object Connected extends EventType { override def label: String = "connected" }
+      object PaymentSent extends EventType { override def label: String = "sent" }
+      object PaymentReceived extends EventType { override def label: String = "received" }
+      case class Closed(closingType: ClosingType) extends EventType {
+        override def label: String = closingType match {
+          case _: MutualClose => "mutual"
+          case _: LocalClose => "local"
+          case _: CurrentRemoteClose => "remote"
+          case _: NextRemoteClose => "remote"
+          case _: RecoveryClose => "recovery"
+          case _: RevokedClose => "revoked"
+        }
+      }
+    }
+  }
+  // @formatter:on
 }
