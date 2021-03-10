@@ -89,6 +89,8 @@ object NodeRelay {
       Some(TrampolineFeeInsufficient)
     } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.expiryDelta) {
       Some(TrampolineExpiryTooSoon)
+    } else if (payloadOut.outgoingCltv <= CltvExpiry(nodeParams.currentBlockHeight)) {
+      Some(TrampolineExpiryTooSoon)
     } else {
       None
     }

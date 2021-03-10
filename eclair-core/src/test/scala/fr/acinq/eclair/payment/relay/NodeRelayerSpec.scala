@@ -256,6 +256,21 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
+  test("fail to relay when final expiry is below chain height") { f =>
+    import f._
+
+    val expiryIn = CltvExpiry(500000)
+    val expiryOut = CltvExpiry(300000) // not ok (chain heigh = 400000)
+    val p = createValidIncomingPacket(2000000 msat, 2000000 msat, expiryIn, 1000000 msat, expiryOut)
+    nodeRelayer ! NodeRelay.Relay(p)
+
+    val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fwd.channelId === p.add.channelId)
+    assert(fwd.message === CMD_FAIL_HTLC(p.add.id, Right(TrampolineExpiryTooSoon), commit = true))
+
+    register.expectNoMessage(100 millis)
+  }
+
   test("fail to relay when expiry is too soon (multi-part)") { f =>
     import f._
 
