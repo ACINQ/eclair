@@ -19,14 +19,13 @@ package fr.acinq.eclair.db
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
-import fr.acinq.eclair.db.DbEventHandler.ChannelLifecycleEvent
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
-import fr.acinq.eclair.payment.{PaymentReceived, PaymentSent}
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import fr.acinq.eclair.wire.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -105,19 +104,19 @@ class SqliteChannelsDbSpec extends AnyFunSuite {
       assert(getTimestamp(channel1.channelId, "last_connected_timestamp").isEmpty)
       assert(getTimestamp(channel1.channelId, "closed_timestamp").isEmpty)
 
-      db.updateChannelMeta(channel1.channelId, ChannelLifecycleEvent.EventType.Created)
+      db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Created)
       assert(getTimestamp(channel1.channelId, "created_timestamp").nonEmpty)
 
-      db.updateChannelMeta(channel1.channelId, PaymentSent(null, randomBytes32, randomBytes32, 40000 msat, randomKey.publicKey, PaymentSent.PartialPayment(null, 42000 msat, 1000 msat, randomBytes32, None) :: Nil))
+      db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.PaymentSent)
       assert(getTimestamp(channel1.channelId, "last_payment_sent_timestamp").nonEmpty)
 
-      db.updateChannelMeta(channel1.channelId, PaymentReceived(randomBytes32, PaymentReceived.PartialPayment(42000 msat, randomBytes32) :: Nil))
+      db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.PaymentReceived)
       assert(getTimestamp(channel1.channelId, "last_payment_received_timestamp").nonEmpty)
 
-      db.updateChannelMeta(channel1.channelId, ChannelLifecycleEvent.EventType.Connected)
+      db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Connected)
       assert(getTimestamp(channel1.channelId, "last_connected_timestamp").nonEmpty)
 
-      db.updateChannelMeta(channel1.channelId, ChannelLifecycleEvent.EventType.Closed(null))
+      db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Closed(null))
       assert(getTimestamp(channel1.channelId, "closed_timestamp").nonEmpty)
 
       // make sure all metadata are still empty for channel 2
@@ -160,7 +159,7 @@ class SqliteChannelsDbSpec extends AnyFunSuite {
           assert(getVersion(statement, "channels", 1) == 3) // version changed from 1 -> 3
         }
         assert(db.listLocalChannels() === List(channel))
-        db.updateChannelMeta(channel.channelId, ChannelLifecycleEvent.EventType.Created) // this call must not fail
+        db.updateChannelMeta(channel.channelId, ChannelEvent.EventType.Created) // this call must not fail
     }
   }
 
@@ -195,7 +194,7 @@ class SqliteChannelsDbSpec extends AnyFunSuite {
           assert(getVersion(statement, "channels", 2) == 3) // version changed from 2 -> 3
         }
         assert(db.listLocalChannels() === List(channel))
-        db.updateChannelMeta(channel.channelId, ChannelLifecycleEvent.EventType.Created) // this call must not fail
+        db.updateChannelMeta(channel.channelId, ChannelEvent.EventType.Created) // this call must not fail
     }
   }
 }

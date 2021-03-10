@@ -20,9 +20,9 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
-import fr.acinq.eclair.db.DbEventHandler.ChannelLifecycleEvent
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
-import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentSent}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
 
@@ -103,20 +103,13 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  override def updateChannelMeta(channelId: ByteVector32, event: ChannelLifecycleEvent.EventType): Unit = {
+  override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
     val timestampColumn_opt = event match {
-      case ChannelLifecycleEvent.EventType.Created => Some("created_timestamp")
-      case ChannelLifecycleEvent.EventType.Connected => Some("last_connected_timestamp")
-      case _: ChannelLifecycleEvent.EventType.Closed => Some("closed_timestamp")
-      case _ => None
-    }
-    timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))
-  }
-
-  override def updateChannelMeta(channelId: ByteVector32, event: PaymentEvent): Unit = {
-    val timestampColumn_opt = event match {
-      case _: PaymentSent => Some("last_payment_sent_timestamp")
-      case _: PaymentReceived => Some("last_payment_received_timestamp")
+      case ChannelEvent.EventType.Created => Some("created_timestamp")
+      case ChannelEvent.EventType.Connected => Some("last_connected_timestamp")
+      case ChannelEvent.EventType.PaymentReceived => Some("last_payment_received_timestamp")
+      case ChannelEvent.EventType.PaymentSent => Some("last_payment_sent_timestamp")
+      case _: ChannelEvent.EventType.Closed => Some("closed_timestamp")
       case _ => None
     }
     timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))

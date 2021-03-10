@@ -20,14 +20,14 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
-import fr.acinq.eclair.db.DbEventHandler.ChannelLifecycleEvent
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 
 import java.io.Closeable
 
 trait AuditDb extends Closeable {
 
-  def add(channelLifecycle: ChannelLifecycleEvent): Unit
+  def add(channelLifecycle: ChannelEvent): Unit
 
   def add(paymentSent: PaymentSent): Unit
 

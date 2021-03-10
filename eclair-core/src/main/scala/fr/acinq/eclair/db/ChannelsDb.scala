@@ -19,8 +19,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
-import fr.acinq.eclair.db.DbEventHandler.ChannelLifecycleEvent
-import fr.acinq.eclair.payment.PaymentEvent
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 
 import java.io.Closeable
 
@@ -28,9 +27,7 @@ trait ChannelsDb extends Closeable {
 
   def addOrUpdateChannel(state: HasCommitments): Unit
 
-  def updateChannelMeta(channelId: ByteVector32, event: ChannelLifecycleEvent.EventType)
-
-  def updateChannelMeta(channelId: ByteVector32, event: PaymentEvent)
+  def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType)
 
   def removeChannel(channelId: ByteVector32): Unit
 
