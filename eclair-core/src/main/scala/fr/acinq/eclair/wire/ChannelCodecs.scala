@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
@@ -100,6 +100,11 @@ object ChannelCodecs extends Logging {
 
   val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
+  val outputInfoCodec: Codec[OutputInfo] = (
+    ("index" | uint32) ::
+      ("amount" | satoshi) ::
+      ("scriptPubKey" | lengthDelimited(bytes))).as[OutputInfo]
+
   val inputInfoCodec: Codec[InputInfo] = (
     ("outPoint" | outPointCodec) ::
       ("txOut" | txOutCodec) ::
@@ -107,18 +112,22 @@ object ChannelCodecs extends Logging {
 
   val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
     .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
-    .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32)).as[HtlcSuccessTx])
-    .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcTimeoutTx])
-    .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcSuccessTx])
-    .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcTimeoutTx])
+    .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow)).as[HtlcSuccessTx])
+    .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[HtlcTimeoutTx])
+    .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[ClaimHtlcSuccessTx])
+    .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[ClaimHtlcTimeoutTx])
     .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
     .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
     .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])
     .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx])
-    .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClosingTx])
+    .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("outputIndex" | optional(bool8, outputInfoCodec))).as[ClosingTx])
+    .typecase(0x11, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalAnchorOutputTx])
+    .typecase(0x12, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimRemoteAnchorOutputTx])
+    .typecase(0x13, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimRemoteDelayedOutputTx])
+    .typecase(0x14, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcDelayedOutputPenaltyTx])
 
   val htlcTxAndSigsCodec: Codec[HtlcTxAndSigs] = (
-    ("txinfo" | txWithInputInfoCodec) ::
+    ("txinfo" | txWithInputInfoCodec.downcast[HtlcTx]) ::
       ("localSig" | lengthDelimited(bytes64)) :: // we store as variable length for historical purposes (we used to store as DER encoded)
       ("remoteSig" | lengthDelimited(bytes64))).as[HtlcTxAndSigs]
 
@@ -178,7 +187,7 @@ object ChannelCodecs extends Logging {
 
   val originsMapCodec: Codec[Map[Long, Origin]] = mapCodec(int64, originCodec)
 
-  val spentMapCodec: Codec[Map[OutPoint, ByteVector32]] = mapCodec(outPointCodec, bytes32)
+  val spentMapCodec: Codec[Map[OutPoint, Transaction]] = mapCodec(outPointCodec, txCodec)
 
   val commitmentsCodec: Codec[Commitments] = (
     ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
@@ -199,30 +208,30 @@ object ChannelCodecs extends Logging {
     }).as[Commitments]
 
   val closingTxProposedCodec: Codec[ClosingTxProposed] = (
-    ("unsignedTx" | txCodec) ::
+    ("unsignedTx" | txWithInputInfoCodec.downcast[ClosingTx]) ::
       ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
 
   val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
     ("commitTx" | txCodec) ::
-      ("claimMainDelayedOutputTx" | optional(bool8, txCodec)) ::
-      ("htlcSuccessTxs" | listOfN(uint16, txCodec)) ::
-      ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
-      ("claimHtlcDelayedTx" | listOfN(uint16, txCodec)) ::
+      ("claimMainDelayedOutputTx" | optional(bool8, txWithInputInfoCodec.downcast[ClaimLocalDelayedOutputTx])) ::
+      ("htlcTxs" | mapCodec(outPointCodec, optional(bool8, txWithInputInfoCodec.downcast[HtlcTx]))) ::
+      ("claimHtlcDelayedTx" | listOfN(uint16, txWithInputInfoCodec.downcast[ClaimLocalDelayedOutputTx])) ::
+      ("claimAnchorTxs" | listOfN(uint16, txWithInputInfoCodec.downcast[ClaimAnchorOutputTx])) ::
       ("spent" | spentMapCodec)).as[LocalCommitPublished]
 
   val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
     ("commitTx" | txCodec) ::
-      ("claimMainOutputTx" | optional(bool8, txCodec)) ::
-      ("claimHtlcSuccessTxs" | listOfN(uint16, txCodec)) ::
-      ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
+      ("claimMainOutputTx" | optional(bool8, txWithInputInfoCodec.downcast[ClaimRemoteCommitMainOutputTx])) ::
+      ("claimHtlcTxs" | mapCodec(outPointCodec, optional(bool8, txWithInputInfoCodec.downcast[ClaimHtlcTx]))) ::
+      ("claimAnchorTxs" | listOfN(uint16, txWithInputInfoCodec.downcast[ClaimAnchorOutputTx])) ::
       ("spent" | spentMapCodec)).as[RemoteCommitPublished]
 
   val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
     ("commitTx" | txCodec) ::
-      ("claimMainOutputTx" | optional(bool8, txCodec)) ::
-      ("mainPenaltyTx" | optional(bool8, txCodec)) ::
-      ("htlcPenaltyTxs" | listOfN(uint16, txCodec)) ::
-      ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
+      ("claimMainOutputTx" | optional(bool8, txWithInputInfoCodec.downcast[ClaimRemoteCommitMainOutputTx])) ::
+      ("mainPenaltyTx" | optional(bool8, txWithInputInfoCodec.downcast[MainPenaltyTx])) ::
+      ("htlcPenaltyTxs" | listOfN(uint16, txWithInputInfoCodec.downcast[HtlcPenaltyTx])) ::
+      ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txWithInputInfoCodec.downcast[ClaimHtlcDelayedOutputPenaltyTx])) ::
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
@@ -258,14 +267,14 @@ object ChannelCodecs extends Logging {
       ("localShutdown" | lengthDelimited(shutdownCodec)) ::
       ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
       ("closingTxProposed" | listOfN(uint16, listOfN(uint16, lengthDelimited(closingTxProposedCodec)))) ::
-      ("bestUnpublishedClosingTx_opt" | optional(bool8, txCodec))).as[DATA_NEGOTIATING]
+      ("bestUnpublishedClosingTx_opt" | optional(bool8, txWithInputInfoCodec.downcast[ClosingTx]))).as[DATA_NEGOTIATING]
 
   val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
     ("commitments" | commitmentsCodec) ::
       ("fundingTx" | optional(bool8, txCodec)) ::
       ("waitingSince" | int64) ::
-      ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
-      ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
+      ("mutualCloseProposed" | listOfN(uint16, txWithInputInfoCodec.downcast[ClosingTx])) ::
+      ("mutualClosePublished" | listOfN(uint16, txWithInputInfoCodec.downcast[ClosingTx])) ::
       ("localCommitPublished" | optional(bool8, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
       ("nextRemoteCommitPublished" | optional(bool8, remoteCommitPublishedCodec)) ::
@@ -282,30 +291,38 @@ object ChannelCodecs extends Logging {
    * We use the fact that the discriminated codec encodes using the first suitable codec it finds in the list to handle
    * database migration.
    *
-   * For example, a data encoded with type 01 will be decoded using [[LegacyChannelCodecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
+   * For example, a data encoded with type 01 will be decoded using [[LegacyChannelCodecs0.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
    * encoded to a type 08 using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec]].
    *
    * More info here: https://github.com/scodec/scodec/issues/122
    */
   val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(byte)
+    .typecase(2, discriminated[HasCommitments].by(uint16)
+      .typecase(0x30, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+      .typecase(0x31, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
+      .typecase(0x32, DATA_NORMAL_Codec)
+      .typecase(0x33, DATA_SHUTDOWN_Codec)
+      .typecase(0x34, DATA_NEGOTIATING_Codec)
+      .typecase(0x35, DATA_CLOSING_Codec)
+      .typecase(0x36, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
     .typecase(1, discriminated[HasCommitments].by(uint16)
-      .typecase(0x20, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x21, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x22, DATA_NORMAL_Codec)
-      .typecase(0x23, DATA_SHUTDOWN_Codec)
-      .typecase(0x24, DATA_NEGOTIATING_Codec)
-      .typecase(0x25, DATA_CLOSING_Codec)
-      .typecase(0x26, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
+      .typecase(0x20, LegacyChannelCodecs1.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+      .typecase(0x21, LegacyChannelCodecs1.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
+      .typecase(0x22, LegacyChannelCodecs1.DATA_NORMAL_Codec)
+      .typecase(0x23, LegacyChannelCodecs1.DATA_SHUTDOWN_Codec)
+      .typecase(0x24, LegacyChannelCodecs1.DATA_NEGOTIATING_Codec)
+      .typecase(0x25, LegacyChannelCodecs1.DATA_CLOSING_Codec)
+      .typecase(0x26, LegacyChannelCodecs1.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
     .typecase(0, discriminated[HasCommitments].by(uint16)
-      .typecase(0x10, LegacyChannelCodecs.DATA_NORMAL_Codec)
-      .typecase(0x09, LegacyChannelCodecs.DATA_CLOSING_Codec)
-      .typecase(0x08, LegacyChannelCodecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x01, LegacyChannelCodecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
-      .typecase(0x02, LegacyChannelCodecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x03, LegacyChannelCodecs.DATA_NORMAL_COMPAT_03_Codec)
-      .typecase(0x04, LegacyChannelCodecs.DATA_SHUTDOWN_Codec)
-      .typecase(0x05, LegacyChannelCodecs.DATA_NEGOTIATING_Codec)
-      .typecase(0x06, LegacyChannelCodecs.DATA_CLOSING_COMPAT_06_Codec)
-      .typecase(0x07, LegacyChannelCodecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
+      .typecase(0x10, LegacyChannelCodecs0.DATA_NORMAL_Codec)
+      .typecase(0x09, LegacyChannelCodecs0.DATA_CLOSING_Codec)
+      .typecase(0x08, LegacyChannelCodecs0.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
+      .typecase(0x01, LegacyChannelCodecs0.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
+      .typecase(0x02, LegacyChannelCodecs0.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
+      .typecase(0x03, LegacyChannelCodecs0.DATA_NORMAL_COMPAT_03_Codec)
+      .typecase(0x04, LegacyChannelCodecs0.DATA_SHUTDOWN_Codec)
+      .typecase(0x05, LegacyChannelCodecs0.DATA_NEGOTIATING_Codec)
+      .typecase(0x06, LegacyChannelCodecs0.DATA_CLOSING_COMPAT_06_Codec)
+      .typecase(0x07, LegacyChannelCodecs0.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
 
 }
