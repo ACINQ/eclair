@@ -266,7 +266,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
     assert(fwd.channelId === p.add.channelId)
-    assert(fwd.message === CMD_FAIL_HTLC(p.add.id, Right(IncorrectOrUnknownPaymentDetails(2000000 msat, 400000)), commit = true))
+    assert(fwd.message === CMD_FAIL_HTLC(p.add.id, Right(TrampolineExpiryTooSoon), commit = true))
 
     register.expectNoMessage(100 millis)
   }
