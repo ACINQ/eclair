@@ -193,18 +193,20 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         retry(failure, d)
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
         log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
+        val failure = RemoteFailure(cfg.fullRoute(route), e)
         val ignore1 = if (Announcements.checkSig(failureMessage.update, nodeId)) {
           val assistedRoutes1 = handleUpdate(nodeId, failureMessage, d)
+          val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
           // let's try again, router will have updated its state
-          router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), assistedRoutes1, ignore, c.routeParams, paymentContext = Some(cfg.paymentContext))
-          ignore
+          router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
+          ignore1
         } else {
           // this node is fishy, it gave us a bad sig!! let's filter it out
           log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
           router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
           ignore + nodeId
         }
-        goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ RemoteFailure(cfg.fullRoute(route), e), ignore1)
+        goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
         log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
         val failure = RemoteFailure(cfg.fullRoute(route), e)
