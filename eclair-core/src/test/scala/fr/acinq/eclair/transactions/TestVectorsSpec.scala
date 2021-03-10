@@ -226,7 +226,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     Transaction.correctlySpends(commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     logger.info(s"output commit_tx: ${commitTx.tx}")
 
-    val (unsignedHtlcTimeoutTxs, unsignedHtlcSuccessTxs) = Transactions.makeHtlcTxs(
+    val unsignedHtlcTxs = Transactions.makeHtlcTxs(
       commitTx.tx,
       Local.dustLimit,
       Local.revocation_pubkey,
@@ -235,7 +235,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       outputs,
       commitmentFormat)
 
-    val htlcTxs: Seq[TransactionWithInputInfo] = (unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).sortBy(_.input.outPoint.index)
+    val htlcTxs: Seq[TransactionWithInputInfo] = unsignedHtlcTxs.sortBy(_.input.outPoint.index)
     logger.info(s"num_htlcs: ${htlcTxs.length}")
 
     htlcTxs.collect {

@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, CommitmentFormat, DefaultCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
@@ -268,27 +268,58 @@ sealed trait HasCommitments extends Data {
   def commitments: Commitments
 }
 
-case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
+case class ClosingTxProposed(unsignedTx: ClosingTx, localClosingSigned: ClosingSigned)
 
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) {
+/**
+ * Details about a force-close where we published our commitment.
+ *
+ * @param commitTx                 commitment tx.
+ * @param claimMainDelayedOutputTx tx claiming our main output (if we have one).
+ * @param htlcTxs                  txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be
+ *                                 None only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
+ * @param claimHtlcDelayedTxs      3rd-stage txs (spending the output of HTLC txs).
+ * @param claimAnchorTxs           txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
+ * @param irrevocablySpent         map of relevant outpoints that have been spent and the confirmed transaction that spends them.
+ */
+case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[ClaimLocalDelayedOutputTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) {
   def isConfirmed: Boolean = {
     // NB: if multiple transactions end up in the same block, the first confirmation we receive may not be the commit tx.
     // However if the confirmed tx spends from the commit tx, we know that the commit tx is already confirmed and we know
     // the type of closing.
-    val confirmedTxs = irrevocablySpent.values.toSet
-    (commitTx :: claimMainDelayedOutputTx.toList ::: htlcSuccessTxs ::: htlcTimeoutTxs ::: claimHtlcDelayedTxs).exists(tx => confirmedTxs.contains(tx.txid))
+    irrevocablySpent.values.exists(tx => tx.txid == commitTx.txid) || irrevocablySpent.keys.exists(_.txid == commitTx.txid)
   }
 }
-case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) {
+
+/**
+ * Details about a force-close where they published their commitment.
+ *
+ * @param commitTx          commitment tx.
+ * @param claimMainOutputTx tx claiming our main output (if we have one).
+ * @param claimHtlcTxs      txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be None
+ *                          only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
+ * @param claimAnchorTxs    txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
+ * @param irrevocablySpent  map of relevant outpoints that have been spent and the confirmed transaction that spends them.
+ */
+case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) {
   def isConfirmed: Boolean = {
     // NB: if multiple transactions end up in the same block, the first confirmation we receive may not be the commit tx.
     // However if the confirmed tx spends from the commit tx, we know that the commit tx is already confirmed and we know
     // the type of closing.
-    val confirmedTxs = irrevocablySpent.values.toSet
-    (commitTx :: claimMainOutputTx.toList ::: claimHtlcSuccessTxs ::: claimHtlcTimeoutTxs).exists(tx => confirmedTxs.contains(tx.txid))
+    irrevocablySpent.values.exists(tx => tx.txid == commitTx.txid) || irrevocablySpent.keys.exists(_.txid == commitTx.txid)
   }
 }
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], htlcPenaltyTxs: List[Transaction], claimHtlcDelayedPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32])
+
+/**
+ * Details about a force-close where they published one of their revoked commitments.
+ *
+ * @param commitTx                   revoked commitment tx.
+ * @param claimMainOutputTx          tx claiming our main output (if we have one).
+ * @param mainPenaltyTx              penalty tx claiming their main output (if they have one).
+ * @param htlcPenaltyTxs             penalty txs claiming every HTLC output.
+ * @param claimHtlcDelayedPenaltyTxs penalty txs claiming the output of their HTLC txs (if they managed to get them confirmed before our htlcPenaltyTxs).
+ * @param irrevocablySpent           map of relevant outpoints that have been spent and the confirmed transaction that spends them.
+ */
+case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], mainPenaltyTx: Option[MainPenaltyTx], htlcPenaltyTxs: List[HtlcPenaltyTx], claimHtlcDelayedPenaltyTxs: List[ClaimHtlcDelayedOutputPenaltyTx], irrevocablySpent: Map[OutPoint, Transaction])
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data {
   val channelId: ByteVector32 = initFundee.temporaryChannelId
@@ -352,26 +383,25 @@ final case class DATA_SHUTDOWN(commitments: Commitments,
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
-                                  bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
+                                  bestUnpublishedClosingTx_opt: Option[ClosingTx]) extends Data with HasCommitments {
   require(closingTxProposed.nonEmpty, "there must always be a list for the current negotiation")
   require(!commitments.localParams.isFunder || closingTxProposed.forall(_.nonEmpty), "funder must have at least one closing signature for every negotiation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
                               fundingTx: Option[Transaction], // this will be non-empty if we are funder and we got in closing while waiting for our own tx to be published
                               waitingSinceBlock: Long, // how long since we initiated the closing
-                              mutualCloseProposed: List[Transaction], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
-                              mutualClosePublished: List[Transaction] = Nil,
+                              mutualCloseProposed: List[ClosingTx], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
+                              mutualClosePublished: List[ClosingTx] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
-  require(spendingTxes.nonEmpty, "there must be at least one tx published in this state")
+  val spendingTxs: List[Transaction] = mutualClosePublished.map(_.tx) ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  require(spendingTxs.nonEmpty, "there must be at least one tx published in this state")
 }
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
-
 
 /**
  * @param features current connection features, or last features used if the channel is disconnected. Note that these

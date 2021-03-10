@@ -21,7 +21,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
@@ -105,8 +105,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig1.feeSatoshis)
     awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.map(_.localClosingSigned) == initialState.closingTxProposed.last.map(_.localClosingSigned) :+ aliceCloseSig2)
     val Some(closingTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
-    assert(closingTx.txOut.length === 2) // NB: in the anchor outputs case, anchors are removed from the closing tx
-    assert(aliceCloseSig2.feeSatoshis > Transactions.weight2fee(TestConstants.anchorOutputsFeeratePerKw, closingTx.weight())) // NB: closing fee is allowed to be higher than commit tx fee when using anchor outputs
+    assert(closingTx.tx.txOut.length === 2) // NB: in the anchor outputs case, anchors are removed from the closing tx
+    assert(aliceCloseSig2.feeSatoshis > Transactions.weight2fee(TestConstants.anchorOutputsFeeratePerKw, closingTx.tx.weight())) // NB: closing fee is allowed to be higher than commit tx fee when using anchor outputs
   }
 
   test("recv ClosingSigned (theirCloseFee != ourCloseFee)") {
@@ -150,8 +150,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(mutualCloseTxAlice === mutualCloseTxBob)
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTxAlice))
     assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTxBob))
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTxAlice))
-    assert(bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished == List(mutualCloseTxBob))
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.map(_.tx) == List(mutualCloseTxAlice))
+    assert(bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.map(_.tx) == List(mutualCloseTxBob))
   }
 
   test("recv ClosingSigned (fee too high)") { f =>
@@ -218,9 +218,9 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     implicit val log: LoggingAdapter = bob.underlyingActor.implicitLog
     val Right(bobClosingTx) = Closing.checkClosingSignature(Bob.channelKeyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, aliceClose1.feeSatoshis, aliceClose1.signature)
 
-    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
-    alice2blockchain.expectMsg(PublishAsap(bobClosingTx, PublishStrategy.JustPublish))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobClosingTx.txid)
+    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx.tx)
+    alice2blockchain.expectMsg(PublishAsap(bobClosingTx.tx, PublishStrategy.JustPublish))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobClosingTx.tx.txid)
     alice2blockchain.expectNoMsg(100 millis)
     assert(alice.stateName == CLOSING)
   }

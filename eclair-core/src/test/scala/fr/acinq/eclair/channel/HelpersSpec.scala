@@ -16,16 +16,21 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{Btc, Transaction}
+import fr.acinq.bitcoin.{Btc, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.MilliSatoshiLong
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.channel.Helpers.Closing
+import fr.acinq.eclair.transactions.Transactions._
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.concurrent.duration._
 
 class HelpersSpec extends AnyFunSuite {
+
+  private def txInputInfo(tx: Transaction): InputInfo = {
+    InputInfo(tx.txIn.head.outPoint, TxOut(10_000 sat, Nil), Nil)
+  }
 
   test("compute the funding tx min depth according to funding amount") {
     assert(Helpers.minDepthForFunding(nodeParams, Btc(1)) == 4)
@@ -61,8 +66,8 @@ class HelpersSpec extends AnyFunSuite {
         commitments = commitments,
         fundingTx = None,
         waitingSinceBlock = 0,
-        mutualCloseProposed = tx1 :: tx2 :: tx3 :: Nil,
-        mutualClosePublished = tx2 :: tx3 :: Nil,
+        mutualCloseProposed = (tx1 :: tx2 :: tx3 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
+        mutualClosePublished = (tx2 :: tx3 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
         localCommitPublished = None,
         remoteCommitPublished = None,
         nextRemoteCommitPublished = None,
@@ -76,14 +81,14 @@ class HelpersSpec extends AnyFunSuite {
         commitments = commitments,
         fundingTx = None,
         waitingSinceBlock = 0,
-        mutualCloseProposed = tx1 :: Nil,
-        mutualClosePublished = tx1 :: Nil,
+        mutualCloseProposed = (tx1 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
+        mutualClosePublished = (tx1 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2,
-          claimMainDelayedOutputTx = Some(tx3),
-          htlcSuccessTxs = Nil,
-          htlcTimeoutTxs = Nil,
+          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(txInputInfo(tx3), tx3)),
+          htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -98,17 +103,15 @@ class HelpersSpec extends AnyFunSuite {
         commitments = commitments,
         fundingTx = None,
         waitingSinceBlock = 0,
-        mutualCloseProposed = tx1 :: Nil,
-        mutualClosePublished = tx1 :: Nil,
+        mutualCloseProposed = (tx1 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
+        mutualClosePublished = (tx1 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2,
-          claimMainDelayedOutputTx = Some(tx3),
-          htlcSuccessTxs = Nil,
-          htlcTimeoutTxs = Nil,
+          claimMainDelayedOutputTx = Some(ClaimLocalDelayedOutputTx(txInputInfo(tx3), tx3)),
+          htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
-          irrevocablySpent = Map(
-            tx2.txIn.head.outPoint -> tx2.txid
-          )
+          claimAnchorTxs = Nil,
+          irrevocablySpent = Map(tx2.txIn.head.outPoint -> tx2)
         )),
         remoteCommitPublished = None,
         nextRemoteCommitPublished = None,
@@ -127,16 +130,16 @@ class HelpersSpec extends AnyFunSuite {
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2,
           claimMainDelayedOutputTx = None,
-          htlcSuccessTxs = Nil,
-          htlcTimeoutTxs = Nil,
+          htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3,
           claimMainOutputTx = None,
-          claimHtlcSuccessTxs = Nil,
-          claimHtlcTimeoutTxs = Nil,
+          claimHtlcTxs = Map.empty,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = None,
@@ -150,24 +153,22 @@ class HelpersSpec extends AnyFunSuite {
         commitments = commitments,
         fundingTx = None,
         waitingSinceBlock = 0,
-        mutualCloseProposed = tx1 :: Nil,
-        mutualClosePublished = tx1 :: Nil,
+        mutualCloseProposed = (tx1 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
+        mutualClosePublished = (tx1 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2,
           claimMainDelayedOutputTx = None,
-          htlcSuccessTxs = Nil,
-          htlcTimeoutTxs = Nil,
+          htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3,
           claimMainOutputTx = None,
-          claimHtlcSuccessTxs = Nil,
-          claimHtlcTimeoutTxs = Nil,
-          irrevocablySpent = Map(
-            tx3.txIn.head.outPoint -> tx3.txid
-          )
+          claimHtlcTxs = Map.empty,
+          claimAnchorTxs = Nil,
+          irrevocablySpent = Map(tx3.txIn.head.outPoint -> tx3)
         )),
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = None,
@@ -180,31 +181,29 @@ class HelpersSpec extends AnyFunSuite {
         commitments = commitments.copy(remoteNextCommitInfo = Left(WaitingForRevocation(commitments.remoteCommit, null, 7L))),
         fundingTx = None,
         waitingSinceBlock = 0,
-        mutualCloseProposed = tx1 :: Nil,
-        mutualClosePublished = tx1 :: Nil,
+        mutualCloseProposed = (tx1 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
+        mutualClosePublished = (tx1 :: Nil).map(tx => ClosingTx(txInputInfo(tx), tx, None)),
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx2,
           claimMainDelayedOutputTx = None,
-          htlcSuccessTxs = Nil,
-          htlcTimeoutTxs = Nil,
+          htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx3,
           claimMainOutputTx = None,
-          claimHtlcSuccessTxs = Nil,
-          claimHtlcTimeoutTxs = Nil,
+          claimHtlcTxs = Map.empty,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         nextRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4,
-          claimMainOutputTx = Some(tx5),
-          claimHtlcSuccessTxs = Nil,
-          claimHtlcTimeoutTxs = Nil,
-          irrevocablySpent = Map(
-            tx4.txIn.head.outPoint -> tx4.txid
-          )
+          claimMainOutputTx = Some(ClaimP2WPKHOutputTx(txInputInfo(tx5), tx5)),
+          claimHtlcTxs = Map.empty,
+          claimAnchorTxs = Nil,
+          irrevocablySpent = Map(tx4.txIn.head.outPoint -> tx4)
         )),
         futureRemoteCommitPublished = None,
         revokedCommitPublished = Nil)
@@ -223,9 +222,9 @@ class HelpersSpec extends AnyFunSuite {
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4,
-          claimMainOutputTx = Some(tx5),
-          claimHtlcSuccessTxs = Nil,
-          claimHtlcTimeoutTxs = Nil,
+          claimMainOutputTx = Some(ClaimRemoteDelayedOutputTx(txInputInfo(tx5), tx5)),
+          claimHtlcTxs = Map.empty,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         revokedCommitPublished = Nil)
@@ -244,12 +243,10 @@ class HelpersSpec extends AnyFunSuite {
         nextRemoteCommitPublished = None,
         futureRemoteCommitPublished = Some(RemoteCommitPublished(
           commitTx = tx4,
-          claimMainOutputTx = Some(tx5),
-          claimHtlcSuccessTxs = Nil,
-          claimHtlcTimeoutTxs = Nil,
-          irrevocablySpent = Map(
-            tx4.txIn.head.outPoint -> tx4.txid
-          )
+          claimMainOutputTx = Some(ClaimP2WPKHOutputTx(txInputInfo(tx5), tx5)),
+          claimHtlcTxs = Map.empty,
+          claimAnchorTxs = Nil,
+          irrevocablySpent = Map(tx4.txIn.head.outPoint -> tx4)
         )),
         revokedCommitPublished = Nil)
     ).exists(_.isInstanceOf[Closing.RecoveryClose]))
@@ -265,9 +262,9 @@ class HelpersSpec extends AnyFunSuite {
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1,
           claimMainDelayedOutputTx = None,
-          htlcSuccessTxs = Nil,
-          htlcTimeoutTxs = Nil,
+          htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -276,7 +273,7 @@ class HelpersSpec extends AnyFunSuite {
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2,
-            claimMainOutputTx = Some(tx3),
+            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(txInputInfo(tx3), tx3)),
             mainPenaltyTx = None,
             htlcPenaltyTxs = Nil,
             claimHtlcDelayedPenaltyTxs = Nil,
@@ -284,7 +281,7 @@ class HelpersSpec extends AnyFunSuite {
           ) ::
             RevokedCommitPublished(
               commitTx = tx4,
-              claimMainOutputTx = Some(tx5),
+              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(txInputInfo(tx5), tx5)),
               mainPenaltyTx = None,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
@@ -312,9 +309,9 @@ class HelpersSpec extends AnyFunSuite {
         localCommitPublished = Some(LocalCommitPublished(
           commitTx = tx1,
           claimMainDelayedOutputTx = None,
-          htlcSuccessTxs = Nil,
-          htlcTimeoutTxs = Nil,
+          htlcTxs = Map.empty,
           claimHtlcDelayedTxs = Nil,
+          claimAnchorTxs = Nil,
           irrevocablySpent = Map.empty
         )),
         remoteCommitPublished = None,
@@ -323,7 +320,7 @@ class HelpersSpec extends AnyFunSuite {
         revokedCommitPublished =
           RevokedCommitPublished(
             commitTx = tx2,
-            claimMainOutputTx = Some(tx3),
+            claimMainOutputTx = Some(ClaimP2WPKHOutputTx(txInputInfo(tx3), tx3)),
             mainPenaltyTx = None,
             htlcPenaltyTxs = Nil,
             claimHtlcDelayedPenaltyTxs = Nil,
@@ -331,13 +328,11 @@ class HelpersSpec extends AnyFunSuite {
           ) ::
             RevokedCommitPublished(
               commitTx = tx4,
-              claimMainOutputTx = Some(tx5),
+              claimMainOutputTx = Some(ClaimP2WPKHOutputTx(txInputInfo(tx5), tx5)),
               mainPenaltyTx = None,
               htlcPenaltyTxs = Nil,
               claimHtlcDelayedPenaltyTxs = Nil,
-              irrevocablySpent = Map(
-                tx4.txIn.head.outPoint -> tx4.txid
-              )
+              irrevocablySpent = Map(tx4.txIn.head.outPoint -> tx4)
             ) ::
             RevokedCommitPublished(
               commitTx = tx6,

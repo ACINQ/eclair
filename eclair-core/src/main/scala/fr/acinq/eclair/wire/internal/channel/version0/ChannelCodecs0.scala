@@ -52,10 +52,8 @@ private[channel] object ChannelCodecs0 {
         ("parent" | int64)).as[ExtendedPrivateKey].decodeOnly
 
     val channelVersionCodec: Codec[ChannelVersion] = discriminatorWithDefault[ChannelVersion](
-      discriminator = discriminated[ChannelVersion].by(byte)
-        .typecase(0x01, bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion])
       // NB: 0x02 and 0x03 are *reserved* for backward compatibility reasons
-      ,
+      discriminator = discriminated[ChannelVersion].by(byte).typecase(0x01, bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion]),
       fallback = provide(ChannelVersion.ZEROES) // README: DO NOT CHANGE THIS !! old channels don't have a channel version
       // field and don't support additional features which is why all bits are set to 0.
     )
@@ -110,22 +108,29 @@ private[channel] object ChannelCodecs0 {
 
     val txCodec: Codec[Transaction] = variableSizeBytes(uint16, bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
+    val closingTxCodec: Codec[ClosingTx] = txCodec.decodeOnly.xmap(
+      tx => ChannelTypes0.migrateClosingTx(tx),
+      closingTx => closingTx.tx
+    )
+
     val inputInfoCodec: Codec[InputInfo] = (
       ("outPoint" | outPointCodec) ::
         ("txOut" | txOutCodec) ::
         ("redeemScript" | varsizebinarydata)).as[InputInfo].decodeOnly
 
+    // NB: we can safely set htlcId = 0 for htlc txs. This information is only used to find upstream htlcs to fail when a
+    // downstream htlc times out, and `Helpers.Closing.timedOutHtlcs` explicitly handles the case where htlcId is missing.
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
       .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
-      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32)).as[HtlcSuccessTx])
-      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcTimeoutTx])
-      .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcSuccessTx])
-      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcTimeoutTx])
+      .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L))).as[HtlcSuccessTx])
+      .typecase(0x03, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L))).as[HtlcTimeoutTx])
+      .typecase(0x04, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L))).as[ClaimHtlcSuccessTx])
+      .typecase(0x05, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | provide(0L))).as[ClaimHtlcTimeoutTx])
       .typecase(0x06, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx])
       .typecase(0x07, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx])
       .typecase(0x08, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx])
       .typecase(0x09, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx])
-      .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClosingTx])
+      .typecase(0x10, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("outputIndex" | provide(Option.empty[OutputInfo]))).as[ClosingTx])
 
     // this is a backward compatible codec (we used to store the sig as DER encoded), now we store it as 64-bytes
     val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
@@ -137,7 +142,7 @@ private[channel] object ChannelCodecs0 {
     )
 
     val htlcTxAndSigsCodec: Codec[HtlcTxAndSigs] = (
-      ("txinfo" | txWithInputInfoCodec) ::
+      ("txinfo" | txWithInputInfoCodec.downcast[HtlcTx]) ::
         ("localSig" | variableSizeBytes(uint16, sig64OrDERCodec)) :: // we store as variable length for historical purposes (we used to store as DER encoded)
         ("remoteSig" | variableSizeBytes(uint16, sig64OrDERCodec))).as[HtlcTxAndSigs].decodeOnly
 
@@ -232,7 +237,7 @@ private[channel] object ChannelCodecs0 {
       }).as[Commitments].decodeOnly
 
     val closingTxProposedCodec: Codec[ClosingTxProposed] = (
-      ("unsignedTx" | txCodec) ::
+      ("unsignedTx" | closingTxCodec) ::
         ("localClosingSigned" | closingSignedCodec)).as[ClosingTxProposed].decodeOnly
 
     val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
@@ -241,14 +246,14 @@ private[channel] object ChannelCodecs0 {
         ("htlcSuccessTxs" | listOfN(uint16, txCodec)) ::
         ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
         ("claimHtlcDelayedTx" | listOfN(uint16, txCodec)) ::
-        ("spent" | spentMapCodec)).as[LocalCommitPublished].decodeOnly
+        ("spent" | spentMapCodec)).as[ChannelTypes0.LocalCommitPublished].decodeOnly.map[LocalCommitPublished](_.migrate()).decodeOnly
 
     val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool, txCodec)) ::
         ("claimHtlcSuccessTxs" | listOfN(uint16, txCodec)) ::
         ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
-        ("spent" | spentMapCodec)).as[RemoteCommitPublished].decodeOnly
+        ("spent" | spentMapCodec)).as[ChannelTypes0.RemoteCommitPublished].decodeOnly.map[RemoteCommitPublished](_.migrate()).decodeOnly
 
     val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
       ("commitTx" | txCodec) ::
@@ -256,7 +261,7 @@ private[channel] object ChannelCodecs0 {
         ("mainPenaltyTx" | optional(bool, txCodec)) ::
         ("htlcPenaltyTxs" | listOfN(uint16, txCodec)) ::
         ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
-        ("spent" | spentMapCodec)).as[RevokedCommitPublished].decodeOnly
+        ("spent" | spentMapCodec)).as[ChannelTypes0.RevokedCommitPublished].decodeOnly.map[RevokedCommitPublished](_.migrate()).decodeOnly
 
     // All channel_announcement's written prior to supporting unknown trailing fields had the same fixed size, because
     // those are the announcements that *we* created and we always used an empty features field, which was the only
@@ -325,15 +330,15 @@ private[channel] object ChannelCodecs0 {
         ("localShutdown" | shutdownCodec) ::
         ("remoteShutdown" | shutdownCodec) ::
         ("closingTxProposed" | listOfN(uint16, listOfN(uint16, closingTxProposedCodec))) ::
-        ("bestUnpublishedClosingTx_opt" | optional(bool, txCodec))).as[DATA_NEGOTIATING].decodeOnly
+        ("bestUnpublishedClosingTx_opt" | optional(bool, closingTxCodec))).as[DATA_NEGOTIATING].decodeOnly
 
     // this is a decode-only codec compatible with versions 818199e and below, with placeholders for new fields
     val DATA_CLOSING_COMPAT_06_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | provide[Option[Transaction]](None)) ::
         ("waitingSince" | provide(System.currentTimeMillis.milliseconds.toSeconds)) ::
-        ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
-        ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
+        ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
+        ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
         ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
         ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
@@ -344,8 +349,8 @@ private[channel] object ChannelCodecs0 {
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | optional(bool, txCodec)) ::
         ("waitingSince" | int64) ::
-        ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
-        ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
+        ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
+        ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
         ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
         ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::

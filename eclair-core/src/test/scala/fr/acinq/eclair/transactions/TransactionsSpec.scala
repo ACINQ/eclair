@@ -197,7 +197,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimAnchorOutputTx
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
-      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx, localFundingPriv.publicKey)
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey)
       assert(claimAnchorOutputTx.tx.txOut.isEmpty)
       // we will always add at least one input and one output to be able to set our desired feerate
       // we use dummy signatures to compute the weight
@@ -297,7 +297,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       assert((check ^ num) == commitTxNumber)
     }
 
-    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.feeratePerKw, outputs, DefaultCommitmentFormat)
+    val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.feeratePerKw, outputs, DefaultCommitmentFormat)
+    assert(htlcTxs.length === 4)
+    val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
+    val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
     assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
     assert(htlcSuccessTxs.size == 2) // htlc2 and htlc4
 
@@ -512,7 +515,10 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val localSig = Transactions.sign(txinfo, localPaymentPriv, TxOwner.Local, AnchorOutputsCommitmentFormat)
       val remoteSig = Transactions.sign(txinfo, remotePaymentPriv, TxOwner.Remote, AnchorOutputsCommitmentFormat)
       val commitTx = Transactions.addSigs(txinfo, localFundingPriv.publicKey, remoteFundingPriv.publicKey, localSig, remoteSig)
-      val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.feeratePerKw, outputs, AnchorOutputsCommitmentFormat)
+      val htlcTxs = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, spec.feeratePerKw, outputs, AnchorOutputsCommitmentFormat)
+      assert(htlcTxs.length === 5)
+      val htlcSuccessTxs = htlcTxs.collect { case tx: HtlcSuccessTx => tx }
+      val htlcTimeoutTxs = htlcTxs.collect { case tx: HtlcTimeoutTx => tx }
       assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
       assert(htlcSuccessTxs.size == 3) // htlc2a, htlc2b and htlc4
       (commitTx, outputs, htlcTimeoutTxs, htlcSuccessTxs)
@@ -539,7 +545,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // local spends local anchor
-      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey)
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPriv.publicKey)
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
       val localSig = sign(claimAnchorOutputTx, localFundingPriv, TxOwner.Local, AnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)
@@ -547,7 +553,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     }
     {
       // remote spends remote anchor
-      val Right(claimAnchorOutputTx) = makeClaimAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey)
+      val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx.tx, remoteFundingPriv.publicKey)
       assert(checkSpendable(claimAnchorOutputTx).isFailure)
       val localSig = sign(claimAnchorOutputTx, remoteFundingPriv, TxOwner.Local, AnchorOutputsCommitmentFormat)
       val signedTx = addSigs(claimAnchorOutputTx, localSig)

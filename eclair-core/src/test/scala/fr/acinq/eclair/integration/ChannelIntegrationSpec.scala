@@ -258,13 +258,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(3, Some(minerAddress))
     // we wait until the htlc-timeout has been broadcast
-    commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat =>
-        waitForTxBroadcastOrConfirmed(localCommit.htlcTimeoutTxs.head.txid, bitcoinClient, sender)
-      case Transactions.AnchorOutputsCommitmentFormat =>
-        // we don't know the txid of the HTLC-timeout, so we just check that the corresponding output has been spent
-        waitForOutputSpent(localCommit.htlcTimeoutTxs.head.txIn.head.outPoint, bitcoinClient, sender)
-    }
+    assert(localCommit.htlcTxs.size === 1)
+    waitForOutputSpent(localCommit.htlcTxs.keys.head, bitcoinClient, sender)
     // we generate more blocks for the htlc-timeout to reach enough confirmations
     generateBlocks(3, Some(minerAddress))
     // this will fail the htlc
@@ -286,6 +281,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(2, Some(minerAddress))
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 60 seconds)
+    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 60 seconds)
     awaitAnnouncements(1)
   }
 
@@ -314,7 +310,8 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks((htlc.cltvExpiry.toLong - getBlockCount).toInt, Some(minerAddress))
     // we wait until the claim-htlc-timeout has been broadcast
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-    waitForTxBroadcastOrConfirmed(remoteCommit.claimHtlcTimeoutTxs.head.txid, bitcoinClient, sender)
+    assert(remoteCommit.claimHtlcTxs.size === 1)
+    waitForOutputSpent(remoteCommit.claimHtlcTxs.keys.head, bitcoinClient, sender)
     // and we generate blocks for the claim-htlc-timeout to reach enough confirmations
     generateBlocks(3, Some(minerAddress))
     // this will fail the htlc
@@ -336,6 +333,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     generateBlocks(2, Some(minerAddress))
     // and we wait for the channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 60 seconds)
+    awaitCond(stateListenerF.expectMsgType[ChannelStateChanged].currentState == CLOSED, max = 60 seconds)
     awaitAnnouncements(1)
   }
 

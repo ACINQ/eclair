@@ -647,7 +647,8 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       assert(alice2watcher.expectMsgType[PublishAsap].strategy === PublishStrategy.JustPublish) // claim main output
       alice2watcher.expectMsgType[WatchConfirmed] // commit tx
       alice2watcher.expectMsgType[WatchConfirmed] // claim main output
-      alice2watcher.expectNoMsg(100 millis) // alice doesn't have the preimage yet to redeem the htlc
+      alice2watcher.expectMsgType[WatchSpent] // alice doesn't have the preimage yet to redeem the htlc but she watches the output
+      alice2watcher.expectNoMsg(100 millis)
 
       // Publish and confirm the commit tx.
       alice2watcher.forward(watcher, publishCommitTx)

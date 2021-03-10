@@ -16,14 +16,15 @@
 
 package fr.acinq.eclair.wire.internal.channel
 
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
+import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2
 import grizzled.slf4j.Logging
 import scodec.Codec
-import scodec.codecs._
+import scodec.codecs.{byte, discriminated}
 
-//@formatter:off
+// @formatter:off
 /**
  * Codecs used to store the internal channel data.
  *
@@ -52,7 +53,7 @@ import scodec.codecs._
  *
  * Created by PM on 02/06/2017.
  */
-//@formatter:on
+// @formatter:on
 object ChannelCodecs extends Logging {
 
   /**
@@ -64,6 +65,7 @@ object ChannelCodecs extends Logging {
    * More info here: https://github.com/scodec/scodec/issues/122
    */
   val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(byte)
+    .typecase(2, ChannelCodecs2.stateDataCodec)
     .typecase(1, ChannelCodecs1.stateDataCodec)
     .typecase(0, ChannelCodecs0.stateDataCodec)
 

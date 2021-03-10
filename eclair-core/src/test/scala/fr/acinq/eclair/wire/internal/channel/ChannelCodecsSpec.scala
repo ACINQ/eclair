@@ -90,7 +90,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
     // and re-encode it with the new codec
     val bin_new = ByteVector(stateDataCodec.encode(data_new).require.toByteVector.toArray)
     // data should now be encoded under the new format
-    assert(bin_new.startsWith(hex"010020"))
+    assert(bin_new.startsWith(hex"020000"))
     // now let's decode it again
     val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
@@ -122,8 +122,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // and we encode with new codec
       val newbin = stateDataCodec.encode(oldnormal).require.bytes
       // make sure that encoding used the new codec
-      assert(newbin.startsWith(hex"010022"))
-      // make sure that roundtrip yields the same data
+      assert(newbin.startsWith(hex"020002"))
+      // make sure that round-trip yields the same data
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       assert(newnormal === oldnormal)
     }
