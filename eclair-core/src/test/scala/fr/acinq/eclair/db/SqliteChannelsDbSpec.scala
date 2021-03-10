@@ -125,7 +125,6 @@ class SqliteChannelsDbSpec extends AnyFunSuite {
       assert(getTimestamp(channel2.channelId, "last_payment_received_timestamp").isEmpty)
       assert(getTimestamp(channel2.channelId, "last_connected_timestamp").isEmpty)
       assert(getTimestamp(channel2.channelId, "closed_timestamp").isEmpty)
-
     }
   }
 
