@@ -25,7 +25,7 @@ import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.pg.PgUtils.NoLock
+import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.{Peer, PeerConnection}
@@ -102,7 +102,8 @@ object TestConstants {
     config.setDataSource(pg.getPostgresDatabase)
 
     implicit val ds = new HikariDataSource(config)
-    implicit val lock = NoLock
+    implicit val lock = PgLock.NoLock
+    //implicit val lock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 1 minute, PgLock.logAndStopLockExceptionHandler)
 
     // @formatter:off
     override def network(): NetworkDb = new PgNetworkDb

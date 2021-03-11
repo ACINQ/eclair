@@ -18,81 +18,175 @@ package fr.acinq.eclair.db.pg
 
 import java.sql.{Connection, Statement, Timestamp}
 import java.util.UUID
-
 import fr.acinq.eclair.db.jdbc.JdbcUtils
+import fr.acinq.eclair.db.pg.PgUtils.PgLock.TransactionIsolationLevel
 import grizzled.slf4j.Logging
+
 import javax.sql.DataSource
 import org.postgresql.util.{PGInterval, PSQLException}
 
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
-object PgUtils extends JdbcUtils with Logging {
+object PgUtils extends JdbcUtils {
 
-  val LeaseTable = "lease"
-
-  val LockTimeout = 5 seconds
-
-  val TransactionIsolationLevel = Connection.TRANSACTION_SERIALIZABLE
-
-  object LockType extends Enumeration {
-    type LockType = Value
-
-    val NONE, LEASE = Value
-
-    def apply(s: String): LockType = s match {
-      case "none" => NONE
-      case "lease" => LEASE
-      case _ => throw new RuntimeException(s"Unknown postgres lock type: `$s`")
-    }
-  }
-
-  case class LockLease(expiresAt: Timestamp, instanceId: UUID, expired: Boolean)
-
-  // @formatter:off
-  class TooManyLockAttempts(msg: String) extends RuntimeException(msg)
-  class UninitializedLockTable(msg: String) extends RuntimeException(msg)
-  class LockException(msg: String, cause: Option[Throwable] = None) extends RuntimeException(msg, cause.orNull)
-  class LeaseException(msg: String) extends RuntimeException(msg)
-  // @formatter:on
-
-  type LockExceptionHandler = LockException => Unit
-
-  sealed trait DatabaseLock {
+  sealed trait PgLock {
     def obtainExclusiveLock(implicit ds: DataSource): Unit
 
     def withLock[T](f: Connection => T)(implicit ds: DataSource): T
   }
 
-  case object NoLock extends DatabaseLock {
-    override def obtainExclusiveLock(implicit ds: DataSource): Unit = ()
+  object PgLock extends Logging {
 
-    override def withLock[T](f: Connection => T)(implicit ds: DataSource): T =
-      inTransaction(f)
-  }
+    val LeaseTable: String = "lease"
+    val LockTimeout: FiniteDuration = 5 seconds
+    val TransactionIsolationLevel: Int = Connection.TRANSACTION_SERIALIZABLE
 
-  /**
-   * This class represents a lease based locking mechanism [[https://en.wikipedia.org/wiki/Lease_(computer_science]].
-   * It allows only one process to access the database at a time.
-   *
-   * `obtainExclusiveLock` method updates the record in `lease` table with the instance id and the expiration date
-   * calculated as the current time plus the lease duration. If the current lease is not expired or it belongs to
-   * another instance `obtainExclusiveLock` throws an exception.
-   *
-   * withLock method executes its `f` function and reads the record from lease table to checks if this instance still
-   * holds the lease and it's not expired. If so, the database transaction gets committed, otherwise en exception is thrown.
-   *
-   * `lockExceptionHandler` provides a lock exception handler to customize the behavior when locking errors occur.
-   */
-  case class LeaseLock(instanceId: UUID, leaseDuration: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends DatabaseLock {
-    override def obtainExclusiveLock(implicit ds: DataSource): Unit =
-      obtainDatabaseLease(instanceId, leaseDuration)
+    case class LockLease(expiresAt: Timestamp, instanceId: UUID, expired: Boolean)
 
-    override def withLock[T](f: Connection => T)(implicit ds: DataSource): T = {
-      inTransaction { connection =>
-        val res = f(connection)
-        checkDatabaseLease(connection, instanceId, lockExceptionHandler)
-        res
+    // @formatter:off
+    class TooManyLockAttempts(msg: String) extends RuntimeException(msg)
+    class UninitializedLockTable(msg: String) extends RuntimeException(msg)
+    class LockException(msg: String, cause: Option[Throwable] = None) extends RuntimeException(msg, cause.orNull)
+    class LeaseException(msg: String) extends RuntimeException(msg)
+    // @formatter:on
+
+    type LockExceptionHandler = LockException => Unit
+
+    def logAndStopLockExceptionHandler: LockExceptionHandler = { ex =>
+      logger.error("fatal error: Cannot obtain lock on the database.\n", ex)
+      sys.exit(-2)
+    }
+
+    case object NoLock extends PgLock {
+      override def obtainExclusiveLock(implicit ds: DataSource): Unit = ()
+
+      override def withLock[T](f: Connection => T)(implicit ds: DataSource): T =
+        inTransaction(f)
+    }
+
+    /**
+     * This class represents a lease based locking mechanism [[https://en.wikipedia.org/wiki/Lease_(computer_science]].
+     * It allows only one process to access the database at a time.
+     *
+     * `obtainExclusiveLock` method updates the record in `lease` table with the instance id and the expiration date
+     * calculated as the current time plus the lease duration. If the current lease is not expired or it belongs to
+     * another instance `obtainExclusiveLock` throws an exception.
+     *
+     * withLock method executes its `f` function and reads the record from lease table to checks if this instance still
+     * holds the lease and it's not expired. If so, the database transaction gets committed, otherwise en exception is thrown.
+     *
+     * `lockExceptionHandler` provides a lock exception handler to customize the behavior when locking errors occur.
+     */
+    case class LeaseLock(instanceId: UUID, leaseDuration: FiniteDuration, leaseRenewInterval: FiniteDuration, lockExceptionHandler: LockExceptionHandler) extends PgLock {
+      override def obtainExclusiveLock(implicit ds: DataSource): Unit =
+        obtainDatabaseLease(instanceId, leaseDuration)
+
+      override def withLock[T](f: Connection => T)(implicit ds: DataSource): T = {
+        inTransaction { connection =>
+          val res = f(connection)
+          checkDatabaseLease(connection, instanceId, lockExceptionHandler)
+          res
+        }
+      }
+
+      private def obtainDatabaseLease(instanceId: UUID, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
+        logger.debug(s"trying to acquire database lease (attempt #$attempt) instance ID=$instanceId")
+
+        if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire database lease")
+
+        try {
+          inTransaction { implicit connection =>
+            acquireExclusiveTableLock()
+            getCurrentLease match {
+              case Some(lease) =>
+                if (lease.instanceId == instanceId || lease.expired)
+                  updateLease(instanceId, leaseDuration)
+                else
+                  throw new LeaseException(s"The database is locked by instance ID=${lease.instanceId}")
+              case None =>
+                updateLease(instanceId, leaseDuration, insertNew = true)
+            }
+          }
+          logger.debug("database lease was successfully acquired")
+        } catch {
+          case e: PSQLException if e.getServerErrorMessage != null && e.getServerErrorMessage.getSQLState == "42P01" =>
+            withConnection {
+              connection =>
+                logger.warn(s"table $LeaseTable does not exist, trying to recreate it")
+                initializeLeaseTable(connection)
+                obtainDatabaseLease(instanceId, leaseDuration, attempt + 1)
+            }
+        }
+      }
+
+      private def initializeLeaseTable(implicit connection: Connection): Unit = {
+        using(connection.createStatement()) {
+          statement =>
+            // allow only one row in the ownership lease table
+            statement.executeUpdate(s"CREATE TABLE IF NOT EXISTS $LeaseTable (id INTEGER PRIMARY KEY default(1), expires_at TIMESTAMP NOT NULL, instance VARCHAR NOT NULL, CONSTRAINT one_row CHECK (id = 1))")
+        }
+      }
+
+      private def acquireExclusiveTableLock()(implicit connection: Connection): Unit = {
+        using(connection.createStatement()) {
+          statement =>
+            statement.executeUpdate(s"SET lock_timeout TO '${LockTimeout.toSeconds}s'")
+            statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE")
+        }
+      }
+
+      private def checkDatabaseLease(connection: Connection, instanceId: UUID, lockExceptionHandler: LockExceptionHandler): Unit = {
+        Try {
+          getCurrentLease(connection) match {
+            case Some(lease) =>
+              if (!(lease.instanceId == instanceId) || lease.expired) {
+                logger.info(s"database lease: $lease")
+                throw new LockException("This Eclair instance is not a database owner")
+              }
+            case None =>
+              throw new LockException("No database lease info")
+          }
+        } match {
+          case Success(_) => ()
+          case Failure(ex) =>
+            ex.printStackTrace()
+            val lex = ex match {
+              case e: LockException => e
+              case t: Throwable => new LockException("Cannot check database lease", Some(t))
+            }
+            lockExceptionHandler(lex)
+            throw lex
+        }
+      }
+
+      private def getCurrentLease(implicit connection: Connection): Option[LockLease] = {
+        using(connection.createStatement()) {
+          statement =>
+            val rs = statement.executeQuery(s"SELECT expires_at, instance, now() > expires_at AS expired FROM $LeaseTable WHERE id = 1")
+            if (rs.next())
+              Some(LockLease(
+                expiresAt = rs.getTimestamp("expires_at"),
+                instanceId = UUID.fromString(rs.getString("instance")),
+                expired = rs.getBoolean("expired")))
+            else
+              None
+        }
+      }
+
+      private def updateLease(instanceId: UUID, leaseDuration: FiniteDuration, insertNew: Boolean = false)(implicit connection: Connection): Unit = {
+        val sql = if (insertNew)
+          s"INSERT INTO $LeaseTable (expires_at, instance) VALUES (now() + ?, ?)"
+        else
+          s"UPDATE $LeaseTable SET expires_at = now() + ?, instance = ? WHERE id = 1"
+        using(connection.prepareStatement(sql)) {
+          statement =>
+            statement.setObject(1, new PGInterval(s"${
+              leaseDuration.toSeconds
+            } seconds"))
+            statement.setString(2, instanceId.toString)
+            statement.executeUpdate()
+        }
       }
     }
   }
@@ -144,104 +238,6 @@ object PgUtils extends JdbcUtils with Logging {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
     // overwrite the existing version
     statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
-  }
-
-  private def obtainDatabaseLease(instanceId: UUID, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Unit = synchronized {
-    logger.debug(s"trying to acquire database lease (attempt #$attempt) instance ID=${instanceId}")
-
-    if (attempt > 3) throw new TooManyLockAttempts("Too many attempts to acquire database lease")
-
-    try {
-      inTransaction { implicit connection =>
-        acquireExclusiveTableLock()
-        getCurrentLease match {
-          case Some(lease) =>
-            if (lease.instanceId == instanceId || lease.expired)
-              updateLease(instanceId, leaseDuration)
-            else
-              throw new LeaseException(s"The database is locked by instance ID=${lease.instanceId}")
-          case None =>
-            updateLease(instanceId, leaseDuration, insertNew = true)
-        }
-      }
-      logger.debug("database lease was successfully acquired")
-    } catch {
-      case e: PSQLException if (e.getServerErrorMessage != null && e.getServerErrorMessage.getSQLState == "42P01") =>
-        withConnection {
-          connection =>
-            logger.warn(s"table $LeaseTable does not exist, trying to recreate it")
-            initializeLeaseTable(connection)
-            obtainDatabaseLease(instanceId, leaseDuration, attempt + 1)
-        }
-    }
-  }
-
-  private def initializeLeaseTable(implicit connection: Connection): Unit = {
-    using(connection.createStatement()) {
-      statement =>
-        // allow only one row in the ownership lease table
-        statement.executeUpdate(s"CREATE TABLE IF NOT EXISTS $LeaseTable (id INTEGER PRIMARY KEY default(1), expires_at TIMESTAMP NOT NULL, instance VARCHAR NOT NULL, CONSTRAINT one_row CHECK (id = 1))")
-    }
-  }
-
-  private def acquireExclusiveTableLock()(implicit connection: Connection): Unit = {
-    using(connection.createStatement()) {
-      statement =>
-        statement.executeUpdate(s"SET lock_timeout TO '${LockTimeout.toSeconds}s'")
-        statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE")
-    }
-  }
-
-  private def checkDatabaseLease(connection: Connection, instanceId: UUID, lockExceptionHandler: LockExceptionHandler): Unit = {
-    Try {
-      getCurrentLease(connection) match {
-        case Some(lease) =>
-          if (!(lease.instanceId == instanceId) || lease.expired) {
-            logger.info(s"database lease: $lease")
-            throw new LockException("This Eclair instance is not a database owner")
-          }
-        case None =>
-          throw new LockException("No database lease info")
-      }
-    } match {
-      case Success(_) => ()
-      case Failure(ex) =>
-        val lex = ex match {
-          case e: LockException => e
-          case t: Throwable => new LockException("Cannot check database lease", Some(t))
-        }
-        lockExceptionHandler(lex)
-        throw lex
-    }
-  }
-
-  private def getCurrentLease(implicit connection: Connection): Option[LockLease] = {
-    using(connection.createStatement()) {
-      statement =>
-        val rs = statement.executeQuery(s"SELECT expires_at, instance, now() > expires_at AS expired FROM $LeaseTable WHERE id = 1")
-        if (rs.next())
-          Some(LockLease(
-            expiresAt = rs.getTimestamp("expires_at"),
-            instanceId = UUID.fromString(rs.getString("instance")),
-            expired = rs.getBoolean("expired")))
-        else
-          None
-    }
-  }
-
-  private def updateLease(instanceId: UUID, leaseDuration: FiniteDuration, insertNew: Boolean = false)(implicit connection: Connection): Unit = {
-    val sql = if (insertNew)
-      s"INSERT INTO $LeaseTable (expires_at, instance) VALUES (now() + ?, ?)"
-    else
-      s"UPDATE $LeaseTable SET expires_at = now() + ?, instance = ? WHERE id = 1"
-    using(connection.prepareStatement(sql)) {
-      statement =>
-        statement.setObject(1, new PGInterval(s"${
-          leaseDuration.toSeconds
-        } seconds"))
-        statement.setString(2, instanceId.toString)
-        statement.executeUpdate()
-    }
   }
 
 }
