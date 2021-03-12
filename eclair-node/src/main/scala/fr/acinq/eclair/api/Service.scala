@@ -28,8 +28,6 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
 
   /**
    * Allows router access to the API password as configured in eclair.conf
-   *
-   * @return
    */
   def password: String
 

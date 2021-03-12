@@ -16,12 +16,11 @@
 
 package fr.acinq.eclair.api.handlers
 
-import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.api.serde.FormParamExtractors._
+import akka.http.scaladsl.server.Route
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
-import fr.acinq.eclair.payment.PaymentRequest
+import fr.acinq.eclair.api.serde.FormParamExtractors._
 
 trait Invoice {
   this: Service with EclairDirectives =>
@@ -60,6 +59,6 @@ trait Invoice {
     }
   }
 
-  val invoiceRoutes: Route =  createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ parseInvoice
+  val invoiceRoutes: Route = createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ parseInvoice
 
 }

@@ -20,8 +20,8 @@ import akka.http.scaladsl.server.Route
 import com.google.common.net.HostAndPort
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
-import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.api.serde.FormParamExtractors._
+import fr.acinq.eclair.io.NodeURI
 
 trait Node {
   this: Service with EclairDirectives =>

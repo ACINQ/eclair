@@ -20,9 +20,9 @@ import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.MilliSatoshi
-import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
+import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import scodec.bits.ByteVector
 

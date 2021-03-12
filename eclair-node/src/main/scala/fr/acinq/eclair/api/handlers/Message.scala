@@ -17,9 +17,9 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.Route
-import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
+import fr.acinq.eclair.api.serde.FormParamExtractors._
 import scodec.bits.ByteVector
 
 trait Message {

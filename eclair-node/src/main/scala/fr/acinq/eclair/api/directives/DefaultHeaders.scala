@@ -27,10 +27,9 @@ trait DefaultHeaders {
   /**
    * Adds customHeaders to all http responses.
    */
-  def eclairHeaders:Directive0 = respondWithDefaultHeaders(customHeaders)
-
+  def eclairHeaders: Directive0 = respondWithDefaultHeaders(customHeaders)
 
   private val customHeaders = `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
-      `Access-Control-Allow-Methods`(POST) ::
-      `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
+    `Access-Control-Allow-Methods`(POST) ::
+    `Cache-Control`(public, `no-store`, `max-age`(0)) :: Nil
 }
