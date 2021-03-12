@@ -28,14 +28,14 @@ class SqlitePendingRelayDbSpec extends AnyFunSuite {
 
   test("init database 2 times in a row") {
     forAllDbs { dbs =>
-      val db1 = dbs.pendingRelay()
-      val db2 = dbs.pendingRelay()
+      val db1 = dbs.pendingRelay
+      val db2 = dbs.pendingRelay
     }
   }
 
   test("add/remove/list messages") {
     forAllDbs { dbs =>
-      val db = dbs.pendingRelay()
+      val db = dbs.pendingRelay
 
       val channelId1 = randomBytes32
       val channelId2 = randomBytes32

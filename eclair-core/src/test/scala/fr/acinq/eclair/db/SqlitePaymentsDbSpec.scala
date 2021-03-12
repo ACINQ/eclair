@@ -36,8 +36,8 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   test("init database 2 times in a row") {
     forAllDbs { dbs =>
-      val db1 = dbs.payments()
-      val db2 = dbs.payments()
+      val db1 = dbs.payments
+      val db2 = dbs.payments
     }
   }
 
@@ -319,7 +319,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   test("add/retrieve/update incoming payments") {
     forAllDbs { dbs =>
-      val db = dbs.payments()
+      val db = dbs.payments
 
       // can't receive a payment without an invoice associated with it
       assertThrows[IllegalArgumentException](db.receiveIncomingPayment(randomBytes32, 12345678 msat))
@@ -372,7 +372,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   test("add/retrieve/update outgoing payments") {
     forAllDbs { dbs =>
-      val db = dbs.payments()
+      val db = dbs.payments
 
       val parentId = UUID.randomUUID()
       val i1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(123 msat), paymentHash1, davePriv, "Some invoice", CltvExpiryDelta(18), expirySeconds = None, timestamp = 0)

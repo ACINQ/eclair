@@ -32,12 +32,14 @@ import javax.sql.DataSource
 import scala.concurrent.duration._
 
 trait Databases {
-  val network: NetworkDb
-  val audit: AuditDb
-  val channels: ChannelsDb
-  val peers: PeersDb
-  val payments: PaymentsDb
-  val pendingRelay: PendingRelayDb
+  //@formatter:off
+  def network: NetworkDb
+  def audit: AuditDb
+  def channels: ChannelsDb
+  def peers: PeersDb
+  def payments: PaymentsDb
+  def pendingRelay: PendingRelayDb
+  //@formatter:on
 }
 
 object Databases extends Logging {
@@ -143,19 +145,22 @@ object Databases extends Logging {
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
 
+    val jdbcUrlFile = new File(datadir, "last_jdbcurl")
+
     Databases.postgresJDBC(
       hikariConfig = hikariConfig,
       instanceId = instanceId,
       lock = lock,
-      datadir = datadir
+      jdbcUrlFile_opt = Some(jdbcUrlFile)
     )
   }
 
   def postgresJDBC(hikariConfig: HikariConfig,
                    instanceId: UUID,
-                   lock: PgLock = PgLock.NoLock, datadir: File)(implicit system: ActorSystem): Databases with ExclusiveLock = {
+                   lock: PgLock = PgLock.NoLock,
+                   jdbcUrlFile_opt: Option[File])(implicit system: ActorSystem): Databases with ExclusiveLock = {
 
-    checkIfDatabaseUrlIsUnchanged(hikariConfig.getJdbcUrl, datadir)
+    jdbcUrlFile_opt.foreach(jdbcUrlFile => checkIfDatabaseUrlIsUnchanged(hikariConfig.getJdbcUrl, jdbcUrlFile))
 
     implicit val ds: DataSource = new HikariDataSource(hikariConfig)
     implicit val implicitLock: PgLock = lock
@@ -195,9 +200,7 @@ object Databases extends Logging {
     databases
   }
 
-  private def checkIfDatabaseUrlIsUnchanged(url: String, datadir: File): Unit = {
-    val urlFile = new File(datadir, "last_jdbcurl")
-
+  private def checkIfDatabaseUrlIsUnchanged(url: String, urlFile: File): Unit = {
     def readString(path: Path): String = Files.readAllLines(path).get(0)
 
     def writeString(path: Path, string: String): Unit = Files.write(path, java.util.Arrays.asList(string))

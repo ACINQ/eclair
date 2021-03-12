@@ -28,14 +28,14 @@ class SqlitePeersDbSpec extends AnyFunSuite {
 
   test("init database 2 times in a row") {
     forAllDbs { dbs =>
-      val db1 = dbs.peers()
-      val db2 = dbs.peers()
+      val db1 = dbs.peers
+      val db2 = dbs.peers
     }
   }
 
   test("add/remove/list peers") {
     forAllDbs { dbs =>
-      val db = dbs.peers()
+      val db = dbs.peers
 
       case class TestCase(nodeId: PublicKey, nodeAddress: NodeAddress)
 

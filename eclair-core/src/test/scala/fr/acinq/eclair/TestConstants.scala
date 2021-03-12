@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Script}
@@ -35,6 +36,7 @@ import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import org.scalatest.Tag
 import scodec.bits.ByteVector
 
+import java.io.File
 import java.sql.{Connection, DriverManager, Statement}
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -64,28 +66,32 @@ object TestConstants {
     }
   }
 
-  sealed trait TestDatabases {
+  /**
+   * Extends the regular [[fr.acinq.eclair.db.Databases]] trait with test-specific methods
+   */
+  sealed trait TestDatabases extends Databases {
     // @formatter:off
     val connection: Connection
-    def network(): NetworkDb
-    def audit(): AuditDb
-    def channels(): ChannelsDb
-    def peers(): PeersDb
-    def payments(): PaymentsDb
-    def pendingRelay(): PendingRelayDb
+    val db: Databases
+    override def network: NetworkDb = db.network
+    override def audit: AuditDb = db.audit
+    override def channels: ChannelsDb = db.channels
+    override def peers: PeersDb = db.peers
+    override def payments: PaymentsDb = db.payments
+    override def pendingRelay: PendingRelayDb = db.pendingRelay
     def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
     def close(): Unit
     // @formatter:on
   }
 
-  case class TestSqliteDatabases(connection: Connection = sqliteInMemory()) extends TestDatabases {
+  def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
+
+  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
+
+  case class TestSqliteDatabases() extends TestDatabases {
     // @formatter:off
-    override def network(): NetworkDb = new SqliteNetworkDb(connection)
-    override def audit(): AuditDb = new SqliteAuditDb(connection)
-    override def channels(): ChannelsDb = new SqliteChannelsDb(connection)
-    override def peers(): PeersDb = new SqlitePeersDb(connection)
-    override def payments(): PaymentsDb = new SqlitePaymentsDb(connection)
-    override def pendingRelay(): PendingRelayDb = new SqlitePendingRelayDb(connection)
+    override val connection: Connection = sqliteInMemory()
+    override lazy val db = Databases.sqliteDatabaseByConnections(connection, connection, connection)
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = ()
     // @formatter:on
@@ -94,30 +100,24 @@ object TestConstants {
   case class TestPgDatabases() extends TestDatabases {
     private val pg = EmbeddedPostgres.start()
 
-    override val connection: Connection = pg.getPostgresDatabase.getConnection
+    import com.zaxxer.hikari.HikariConfig
+    val hikariConfig = new HikariConfig
+    hikariConfig.setDataSource(pg.getPostgresDatabase)
 
-    import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+    val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, PgLock.logAndStopLockExceptionHandler)
 
-    val config = new HikariConfig
-    config.setDataSource(pg.getPostgresDatabase)
+    val jdbcUrlFile: File = new File(sys.props("tmp.dir"), s"jdbcUrlFile_${UUID.randomUUID()}.tmp")
+    jdbcUrlFile.deleteOnExit()
 
-    implicit val ds = new HikariDataSource(config)
-    implicit val lock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 1 minute, PgLock.logAndStopLockExceptionHandler)
-    lock.obtainExclusiveLock
+    implicit val system: ActorSystem = ActorSystem()
 
     // @formatter:off
-    override def network(): NetworkDb = new PgNetworkDb
-    override def audit(): AuditDb = new PgAuditDb
-    override def channels(): ChannelsDb = new PgChannelsDb
-    override def peers(): PeersDb = new PgPeersDb
-    override def payments(): PaymentsDb = new PgPaymentsDb
-    override def pendingRelay(): PendingRelayDb = new PgPendingRelayDb
+    override val connection: Connection = pg.getPostgresDatabase.getConnection
+    override lazy val db = Databases.postgresJDBC(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile))
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = pg.close()
     // @formatter:on
   }
-
-  def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
 
   def forAllDbs(f: TestDatabases => Unit): Unit = {
     // @formatter:off
@@ -126,8 +126,6 @@ object TestConstants {
     using(TestPgDatabases())(f)
     // @formatter:on
   }
-
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
 
   case object TestFeature extends Feature {
     val rfcName = "test_feature"
