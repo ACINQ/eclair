@@ -20,8 +20,8 @@ import akka.http.scaladsl.model.{ContentTypes, HttpRequest, HttpResponse, Status
 import akka.http.scaladsl.server.{Directive0, Directive1, Directives}
 import akka.util.Timeout
 import fr.acinq.eclair.api.serde.FormParamExtractors._
-import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.api.serde.JsonSupport
+import fr.acinq.eclair.api.serde.JsonSupport._
 
 import scala.concurrent.duration.DurationInt
 
@@ -29,12 +29,11 @@ trait TimeoutDirective extends Directives {
 
   import JsonSupport.{formats, serialization}
 
-
   /**
    * Extracts a given request timeout from an optional form field. Provides either the
    * extracted Timeout or a default Timeout to the inner route.
    */
-  def withTimeout:Directive1[Timeout] = extractTimeout.tflatMap { timeout =>
+  def withTimeout: Directive1[Timeout] = extractTimeout.tflatMap { timeout =>
     withTimeoutRequest(timeout._1) & provide(timeout._1)
   }
 

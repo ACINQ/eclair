@@ -38,7 +38,6 @@ trait WebSocket {
     handleWebSocketMessages(makeSocketHandler)
   }
 
-
   // Init the websocket message flow
   private lazy val makeSocketHandler: Flow[Message, TextMessage.Strict, NotUsed] = {
 
@@ -73,6 +72,5 @@ trait WebSocket {
       .merge(flowOutput) // Stream the data we want to the client
       .map(TextMessage.apply)
   }
-
 
 }

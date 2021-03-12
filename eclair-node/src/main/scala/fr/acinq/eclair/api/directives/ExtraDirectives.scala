@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.api.directives
 
-import fr.acinq.eclair.api.serde.JsonSupport.serialization
 import akka.http.scaladsl.common.{NameReceptacle, NameUnmarshallerReceptacle}
 import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.StatusCodes.NotFound

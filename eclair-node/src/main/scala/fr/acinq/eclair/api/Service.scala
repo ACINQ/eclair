@@ -28,8 +28,6 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
 
   /**
    * Allows router access to the API password as configured in eclair.conf
-   *
-   * @return
    */
   def password: String
 
@@ -49,9 +47,12 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
   implicit val mat: Materializer
 
   /**
-   * Collect routes from all sub-routers here. This is the main entrypoint for the global
-   * http request router of the API service.
+   * Collect routes from all sub-routers here.
+   * This is the main entrypoint for the global http request router of the API service.
+   * This is where we handle errors to ensure all routes are correctly tried before rejecting.
    */
-  val route: Route = nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
+  val route: Route = securedHandler {
+    nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
+  }
 
 }

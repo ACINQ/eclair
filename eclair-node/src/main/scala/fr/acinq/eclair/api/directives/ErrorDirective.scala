@@ -24,12 +24,9 @@ trait ErrorDirective {
   this: Service with EclairDirectives =>
 
   /**
-   * Handles API exceptions and rejections. Produces json formatted
-   * error responses.
+   * Handles API exceptions and rejections. Produces json formatted error responses.
    */
-  def handled: Directive0 = handleExceptions(apiExceptionHandler) &
-    handleRejections(apiRejectionHandler)
-
+  def handled: Directive0 = handleExceptions(apiExceptionHandler) & handleRejections(apiRejectionHandler)
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
@@ -45,9 +42,7 @@ trait ErrorDirective {
   // map all the rejections to a JSON error object ErrorResponse
   private val apiRejectionHandler = RejectionHandler.default.mapRejectionResponse {
     case res@HttpResponse(_, _, ent: HttpEntity.Strict, _) =>
-      res.withEntity(
-        HttpEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse(ent.data.utf8String)))
-      )
+      res.withEntity(HttpEntity(ContentTypes.`application/json`, serialization.writePretty(ErrorResponse(ent.data.utf8String))))
   }
 
 }
