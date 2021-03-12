@@ -36,7 +36,7 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
     blocks_144 = FeeratePerKB(20000 sat),
     blocks_1008 = FeeratePerKB(10000 sat))
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     val sqlite = TestConstants.sqliteInMemory()
     val db1 = new SqliteFeeratesDb(sqlite)
     val db2 = new SqliteFeeratesDb(sqlite)

@@ -102,8 +102,8 @@ object TestConstants {
     config.setDataSource(pg.getPostgresDatabase)
 
     implicit val ds = new HikariDataSource(config)
-    implicit val lock = PgLock.NoLock
-    //implicit val lock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 1 minute, PgLock.logAndStopLockExceptionHandler)
+    implicit val lock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 1 minute, PgLock.logAndStopLockExceptionHandler)
+    lock.obtainExclusiveLock
 
     // @formatter:off
     override def network(): NetworkDb = new PgNetworkDb

@@ -26,7 +26,7 @@ class SqlitePeersDbSpec extends AnyFunSuite {
 
   import TestConstants.forAllDbs
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
       val db1 = dbs.peers()
       val db2 = dbs.peers()

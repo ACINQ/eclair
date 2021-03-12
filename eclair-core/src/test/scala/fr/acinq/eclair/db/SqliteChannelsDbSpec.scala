@@ -34,7 +34,7 @@ import java.sql.SQLException
 
 class SqliteChannelsDbSpec extends AnyFunSuite {
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
       val db1 = dbs.channels()
       val db2 = dbs.channels()

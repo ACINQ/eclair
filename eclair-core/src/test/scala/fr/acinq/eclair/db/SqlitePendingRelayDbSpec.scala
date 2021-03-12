@@ -26,7 +26,7 @@ class SqlitePendingRelayDbSpec extends AnyFunSuite {
 
   import TestConstants.forAllDbs
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
       val db1 = dbs.pendingRelay()
       val db2 = dbs.pendingRelay()

@@ -36,7 +36,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
       val db1 = dbs.network()
       val db2 = dbs.network()

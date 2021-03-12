@@ -34,7 +34,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   import SqlitePaymentsDbSpec._
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
       val db1 = dbs.payments()
       val db2 = dbs.payments()
