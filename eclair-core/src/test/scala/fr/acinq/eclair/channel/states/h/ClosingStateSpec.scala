@@ -43,7 +43,7 @@ import scala.concurrent.duration._
 
 class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, bobCommitTxes: List[PublishableTxs])
+  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, bobCommitTxs: List[PublishableTxs])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -560,6 +560,52 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     relayerA.expectNoMsg(100 millis)
   }
 
+  test("recv INPUT_RESTORED (local commit)") { f =>
+    import f._
+
+    // alice sends an htlc to bob
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val closingState = localClose(alice, alice2blockchain)
+    val htlcTimeoutTx = getHtlcTimeoutTxs(closingState).head
+
+    // simulate a node restart
+    val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(beforeRestart)
+    awaitCond(alice.stateName == CLOSING)
+
+    // the commit tx hasn't been confirmed yet, so we watch the funding output first
+    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_FUNDING_SPENT)
+    // then we should re-publish unconfirmed transactions
+    assert(alice2blockchain.expectMsgType[PublishAsap].tx === closingState.commitTx)
+    closingState.claimMainDelayedOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishAsap].tx === claimMain.tx))
+    assert(alice2blockchain.expectMsgType[PublishAsap].tx === htlcTimeoutTx.tx)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === closingState.commitTx.txid)
+    closingState.claimMainDelayedOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimMain.tx.txid))
+    assert(alice2blockchain.expectMsgType[WatchSpent].outputIndex === htlcTimeoutTx.input.outPoint.index)
+
+    // the htlc transaction confirms, so we publish a 3rd-stage transaction
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.commitTx), 2701, 1, closingState.commitTx)
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx.tx), 2702, 0, htlcTimeoutTx.tx)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.nonEmpty)
+    val beforeSecondRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
+    val claimHtlcTimeoutTx = beforeSecondRestart.localCommitPublished.get.claimHtlcDelayedTxs.head
+    assert(alice2blockchain.expectMsgType[PublishAsap].tx === claimHtlcTimeoutTx.tx)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimHtlcTimeoutTx.tx.txid)
+
+    // simulate another node restart
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(beforeSecondRestart)
+    awaitCond(alice.stateName == CLOSING)
+
+    // we should re-publish unconfirmed transactions
+    closingState.claimMainDelayedOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishAsap].tx === claimMain.tx))
+    assert(alice2blockchain.expectMsgType[PublishAsap].tx === claimHtlcTimeoutTx.tx)
+    closingState.claimMainDelayedOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimMain.tx.txid))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimHtlcTimeoutTx.tx.txid)
+  }
+
   test("recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)") { f =>
     import f._
     val listener = TestProbe()
@@ -590,7 +636,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
-    val bobCommitTx = bobCommitTxes.last.commitTx.tx
+    val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 2) // two main outputs
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
     assert(closingState.claimMainOutputTx.nonEmpty)
@@ -604,7 +650,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(initialState.commitments.channelVersion === ChannelVersion.STANDARD)
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
-    val bobCommitTx = bobCommitTxes.last.commitTx.tx
+    val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 2) // two main outputs
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
 
@@ -622,7 +668,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelVersion === ChannelVersion.STATIC_REMOTEKEY)
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
-    val bobCommitTx = bobCommitTxes.last.commitTx.tx
+    val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 2) // two main outputs
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
@@ -640,7 +686,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(initialState.commitments.channelVersion === ChannelVersion.ANCHOR_OUTPUTS)
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
-    val bobCommitTx = bobCommitTxes.last.commitTx.tx
+    val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 4) // two main outputs + two anchors
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
 
@@ -749,6 +795,30 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
     alice2blockchain.expectNoMsg(100 millis)
     relayerA.expectNoMsg(100 millis)
+  }
+
+  test("recv INPUT_RESTORED (remote commit)") { f =>
+    import f._
+
+    // alice sends an htlc to bob
+    addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
+    val htlcTimeoutTx = getClaimHtlcTimeoutTxs(closingState).head
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0, bobCommitTx)
+
+    // simulate a node restart
+    val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(beforeRestart)
+    awaitCond(alice.stateName == CLOSING)
+
+    // we should re-publish unconfirmed transactions
+    closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishAsap].tx === claimMain.tx))
+    assert(alice2blockchain.expectMsgType[PublishAsap].tx === htlcTimeoutTx.tx)
+    closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimMain.tx.txid))
+    assert(alice2blockchain.expectMsgType[WatchSpent].outputIndex === htlcTimeoutTx.input.outPoint.index)
   }
 
   private def testNextRemoteCommitTxConfirmed(f: FixtureParam, channelVersion: ChannelVersion): (Transaction, RemoteCommitPublished, Set[UpdateAddHtlc]) = {
@@ -894,6 +964,28 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     relayerA.expectNoMsg(100 millis)
   }
 
+  test("recv INPUT_RESTORED (next remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    val (bobCommitTx, closingState, _) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
+    val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState)
+
+    // simulate a node restart
+    val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(beforeRestart)
+    awaitCond(alice.stateName == CLOSING)
+
+    // the commit tx hasn't been confirmed yet, so we watch the funding output first
+    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_FUNDING_SPENT)
+    // then we should re-publish unconfirmed transactions
+    closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishAsap].tx === claimMain.tx))
+    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(alice2blockchain.expectMsgType[PublishAsap].tx === claimHtlcTimeout.tx))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobCommitTx.txid)
+    closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimMain.tx.txid))
+    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(alice2blockchain.expectMsgType[WatchSpent].outputIndex === claimHtlcTimeout.input.outPoint.index))
+  }
+
   private def testFutureRemoteCommitTxConfirmed(f: FixtureParam, channelVersion: ChannelVersion): Transaction = {
     import f._
     val oldStateData = alice.stateData
@@ -984,6 +1076,24 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
+  test("recv INPUT_RESTORED (future remote commit)") { f =>
+    import f._
+
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.STANDARD)
+
+    // simulate a node restart
+    val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(beforeRestart)
+    awaitCond(alice.stateName == CLOSING)
+
+    // then we should claim our main output
+    val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx
+    Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimMainTx.txid)
+  }
+
   case class RevokedCloseFixture(bobRevokedTxs: Seq[PublishableTxs], htlcsAlice: Seq[(UpdateAddHtlc, ByteVector32)], htlcsBob: Seq[(UpdateAddHtlc, ByteVector32)])
 
   private def prepareRevokedClose(f: FixtureParam, channelVersion: ChannelVersion): RevokedCloseFixture = {
@@ -1049,8 +1159,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     RevokedCloseFixture(Seq(commitTx1, commitTx2, commitTx3, commitTx4), Seq(htlcAlice1, htlcAlice2), Seq(htlcBob1, htlcBob2))
   }
 
-  private def testFundingSpentRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+  private def setupFundingSpentRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): (Transaction, RevokedCommitPublished) = {
     import f._
+
     val revokedCloseFixture = prepareRevokedClose(f, channelVersion)
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
 
@@ -1102,6 +1213,14 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val watchedOutpoints = Seq(alice2blockchain.expectMsgType[WatchSpent], alice2blockchain.expectMsgType[WatchSpent], alice2blockchain.expectMsgType[WatchSpent]).map(_.outputIndex).toSet
     assert(watchedOutpoints === (rvk.mainPenaltyTx.get :: rvk.htlcPenaltyTxs).map(_.input.outPoint.index).toSet)
     alice2blockchain.expectNoMsg(1 second)
+
+    (bobRevokedTx, rvk)
+  }
+
+  private def testFundingSpentRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+    import f._
+
+    val (bobRevokedTx, rvk) = setupFundingSpentRevokedTx(f, channelVersion)
 
     // once all txs are confirmed, alice can move to the closed state
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobRevokedTx), 100, 3, bobRevokedTx)
@@ -1173,6 +1292,37 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateName === CLOSING)
     alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(rvk2.htlcPenaltyTxs(1).tx), 115, 2, rvk2.htlcPenaltyTxs(1).tx)
     awaitCond(alice.stateName === CLOSED)
+  }
+
+  def testInputRestoredRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+    import f._
+
+    val (bobRevokedTx, rvk) = setupFundingSpentRevokedTx(f, channelVersion)
+
+    // simulate a node restart
+    val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
+    alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
+    alice ! INPUT_RESTORED(beforeRestart)
+    awaitCond(alice.stateName == CLOSING)
+
+    // the commit tx hasn't been confirmed yet, so we watch the funding output first
+    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_FUNDING_SPENT)
+    // then we should re-publish unconfirmed transactions
+    rvk.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishAsap].tx === claimMain.tx))
+    assert(alice2blockchain.expectMsgType[PublishAsap].tx === rvk.mainPenaltyTx.get.tx)
+    rvk.htlcPenaltyTxs.foreach(htlcPenalty => assert(alice2blockchain.expectMsgType[PublishAsap].tx === htlcPenalty.tx))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobRevokedTx.txid)
+    rvk.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === claimMain.tx.txid))
+    assert(alice2blockchain.expectMsgType[WatchSpent].outputIndex === rvk.mainPenaltyTx.get.input.outPoint.index)
+    rvk.htlcPenaltyTxs.foreach(htlcPenalty => assert(alice2blockchain.expectMsgType[WatchSpent].outputIndex === htlcPenalty.input.outPoint.index))
+  }
+
+  test("recv INPUT_RESTORED (one revoked tx)") { f =>
+    testInputRestoredRevokedTx(f, ChannelVersion.STANDARD)
+  }
+
+  test("recv INPUT_RESTORED (one revoked tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    testInputRestoredRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
   def testOutputSpentRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
