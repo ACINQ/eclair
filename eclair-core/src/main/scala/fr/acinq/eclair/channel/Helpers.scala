@@ -1008,7 +1008,7 @@ object Helpers {
             }.toSet
         } else {
           tx.txIn.flatMap(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
-            case Some(Some(HtlcTimeoutTx(_, _, htlcId))) =>
+            case Some(Some(HtlcTimeoutTx(_, _, htlcId))) if isHtlcTimeout(tx, localCommitPublished) =>
               untrimmedHtlcs.find(_.id == htlcId) match {
                 case Some(htlc) =>
                   log.info(s"htlc-timeout tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
@@ -1049,7 +1049,7 @@ object Helpers {
             }.toSet
         } else {
           tx.txIn.flatMap(txIn => remoteCommitPublished.claimHtlcTxs.get(txIn.outPoint) match {
-            case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId))) =>
+            case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId))) if isClaimHtlcTimeout(tx, remoteCommitPublished) =>
               untrimmedHtlcs.find(_.id == htlcId) match {
                 case Some(htlc) =>
                   log.info(s"claim-htlc-timeout tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")

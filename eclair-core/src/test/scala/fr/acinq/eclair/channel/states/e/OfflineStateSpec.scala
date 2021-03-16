@@ -491,7 +491,10 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
-    alice2blockchain.expectNoMsg(500 millis)
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
+    bob2blockchain.expectMsgType[WatchSpent] // htlc
+    bob2blockchain.expectNoMsg(500 millis)
   }
 
   test("pending non-relayed fail htlcs will timeout upstream") { f =>
