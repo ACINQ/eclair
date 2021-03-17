@@ -755,7 +755,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     // htlc3 and htlc4 are completely identical, their relative order can't be enforced.
     assert(htlcTxs.length === 5)
     htlcTxs.foreach(tx => assert(tx.isInstanceOf[HtlcTimeoutTx]))
-    val htlcIds = htlcTxs.map(_.htlcId)
+    val htlcIds = htlcTxs.sortBy(_.input.outPoint.index).map(_.htlcId)
     assert(htlcIds === Seq(1, 2, 3, 4, 5) || htlcIds === Seq(1, 2, 4, 3, 5))
 
     assert(htlcOut2.publicKeyScript.toHex < htlcOut3.publicKeyScript.toHex)
