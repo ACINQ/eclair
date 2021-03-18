@@ -1241,7 +1241,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
       // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
-      handleMutualClose(findMutualClosePublished(tx, d.closingTxProposed), Left(d))
+      handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1508,7 +1508,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _, _), _) => stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
-      handleMutualClose(findMutualClosePublished(tx, d.closingTxProposed), Left(d))
+      handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1679,7 +1679,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK | BITCOIN_FUNDING_DEEPLYBURIED, _, _, _), _) => stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if d.closingTxProposed.flatten.exists(_.unsignedTx.tx.txid == tx.txid) =>
-      handleMutualClose(findMutualClosePublished(tx, d.closingTxProposed), Left(d))
+      handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -2121,7 +2121,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  private def findMutualClosePublished(tx: Transaction, closingTxProposed: List[List[ClosingTxProposed]]): ClosingTx = {
+  /**
+   * Return full information about a known closing tx.
+   */
+  private def getMutualClosePublished(tx: Transaction, closingTxProposed: List[List[ClosingTxProposed]]): ClosingTx = {
     // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
     val proposedTx_opt = closingTxProposed.flatten.find(_.unsignedTx.tx.txid == tx.txid)
     require(proposedTx_opt.nonEmpty, s"closing tx not found in our proposed transactions: tx=$tx")
@@ -2188,13 +2191,16 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   /**
    * This helper method will watch txs only if the utxo they spend hasn't already been irrevocably spent
+   *
+   * @param parentTx transaction which outputs will be watched
+   * @param outputs  outputs that will be watched. They must be a subset of the outputs of the `parentTx`
    */
   private def watchSpentIfNeeded(parentTx: Transaction, outputs: Iterable[OutPoint], irrevocablySpent: Map[OutPoint, Transaction]): Unit = {
+    outputs.foreach { output =>
+      require(output.txid == parentTx.txid && output.index < parentTx.txOut.size, s"output doesn't belong to the given parentTx: output=${output.txid}:${output.index} (expected txid=${parentTx.txid} index < ${parentTx.txOut.size})")
+    }
     val (skip, process) = outputs.partition(irrevocablySpent.contains)
-    process.foreach(output => {
-      require(output.txid == parentTx.txid, s"output doesn't belong to the given parentTx: txid=${output.txid} but expected txid=${parentTx.txid}")
-      blockchain ! WatchSpent(self, parentTx, output.index.toInt, BITCOIN_OUTPUT_SPENT, hints = Set.empty)
-    })
+    process.foreach(output => blockchain ! WatchSpent(self, parentTx, output.index.toInt, BITCOIN_OUTPUT_SPENT, hints = Set.empty))
     skip.foreach(output => log.info(s"no need to watch output=${output.txid}:${output.index}, it has already been spent by txid=${irrevocablySpent.get(output).map(_.txid)}"))
   }
 
