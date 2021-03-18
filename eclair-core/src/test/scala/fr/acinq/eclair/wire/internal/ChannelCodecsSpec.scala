@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.internal
 
 import akka.actor.ActorSystem
 import akka.testkit.TestProbe
@@ -30,9 +30,10 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.wire.CommonCodecs.setCodec
-import fr.acinq.eclair.wire.legacy.legacy0.LegacyChannelCodecs0
+import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.wire.internal.ChannelCodecs.Codecs._
+import fr.acinq.eclair.wire.internal.ChannelCodecs._
 import fr.acinq.eclair.{TestConstants, UInt64, randomBytes32, randomKey, _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization

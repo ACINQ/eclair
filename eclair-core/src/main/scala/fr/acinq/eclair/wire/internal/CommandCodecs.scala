@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.internal
 
 import akka.actor.ActorRef
 import fr.acinq.eclair.channel._

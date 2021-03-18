@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.internal
 
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.CommonCodecs.{bytes32, varsizebinarydata}
 import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
+import fr.acinq.eclair.wire.{FailureMessageCodecs, TemporaryNodeFailure}
 import fr.acinq.eclair.{randomBytes, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult

@@ -22,7 +22,7 @@ import fr.acinq.eclair.channel.{Command, HtlcSettlementCommand}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.db.pg.PgUtils._
-import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
+import fr.acinq.eclair.wire.internal.CommandCodecs.cmdCodec
 import javax.sql.DataSource
 
 import scala.collection.immutable.Queue

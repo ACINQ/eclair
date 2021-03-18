@@ -1,4 +1,4 @@
-package fr.acinq.eclair.wire.legacy
+package fr.acinq.eclair.wire.internal.legacy
 
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.channel.{LocalCommitPublished, RemoteCommitPublished, RevokedCommitPublished}

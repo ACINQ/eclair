@@ -1,4 +1,4 @@
-package fr.acinq.eclair.wire.legacy.legacy0
+package fr.acinq.eclair.wire.internal.legacy.legacy0
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
@@ -10,7 +10,7 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc,
 import fr.acinq.eclair.wire.CommonCodecs.{bytes32, discriminatorWithDefault, publicKey, _}
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.UpdateMessage
-import fr.acinq.eclair.wire.legacy.LegacyChannelTypes
+import fr.acinq.eclair.wire.internal.legacy.LegacyChannelTypes
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 import scodec.codecs.{bits, bool, byte, bytes, discriminated, either, ignore, int64, listOfN, optional, peek, provide, uint16, uint32, variableSizeBytes, _}
@@ -24,7 +24,7 @@ import scala.concurrent.duration._
  *
  * Created by PM on 02/06/2017.
  */
-private[wire] object LegacyChannelCodecs0 extends Logging {
+private[internal] object LegacyChannelCodecs0 extends Logging {
 
   private[legacy0] object Codecs {
 

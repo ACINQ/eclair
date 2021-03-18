@@ -1,4 +1,4 @@
-package fr.acinq.eclair.wire.legacy.legacy0
+package fr.acinq.eclair.wire.internal.legacy.legacy0
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong}

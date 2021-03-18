@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire.legacy.legacy1
+package fr.acinq.eclair.wire.internal.legacy.legacy1
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
@@ -26,13 +26,13 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.UpdateMessage
-import fr.acinq.eclair.wire.legacy.LegacyChannelTypes
+import fr.acinq.eclair.wire.internal.legacy.LegacyChannelTypes
 import grizzled.slf4j.Logging
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
 
-private[wire] object LegacyChannelCodecs1 extends Logging {
+private[internal] object LegacyChannelCodecs1 extends Logging {
 
   private[legacy1] object Codecs {
 
