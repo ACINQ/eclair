@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire.internal.legacy.legacy1
+package fr.acinq.eclair.wire.internal.channel.legacy.version1
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
@@ -26,15 +26,15 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.UpdateMessage
-import fr.acinq.eclair.wire.internal.legacy.LegacyChannelTypes
+import fr.acinq.eclair.wire.internal.channel.legacy.ChannelTypes
 import grizzled.slf4j.Logging
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
 
-private[internal] object LegacyChannelCodecs1 extends Logging {
+private[channel] object ChannelCodecs1 extends Logging {
 
-  private[legacy1] object Codecs {
+  private[version1] object Codecs {
 
     def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, codec).decodeOnly
 
@@ -101,7 +101,7 @@ private[internal] object LegacyChannelCodecs1 extends Logging {
     val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
     val closingTxCodec: Codec[ClosingTx] = txCodec.xmap(
-      tx => LegacyChannelTypes.migrateClosingTx(tx),
+      tx => ChannelTypes.migrateClosingTx(tx),
       closingTx => closingTx.tx
     )
 
@@ -217,14 +217,14 @@ private[internal] object LegacyChannelCodecs1 extends Logging {
         ("htlcSuccessTxs" | listOfN(uint16, txCodec)) ::
         ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
         ("claimHtlcDelayedTx" | listOfN(uint16, txCodec)) ::
-        ("spent" | spentMapCodec)).as[LegacyChannelTypes.LegacyLocalCommitPublished].decodeOnly.map[LocalCommitPublished](_.migrate()).decodeOnly
+        ("spent" | spentMapCodec)).as[ChannelTypes.LegacyLocalCommitPublished].decodeOnly.map[LocalCommitPublished](_.migrate()).decodeOnly
 
     val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
       ("commitTx" | txCodec) ::
         ("claimMainOutputTx" | optional(bool8, txCodec)) ::
         ("claimHtlcSuccessTxs" | listOfN(uint16, txCodec)) ::
         ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
-        ("spent" | spentMapCodec)).as[LegacyChannelTypes.LegacyRemoteCommitPublished].decodeOnly.map[RemoteCommitPublished](_.migrate()).decodeOnly
+        ("spent" | spentMapCodec)).as[ChannelTypes.LegacyRemoteCommitPublished].decodeOnly.map[RemoteCommitPublished](_.migrate()).decodeOnly
 
     val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
       ("commitTx" | txCodec) ::
@@ -232,7 +232,7 @@ private[internal] object LegacyChannelCodecs1 extends Logging {
         ("mainPenaltyTx" | optional(bool8, txCodec)) ::
         ("htlcPenaltyTxs" | listOfN(uint16, txCodec)) ::
         ("claimHtlcDelayedPenaltyTxs" | listOfN(uint16, txCodec)) ::
-        ("spent" | spentMapCodec)).as[LegacyChannelTypes.LegacyRevokedCommitPublished].decodeOnly.map[RevokedCommitPublished](_.migrate()).decodeOnly
+        ("spent" | spentMapCodec)).as[ChannelTypes.LegacyRevokedCommitPublished].decodeOnly.map[RevokedCommitPublished](_.migrate()).decodeOnly
 
   }
 

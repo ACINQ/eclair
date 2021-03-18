@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire.internal
+package fr.acinq.eclair.wire.internal.channel.version2
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
@@ -26,8 +26,8 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.UpdateMessage
-import fr.acinq.eclair.wire.internal.legacy.legacy0.LegacyChannelCodecs0
-import fr.acinq.eclair.wire.internal.legacy.legacy1.LegacyChannelCodecs1
+import fr.acinq.eclair.wire.internal.channel.legacy.version0.ChannelCodecs0
+import fr.acinq.eclair.wire.internal.channel.legacy.version1.ChannelCodecs1
 import grizzled.slf4j.Logging
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -35,9 +35,9 @@ import scodec.{Attempt, Codec}
 /**
  * Created by PM on 02/06/2017.
  */
-object ChannelCodecs extends Logging {
+private[channel] object ChannelCodecs2 extends Logging {
 
-  object Codecs {
+  private[version2] object Codecs {
 
     /**
      * All LN protocol message must be stored as length-delimited, because they may have arbitrary trailing data
@@ -293,45 +293,5 @@ object ChannelCodecs extends Logging {
   val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
     ("commitments" | commitmentsCodec) ::
       ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
-
-  /**
-   * Order matters!!
-   *
-   * We use the fact that the discriminated codec encodes using the first suitable codec it finds in the list to handle
-   * database migration.
-   *
-   * For example, a data encoded with type 01 will be decoded using [[LegacyChannelCodecs0.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec]] and
-   * encoded to a type 08 using [[DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec]].
-   *
-   * More info here: https://github.com/scodec/scodec/issues/122
-   */
-  val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(byte)
-    .typecase(2, discriminated[HasCommitments].by(uint16)
-      .typecase(0x30, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x31, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x32, DATA_NORMAL_Codec)
-      .typecase(0x33, DATA_SHUTDOWN_Codec)
-      .typecase(0x34, DATA_NEGOTIATING_Codec)
-      .typecase(0x35, DATA_CLOSING_Codec)
-      .typecase(0x36, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
-    .typecase(1, discriminated[HasCommitments].by(uint16)
-      .typecase(0x20, LegacyChannelCodecs1.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x21, LegacyChannelCodecs1.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x22, LegacyChannelCodecs1.DATA_NORMAL_Codec)
-      .typecase(0x23, LegacyChannelCodecs1.DATA_SHUTDOWN_Codec)
-      .typecase(0x24, LegacyChannelCodecs1.DATA_NEGOTIATING_Codec)
-      .typecase(0x25, LegacyChannelCodecs1.DATA_CLOSING_Codec)
-      .typecase(0x26, LegacyChannelCodecs1.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
-    .typecase(0, discriminated[HasCommitments].by(uint16)
-      .typecase(0x10, LegacyChannelCodecs0.DATA_NORMAL_Codec)
-      .typecase(0x09, LegacyChannelCodecs0.DATA_CLOSING_Codec)
-      .typecase(0x08, LegacyChannelCodecs0.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x01, LegacyChannelCodecs0.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
-      .typecase(0x02, LegacyChannelCodecs0.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x03, LegacyChannelCodecs0.DATA_NORMAL_COMPAT_03_Codec)
-      .typecase(0x04, LegacyChannelCodecs0.DATA_SHUTDOWN_Codec)
-      .typecase(0x05, LegacyChannelCodecs0.DATA_NEGOTIATING_Codec)
-      .typecase(0x06, LegacyChannelCodecs0.DATA_CLOSING_COMPAT_06_Codec)
-      .typecase(0x07, LegacyChannelCodecs0.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
 
 }

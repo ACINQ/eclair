@@ -1,4 +1,4 @@
-package fr.acinq.eclair.wire.internal.legacy
+package fr.acinq.eclair.wire.internal.channel.legacy
 
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.channel.{LocalCommitPublished, RemoteCommitPublished, RevokedCommitPublished}
@@ -10,7 +10,7 @@ import fr.acinq.eclair.transactions.Transactions._
  * Created by PM on 02/06/2017.
  */
 
-private[legacy] object LegacyChannelTypes {
+private[legacy] object ChannelTypes {
 
   // The format of the XxxCommitPublished types was changed in eclair v0.5.2 to work with anchor outputs channels.
   // Before that, all closing txs were generated once (when we detected the force-close) and never updated afterwards
