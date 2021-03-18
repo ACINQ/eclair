@@ -26,8 +26,8 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.UpdateMessage
-import fr.acinq.eclair.wire.internal.channel.legacy.version0.ChannelCodecs0
-import fr.acinq.eclair.wire.internal.channel.legacy.version1.ChannelCodecs1
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0
+import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
 import grizzled.slf4j.Logging
 import scodec.codecs._
 import scodec.{Attempt, Codec}

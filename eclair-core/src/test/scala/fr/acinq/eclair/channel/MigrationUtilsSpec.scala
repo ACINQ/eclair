@@ -12,7 +12,7 @@ import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
-class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateTestsHelperMethods {
+class MigrationUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with StateTestsHelperMethods {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 

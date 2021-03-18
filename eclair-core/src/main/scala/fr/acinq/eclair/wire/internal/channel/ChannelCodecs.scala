@@ -17,8 +17,8 @@
 package fr.acinq.eclair.wire.internal.channel
 
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.internal.channel.legacy.version0.ChannelCodecs0
-import fr.acinq.eclair.wire.internal.channel.legacy.version1.ChannelCodecs1
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0
+import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2
 import grizzled.slf4j.Logging
 import scodec.Codec
