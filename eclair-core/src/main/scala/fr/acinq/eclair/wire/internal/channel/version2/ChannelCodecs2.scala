@@ -26,8 +26,7 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.UpdateMessage
-import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0
-import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
+import fr.acinq.eclair.wire.internal.InternalCommonCodecs._
 import grizzled.slf4j.Logging
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -38,11 +37,6 @@ import scodec.{Attempt, Codec}
 private[channel] object ChannelCodecs2 extends Logging {
 
   private[version2] object Codecs {
-
-    /**
-     * All LN protocol message must be stored as length-delimited, because they may have arbitrary trailing data
-     */
-    def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, codec)
 
     val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
@@ -102,8 +96,6 @@ private[channel] object ChannelCodecs2 extends Logging {
     val outPointCodec: Codec[OutPoint] = lengthDelimited(bytes.xmap(d => OutPoint.read(d.toArray), d => OutPoint.write(d)))
 
     val txOutCodec: Codec[TxOut] = lengthDelimited(bytes.xmap(d => TxOut.read(d.toArray), d => TxOut.write(d)))
-
-    val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
     val outputInfoCodec: Codec[OutputInfo] = (
       ("index" | uint32) ::

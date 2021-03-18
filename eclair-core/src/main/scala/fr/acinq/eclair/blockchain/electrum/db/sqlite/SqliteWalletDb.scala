@@ -22,6 +22,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
 import fr.acinq.eclair.db.sqlite.SqliteUtils
+import fr.acinq.eclair.wire.internal.InternalCommonCodecs.txCodec
 
 import java.sql.Connection
 import scala.collection.immutable.Queue
@@ -163,10 +164,6 @@ object SqliteWalletDb {
     (map: Map[ByteVector32, Int]) => heightsListCodec.encode(map.toList),
     (wire: BitVector) => heightsListCodec.decode(wire).map(_.map(_.toMap))
   )
-
-  def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, codec)
-
-  val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
   val transactionListCodec: Codec[List[(ByteVector32, Transaction)]] = listOfN(uint16, bytes32 ~ txCodec)
 
