@@ -376,8 +376,8 @@ object Helpers {
           Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
         case _ if closing.futureRemoteCommitPublished.exists(_.isConfirmed) =>
           Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
-        case _ if closing.revokedCommitPublished.exists(rcp => rcp.irrevocablySpent.values.exists(_.txid == rcp.commitTx.txid)) =>
-          Some(RevokedClose(closing.revokedCommitPublished.find(rcp => rcp.irrevocablySpent.values.exists(_.txid == rcp.commitTx.txid)).get))
+        case _ if closing.revokedCommitPublished.exists(_.isConfirmed) =>
+          Some(RevokedClose(closing.revokedCommitPublished.find(_.isConfirmed).get))
         case _ => None // we don't know yet what the closing type will be
       }
     }
@@ -394,16 +394,16 @@ object Helpers {
       case closing: DATA_CLOSING if additionalConfirmedTx_opt.exists(closing.mutualClosePublished.map(_.tx).contains) =>
         val closingTx = closing.mutualClosePublished.find(_.tx.txid == additionalConfirmedTx_opt.get.txid).get
         Some(MutualClose(closingTx))
-      case closing: DATA_CLOSING if closing.localCommitPublished.exists(Closing.isLocalCommitDone) =>
+      case closing: DATA_CLOSING if closing.localCommitPublished.exists(_.isDone) =>
         Some(LocalClose(closing.commitments.localCommit, closing.localCommitPublished.get))
-      case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
+      case closing: DATA_CLOSING if closing.remoteCommitPublished.exists(_.isDone) =>
         Some(CurrentRemoteClose(closing.commitments.remoteCommit, closing.remoteCommitPublished.get))
-      case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(Closing.isRemoteCommitDone) =>
+      case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.exists(_.isDone) =>
         Some(NextRemoteClose(closing.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, closing.nextRemoteCommitPublished.get))
-      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(rcp => Closing.isFutureRemoteCommitDone(rcp)) =>
+      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.exists(_.isDone) =>
         Some(RecoveryClose(closing.futureRemoteCommitPublished.get))
-      case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(Closing.isRevokedCommitDone) =>
-        Some(RevokedClose(closing.revokedCommitPublished.find(Closing.isRevokedCommitDone).get))
+      case closing: DATA_CLOSING if closing.revokedCommitPublished.exists(_.isDone) =>
+        Some(RevokedClose(closing.revokedCommitPublished.find(_.isDone).get))
       case _ => None
     }
 
@@ -1196,76 +1196,6 @@ object Helpers {
       })
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
       revokedCommitPublished.copy(irrevocablySpent = revokedCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => o -> tx).toMap)
-    }
-
-    /**
-     * A local commit is considered done when:
-     * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
-     * - all 3rd stage txs (txs spending htlc txs) have been confirmed
-     */
-    def isLocalCommitDone(localCommitPublished: LocalCommitPublished): Boolean = {
-      val confirmedTxs = localCommitPublished.irrevocablySpent.values.map(_.txid).toSet
-      // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-      val isCommitTxConfirmed = confirmedTxs.contains(localCommitPublished.commitTx.txid)
-      // is our main output confirmed (if we have one)?
-      val isMainOutputConfirmed = localCommitPublished.claimMainDelayedOutputTx.forall(tx => localCommitPublished.irrevocablySpent.contains(tx.input.outPoint))
-      // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-      val allHtlcsSpent = (localCommitPublished.htlcTxs.keySet -- localCommitPublished.irrevocablySpent.keys).isEmpty
-      // are all outputs from htlc txs spent?
-      val unconfirmedHtlcDelayedTxs = localCommitPublished.claimHtlcDelayedTxs.map(_.input.outPoint)
-        // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
-        .filter(input => confirmedTxs.contains(input.txid))
-        // has the tx already been confirmed?
-        .filterNot(input => localCommitPublished.irrevocablySpent.contains(input))
-      isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent && unconfirmedHtlcDelayedTxs.isEmpty
-    }
-
-    /**
-     * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
-     * (even if the spending tx was not ours).
-     */
-    def isRemoteCommitDone(remoteCommitPublished: RemoteCommitPublished): Boolean = {
-      val confirmedTxs = remoteCommitPublished.irrevocablySpent.values.map(_.txid).toSet
-      // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-      val isCommitTxConfirmed = confirmedTxs.contains(remoteCommitPublished.commitTx.txid)
-      // is our main output confirmed (if we have one)?
-      val isMainOutputConfirmed = remoteCommitPublished.claimMainOutputTx.forall(tx => remoteCommitPublished.irrevocablySpent.contains(tx.input.outPoint))
-      // are all htlc outputs from the commitment tx spent (we need to check them all because we may receive preimages later)?
-      val allHtlcsSpent = (remoteCommitPublished.claimHtlcTxs.keySet -- remoteCommitPublished.irrevocablySpent.keys).isEmpty
-      isCommitTxConfirmed && isMainOutputConfirmed && allHtlcsSpent
-    }
-
-    /**
-     * A future remote commit (the case where we lost data about the commitment) is considered done once we've recovered
-     * our main output. We can't recover HTLC outputs in that scenario.
-     */
-    def isFutureRemoteCommitDone(remoteCommitPublished: RemoteCommitPublished): Boolean = {
-      val confirmedTxs = remoteCommitPublished.irrevocablySpent.values.map(_.txid).toSet
-      val isCommitTxConfirmed = confirmedTxs.contains(remoteCommitPublished.commitTx.txid)
-      val isMainOutputConfirmed = remoteCommitPublished.claimMainOutputTx.forall(tx => remoteCommitPublished.irrevocablySpent.contains(tx.input.outPoint))
-      isCommitTxConfirmed && isMainOutputConfirmed
-    }
-
-    /**
-     * A revoked commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
-     * (even if the spending tx was not ours).
-     */
-    def isRevokedCommitDone(revokedCommitPublished: RevokedCommitPublished): Boolean = {
-      val confirmedTxs = revokedCommitPublished.irrevocablySpent.values.map(_.txid).toSet
-      // is the commitment tx confirmed (we need to check this because we may not have any outputs)?
-      val isCommitTxConfirmed = confirmedTxs.contains(revokedCommitPublished.commitTx.txid)
-      // are there remaining spendable outputs from the commitment tx?
-      val unspentCommitTxOutputs = {
-        val commitOutputsSpendableByUs = (revokedCommitPublished.claimMainOutputTx.toSeq ++ revokedCommitPublished.mainPenaltyTx.toSeq ++ revokedCommitPublished.htlcPenaltyTxs).map(_.input.outPoint)
-        commitOutputsSpendableByUs.toSet -- revokedCommitPublished.irrevocablySpent.keys
-      }
-      // are all outputs from htlc txs spent?
-      val unconfirmedHtlcDelayedTxs = revokedCommitPublished.claimHtlcDelayedPenaltyTxs.map(_.input.outPoint)
-        // only the txs which parents are already confirmed may get confirmed (note that this eliminates outputs that have been double-spent by a competing tx)
-        .filter(input => confirmedTxs.contains(input.txid))
-        // if one of the tx inputs has been spent, the tx has already been confirmed or a competing tx has been confirmed
-        .filterNot(input => revokedCommitPublished.irrevocablySpent.contains(input))
-      isCommitTxConfirmed && unspentCommitTxOutputs.isEmpty && unconfirmedHtlcDelayedTxs.isEmpty
     }
 
     /**
