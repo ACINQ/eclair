@@ -1002,7 +1002,7 @@ object Helpers {
             .map(_.witness)
             .collect(Scripts.extractPaymentHashFromHtlcTimeout)
             .flatMap { paymentHash160 =>
-              log.info(s"htlc-timeout tx for paymentHash160=$paymentHash160 expiry=${tx.lockTime} has been confirmed (tx=$tx)")
+              log.info(s"htlc-timeout tx for paymentHash160=${paymentHash160.toHex} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
               val timeoutTxs = localCommitPublished.htlcTxs.values.collect { case Some(HtlcTimeoutTx(_, tx, _)) => tx }.toSeq
               findTimedOutHtlc(tx, paymentHash160, untrimmedHtlcs, timeoutTxs, Scripts.extractPaymentHashFromHtlcTimeout)
             }.toSet
@@ -1043,7 +1043,7 @@ object Helpers {
             .map(_.witness)
             .collect(Scripts.extractPaymentHashFromClaimHtlcTimeout)
             .flatMap { paymentHash160 =>
-              log.info(s"claim-htlc-timeout tx for paymentHash160=$paymentHash160 expiry=${tx.lockTime} has been confirmed (tx=$tx)")
+              log.info(s"claim-htlc-timeout tx for paymentHash160=${paymentHash160.toHex} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
               val timeoutTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(ClaimHtlcTimeoutTx(_, tx, _)) => tx }.toSeq
               findTimedOutHtlc(tx, paymentHash160, untrimmedHtlcs, timeoutTxs, Scripts.extractPaymentHashFromClaimHtlcTimeout)
             }.toSet
