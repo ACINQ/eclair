@@ -14,14 +14,11 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.internal.channel
 
-import akka.actor.ActorSystem
-import akka.testkit.TestProbe
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
@@ -30,21 +27,19 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.ChannelCodecs._
-import fr.acinq.eclair.wire.CommonCodecs.setCodec
-import fr.acinq.eclair.{TestConstants, UInt64, randomBytes32, randomKey, _}
+import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
+import fr.acinq.eclair.{TestConstants, UInt64, randomKey, _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomKeySerializer, CustomSerializer, Formats}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
-import scodec.{Attempt, Codec, DecodeResult}
 
 import java.net.InetSocketAddress
 import java.util.UUID
 import scala.concurrent.duration._
 import scala.io.Source
-import scala.util.Random
 
 /**
  * Created by PM on 31/05/2016.
@@ -53,250 +48,6 @@ import scala.util.Random
 class ChannelCodecsSpec extends AnyFunSuite {
 
   import ChannelCodecsSpec._
-
-  test("encode/decode key paths (all 0s)") {
-    val keyPath = KeyPath(Seq(0L, 0L, 0L, 0L))
-    val encoded = keyPathCodec.encode(keyPath).require
-    val decoded = keyPathCodec.decode(encoded).require
-    assert(keyPath === decoded.value)
-  }
-
-  test("encode/decode key paths (all 1s)") {
-    val keyPath = KeyPath(Seq(0xffffffffL, 0xffffffffL, 0xffffffffL, 0xffffffffL))
-    val encoded = keyPathCodec.encode(keyPath).require
-    val decoded = keyPathCodec.decode(encoded).require
-    assert(keyPath === decoded.value)
-  }
-
-  test("encode/decode channel version in a backward compatible way (legacy)") {
-    val codec = LegacyChannelCodecs.channelVersionCodec
-
-    // before we had commitment version, public keys were stored first (they started with 0x02 and 0x03)
-    val legacy02 = hex"02a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
-    val legacy03 = hex"03d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-    val current02 = hex"010000000102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
-    val current03 = hex"010000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-    val current04 = hex"010000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-
-    assert(codec.decode(legacy02.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy02.bits)))
-    assert(codec.decode(legacy03.bits) === Attempt.successful(DecodeResult(ChannelVersion.ZEROES, legacy03.bits)))
-    assert(codec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(5).bits)))
-    assert(codec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(5).bits)))
-    assert(codec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(5).bits)))
-
-    assert(codec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"0100000001".bits))
-    assert(codec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"0100000003".bits))
-  }
-
-  test("encode/decode channel version") {
-    val current02 = hex"0000000102a06ea3081f0f7a8ce31eb4f0822d10d2da120d5a1b1451f0727f51c7372f0f9b"
-    val current03 = hex"0000000103d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-    val current04 = hex"0000000303d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-    val current05 = hex"0000000703d5c030835d6a6248b2d1d4cac60813838011b995a66b6f78dcc9fb8b5c40c3f3"
-
-    assert(channelVersionCodec.decode(current02.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current02.drop(4).bits)))
-    assert(channelVersionCodec.decode(current03.bits) === Attempt.successful(DecodeResult(ChannelVersion.STANDARD, current03.drop(4).bits)))
-    assert(channelVersionCodec.decode(current04.bits) === Attempt.successful(DecodeResult(ChannelVersion.STATIC_REMOTEKEY, current04.drop(4).bits)))
-    assert(channelVersionCodec.decode(current05.bits) === Attempt.successful(DecodeResult(ChannelVersion.ANCHOR_OUTPUTS, current05.drop(4).bits)))
-
-    assert(channelVersionCodec.encode(ChannelVersion.STANDARD) === Attempt.successful(hex"00000001".bits))
-    assert(channelVersionCodec.encode(ChannelVersion.STATIC_REMOTEKEY) === Attempt.successful(hex"00000003".bits))
-    assert(channelVersionCodec.encode(ChannelVersion.ANCHOR_OUTPUTS) === Attempt.successful(hex"00000007".bits))
-  }
-
-  test("encode/decode localparams") {
-    def roundtrip(localParams: LocalParams, codec: Codec[LocalParams]) = {
-      val encoded = codec.encode(localParams).require
-      val decoded = codec.decode(encoded).require
-      assert(localParams === decoded.value)
-    }
-
-    val o = LocalParams(
-      nodeId = randomKey.publicKey,
-      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
-      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
-      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
-      walletStaticPaymentBasepoint = None,
-      isFunder = Random.nextBoolean(),
-      features = Features(randomBytes(256)))
-    val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey))
-
-    roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
-    roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
-    roundtrip(o, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
-  }
-
-  test("backward compatibility local params with global features") {
-    // Backwards-compatibility: decode localparams with global features.
-    val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
-    val withGlobalFeaturesDecoded = LegacyChannelCodecs.localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
-  }
-
-  test("encode/decode remoteparams") {
-    val o = RemoteParams(
-      nodeId = randomKey.publicKey,
-      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
-      maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
-      htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
-      maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      fundingPubKey = randomKey.publicKey,
-      revocationBasepoint = randomKey.publicKey,
-      paymentBasepoint = randomKey.publicKey,
-      delayedPaymentBasepoint = randomKey.publicKey,
-      htlcBasepoint = randomKey.publicKey,
-      features = TestConstants.Alice.nodeParams.features)
-    val encoded = remoteParamsCodec.encode(o).require
-    val decoded = remoteParamsCodec.decodeValue(encoded).require
-    assert(o === decoded)
-
-    // Backwards-compatibility: decode remoteparams with global features.
-    val withGlobalFeatures = hex"03c70c3b813815a8b79f41622b6f2c343fa24d94fb35fa7110bbb3d4d59cd9612e0000000059844cbc000000001b1524ea000000001503cbac000000006b75d3272e38777e029fa4e94066163024177311de7ba1befec2e48b473c387bbcee1484bf276a54460215e3dfb8e6f262222c5f343f5e38c5c9a43d2594c7f06dd7ac1a4326c665dd050347aba4d56d7007a7dcf03594423dccba9ed700d11e665d261594e1154203df31020d457ee336ba6eeb328d00f1b8bd8bfefb8a4dcd5af6db4c438b7ec5106c7edc0380df17e1beb0f238e51a39122ac4c6fb57f3c4f5b7bc9432f991b1ef4a8af3570002020000018a"
-    val withGlobalFeaturesDecoded = remoteParamsCodec.decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"028a")
-  }
-
-  test("encode/decode htlc") {
-    val add = UpdateAddHtlc(
-      channelId = randomBytes32,
-      id = Random.nextInt(Int.MaxValue),
-      amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
-      paymentHash = randomBytes32,
-      onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val htlc1 = IncomingHtlc(add)
-    val htlc2 = OutgoingHtlc(add)
-    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require === htlc1)
-    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require === htlc2)
-  }
-
-  test("backward compatibility of htlc codec") {
-
-    val codec = LegacyChannelCodecs.htlcCodec
-
-    // these encoded HTLC were produced by a previous version of the codec (at commit 8932785e001ddfe32839b3f83468ea19cf00b289)
-    val encodedHtlc1 = hex"89d5618930919bd77c07ea3931e7791010a9637c3d06e091b2dad38f21bbcffa00000000384ffa48000000003dbf35101f8724fbd36096ea5f462be20d20bc2f93ebc2c8a3f00b7a78c5158b5a0e9f6b1666923e800f1d073e2adcfba5904f1b8234af1c43a6e84a862a044d15f33addf8d41b3cfb7f96d815d2248322aeadd0ce7bacbcc44e611f66c35c439423c099e678c077203d5fc415ec37b798c6c74c9eed0806e6cb20f2b613855772c086cee60642b3b9c3919627c877a62a57dcf6ce003bedc53a8b7a0d7aa91b2304ef8b512fe1a9a043e410d7cd3009edffcb5d4c05cfb545aced4afea8bbe26c5ff492602edf9d4eb731541e60e48fd1ae5e33b04a614346fb16e09ccd9bcb8907fe9fc287757ea9280a03462299e950a274c1dc53fbae8c421e67d7de35709eda0f11bcd417c0f215667e8b8ccae1035d0281214af25bf690102b180e5d4b57323d02ab5cee5d3669b4300539d02eff553143f085cd70e5428b7af3262418aa7664d56c3fd29c00a2f88a6a5ee9685f45b6182c45d492b2170b092e4b5891247bcffe82623b86637bec291cca1dc729f5747d842ecdf2fc24eaf95c522cbebe9a841e7cff837e715b689f0b366b92a2850875636962ba42863ab6df12ee938ada6e6ae795f8b4fbe81adea478caa9899fed0d6ccdf7a2173b69b2d3ff1b93c82c08c4da63b426d2f94912109997e8ee5830c5ffe3b60c97438ae1521a2956e73a9a60f16dc13a5e6565904e04bf66ceda3db693fc7a0c6ad4f7dc8cb7f1ef54527c11589b7c35ce5b20e7f23a0ab107a406fa747435ff08096a7533a8ab7f5d3630d5c20c9161101f922c76079497e00e3ca62bce033b2bb065ea1733c50b5a06492d2b46715812003f29a8754b5dc1649082893e7be76550c58d98e81556e4ddf20a244f363bc23e756c95224335d0eeccd3da06a9161c4c72ae3d93afe902a806eadd2167d15c04cf3028fc61d0843bd270fd702a2c5af889ab5bc79a294847914f8dd409a9b990a96397d9046c385ca9810fb7c7b2c61491c67264257a601be7fe8c47a859b56af41caf06be7ea1cdb540719fc3bc2603675b79fd36a6f2911043b78da9f186d2a01f1209d0d91508e8ebecce09fd72823d0c166542f6d059fa8725d9d719a2532289c88f7a291a6bbe01f5b1f83cc2232d716f7dfc6a103fb8637d759aab939aaa278cffe04a64f4142564113080276bee7d3ec62e3f887838e3821f0dd713337972df994160edc29ccb9b9630c41a9ec7c994cbef2501a610e1c3684e697df230fd6f6f10526c9446e8307a1fb7e4988cdf7fc8aa32c8a09206113d8247aaae42e3942c0ffd291d67837d2c88231c85882667582eca1d2566134c4ee1301de8e1637f09467b473ba3e353992488048bd34b26dcc6f6f474751b7ac5bbad468c64eda2aeabfe6a92150a4faab142229d7934c4a24427441850d0deae5db802b02940435f39ceaa85e2d3d2269510881ab26926c3167487aa138d38b9cf650f59f0aa0b84297479271c2009cde61e5c58c26bf8a15aba86869af83941ec14972d93b6ae4a6ecf6584238150a61487d6bd394db40a10d710fd2d065850e52ea6536a74d88947448221c1ce493fecbf2070998e04d5263935488c2935f2d3afed4d0fc7472c03e652f928e6a18f78029043f219f652d992e104529149a978e5c660c0081fe6a179dbe62dcb597f3b4e497c6049b0255f8f306e4b18c97c339c98270abf86a4eb1af93b14d880eeda203bb3ba5b6e3113d0e003f8e55f3d446bd4dcda686b357ca0adf1fe25390767a40ff086a9258d04c19b0474488aaafac321f087d2bd0dc0e056ad9f5b5afa5f3d82bc3f18b33de9044529637fed05879f6bd440f331c06008dd38c2fb822c22fc4201e97f9ef9fc351807c045dece147d19fd01a68604c3cb6b5e0db1b4d1ebe387670021067d94206fbdc9ed33ac1f49d87f961cb5d44f48805e55f8637ca3de4ec9dd969944ed61de45970b7ef96d9f313a41de1cae380e0fe4b56729f275e2a0a87403c90e80"
-    val encodedHtlc2 = hex"09d5618930919bd77c07ea3931e7791010a9637c3d06e091b2dad38f21bbcffa00000000384ffa48000000003dbf35101f8724fbd36096ea5f462be20d20bc2f93ebc2c8a3f00b7a78c5158b5a0e9f6b1666923e800f1d073e2adcfba5904f1b8234af1c43a6e84a862a044d15f33addf8d41b3cfb7f96d815d2248322aeadd0ce7bacbcc44e611f66c35c439423c099e678c077203d5fc415ec37b798c6c74c9eed0806e6cb20f2b613855772c086cee60642b3b9c3919627c877a62a57dcf6ce003bedc53a8b7a0d7aa91b2304ef8b512fe1a9a043e410d7cd3009edffcb5d4c05cfb545aced4afea8bbe26c5ff492602edf9d4eb731541e60e48fd1ae5e33b04a614346fb16e09ccd9bcb8907fe9fc287757ea9280a03462299e950a274c1dc53fbae8c421e67d7de35709eda0f11bcd417c0f215667e8b8ccae1035d0281214af25bf690102b180e5d4b57323d02ab5cee5d3669b4300539d02eff553143f085cd70e5428b7af3262418aa7664d56c3fd29c00a2f88a6a5ee9685f45b6182c45d492b2170b092e4b5891247bcffe82623b86637bec291cca1dc729f5747d842ecdf2fc24eaf95c522cbebe9a841e7cff837e715b689f0b366b92a2850875636962ba42863ab6df12ee938ada6e6ae795f8b4fbe81adea478caa9899fed0d6ccdf7a2173b69b2d3ff1b93c82c08c4da63b426d2f94912109997e8ee5830c5ffe3b60c97438ae1521a2956e73a9a60f16dc13a5e6565904e04bf66ceda3db693fc7a0c6ad4f7dc8cb7f1ef54527c11589b7c35ce5b20e7f23a0ab107a406fa747435ff08096a7533a8ab7f5d3630d5c20c9161101f922c76079497e00e3ca62bce033b2bb065ea1733c50b5a06492d2b46715812003f29a8754b5dc1649082893e7be76550c58d98e81556e4ddf20a244f363bc23e756c95224335d0eeccd3da06a9161c4c72ae3d93afe902a806eadd2167d15c04cf3028fc61d0843bd270fd702a2c5af889ab5bc79a294847914f8dd409a9b990a96397d9046c385ca9810fb7c7b2c61491c67264257a601be7fe8c47a859b56af41caf06be7ea1cdb540719fc3bc2603675b79fd36a6f2911043b78da9f186d2a01f1209d0d91508e8ebecce09fd72823d0c166542f6d059fa8725d9d719a2532289c88f7a291a6bbe01f5b1f83cc2232d716f7dfc6a103fb8637d759aab939aaa278cffe04a64f4142564113080276bee7d3ec62e3f887838e3821f0dd713337972df994160edc29ccb9b9630c41a9ec7c994cbef2501a610e1c3684e697df230fd6f6f10526c9446e8307a1fb7e4988cdf7fc8aa32c8a09206113d8247aaae42e3942c0ffd291d67837d2c88231c85882667582eca1d2566134c4ee1301de8e1637f09467b473ba3e353992488048bd34b26dcc6f6f474751b7ac5bbad468c64eda2aeabfe6a92150a4faab142229d7934c4a24427441850d0deae5db802b02940435f39ceaa85e2d3d2269510881ab26926c3167487aa138d38b9cf650f59f0aa0b84297479271c2009cde61e5c58c26bf8a15aba86869af83941ec14972d93b6ae4a6ecf6584238150a61487d6bd394db40a10d710fd2d065850e52ea6536a74d88947448221c1ce493fecbf2070998e04d5263935488c2935f2d3afed4d0fc7472c03e652f928e6a18f78029043f219f652d992e104529149a978e5c660c0081fe6a179dbe62dcb597f3b4e497c6049b0255f8f306e4b18c97c339c98270abf86a4eb1af93b14d880eeda203bb3ba5b6e3113d0e003f8e55f3d446bd4dcda686b357ca0adf1fe25390767a40ff086a9258d04c19b0474488aaafac321f087d2bd0dc0e056ad9f5b5afa5f3d82bc3f18b33de9044529637fed05879f6bd440f331c06008dd38c2fb822c22fc4201e97f9ef9fc351807c045dece147d19fd01a68604c3cb6b5e0db1b4d1ebe387670021067d94206fbdc9ed33ac1f49d87f961cb5d44f48805e55f8637ca3de4ec9dd969944ed61de45970b7ef96d9f313a41de1cae380e0fe4b56729f275e2a0a87403c90e80"
-
-    val ref = UpdateAddHtlc(
-      ByteVector32(hex"13aac312612337aef80fd47263cef2202152c6f87a0dc12365b5a71e43779ff4"),
-      1889531024,
-      2071882272 msat,
-      ByteVector32(hex"3f0e49f7a6c12dd4be8c57c41a41785f27d7859147e016f4f18a2b16b41d3ed6"),
-      CltvExpiry(751641725),
-      OnionRoutingPacket(
-        0,
-        hex"1e3a0e7c55b9f74b209e3704695e38874dd0950c54089a2be675bbf1a83679f6ff",
-        hex"2db02ba44906455d5ba19cf75979889cc23ecd86b88728478133ccf180ee407abf882bd86f6f318d8e993dda100dcd9641e56c270aaee5810d9dcc0c85677387232c4f90ef4c54afb9ed9c0077db8a7516f41af552364609df16a25fc3534087c821af9a6013dbff96ba980b9f6a8b59da95fd5177c4d8bfe924c05dbf3a9d6e62a83cc1c91fa35cbc676094c2868df62dc1399b3797120ffd3f850eeafd525014068c4533d2a144e983b8a7f75d18843ccfafbc6ae13db41e2379a82f81e42accfd171995c206ba05024295e4b7ed202056301cba96ae647a0556b9dcba6cd368600a73a05dfeaa6287e10b9ae1ca8516f5e64c483154ecc9aad87fa5380145f114d4bdd2d0be8b6c30588ba925642e16125c96b12248f79ffd04c4770cc6f7d85239943b8e53eae8fb085d9be5f849d5f2b8a4597d7d35083cf9ff06fce2b6d13e166cd725450a10eac6d2c574850c756dbe25dd2715b4dcd5cf2bf169f7d035bd48f19553133fda1ad99bef442e76d365a7fe372790581189b4c7684da5f2922421332fd1dcb0618bffc76c192e8715c2a43452adce7534c1e2db8274bccacb209c097ecd9db47b6d27f8f418d5a9efb9196fe3dea8a4f822b136f86b9cb641cfe47415620f480df4e8e86bfe1012d4ea675156feba6c61ab841922c2203f2458ec0f292fc01c794c579c06765760cbd42e678a16b40c925a568ce2b024007e5350ea96bb82c92105127cf7cecaa18b1b31d02aadc9bbe414489e6c77847cead92a44866ba1dd99a7b40d522c3898e55c7b275fd205500dd5ba42cfa2b8099e6051f8c3a10877a4e1fae05458b5f11356b78f3452908f229f1ba81353732152c72fb208d870b953021f6f8f658c29238ce4c84af4c037cffd188f50b36ad5e8395e0d7cfd439b6a80e33f87784c06ceb6f3fa6d4de52220876f1b53e30da5403e2413a1b22a11d1d7d99c13fae5047a182cca85eda0b3f50e4bb3ae3344a64513911ef45234d77c03eb63f07984465ae2defbf8d4207f70c6faeb35572735544f19ffc094c9e8284ac82261004ed7dcfa7d8c5c7f10f071c7043e1bae2666f2e5bf3282c1db853997372c6188353d8f932997de4a034c21c386d09cd2fbe461fadede20a4d9288dd060f43f6fc93119beff9154659141240c227b048f555c85c728581ffa523acf06fa591046390b104cceb05d943a4acc26989dc2603bd1c2c6fe128cf68e7747c6a73249100917a6964db98dede8e8ea36f58b775a8d18c9db455d57fcd5242a149f556284453af2698944884e8830a1a1bd5cbb700560528086be739d550bc5a7a44d2a21103564d24d862ce90f54271a71739eca1eb3e154170852e8f24e3840139bcc3cb8b184d7f142b5750d0d35f07283d8292e5b276d5c94dd9ecb084702a14c290fad7a729b681421ae21fa5a0cb0a1ca5d4ca6d4e9b1128e890443839c927fd97e40e1331c09aa4c726a9118526be5a75fda9a1f8e8e5807cca5f251cd431ef0052087e433eca5b325c208a5229352f1cb8cc180103fcd42f3b7cc5b96b2fe769c92f8c093604abf1e60dc963192f86739304e157f0d49d635f27629b101ddb440776774b6dc6227a1c007f1cabe7a88d7a9b9b4d0d66af9415be3fc4a720ecf481fe10d524b1a09833608e8911555f58643e10fa57a1b81c0ad5b3eb6b5f4be7b05787e31667bd2088a52c6ffda0b0f3ed7a881e66380c011ba7185f7045845f88403d2ff3df3f86a300f808bbd9c28fa33fa034d0c098796d6bc1b6369a3d7c70ece00420cfb2840df7b93da67583e93b0ff2c396ba89e9100bcabf0c6f947bc9d93bb2d3289",
-        ByteVector32(hex"dac3bc8b2e16fdf2db3e627483bc395c701c1fc96ace53e4ebc54150e807921d"))
-    )
-    val remaining = bin"0000000" // 7 bits remainder because the direction is encoded with 1 bit and we are dealing with bytes
-
-    val DecodeResult(h1, r1) = codec.decode(encodedHtlc1.toBitVector).require
-    val DecodeResult(h2, r2) = codec.decode(encodedHtlc2.toBitVector).require
-
-    assert(h1 == IncomingHtlc(ref))
-    assert(h2 == OutgoingHtlc(ref))
-    assert(r1 == remaining)
-    assert(r2 == remaining)
-
-    assert(codec.encode(h1).require.bytes === encodedHtlc1)
-    assert(codec.encode(h2).require.bytes === encodedHtlc2)
-  }
-
-  test("encode/decode commitment spec") {
-    val add1 = UpdateAddHtlc(
-      channelId = randomBytes32,
-      id = Random.nextInt(Int.MaxValue),
-      amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
-      paymentHash = randomBytes32,
-      onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val add2 = UpdateAddHtlc(
-      channelId = randomBytes32,
-      id = Random.nextInt(Int.MaxValue),
-      amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
-      paymentHash = randomBytes32,
-      onionRoutingPacket = TestConstants.emptyOnionPacket)
-    val htlc1 = IncomingHtlc(add1)
-    val htlc2 = OutgoingHtlc(add2)
-    val htlcs = Set[DirectedHtlc](htlc1, htlc2)
-    assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
-    val o = CommitmentSpec(
-      htlcs = Set(htlc1, htlc2),
-      feeratePerKw = FeeratePerKw(Random.nextInt(Int.MaxValue).sat),
-      toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
-      toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
-    )
-    val encoded = commitmentSpecCodec.encode(o).require
-    val decoded = commitmentSpecCodec.decode(encoded).require
-    assert(o === decoded.value)
-  }
-
-  test("encode/decode origin") {
-    val replyTo = TestProbe("replyTo")(ActorSystem("system")).ref
-
-    val localHot = Origin.LocalHot(replyTo, UUID.randomUUID())
-    val localCold = Origin.LocalCold(localHot.id)
-    assert(originCodec.decodeValue(originCodec.encode(localHot).require).require === localCold)
-    assert(originCodec.decodeValue(originCodec.encode(localCold).require).require === localCold)
-
-    val add = UpdateAddHtlc(randomBytes32, 4324, 11000000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket)
-    val relayedHot = Origin.ChannelRelayedHot(replyTo, add, 11000000 msat)
-    val relayedCold = Origin.ChannelRelayedCold(add.channelId, add.id, add.amountMsat, relayedHot.amountOut)
-    assert(originCodec.decodeValue(originCodec.encode(relayedHot).require).require === relayedCold)
-    assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require === relayedCold)
-
-    val adds = Seq(
-      UpdateAddHtlc(randomBytes32, 1L, 1000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(randomBytes32, 1L, 2000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(randomBytes32, 2L, 3000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
-    )
-    val trampolineRelayedHot = Origin.TrampolineRelayedHot(replyTo, adds)
-    val trampolineRelayedCold = Origin.TrampolineRelayedCold(trampolineRelayedHot.htlcs)
-    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedHot).require).require === trampolineRelayedCold)
-    assert(originCodec.decodeValue(originCodec.encode(trampolineRelayedCold).require).require === trampolineRelayedCold)
-  }
-
-  test("encode/decode map of origins") {
-    val map = Map(
-      1L -> Origin.LocalCold(UUID.randomUUID()),
-      42L -> Origin.ChannelRelayedCold(randomBytes32, 4324, 12000000 msat, 11000000 msat),
-      43L -> Origin.TrampolineRelayedCold((randomBytes32, 17L) :: (randomBytes32, 21L) :: (randomBytes32, 21L) :: Nil),
-      130L -> Origin.ChannelRelayedCold(randomBytes32, -45, 13000000 msat, 12000000 msat),
-      140L -> Origin.TrampolineRelayedCold((randomBytes32, 0L) :: Nil),
-      1000L -> Origin.ChannelRelayedCold(randomBytes32, 10, 14000000 msat, 13000000 msat),
-      -32L -> Origin.ChannelRelayedCold(randomBytes32, 54, 15000000 msat, 14000000 msat),
-      -54L -> Origin.TrampolineRelayedCold((randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil),
-      -4L -> Origin.LocalCold(UUID.randomUUID()))
-    assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
-  }
-
-  test("encode/decode map of spending txes") {
-    val map = Map(
-      OutPoint(randomBytes32, 42) -> randomBytes32,
-      OutPoint(randomBytes32, 14502) -> randomBytes32,
-      OutPoint(randomBytes32, 0) -> randomBytes32,
-      OutPoint(randomBytes32, 454513) -> randomBytes32
-    )
-    assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
-  }
-
-  test("basic serialization test (NORMAL)") {
-    val data = normal
-    val bin = ChannelCodecs.DATA_NORMAL_Codec.encode(data).require
-    val check = ChannelCodecs.DATA_NORMAL_Codec.decodeValue(bin).require
-    assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
-    assert(data === check)
-  }
 
   test("nonreg for der/bin64 signatures") {
     val bin = ByteVector.fromValidHex(Source.fromInputStream(getClass.getResourceAsStream("/normal_data_htlcs.bin")).mkString)
@@ -344,17 +95,6 @@ class ChannelCodecsSpec extends AnyFunSuite {
     val data_new2 = stateDataCodec.decode(bin_new.toBitVector).require.value
     // data should match perfectly
     assert(data_new === data_new2)
-  }
-
-  test("tell channel_update length") {
-    // with option_channel_htlc_max (136 bytes)
-    val u1 = hex"81D6DE1B150A0EAD83B214C879BD55FB3EE82E54F3F38DF601B692B481DFFBBF66582C018B271FBEBF17B0F72FAD1E1B78EF19232621AA2D8055B51D94C5A39543497FD7F826957108F4A30FD9CEC3AEBA79972084E90EAD01EA33090000000013AB9500006E00005D117A190100009000000000000003E8000003E80000000100000003E8000000".bits
-    // without option_channel_htlc_max (128 bytes)
-    val u2 = hex"A94A853FCDE515F89259E03D10368B1A600B3BF78F6BD5C968469C0816F45EFF7878714DF26B580D5A304334E46816D5AC37B098EBC46C1CE47E37504D052DD643497FD7F826957108F4A30FD9CEC3AEBA79972084E90EAD01EA33090000000013AB9500006E00005D1149290001009000000000000003E8000003E800000001".bits
-
-    // check that we decode correct length, and that we just take a peek without actually consuming data
-    assert(LegacyChannelCodecs.noUnknownFieldsChannelUpdateSizeCodec.decode(u1) == Attempt.successful(DecodeResult(136, u1)))
-    assert(LegacyChannelCodecs.noUnknownFieldsChannelUpdateSizeCodec.decode(u2) == Attempt.successful(DecodeResult(128, u2)))
   }
 
   test("backward compatibility DATA_NORMAL_COMPAT_03_Codec (roundtrip)") {

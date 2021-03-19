@@ -24,8 +24,8 @@ import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgUtils
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteUtils}
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
-import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
-import fr.acinq.eclair.wire.ChannelCodecsSpec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.{CltvExpiry, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector

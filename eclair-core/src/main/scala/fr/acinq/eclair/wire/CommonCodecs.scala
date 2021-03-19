@@ -155,4 +155,9 @@ object CommonCodecs {
     }
   )
 
+  /**
+   * All LN protocol message must be stored as length-delimited, because they may have arbitrary trailing data
+   */
+  def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, codec)
+
 }

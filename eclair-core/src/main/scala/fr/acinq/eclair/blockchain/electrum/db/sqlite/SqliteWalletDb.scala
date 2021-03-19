@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
-import java.sql.Connection
-
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetMerkleResponse, TransactionHistoryItem}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
@@ -25,6 +23,7 @@ import fr.acinq.eclair.blockchain.electrum.db.WalletDb
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet}
 import fr.acinq.eclair.db.sqlite.SqliteUtils
 
+import java.sql.Connection
 import scala.collection.immutable.Queue
 
 class SqliteWalletDb(sqlite: Connection) extends WalletDb {
@@ -135,7 +134,6 @@ class SqliteWalletDb(sqlite: Connection) extends WalletDb {
 
 object SqliteWalletDb {
 
-  import fr.acinq.eclair.wire.ChannelCodecs._
   import fr.acinq.eclair.wire.CommonCodecs._
   import scodec.Codec
   import scodec.bits.BitVector
@@ -152,8 +150,6 @@ object SqliteWalletDb {
 
   def deserializeMerkleProof(bin: Array[Byte]): GetMerkleResponse = proofCodec.decode(BitVector(bin)).require.value
 
-  import fr.acinq.eclair.wire.LightningMessageCodecs._
-
   val statusListCodec: Codec[List[(ByteVector32, String)]] = listOfN(uint16, bytes32 ~ cstring)
 
   val statusCodec: Codec[Map[ByteVector32, String]] = Codec[Map[ByteVector32, String]](
@@ -167,6 +163,8 @@ object SqliteWalletDb {
     (map: Map[ByteVector32, Int]) => heightsListCodec.encode(map.toList),
     (wire: BitVector) => heightsListCodec.decode(wire).map(_.map(_.toMap))
   )
+
+  val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
   val transactionListCodec: Codec[List[(ByteVector32, Transaction)]] = listOfN(uint16, bytes32 ~ txCodec)
 

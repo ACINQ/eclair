@@ -31,6 +31,7 @@ import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 import scodec.bits.ByteVector
