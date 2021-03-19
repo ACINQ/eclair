@@ -104,7 +104,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
 
   test("read old persistent data") {
     import SqliteWalletDb._
-    import fr.acinq.eclair.wire.ChannelCodecs._
+    import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
     import scodec.codecs._
 
     val oldPersistentDataCodec: Codec[PersistentData] = (
