@@ -7,10 +7,10 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
-import fr.acinq.eclair.wire.CommonCodecs.{bytes32, bytes64, mapCodec, publicKey, setCodec, varintoverflow, _}
-import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, closingSignedCodec, commitSigCodec, fundingCreatedCodec, fundingLockedCodec, fundingSignedCodec, lightningMessageCodec, shutdownCodec, updateAddHtlcCodec, _}
+import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.wire.UpdateMessage
-import scodec.codecs.{bits, bool, byteAligned, bytes, discriminated, either, int64, listOfN, optional, provide, uint16, uint32, variableSizeBytesLong, _}
+import scodec.codecs._
 import scodec.{Attempt, Codec}
 
 private[channel] object ChannelCodecs1 {
