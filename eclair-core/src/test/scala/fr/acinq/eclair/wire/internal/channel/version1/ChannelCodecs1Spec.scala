@@ -12,7 +12,6 @@ import fr.acinq.eclair.wire.CommonCodecs.setCodec
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1.Codecs._
-import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1.DATA_NORMAL_Codec
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._

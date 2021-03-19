@@ -43,9 +43,7 @@ import scodec.codecs._
 
        }
 
-       import Codecs._
-
-       val STATE_Codec: Codec[STATE] = ...
+       val stateDataCodec: Codec[HasCommitments] = ...
  * }}}
  *
  * Notice that the outer class has a visibility restricted to package [[channel]], while the inner class has a
@@ -66,24 +64,7 @@ object ChannelCodecs extends Logging {
    * More info here: https://github.com/scodec/scodec/issues/122
    */
   val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(byte)
-    .typecase(1, discriminated[HasCommitments].by(uint16)
-      .typecase(0x20, ChannelCodecs1.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x21, ChannelCodecs1.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x22, ChannelCodecs1.DATA_NORMAL_Codec)
-      .typecase(0x23, ChannelCodecs1.DATA_SHUTDOWN_Codec)
-      .typecase(0x24, ChannelCodecs1.DATA_NEGOTIATING_Codec)
-      .typecase(0x25, ChannelCodecs1.DATA_CLOSING_Codec)
-      .typecase(0x26, ChannelCodecs1.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
-    .typecase(0, discriminated[HasCommitments].by(uint16)
-      .typecase(0x10, ChannelCodecs0.DATA_NORMAL_Codec)
-      .typecase(0x09, ChannelCodecs0.DATA_CLOSING_Codec)
-      .typecase(0x08, ChannelCodecs0.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-      .typecase(0x01, ChannelCodecs0.DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec)
-      .typecase(0x02, ChannelCodecs0.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-      .typecase(0x03, ChannelCodecs0.DATA_NORMAL_COMPAT_03_Codec)
-      .typecase(0x04, ChannelCodecs0.DATA_SHUTDOWN_Codec)
-      .typecase(0x05, ChannelCodecs0.DATA_NEGOTIATING_Codec)
-      .typecase(0x06, ChannelCodecs0.DATA_CLOSING_COMPAT_06_Codec)
-      .typecase(0x07, ChannelCodecs0.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec))
+    .typecase(1, ChannelCodecs1.stateDataCodec)
+    .typecase(0, ChannelCodecs0.stateDataCodec)
 
 }
