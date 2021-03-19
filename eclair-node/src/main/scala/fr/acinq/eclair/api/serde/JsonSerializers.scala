@@ -29,11 +29,11 @@ import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
-import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTx, ClosingTx, HtlcSuccessTx, HtlcTimeoutTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, TypeHints, jackson}
+import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, JsonAST, TypeHints, jackson}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -166,6 +166,37 @@ class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_
 class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
   null
 }, {
+  case x: HtlcSuccessTx => JObject(List(
+    JField("txid", JString(x.tx.txid.toHex)),
+    JField("tx", JString(x.tx.toString())),
+    JField("paymentHash", JString(x.paymentHash.toString())),
+    JField("htlcId", JLong(x.htlcId))
+  ))
+  case x: HtlcTimeoutTx => JObject(List(
+    JField("txid", JString(x.tx.txid.toHex)),
+    JField("tx", JString(x.tx.toString())),
+    JField("htlcId", JLong(x.htlcId))
+  ))
+  case x: ClaimHtlcTx => JObject(List(
+    JField("txid", JString(x.tx.txid.toHex)),
+    JField("tx", JString(x.tx.toString())),
+    JField("htlcId", JLong(x.htlcId))
+  ))
+  case x: ClosingTx =>
+    val txFields = List(
+      JField("txid", JString(x.tx.txid.toHex)),
+      JField("tx", JString(x.tx.toString()))
+    )
+    x.toLocalOutput match {
+      case Some(toLocal) =>
+        val toLocalField = JField("toLocalOutput", JObject(List(
+          JField("index", JLong(toLocal.index)),
+          JField("amount", JLong(toLocal.amount.toLong)),
+          JField("publicKeyScript", JString(toLocal.publicKeyScript.toHex))
+        )))
+        JObject(txFields :+ toLocalField)
+      case None => JObject(txFields)
+    }
   case x: TransactionWithInputInfo => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString()))
