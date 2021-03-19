@@ -164,8 +164,6 @@ object SqliteWalletDb {
     (wire: BitVector) => heightsListCodec.decode(wire).map(_.map(_.toMap))
   )
 
-  def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, codec)
-
   val txCodec: Codec[Transaction] = lengthDelimited(bytes.xmap(d => Transaction.read(d.toArray), d => Transaction.write(d)))
 
   val transactionListCodec: Codec[List[(ByteVector32, Transaction)]] = listOfN(uint16, bytes32 ~ txCodec)

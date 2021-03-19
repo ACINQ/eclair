@@ -17,11 +17,6 @@ private[channel] object ChannelCodecs1 {
 
   private[version1] object Codecs {
 
-    /**
-     * All LN protocol message must be stored as length-delimited, because they may have arbitrary trailing data
-     */
-    def lengthDelimited[T](codec: Codec[T]): Codec[T] = variableSizeBytesLong(varintoverflow, codec)
-
     val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
     val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
