@@ -23,6 +23,7 @@ import grizzled.slf4j.Logging
 import scodec.Codec
 import scodec.codecs._
 
+//@formatter:off
 /**
  * Codecs used to store the internal channel data.
  *
@@ -53,6 +54,7 @@ import scodec.codecs._
  *
  * Created by PM on 02/06/2017.
  */
+//@formatter:on
 object ChannelCodecs extends Logging {
 
   /**
