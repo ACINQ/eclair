@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
 import com.google.common.net.InetAddresses
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -22,7 +22,6 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{UInt64, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
