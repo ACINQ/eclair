@@ -22,7 +22,7 @@ import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.wire.ChannelAnnouncement
+import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import org.json4s.Formats
 import org.json4s.JsonAST._
 import scodec.bits.ByteVector

@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
+import fr.acinq.eclair.wire.protocol.{ClosingSigned, Error, Shutdown}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}

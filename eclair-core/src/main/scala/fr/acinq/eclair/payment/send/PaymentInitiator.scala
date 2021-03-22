@@ -30,8 +30,8 @@ import fr.acinq.eclair.payment.send.PaymentError._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol.Onion.FinalLegacyPayload
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, NodeParams, randomBytes32}
 
 import java.util.UUID

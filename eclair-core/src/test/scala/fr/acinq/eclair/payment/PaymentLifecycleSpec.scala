@@ -40,8 +40,8 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol.Onion.FinalLegacyPayload
+import fr.acinq.eclair.wire.protocol._
 
 import java.util.UUID
 import scala.concurrent.duration._

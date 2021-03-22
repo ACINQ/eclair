@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike

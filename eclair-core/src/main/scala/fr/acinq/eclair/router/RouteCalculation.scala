@@ -28,7 +28,7 @@ import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec

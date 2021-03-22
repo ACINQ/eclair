@@ -45,7 +45,7 @@ import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router.PredefinedNodeRoute
 import fr.acinq.eclair.router.{NetworkStats, Stats}
-import fr.acinq.eclair.wire.{Color, NodeAddress}
+import fr.acinq.eclair.wire.protocol.{Color, NodeAddress}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers

@@ -14,10 +14,10 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.eclair.UInt64.Conversions._
-import fr.acinq.eclair.wire.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{minimalvalue, uint64, varint, varintoverflow}
 import fr.acinq.eclair.{MilliSatoshi, UInt64}
 import scodec.bits.ByteVector
 import scodec.codecs._

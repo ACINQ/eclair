@@ -24,7 +24,7 @@ import fr.acinq.eclair.TestConstants.{TestDatabases, TestPgDatabases, TestSqlite
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
-import fr.acinq.eclair.wire.{Color, NodeAddress, Tor2}
+import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 

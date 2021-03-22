@@ -22,7 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
-import fr.acinq.eclair.wire.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
+import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import java.util.UUID
@@ -129,7 +129,7 @@ case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
 object PaymentFailure {
 
   import fr.acinq.eclair.router.RouteNotFound
-  import fr.acinq.eclair.wire.Update
+  import fr.acinq.eclair.wire.protocol.Update
 
   /**
    * Rewrites a list of failures to retrieve the meaningful part.

@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.{Features, KamonExt, wire}
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.{Features, KamonExt}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -115,7 +115,7 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("nextPerCommitmentPoint" | publicKey)).as[FundingLocked]
 
-  val shutdownCodec: Codec[wire.Shutdown] = (
+  val shutdownCodec: Codec[Shutdown] = (
     ("channelId" | bytes32) ::
       ("scriptPubKey" | varsizebinarydata)).as[Shutdown]
 

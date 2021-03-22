@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire.internal.channel
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
@@ -27,9 +28,8 @@ import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyMa
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitTx, InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
-import fr.acinq.eclair.{TestConstants, UInt64, randomKey, _}
+import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomKeySerializer, CustomSerializer, Formats}

@@ -23,9 +23,9 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.LightningMessageCodecs._
-import fr.acinq.eclair.wire.UpdateMessage
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
+import fr.acinq.eclair.wire.protocol.UpdateMessage
 import scodec.bits.BitVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}

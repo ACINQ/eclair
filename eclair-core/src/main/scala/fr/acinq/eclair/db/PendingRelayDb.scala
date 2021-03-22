@@ -22,7 +22,7 @@ import akka.actor.{ActorContext, ActorRef}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
+import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
 
 /**
  * This database stores CMD_FULFILL_HTLC and CMD_FAIL_HTLC that we have received from downstream

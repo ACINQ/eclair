@@ -14,13 +14,13 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
-import fr.acinq.eclair.wire.LightningMessageCodecs.{channelUpdateCodec, meteredLightningMessageCodec}
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelUpdateCodec, meteredLightningMessageCodec}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, UInt64}
 import scodec.codecs._
 import scodec.{Attempt, Codec}

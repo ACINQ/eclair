@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.PaymentSettlingOnChain
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, TxOwner}
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
 import scala.collection.immutable.Queue

@@ -359,7 +359,7 @@ object PaymentRequest {
 
   object Codecs {
 
-    import fr.acinq.eclair.wire.CommonCodecs._
+    import fr.acinq.eclair.wire.protocol.CommonCodecs._
     import scodec.bits.BitVector
     import scodec.codecs._
     import scodec.{Attempt, Codec, DecodeResult}

@@ -23,7 +23,7 @@ import akka.actor.ActorNotFound
 import akka.io.Tcp.Connected
 import akka.testkit.{ImplicitSender, TestActorRef}
 import akka.util.ByteString
-import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
+import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
 import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
 import org.scalatest._
 import org.scalatest.funsuite.AnyFunSuiteLike

@@ -18,8 +18,9 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{UInt64, wire}
+import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.wire.protocol
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -113,10 +114,10 @@ class SphinxSpec extends AnyFunSuite {
   }
 
   test("bad onion") {
-    val badOnions = Seq[wire.OnionRoutingPacket](
-      wire.OnionRoutingPacket(1, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
-      wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
-      wire.OnionRoutingPacket(0, publicKeys.head.value, ByteVector.fill(42)(1), ByteVector32(hex"2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"))
+    val badOnions = Seq[protocol.OnionRoutingPacket](
+      protocol.OnionRoutingPacket(1, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
+      protocol.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
+      protocol.OnionRoutingPacket(0, publicKeys.head.value, ByteVector.fill(42)(1), ByteVector32(hex"2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"))
     )
 
     val expected = Seq[BadOnion](

@@ -31,8 +31,8 @@ import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.payment.{OutgoingPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
-import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol.Onion.FinalLegacyPayload
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.concurrent.PatienceConfiguration
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike

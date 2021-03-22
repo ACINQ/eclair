@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
-import fr.acinq.eclair.wire.CommonCodecs
+import fr.acinq.eclair.wire.protocol.CommonCodecs
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.BitVector

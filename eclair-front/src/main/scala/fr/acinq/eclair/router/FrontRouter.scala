@@ -26,7 +26,7 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, ShortChannelId, getSimpleClassName}
 import kamon.Kamon
 import kamon.metric.Counter

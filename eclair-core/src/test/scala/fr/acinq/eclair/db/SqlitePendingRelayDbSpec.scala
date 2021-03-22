@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC}
-import fr.acinq.eclair.wire.FailureMessageCodecs
+import fr.acinq.eclair.wire.protocol.FailureMessageCodecs
 import fr.acinq.eclair.{TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 

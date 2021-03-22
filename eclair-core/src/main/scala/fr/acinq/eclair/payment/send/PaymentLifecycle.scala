@@ -32,8 +32,8 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire.Onion._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol.Onion._
+import fr.acinq.eclair.wire.protocol._
 
 import java.util.concurrent.TimeUnit
 import scala.util.{Failure, Success}

@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{ByteVector32, Satoshi, Script, ScriptWitness, Transacti
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.BitcoinEvent
 import fr.acinq.eclair.transactions.Transactions.TransactionSigningKit
-import fr.acinq.eclair.wire.ChannelAnnouncement
+import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success, Try}

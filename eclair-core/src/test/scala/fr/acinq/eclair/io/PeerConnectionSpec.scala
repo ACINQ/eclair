@@ -27,7 +27,8 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits._
@@ -65,7 +66,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
   }
 
-  def connect(aliceParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features), doSync: Boolean = false): Unit = {
+  def connect(aliceParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features), doSync: Boolean = false): Unit = {
     // let's simulate a connection
     val probe = TestProbe()
     probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
@@ -73,7 +74,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, aliceParams.chainHash, aliceParams.features, doSync))
     transport.expectMsgType[TransportHandler.Listener]
-    val localInit = transport.expectMsgType[wire.Init]
+    val localInit = transport.expectMsgType[protocol.Init]
     assert(localInit.networks === List(Block.RegtestGenesisBlock.hash))
     transport.send(peerConnection, remoteInit)
     transport.expectMsgType[TransportHandler.ReadAck]
@@ -131,7 +132,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
-    transport.expectMsgType[wire.Init]
+    transport.expectMsgType[protocol.Init]
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"0000 00050100000000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
@@ -147,7 +148,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
-    transport.expectMsgType[wire.Init]
+    transport.expectMsgType[protocol.Init]
     transport.send(peerConnection, LightningMessageCodecs.initCodec.decode(hex"00050100000000 0000".bits).require.value)
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
@@ -163,7 +164,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
-    transport.expectMsgType[wire.Init]
+    transport.expectMsgType[protocol.Init]
     // remote activated MPP but forgot payment secret
     transport.send(peerConnection, Init(Features(BasicMultiPartPayment -> Optional, VariableLengthOnion -> Optional)))
     transport.expectMsgType[TransportHandler.ReadAck]
@@ -180,8 +181,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
-    transport.expectMsgType[wire.Init]
-    transport.send(peerConnection, wire.Init(Bob.nodeParams.features, TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SegnetGenesisBlock.hash :: Nil))))
+    transport.expectMsgType[protocol.Init]
+    transport.send(peerConnection, protocol.Init(Bob.nodeParams.features, TlvStream(InitTlv.Networks(Block.LivenetGenesisBlock.hash :: Block.SegnetGenesisBlock.hash :: Nil))))
     transport.expectMsgType[TransportHandler.ReadAck]
     probe.expectTerminated(transport.ref)
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible networks"))
@@ -189,7 +190,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
 
   test("sync when requested") { f =>
     import f._
-    val remoteInit = wire.Init(Features(ChannelRangeQueries -> Optional))
+    val remoteInit = protocol.Init(Features(ChannelRangeQueries -> Optional))
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, doSync = true)
   }
 
@@ -264,7 +265,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(bobOrigin)),
       updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + bobOrigin)) + (updates(10) -> Set(bobOrigin)),
       nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(bobOrigin)))
-    val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
+    val filter = protocol.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
     transport.send(peerConnection, filter)
     transport.expectMsg(TransportHandler.ReadAck(filter))
     transport.send(peerConnection, rebroadcast)
@@ -280,7 +281,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey.publicKey))
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     val timestamps = updates.map(_.timestamp).sorted.slice(10, 30)
-    val filter = wire.GossipTimestampFilter(Alice.nodeParams.chainHash, timestamps.head, timestamps.last - timestamps.head)
+    val filter = protocol.GossipTimestampFilter(Alice.nodeParams.chainHash, timestamps.head, timestamps.last - timestamps.head)
     transport.send(peerConnection, filter)
     transport.expectMsg(TransportHandler.ReadAck(filter))
     transport.send(peerConnection, rebroadcast)

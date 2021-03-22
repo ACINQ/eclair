@@ -32,7 +32,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol
+import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, RoutingMessage, UnknownMessage}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -83,7 +84,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         stay using d.copy(channels = channels1)
       }
 
-    case Event(_: wire.LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
+    case Event(_: LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
   }
 
   when(CONNECTED) {
@@ -97,13 +98,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         d.peerConnection forward msg
         stay
 
-      case Event(err@wire.Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
+      case Event(err@Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
         log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
         d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         d.peerConnection ! PeerConnection.Kill(KillReason.AllChannelsFail)
         stay
 
-      case Event(err: wire.Error, d: ConnectedData) =>
+      case Event(err: Error, d: ConnectedData) =>
         // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
         d.channels.get(FinalChannelId(err.channelId)).orElse(d.channels.get(TemporaryChannelId(err.channelId))) match {
           case Some(channel) => channel forward err
@@ -133,7 +134,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
           stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         }
 
-      case Event(msg: wire.OpenChannel, d: ConnectedData) =>
+      case Event(msg: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case None =>
             val channelVersion = ChannelVersion.pickChannelVersion(d.localFeatures, d.remoteFeatures)
@@ -148,14 +149,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
             stay
         }
 
-      case Event(msg: wire.HasChannelId, d: ConnectedData) =>
+      case Event(msg: HasChannelId, d: ConnectedData) =>
         d.channels.get(FinalChannelId(msg.channelId)) match {
           case Some(channel) => channel forward msg
           case None => replyUnknownChannel(d.peerConnection, msg.channelId)
         }
         stay
 
-      case Event(msg: wire.HasTemporaryChannelId, d: ConnectedData) =>
+      case Event(msg: HasTemporaryChannelId, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case Some(channel) => channel forward msg
           case None => replyUnknownChannel(d.peerConnection, msg.temporaryChannelId)
@@ -304,7 +305,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   }
 
   def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
-    val msg = wire.Error(unknownChannelId, UNKNOWN_CHANNEL_MESSAGE)
+    val msg = Error(unknownChannelId, UNKNOWN_CHANNEL_MESSAGE)
     logMessage(msg, "OUT")
     peerConnection ! msg
   }
@@ -368,7 +369,7 @@ object Peer {
   }
   case object Nothing extends Data { override def channels = Map.empty }
   case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
-  case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: wire.Init, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data {
+  case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef]) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
     def localFeatures: Features = localInit.features
     def remoteFeatures: Features = remoteInit.features

@@ -30,8 +30,9 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer._
-import fr.acinq.eclair.wire._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
+import fr.acinq.eclair.wire.protocol
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 import scodec.bits.ByteVector
@@ -71,11 +72,11 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, watcher, relayer, peer, peerConnection)))
   }
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: wire.Init = wire.Init(Bob.nodeParams.features)): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features)): Unit = {
     // let's simulate a connection
     val switchboard = TestProbe()
     switchboard.send(peer, Peer.Init(channels))
-    val localInit = wire.Init(peer.underlyingActor.nodeParams.features)
+    val localInit = protocol.Init(peer.underlyingActor.nodeParams.features)
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo)
@@ -232,7 +233,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING))
 
     // we simulate a success
-    val dummyInit = wire.Init(peer.underlyingActor.nodeParams.features)
+    val dummyInit = protocol.Init(peer.underlyingActor.nodeParams.features)
     probe.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, dummyInit, dummyInit))
 
     // we make sure that the reconnection task has done a full circle
@@ -247,7 +248,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection)
     assert(peer.stateData.channels.isEmpty)
 
-    val open = wire.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32, 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, 0)
+    val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32, 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, 0)
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)
     assert(probe.expectMsgType[ChannelCreated].temporaryChannelId === open.temporaryChannelId)
@@ -294,7 +295,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val fundingAmountBig = Btc(1).toSatoshi
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
@@ -332,7 +333,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)))
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
     val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
@@ -348,7 +349,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, remoteInit = wire.Init(Features(StaticRemoteKey -> Optional))) // Bob supports option_static_remotekey
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional))) // Bob supports option_static_remotekey
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
     awaitCond(peer.stateData.channels.nonEmpty)
     peer.stateData.channels.foreach { case (_, channelRef) =>

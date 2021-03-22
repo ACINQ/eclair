@@ -18,8 +18,8 @@ package fr.acinq.eclair.wire.internal
 
 import akka.actor.ActorRef
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
 import scodec.Codec
 import scodec.codecs._
 

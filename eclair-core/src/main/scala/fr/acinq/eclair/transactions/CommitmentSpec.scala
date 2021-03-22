@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 
 /**
  * Created by PM on 07/12/2016.

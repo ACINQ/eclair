@@ -20,9 +20,10 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.wire.Onion._
-import fr.acinq.eclair.wire.OnionCodecs._
-import fr.acinq.eclair.wire.OnionTlv._
+import fr.acinq.eclair.wire.protocol.Onion._
+import fr.acinq.eclair.wire.protocol.OnionCodecs._
+import fr.acinq.eclair.wire.protocol.OnionTlv._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Attempt

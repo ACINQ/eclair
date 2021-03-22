@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, TestConstants}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite

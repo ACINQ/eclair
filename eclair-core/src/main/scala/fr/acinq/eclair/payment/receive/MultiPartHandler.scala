@@ -25,7 +25,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
 import scala.util.{Failure, Success, Try}

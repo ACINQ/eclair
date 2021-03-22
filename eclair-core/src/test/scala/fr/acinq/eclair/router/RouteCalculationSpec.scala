@@ -25,7 +25,7 @@ import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
 import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Transactions
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, ToMilliSatoshiConversion, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.{ParallelTestExecution, Tag}
