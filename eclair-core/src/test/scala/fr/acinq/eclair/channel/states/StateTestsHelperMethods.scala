@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{FeatureSupport, Features, NodeParams, TestConstants, randomBytes32, _}
@@ -270,32 +271,31 @@ trait StateTestsHelperMethods extends TestKitBase {
     val localCommitPublished = closingState.localCommitPublished.get
 
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish)))
+    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishAsap(tx.tx, PublishStrategy.JustPublish)))
     s.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
-        // all htlcs success/timeout should be published
-        s2blockchain.expectMsgAllOf((localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs).map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
-        // and their outputs should be claimed
-        s2blockchain.expectMsgAllOf(localCommitPublished.claimHtlcDelayedTxs.map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
+        // all htlcs success/timeout should be published as-is, without claiming their outputs
+        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => PublishAsap(tx.tx, PublishStrategy.JustPublish) }: _*)
+        assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
       case Transactions.AnchorOutputsCommitmentFormat =>
-        // all htlcs success/timeout should be published, but their outputs should not be claimed yet
-        val htlcTxs = localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs
+        // all htlcs success/timeout should be published with a fee bumping strategy, without claiming their outputs
+        val htlcTxs = localCommitPublished.htlcTxs.values.collect { case Some(tx: HtlcTx) => tx.tx }
         val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[PublishAsap])
         assert(publishedTxs.map(_.tx).toSet == htlcTxs.toSet)
         publishedTxs.foreach(p => p.strategy.isInstanceOf[PublishStrategy.SetFeerate])
+        assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
     }
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(commitTx))
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(tx)))
-    assert(localCommitPublished.claimHtlcDelayedTxs.map(_ => s2blockchain.expectMsgType[WatchConfirmed].event).toSet == localCommitPublished.claimHtlcDelayedTxs.map(BITCOIN_TX_CONFIRMED).toSet)
+    localCommitPublished.claimMainDelayedOutputTx.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(claimMain.tx)))
 
     // we watch outputs of the commitment tx that both parties may spend
-    val htlcOutputIndexes = (localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs).map(tx => tx.txIn.head.outPoint.index)
+    val htlcOutputIndexes = localCommitPublished.htlcTxs.keySet.map(_.index)
     val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchSpent])
     spentWatches.foreach(ws => assert(ws.event == BITCOIN_OUTPUT_SPENT))
     spentWatches.foreach(ws => assert(ws.txId == commitTx.txid))
-    assert(spentWatches.map(_.outputIndex).toSet == htlcOutputIndexes.toSet)
+    assert(spentWatches.map(_.outputIndex) == htlcOutputIndexes)
     s2blockchain.expectNoMsg(1 second)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
@@ -315,25 +315,25 @@ trait StateTestsHelperMethods extends TestKitBase {
     val remoteCommitPublished = getRemoteCommitPublished(closingData).get
 
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    remoteCommitPublished.claimMainOutputTx.foreach(tx => {
-      Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      s2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
+    remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
+      Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      s2blockchain.expectMsg(PublishAsap(claimMain.tx, PublishStrategy.JustPublish))
     })
     // all htlcs success/timeout should be claimed
-    val claimHtlcTxs = remoteCommitPublished.claimHtlcSuccessTxs ++ remoteCommitPublished.claimHtlcTimeoutTxs
-    claimHtlcTxs.foreach(tx => Transaction.correctlySpends(tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(tx => PublishAsap(tx, PublishStrategy.JustPublish)): _*)
+    val claimHtlcTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTx) => tx }.toSeq
+    claimHtlcTxs.foreach(claimHtlc => Transaction.correctlySpends(claimHtlc.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => PublishAsap(claimHtlc.tx, PublishStrategy.JustPublish)): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(rCommitTx))
-    remoteCommitPublished.claimMainOutputTx.foreach(tx => assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(tx)))
+    remoteCommitPublished.claimMainOutputTx.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(claimMain.tx)))
 
     // we watch outputs of the commitment tx that both parties may spend
-    val htlcOutputIndexes = claimHtlcTxs.map(tx => tx.txIn.head.outPoint.index)
+    val htlcOutputIndexes = remoteCommitPublished.claimHtlcTxs.keySet.map(_.index)
     val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchSpent])
     spentWatches.foreach(ws => assert(ws.event == BITCOIN_OUTPUT_SPENT))
     spentWatches.foreach(ws => assert(ws.txId == rCommitTx.txid))
-    assert(spentWatches.map(_.outputIndex).toSet == htlcOutputIndexes.toSet)
+    assert(spentWatches.map(_.outputIndex) == htlcOutputIndexes)
     s2blockchain.expectNoMsg(1 second)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
@@ -341,5 +341,13 @@ trait StateTestsHelperMethods extends TestKitBase {
   }
 
   def channelId(a: TestFSMRef[State, Data, Channel]): ByteVector32 = a.stateData.channelId
+
+  def getHtlcSuccessTxs(lcp: LocalCommitPublished): Seq[HtlcSuccessTx] = lcp.htlcTxs.values.collect { case Some(tx: HtlcSuccessTx) => tx }.toSeq
+
+  def getHtlcTimeoutTxs(lcp: LocalCommitPublished): Seq[HtlcTimeoutTx] = lcp.htlcTxs.values.collect { case Some(tx: HtlcTimeoutTx) => tx }.toSeq
+
+  def getClaimHtlcSuccessTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcSuccessTx] = rcp.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcSuccessTx) => tx }.toSeq
+
+  def getClaimHtlcTimeoutTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcTimeoutTx] = rcp.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTimeoutTx) => tx }.toSeq
 
 }

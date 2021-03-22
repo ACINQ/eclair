@@ -504,7 +504,7 @@ object ZmqWatcher {
    * We need this because fundrawtransaction doesn't allow us to leave non-wallet inputs, so we have to add them
    * afterwards which may bring the resulting feerate below our target.
    */
-  def adjustAnchorOutputChange(unsignedTx: Transactions.ClaimAnchorOutputTx, commitTx: Transaction, amountIn: Satoshi, currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi): Transactions.ClaimAnchorOutputTx = {
+  def adjustAnchorOutputChange(unsignedTx: Transactions.ClaimLocalAnchorOutputTx, commitTx: Transaction, amountIn: Satoshi, currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi): Transactions.ClaimLocalAnchorOutputTx = {
     require(unsignedTx.tx.txOut.size == 1, "funded transaction should have a single change output")
     // We take into account witness weight and adjust the fee to match our desired feerate.
     val dummySignedClaimAnchorTx = Transactions.addSigs(unsignedTx, Transactions.PlaceHolderSig)

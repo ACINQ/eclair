@@ -469,7 +469,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
 
     disconnect(alice, bob)
 
@@ -486,12 +486,15 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
+    bob2blockchain.expectMsgType[WatchSpent] // htlc
 
     bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
     bob2blockchain.expectMsgType[PublishAsap] // main delayed
     assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
-    bob2blockchain.expectMsgType[PublishAsap] // htlc delayed
-    alice2blockchain.expectNoMsg(500 millis)
+    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
+    bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
+    bob2blockchain.expectMsgType[WatchSpent] // htlc
+    bob2blockchain.expectNoMsg(500 millis)
   }
 
   test("pending non-relayed fail htlcs will timeout upstream") { f =>

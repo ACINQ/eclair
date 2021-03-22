@@ -23,7 +23,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
@@ -65,7 +64,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
   // Outgoing HTLC sets that are still pending may either succeed or fail: we need to watch them to properly forward the
   // result upstream to preserve channels.
   val brokenHtlcs: BrokenHtlcs = {
-    val channels = listLocalChannels(nodeParams.channelKeyManager, nodeParams.db.channels)
+    val channels = listLocalChannels(nodeParams.db.channels)
     val nonStandardIncomingHtlcs: Seq[IncomingHtlc] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getIncomingHtlcs(nodeParams, log) }.flatten
     val htlcsIn: Seq[IncomingHtlc] = getIncomingHtlcs(channels, nodeParams.db.payments, nodeParams.privateKey) ++ nonStandardIncomingHtlcs
     val nonStandardRelayedOutHtlcs: Map[Origin, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn, nodeParams, log) }.flatten.toMap
@@ -359,20 +358,20 @@ object PostRestartHtlcCleaner {
               case _ => Set.empty[UpdateAddHtlc]
             }).map(_.id)
             val irrevocablySpent = closingType_opt match {
-              case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSet
-              case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSet
-              case _ => Set.empty[ByteVector32]
+              case Some(c: Closing.LocalClose) => c.localCommitPublished.irrevocablySpent.values.toSeq
+              case Some(c: Closing.RemoteClose) => c.remoteCommitPublished.irrevocablySpent.values.toSeq
+              case _ => Nil
             }
-            val timedoutHtlcs: Set[Long] = (closingType_opt match {
+            val timedOutHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) =>
-                val confirmedTxs = c.localCommitPublished.commitTx :: c.localCommitPublished.htlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
+                val confirmedTxs = c.localCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isHtlcTimeout(tx, c.localCommitPublished))
+                confirmedTxs.flatMap(tx => Closing.timedOutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
               case Some(c: Closing.RemoteClose) =>
-                val confirmedTxs = c.remoteCommitPublished.commitTx :: c.remoteCommitPublished.claimHtlcTimeoutTxs.filter(tx => irrevocablySpent.contains(tx.txid))
-                confirmedTxs.flatMap(tx => Closing.timedoutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
+                val confirmedTxs = c.remoteCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isClaimHtlcTimeout(tx, c.remoteCommitPublished))
+                confirmedTxs.flatMap(tx => Closing.timedOutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
               case _ => Seq.empty[UpdateAddHtlc]
             }).map(_.id).toSet
-            overriddenHtlcs ++ timedoutHtlcs
+            overriddenHtlcs ++ timedOutHtlcs
           case _ => Set.empty
         }
         c.commitments.originChannels.collect { case (outgoingHtlcId, origin) if !htlcsToIgnore.contains(outgoingHtlcId) => (origin, c.channelId, outgoingHtlcId) }
@@ -386,8 +385,8 @@ object PostRestartHtlcCleaner {
    * and before it has effectively been removed. Such closed channels will automatically be removed once the channel is
    * restored.
    */
-  private def listLocalChannels(keyManager: ChannelKeyManager, channelsDb: ChannelsDb): Seq[HasCommitments] =
-    channelsDb.listLocalChannels().filterNot(c => Closing.isClosed(keyManager, c, None).isDefined)
+  private def listLocalChannels(channelsDb: ChannelsDb): Seq[HasCommitments] =
+    channelsDb.listLocalChannels().filterNot(c => Closing.isClosed(c, None).isDefined)
 
   /**
    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]] in a database
