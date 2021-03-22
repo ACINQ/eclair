@@ -49,7 +49,7 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
 
     // but it works with our custom key serializer
     val json = JsonSupport.serialization.write(map)(org.json4s.DefaultFormats + new ByteVectorSerializer + new OutPointKeySerializer)
-    assert(json === s"""{"${output1.txid}:0":"dead","${output2.txid}:1":"beef"}""")
+    assertJsonEquals(json, s"""{"${output1.txid}:0":"dead","${output2.txid}:1":"beef"}""")
   }
 
   test("deserialize Map[OutPoint, Transaction]") {
@@ -79,8 +79,8 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
          |    "tx": "0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000"
          |  }
          |}
-    """.stripMargin.replace("\n", "").replace(" ", "")
-    assert(json === expectedJson)
+    """.stripMargin
+    assertJsonEquals(json, expectedJson)
   }
 
   test("NodeAddress serialization") {
@@ -143,7 +143,7 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
 
   test("transaction serializer") {
     val tx = Transaction.read("0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800")
-    assert(JsonSupport.serialization.write(tx)(JsonSupport.formats) == "{\"txid\":\"3ef63b5d297c9dcf93f33b45b9f102733c36e8ef61da1ccf2bc132a10584be18\",\"tx\":\"0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800\"}")
+    assertJsonEquals(JsonSupport.serialization.write(tx)(JsonSupport.formats), "{\"txid\":\"3ef63b5d297c9dcf93f33b45b9f102733c36e8ef61da1ccf2bc132a10584be18\",\"tx\":\"0200000001c8a8934fb38a44b969528252bc37be66ee166c7897c57384d1e561449e110c93010000006b483045022100dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773d35228af0800c257970bee9cf75175d75217de09a8ecd83521befd040c4ca012102082b751372fe7e3b012534afe0bb8d1f2f09c724b1a10a813ce704e5b9c217ccfdffffff0247ba2300000000001976a914f97a7641228e6b17d4b0b08252ae75bd62a95fe788ace3de24000000000017a914a9fefd4b9a9282a1d7a17d2f14ac7d1eb88141d287f7d50800\"}")
   }
 
   test("TransactionWithInputInfo serializer") {
@@ -159,8 +159,8 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
          |  "paymentHash": "0100000000000000000000000000000000000000000000000000000000000000",
          |  "htlcId": 3
          |}
-    """.stripMargin.replace("\n", "").replace(" ", "")
-    assert(JsonSupport.serialization.write(htlcSuccessTxInfo)(JsonSupport.formats) == htlcSuccessJson)
+    """.stripMargin
+    assertJsonEquals(JsonSupport.serialization.write(htlcSuccessTxInfo)(JsonSupport.formats), htlcSuccessJson)
 
     val claimHtlcTimeoutTx = Transaction.read("010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000")
     val claimHtlcTimeoutTxInfo = ClaimHtlcTimeoutTx(dummyInputInfo, claimHtlcTimeoutTx, 2)
@@ -170,8 +170,8 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
          |  "tx": "010000000110f01d4a4228ef959681feb1465c2010d0135be88fd598135b2e09d5413bf6f1000000006a473044022074658623424cebdac8290488b76f893cfb17765b7a3805e773e6770b7b17200102202892cfa9dda662d5eac394ba36fcfd1ea6c0b8bb3230ab96220731967bbdb90101210372d437866d9e4ead3d362b01b615d24cc0d5152c740d51e3c55fb53f6d335d82ffffffff01408b0700000000001976a914678db9a7caa2aca887af1177eda6f3d0f702df0d88ac00000000",
          |  "htlcId": 2
          |}
-    """.stripMargin.replace("\n", "").replace(" ", "")
-    assert(JsonSupport.serialization.write(claimHtlcTimeoutTxInfo)(JsonSupport.formats) == claimHtlcTimeoutJson)
+    """.stripMargin
+    assertJsonEquals(JsonSupport.serialization.write(claimHtlcTimeoutTxInfo)(JsonSupport.formats), claimHtlcTimeoutJson)
 
     val closingTx = Transaction.read("0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000")
     val closingTxWithLocalOutput = ClosingTx(dummyInputInfo, closingTx, Some(OutputInfo(1, Satoshi(15000), hex"deadbeef")))
@@ -185,8 +185,8 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
          |    "publicKeyScript": "deadbeef"
          |  }
          |}
-    """.stripMargin.replace("\n", "").replace(" ", "")
-    assert(JsonSupport.serialization.write(closingTxWithLocalOutput)(JsonSupport.formats) == closingTxWithLocalOutputJson)
+    """.stripMargin
+    assertJsonEquals(JsonSupport.serialization.write(closingTxWithLocalOutput)(JsonSupport.formats), closingTxWithLocalOutputJson)
 
     val closingTxWithoutLocalOutput = ClosingTx(dummyInputInfo, closingTx, None)
     val closingTxWithoutLocalOutputJson =
@@ -194,8 +194,17 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
          |  "txid": "${closingTx.txid.toHex}",
          |  "tx": "0100000001be43e9788523ed4de0b24a007a90009bc25e667ddac0e9ee83049be03e220138000000006b483045022100f74dd6ad3e6a00201d266a0ed860a6379c6e68b473970423f3fc8a15caa1ea0f022065b4852c9da230d9e036df743cb743601ca5229e1cb610efdd99769513f2a2260121020636de7755830fb4a3f136e97ecc6c58941611957ba0364f01beae164b945b2fffffffff0150f80c000000000017a9146809053148799a10480eada3d56d15edf4a648c88700000000"
          |}
-    """.stripMargin.replace("\n", "").replace(" ", "")
-    assert(JsonSupport.serialization.write(closingTxWithoutLocalOutput)(JsonSupport.formats) == closingTxWithoutLocalOutputJson)
+    """.stripMargin
+    assertJsonEquals(JsonSupport.serialization.write(closingTxWithoutLocalOutput)(JsonSupport.formats), closingTxWithoutLocalOutputJson)
+  }
+
+  /** utility method that strips line breaks in the expected json */
+  def assertJsonEquals(actual: String, expected: String) = {
+    val cleanedExpected = expected
+      .replace("\n", "")
+      .replace("\r", "")
+      .replace(" ", "")
+    assert(actual == cleanedExpected)
   }
 
 }
