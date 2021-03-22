@@ -20,14 +20,18 @@ import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, ScriptFlags, Transaction}
+import fr.acinq.eclair.balance.CheckBalance.PossiblyPublishedMainAndHtlcBalance
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
+import fr.acinq.eclair.balance.CheckBalance
+import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
 import fr.acinq.eclair.channel.Channel._
+import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
@@ -2370,6 +2374,24 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
     assert(amountClaimed === 814880.sat)
 
+    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
+    val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
+    val knownPreimages = Set((commitments.channelId, htlcb1.id))
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages) ===
+      PossiblyPublishedMainAndHtlcBalance(
+        toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
+        htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi
+      ))
+    // assuming alice gets the preimage for the 2nd htlc
+    val knownPreimages1 = Set((commitments.channelId, htlcb1.id), (commitments.channelId, htlcb2.id))
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages1) ===
+      PossiblyPublishedMainAndHtlcBalance(
+        toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
+        htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi + htlcb2.amountMsat.truncateToSatoshi
+      ))
+
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.txid)
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 1
@@ -2438,6 +2460,24 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }).sum
     // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
     assert(amountClaimed === 822310.sat)
+
+    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
+    val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get
+    val knownPreimages = Set((commitments.channelId, htlcb1.id))
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, remoteCommitPublished), knownPreimages) ===
+      PossiblyPublishedMainAndHtlcBalance(
+        toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
+        htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi
+      ))
+    // assuming alice gets the preimage for the 2nd htlc
+    val knownPreimages1 = Set((commitments.channelId, htlcb1.id), (commitments.channelId, htlcb2.id))
+    assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, remoteCommitPublished), knownPreimages1) ===
+      PossiblyPublishedMainAndHtlcBalance(
+        toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
+        htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi + htlcb2.amountMsat.truncateToSatoshi
+      ))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimTxs(0).txid) // claim-main
@@ -2571,8 +2611,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val (rb1, htlcb1) = addHtlc(50000000 msat, bob, alice, bob2alice, alice2bob)
     val (rb2, htlcb2) = addHtlc(55000000 msat, bob, alice, bob2alice, alice2bob)
     crossSign(alice, bob, alice2bob, bob2alice)
-    fulfillHtlc(1, ra2, bob, alice, bob2alice, alice2bob)
-    fulfillHtlc(0, rb1, alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlca2.id, ra2, bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlcb1.id, rb1, alice, bob, alice2bob, bob2alice)
 
     // at this point here is the situation from alice pov and what she should do when she publishes his commit tx:
     // balances :
@@ -2592,12 +2632,21 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
+    val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
     val localCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     assert(localCommitPublished.commitTx == aliceCommitTx)
     assert(localCommitPublished.htlcTxs.size === 4)
     assert(getHtlcSuccessTxs(localCommitPublished).length === 1)
     assert(getHtlcTimeoutTxs(localCommitPublished).length === 2)
     assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
+
+    val knownPreimages = Set((commitments.channelId, htlcb1.id))
+    assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, localCommitPublished), knownPreimages) ===
+      PossiblyPublishedMainAndHtlcBalance(
+        toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
+        htlcs = Map.empty,
+        htlcsUnpublished = htlca1.amountMsat.truncateToSatoshi + htlca3.amountMsat.truncateToSatoshi + htlcb1.amountMsat.truncateToSatoshi
+      ))
 
     // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
     // so we expect 4 transactions:
@@ -2620,16 +2669,24 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2blockchain.expectNoMsg(1 second)
 
     // 3rd-stage txs are published when htlc txs confirm
-    Seq(htlcTx1, htlcTx2, htlcTx3).foreach(htlcTimeoutTx => {
+    val claimHtlcDelayedTxs = Seq(htlcTx1, htlcTx2, htlcTx3).map { htlcTimeoutTx =>
       alice ! WatchOutputSpentTriggered(htlcTimeoutTx)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === htlcTimeoutTx.txid)
       alice ! WatchTxConfirmedTriggered(2701, 3, htlcTimeoutTx)
       val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishRawTx].tx
       Transaction.correctlySpends(claimHtlcDelayedTx, htlcTimeoutTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimHtlcDelayedTx.txid)
-    })
+      claimHtlcDelayedTx
+    }
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 3)
-    alice2blockchain.expectNoMsg(1 second)
+    alice2blockchain.expectNoMessage(1 second)
+
+    assert(CheckBalance.computeLocalCloseBalance(commitments, LocalClose(commitments.localCommit, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get), knownPreimages) ===
+      PossiblyPublishedMainAndHtlcBalance(
+        toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
+        htlcs = claimHtlcDelayedTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi
+      ))
   }
 
   test("recv Error (nothing at stake)", Tag(StateTestsTags.NoPushMsat)) { f =>

@@ -25,11 +25,12 @@ import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
-import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
+import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.{Channel, Register}
 import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
@@ -194,6 +195,7 @@ class Setup(val datadir: File,
       tcpBound = Promise[Done]()
       routerInitialized = Promise[Done]()
       postRestartCleanUpInitialized = Promise[Done]()
+      channelsListenerReady = Promise[Done]()
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
@@ -249,6 +251,9 @@ class Setup(val datadir: File,
       wallet = new BitcoinCoreWallet(bitcoin)
       _ = wallet.getReceiveAddress().map(address => logger.info(s"initial wallet address=$address"))
 
+      channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")
+      _ <- channelsListenerReady.future
+
       _ = if (config.getBoolean("file-backup.enabled")) {
         nodeParams.db match {
           case fileBackup: FileBackup if config.getBoolean("file-backup.enabled") =>
@@ -283,6 +288,8 @@ class Setup(val datadir: File,
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
+      balanceActor = system.spawn(BalanceActor(nodeParams.db, extendedBitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
+
       kit = Kit(
         nodeParams = nodeParams,
         system = system,
@@ -294,6 +301,8 @@ class Setup(val datadir: File,
         switchboard = switchboard,
         paymentInitiator = paymentInitiator,
         server = server,
+        channelsListener = channelsListener,
+        balanceActor = balanceActor,
         wallet = wallet)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -360,6 +369,8 @@ case class Kit(nodeParams: NodeParams,
                switchboard: ActorRef,
                paymentInitiator: ActorRef,
                server: ActorRef,
+               channelsListener: typed.ActorRef[ChannelsListener.Command],
+               balanceActor: typed.ActorRef[BalanceActor.Command],
                wallet: EclairWallet)
 
 object Kit {

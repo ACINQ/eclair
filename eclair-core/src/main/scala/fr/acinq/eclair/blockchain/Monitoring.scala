@@ -17,31 +17,21 @@
 package fr.acinq.eclair.blockchain
 
 import kamon.Kamon
+import kamon.metric.Metric
 
 object Monitoring {
 
   object Metrics {
-    val NewBlockCheckConfirmedDuration = Kamon.timer("bitcoin.watcher.newblock.checkconfirmed")
-    val RpcBasicInvokeCount = Kamon.counter("bitcoin.rpc.basic.invoke.count")
-    val RpcBasicInvokeDuration = Kamon.timer("bitcoin.rpc.basic.invoke.duration")
-    val RpcBatchInvokeDuration = Kamon.timer("bitcoin.rpc.batch.invoke.duration")
-    val BitcoinBalance = Kamon.gauge("bitcoin.balance", "Bitcoin balance (mBTC)")
-    val MempoolMinFeeratePerKw = Kamon.gauge("bitcoin.mempool.min-feerate-per-kw", "Minimum feerate (sat/kw) for a tx to be accepted in our mempool")
-    val CannotRetrieveFeeratesCount = Kamon.counter("bitcoin.rpc.feerates.error", "Number of failures to retrieve on-chain feerates")
-    val UtxoCount = Kamon.gauge("bitcoin.utxo.count", "Number of unspent outputs available")
+    val NewBlockCheckConfirmedDuration: Metric.Timer = Kamon.timer("bitcoin.watcher.newblock.checkconfirmed")
+    val RpcBasicInvokeCount: Metric.Counter = Kamon.counter("bitcoin.rpc.basic.invoke.count")
+    val RpcBasicInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.basic.invoke.duration")
+    val RpcBatchInvokeDuration: Metric.Timer = Kamon.timer("bitcoin.rpc.batch.invoke.duration")
+    val MempoolMinFeeratePerKw: Metric.Gauge = Kamon.gauge("bitcoin.mempool.min-feerate-per-kw", "Minimum feerate (sat/kw) for a tx to be accepted in our mempool")
+    val CannotRetrieveFeeratesCount: Metric.Counter = Kamon.counter("bitcoin.rpc.feerates.error", "Number of failures to retrieve on-chain feerates")
   }
 
   object Tags {
     val Method = "method"
-    val UtxoStatus = "status"
-
-    object UtxoStatuses {
-      val Confirmed = "confirmed"
-      val Safe = "safe"
-      val Unsafe = "unsafe"
-      val Unconfirmed = "unconfirmed"
-    }
-
   }
 
 }
