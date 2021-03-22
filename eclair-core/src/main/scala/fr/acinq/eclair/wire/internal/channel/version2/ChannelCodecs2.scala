@@ -44,11 +44,6 @@ private[channel] object ChannelCodecs2 {
 
     val channelVersionCodec: Codec[ChannelVersion] = bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion]
 
-    /**
-     * byte-aligned boolean codec
-     */
-    val bool8: Codec[Boolean] = bool(8)
-
     def localParamsCodec(channelVersion: ChannelVersion): Codec[LocalParams] = (
       ("nodeId" | publicKey) ::
         ("channelPath" | keyPathCodec) ::
@@ -77,6 +72,8 @@ private[channel] object ChannelCodecs2 {
         ("delayedPaymentBasepoint" | publicKey) ::
         ("htlcBasepoint" | publicKey) ::
         ("features" | combinedFeaturesCodec)).as[RemoteParams]
+
+    def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 
     val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool8)
       .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
@@ -209,6 +206,8 @@ private[channel] object ChannelCodecs2 {
       .typecase(0x02, relayedCodec)
       .typecase(0x03, localCodec)
       .typecase(0x04, trampolineRelayedCodec)
+
+    def mapCodec[K, V](keyCodec: Codec[K], valueCodec: Codec[V]): Codec[Map[K, V]] = listOfN(uint16, keyCodec ~ valueCodec).xmap(_.toMap, _.toList)
 
     val originsMapCodec: Codec[Map[Long, Origin]] = mapCodec(int64, originCodec)
 

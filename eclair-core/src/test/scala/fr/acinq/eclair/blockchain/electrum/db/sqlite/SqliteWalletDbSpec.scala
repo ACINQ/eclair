@@ -21,7 +21,6 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.{TestConstants, randomBytes, randomBytes32}
-import fr.acinq.eclair.wire.CommonCodecs.setCodec
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Codec
 import scodec.bits.BitVector
@@ -104,8 +103,9 @@ class SqliteWalletDbSpec extends AnyFunSuite {
 
   test("read old persistent data") {
     import SqliteWalletDb._
-    import fr.acinq.eclair.wire.internal.channel.ChannelCodecs._
     import scodec.codecs._
+
+    def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 
     val oldPersistentDataCodec: Codec[PersistentData] = (
       ("version" | constant(BitVector.fromInt(version))) ::
@@ -119,7 +119,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
         ("pendingTransactions" | listOfN(uint16, txCodec)) ::
         ("locks" | setCodec(txCodec))).as[PersistentData]
 
-    for (i <- 0 until 50) {
+    for (_ <- 0 until 50) {
       val data = randomPersistentData
       val encoded = oldPersistentDataCodec.encode(data).require
       val decoded = persistentDataCodec.decode(encoded).require.value

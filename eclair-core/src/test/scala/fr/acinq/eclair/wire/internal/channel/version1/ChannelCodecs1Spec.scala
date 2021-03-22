@@ -8,7 +8,6 @@ import fr.acinq.bitcoin.{DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Sc
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{ChannelVersion, LocalParams, Origin, RemoteParams}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
-import fr.acinq.eclair.wire.CommonCodecs.setCodec
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1.Codecs._

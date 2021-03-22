@@ -27,6 +27,7 @@ import scodec.{Attempt, Codec}
  * Created by PM on 15/11/2016.
  */
 object LightningMessageCodecs {
+
   val featuresCodec: Codec[Features] = varsizebinarydata.xmap[Features](
     { bytes => Features(bytes) },
     { features => features.toByteVector }
@@ -237,7 +238,6 @@ object LightningMessageCodecs {
       .\(1) {
         case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
       }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
-
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
     Codec(
