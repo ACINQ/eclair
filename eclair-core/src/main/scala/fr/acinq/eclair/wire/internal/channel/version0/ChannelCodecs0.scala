@@ -52,8 +52,10 @@ private[channel] object ChannelCodecs0 {
         ("parent" | int64)).as[ExtendedPrivateKey].decodeOnly
 
     val channelVersionCodec: Codec[ChannelVersion] = discriminatorWithDefault[ChannelVersion](
+      discriminator = discriminated[ChannelVersion].by(byte)
+        .typecase(0x01, bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion])
       // NB: 0x02 and 0x03 are *reserved* for backward compatibility reasons
-      discriminator = discriminated[ChannelVersion].by(byte).typecase(0x01, bits(ChannelVersion.LENGTH_BITS).as[ChannelVersion]),
+      ,
       fallback = provide(ChannelVersion.ZEROES) // README: DO NOT CHANGE THIS !! old channels don't have a channel version
       // field and don't support additional features which is why all bits are set to 0.
     )
