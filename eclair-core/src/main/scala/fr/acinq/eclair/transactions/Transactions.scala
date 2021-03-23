@@ -240,7 +240,7 @@ object Transactions {
    * If you are adding multiple fees together for example, you should always add them in MilliSatoshi and then round
    * down to Satoshi.
    */
-  def toDeduceFromFunderOutputMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
+  def commitTxTotalCostMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     // The funder pays the on-chain fee by deducing it from its main output.
     val txFee = commitTxFeeMsat(dustLimit, spec, commitmentFormat)
     // When using anchor outputs, the funder pays for *both* anchors all the time, even if only one anchor is present.
@@ -252,7 +252,7 @@ object Transactions {
     txFee + anchorsCost
   }
 
-  def toDeduceFromFunderOutput(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = toDeduceFromFunderOutputMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
+  def commitTxTotalCost(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxTotalCostMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
 
   /**
    * @param commitTxNumber         commit tx number
@@ -356,9 +356,9 @@ object Transactions {
     val hasHtlcs = outputs.nonEmpty
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (spec.toLocal.truncateToSatoshi - toDeduceFromFunderOutput(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
+      (spec.toLocal.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
     } else {
-      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - toDeduceFromFunderOutput(localDustLimit, spec, commitmentFormat))
+      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, commitmentFormat))
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     if (toLocalAmount >= localDustLimit) {

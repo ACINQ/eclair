@@ -214,7 +214,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment with some outputs that don't materialize (default commitment format)") {
     val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
-    val commitFee = toDeduceFromFunderOutput(localDustLimit, spec, DefaultCommitmentFormat)
+    val commitFee = commitTxTotalCost(localDustLimit, spec, DefaultCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
     val belowDustWithFee = (localDustLimit + commitFee * 0.9).toMilliSatoshi
 
@@ -426,7 +426,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("generate valid commitment with some outputs that don't materialize (anchor outputs)") {
     val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
-    val commitFeeAndAnchorCost = toDeduceFromFunderOutput(localDustLimit, spec, AnchorOutputsCommitmentFormat)
+    val commitFeeAndAnchorCost = commitTxTotalCost(localDustLimit, spec, AnchorOutputsCommitmentFormat)
     val belowDust = (localDustLimit * 0.9).toMilliSatoshi
     val belowDustWithFeeAndAnchors = (localDustLimit + commitFeeAndAnchorCost * 0.9).toMilliSatoshi
 
@@ -787,7 +787,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     assert(tests.size === 30, "there were 15 tests at b201efe0546120c14bf154ce5f4e18da7243fe7a") // simple non-reg to make sure we are not missing tests
     tests.foreach(test => {
       logger.info(s"running BOLT 3 test: '${test.name}'")
-      val fee = toDeduceFromFunderOutput(dustLimit, test.spec, DefaultCommitmentFormat)
+      val fee = commitTxTotalCost(dustLimit, test.spec, DefaultCommitmentFormat)
       assert(fee === test.expectedFee)
     })
   }
