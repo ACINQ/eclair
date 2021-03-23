@@ -53,7 +53,7 @@ Here is a high-level view of the hierarchy of some of the main actors in the sys
                         +------+      +---------+
                             |         +---------+
                             +-------->| Channel |
-                                      +---------
+                                      +---------+
 
                         +----------------+
       +---------------->| ChannelRelayer |
