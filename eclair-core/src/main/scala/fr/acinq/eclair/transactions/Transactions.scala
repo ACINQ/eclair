@@ -663,12 +663,12 @@ object Transactions {
     makeClaimAnchorOutputTx(commitTx, remoteFundingPubkey).map { case (input, tx) => ClaimRemoteAnchorOutputTx(input, tx) }
   }
 
-  def makeClaimHtlcDelayedOutputPenaltyTx(htlcTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Either[TxGenerationSkipped, ClaimHtlcDelayedOutputPenaltyTx] = {
+  def makeClaimHtlcDelayedOutputPenaltyTxs(htlcTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: PublicKey, toLocalDelay: CltvExpiryDelta, localDelayedPaymentPubkey: PublicKey, localFinalScriptPubKey: ByteVector, feeratePerKw: FeeratePerKw): Seq[Either[TxGenerationSkipped, ClaimHtlcDelayedOutputPenaltyTx]] = {
     val redeemScript = toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPaymentPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
-    findPubKeyScriptIndex(htlcTx, pubkeyScript, amount_opt = None) match {
-      case Left(skip) => Left(skip)
-      case Right(outputIndex) =>
+    findPubKeyScriptIndexes(htlcTx, pubkeyScript, amount_opt = None) match {
+      case Left(skip) => Seq(Left(skip))
+      case Right(outputIndexes) => outputIndexes.map(outputIndex => {
         val input = InputInfo(OutPoint(htlcTx, outputIndex), htlcTx.txOut(outputIndex), write(redeemScript))
         // unsigned transaction
         val tx = Transaction(
@@ -686,6 +686,7 @@ object Transactions {
           val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
           Right(ClaimHtlcDelayedOutputPenaltyTx(input, tx1))
         }
+      })
     }
   }
 
@@ -759,12 +760,25 @@ object Transactions {
     ClosingTx(commitTxInput, tx, toLocalOutput)
   }
 
+  private def matchPubKeyScript(txOut: TxOut, pubkeyScript: ByteVector, amount_opt: Option[Satoshi]): Boolean = {
+    amount_opt.forall(_ == txOut.amount) && txOut.publicKeyScript == pubkeyScript
+  }
+
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: ByteVector, amount_opt: Option[Satoshi]): Either[TxGenerationSkipped, Int] = {
-    val outputIndex = tx.txOut
-      .zipWithIndex
-      .indexWhere { case (txOut, _) => amount_opt.forall(_ == txOut.amount) && txOut.publicKeyScript == pubkeyScript }
+    val outputIndex = tx.txOut.indexWhere(txOut => matchPubKeyScript(txOut, pubkeyScript, amount_opt))
     if (outputIndex >= 0) {
       Right(outputIndex)
+    } else {
+      Left(OutputNotFound)
+    }
+  }
+
+  def findPubKeyScriptIndexes(tx: Transaction, pubkeyScript: ByteVector, amount_opt: Option[Satoshi]): Either[TxGenerationSkipped, Seq[Int]] = {
+    val outputIndexes = tx.txOut.zipWithIndex.collect {
+      case (txOut, index) if matchPubKeyScript(txOut, pubkeyScript, amount_opt) => index
+    }
+    if (outputIndexes.nonEmpty) {
+      Right(outputIndexes)
     } else {
       Left(OutputNotFound)
     }
