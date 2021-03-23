@@ -30,42 +30,78 @@ The entry point for `eclair-core` is in `Setup.scala`, where we start the actor 
 
 ## Actor system overview
 
-Here is a high-level view of the main actors in the system:
+Here is a high-level view of the hierarchy of some of the main actors in the system:
 
 ```ascii
-                                                             +--------+
-                          +--------------------------------->| Router |<------------------------------------+
-                          |                                  +--------+                                     |
-                          |                                                                                 |
-                          |           +---------+                                                           |
-                          | +-------->| Channel |<----------------+                                         |
-                          v |         +---------+                 |                                         |
-                        +------+      +---------+                 |                                         v
-      +---------------->| Peer |----->| Channel |<----------------+                                +------------------+
-      |                 +------+      +---------+                 |                    +-----------| PaymentInitiator |
-      |                     |         +---------+                 |                    |           +------------------+
-      |                     +-------->| Channel |<----------------+                    |
-      |                               +---------+                 |                    v
-+-------------+                                              +----------+         +---------+
-| Switchboard |                                              | Register |<--------| Relayer |
-+-------------+                                              +----------+         +---------+
-      |                               +---------+                 |                    |
-      |                     +-------->| Channel |<----------------+                    |
-      |                     |         +---------+                 |                    |           +----------------+
-      |                 +------+      +---------+                 |                    +---------->| PaymentHandler |
-      +---------------->| Peer |----->| Channel |<----------------+                                +----------------+
-                        +------+      +---------+                 |
-                            |         +---------+                 |
-                            +-------->| Channel |<----------------+
                                       +---------+
-                                           |
-                                           |
-                                 +---------+---------+
-                                 |                   |
-                                 v                   v
-                            +---------+          +--------+
-                            | Watcher |          | Wallet |
-                            +---------+          +--------+
+                            +-------->| Channel |
+                            |         +---------+
+                        +------+      +---------+
+      +---------------->| Peer |----->| Channel |
+      |                 +------+      +---------+
+      |                     |         +---------+
+      |                     +-------->| Channel |
+      |                               +---------+
++-------------+
+| Switchboard |
++-------------+
+      |                               +---------+
+      |                     +-------->| Channel |
+      |                     |         +---------+
+      |                 +------+      +---------+
+      +---------------->| Peer |----->| Channel |
+                        +------+      +---------+
+                            |         +---------+
+                            +-------->| Channel |
+                                      +---------
+
+                        +----------------+
+      +---------------->| ChannelRelayer |
+      |                 +----------------+
++---------+
+| Relayer |
++---------+
+      |                 +-------------+
+      +---------------->| NodeRelayer |
+                        +-------------+
+
+                                                           +------------------+
+                                              +----------->| PaymentLifecycle |
+                                              |            +------------------+
+                        +---------------------------+      +------------------+
+      +---------------->| MultiPartPaymentLifecycle |----->| PaymentLifecycle |
+      |                 +---------------------------+      +------------------+
+      |                                       |            +------------------+
+      |                                       +----------->| PaymentLifecycle |
++------------------+                                       +------------------+
+| PaymentInitiator |                          
++------------------+                                       +------------------+
+      |                                       +----------->| PaymentLifecycle |
+      |                                       |            +------------------+
+      |                 +---------------------------+      +------------------+
+      +---------------->| MultiPartPaymentLifecycle |----->| PaymentLifecycle |
+                        +---------------------------+      +------------------+
+                                              |            +------------------+
+                                              +----------->| PaymentLifecycle |
+                                                           +------------------+
+
+                        +---------------------+
+      +---------------->| MultiPartPaymentFSM |
+      |                 +---------------------+
++----------------+
+| PaymentHandler |
++----------------+
+      |                 +---------------------+
+      +---------------->| MultiPartPaymentFSM |
+                        +---------------------+
+
++----------+
+| Register |
++----------+
+
++--------+
+| Router |
++--------+
 ```
 
 And a short description of each actor's role:
@@ -78,8 +114,6 @@ And a short description of each actor's role:
 - Relayer: entry point for relaying payments
 - PaymentHandler: entry point for receiving payments
 - Router: p2p gossip and the network graph ([Bolt 7](https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md))
-- Watcher: watches the bitcoin blockchain
-- Wallet: bitcoin wallet
 
 Actors have two ways of communicating:
 
