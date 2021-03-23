@@ -29,7 +29,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
+import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 

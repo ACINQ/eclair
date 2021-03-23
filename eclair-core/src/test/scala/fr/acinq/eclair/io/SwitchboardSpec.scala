@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.channel.ChannelIdAssigned
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.{Features, NodeParams, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike

@@ -19,14 +19,14 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
 import fr.acinq.eclair.transactions.Scripts.{anchor, htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.anchorAmount
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
-import fr.acinq.eclair.wire.UpdateAddHtlc
-import fr.acinq.eclair.{MilliSatoshi, randomBytes32, _}
+import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._

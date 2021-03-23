@@ -18,7 +18,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 

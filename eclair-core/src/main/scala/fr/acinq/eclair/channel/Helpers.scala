@@ -32,7 +32,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
 import scala.concurrent.Await

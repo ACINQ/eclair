@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Closing.ClosingType
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
 
 /**
  * Created by PM on 17/08/2016.

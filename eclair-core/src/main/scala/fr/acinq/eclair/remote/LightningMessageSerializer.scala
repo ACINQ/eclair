@@ -16,6 +16,6 @@
 
 package fr.acinq.eclair.remote
 
-import fr.acinq.eclair.wire.LightningMessageCodecs.lightningMessageCodec
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.lightningMessageCodec
 
 class LightningMessageSerializer extends ScodecSerializer(42, lightningMessageCodec)

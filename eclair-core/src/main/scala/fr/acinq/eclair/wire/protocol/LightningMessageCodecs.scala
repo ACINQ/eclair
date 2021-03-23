@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.{Features, KamonExt, wire}
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.{Features, KamonExt}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -27,6 +27,7 @@ import scodec.{Attempt, Codec}
  * Created by PM on 15/11/2016.
  */
 object LightningMessageCodecs {
+
   val featuresCodec: Codec[Features] = varsizebinarydata.xmap[Features](
     { bytes => Features(bytes) },
     { features => features.toByteVector }
@@ -114,7 +115,7 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("nextPerCommitmentPoint" | publicKey)).as[FundingLocked]
 
-  val shutdownCodec: Codec[wire.Shutdown] = (
+  val shutdownCodec: Codec[Shutdown] = (
     ("channelId" | bytes32) ::
       ("scriptPubKey" | varsizebinarydata)).as[Shutdown]
 
@@ -237,7 +238,6 @@ object LightningMessageCodecs {
       .\(1) {
         case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
       }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
-
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = {
     Codec(

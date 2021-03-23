@@ -16,17 +16,17 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-import java.net.ServerSocket
-import java.nio.file.Files
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.event.DiagnosticLoggingAdapter
 import akka.testkit
 import akka.testkit.{TestActor, TestProbe}
 import fr.acinq.eclair.channel.Channel
-import fr.acinq.eclair.wire.LightningMessage
+import fr.acinq.eclair.wire.protocol.LightningMessage
+
+import java.io.File
+import java.net.ServerSocket
+import java.nio.file.Files
+import java.util.UUID
 
 object TestUtils {
 

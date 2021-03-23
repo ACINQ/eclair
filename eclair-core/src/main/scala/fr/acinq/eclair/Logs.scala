@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair
 
-import java.util.UUID
-
 import akka.event.DiagnosticLoggingAdapter
 import akka.io.Tcp
 import fr.acinq.bitcoin.ByteVector32
@@ -29,7 +27,9 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
+
+import java.util.UUID
 
 object Logs {
 
@@ -130,7 +130,7 @@ object Logs {
         case _: PeerConnection.DelayedRebroadcast => Some(LogCategory.ROUTING_SYNC)
         case _: Ping => Some(LogCategory.CONNECTION)
         case _: Pong => Some(LogCategory.CONNECTION)
-        case _: wire.Init => Some(LogCategory.CONNECTION)
+        case _: Init => Some(LogCategory.CONNECTION)
         case _: Rebroadcast => Some(LogCategory.ROUTING_SYNC)
 
         case _ => None

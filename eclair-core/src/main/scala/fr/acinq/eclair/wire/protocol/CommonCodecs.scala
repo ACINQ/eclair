@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
-
-import java.net.{Inet4Address, Inet6Address, InetAddress}
+package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
@@ -28,6 +26,7 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, DecodeResult, Err, SizeBound}
 
+import java.net.{Inet4Address, Inet6Address, InetAddress}
 import scala.Ordering.Implicits._
 import scala.util.Try
 
@@ -49,6 +48,9 @@ object CommonCodecs {
       case _: KnownDiscriminatorType[_]#UnknownDiscriminator => fallback.decode(b)
     }
   }
+
+  /** byte-aligned boolean codec */
+  val bool8: Codec[Boolean] = bool(8)
 
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
@@ -102,10 +104,6 @@ object CommonCodecs {
 
   val varsizebinarydata: Codec[ByteVector] = variableSizeBytes(uint16, bytes)
 
-  def mapCodec[K, V](keyCodec: Codec[K], valueCodec: Codec[V]): Codec[Map[K, V]] = listOfN(uint16, keyCodec ~ valueCodec).xmap(_.toMap, _.toList)
-
-  def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
-
   val listofsignatures: Codec[List[ByteVector64]] = listOfN(uint16, bytes64)
 
   val ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
@@ -140,7 +138,7 @@ object CommonCodecs {
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
 
-  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
+  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(size, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
 
   /**
    * When encoding, prepend a valid mac to the output of the given codec.

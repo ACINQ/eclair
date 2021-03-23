@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.UInt64.Conversions._
-import fr.acinq.eclair.wire.CommonCodecs.{publicKey, shortchannelid, uint64, varint}
-import fr.acinq.eclair.wire.TlvCodecs._
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{publicKey, shortchannelid, uint64, varint}
+import fr.acinq.eclair.wire.protocol.TlvCodecs._
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Codec

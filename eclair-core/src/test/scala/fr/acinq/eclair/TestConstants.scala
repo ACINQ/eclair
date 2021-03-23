@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND
-import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf, _}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.NoLock
@@ -30,7 +30,8 @@ import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.wire.{Color, EncodingType, NodeAddress}
+import fr.acinq.eclair.wire.protocol
+import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import org.scalatest.Tag
 import scodec.bits.ByteVector
 
@@ -49,7 +50,7 @@ object TestConstants {
   val pushMsat = 200000000L msat
   val feeratePerKw = FeeratePerKw(10000 sat)
   val anchorOutputsFeeratePerKw = FeeratePerKw(2500 sat)
-  val emptyOnionPacket = wire.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
+  val emptyOnionPacket = protocol.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
   class TestFeeEstimator extends FeeEstimator {
     private var currentFeerates = FeeratesPerKw.single(feeratePerKw)

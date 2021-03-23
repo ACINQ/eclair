@@ -23,7 +23,7 @@ import fr.acinq.eclair.channel.Origin
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._

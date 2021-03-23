@@ -27,7 +27,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, ShortChannelId}
 import grizzled.slf4j.Logging
 

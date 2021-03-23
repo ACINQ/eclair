@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, getVersion, using}
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import scodec.bits.BitVector
 
 class SqlitePeersDb(sqlite: Connection) extends PeersDb {

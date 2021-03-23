@@ -23,7 +23,7 @@ import akka.io.Tcp
 import akka.util.ByteString
 import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.tor.Socks5Connection.{Credentials, Socks5Connect}
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 
 
 /**

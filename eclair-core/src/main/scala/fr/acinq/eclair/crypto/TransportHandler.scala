@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.crypto
 
-import java.nio.ByteOrder
-
 import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, PoisonPill, Props, Terminated}
 import akka.event.Logging.MDC
 import akka.event._
@@ -29,11 +27,12 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
-import fr.acinq.eclair.wire.{AnnouncementSignatures, RoutingMessage}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, RoutingMessage}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, getSimpleClassName}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
+import java.nio.ByteOrder
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
 import scala.reflect.ClassTag

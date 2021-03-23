@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}

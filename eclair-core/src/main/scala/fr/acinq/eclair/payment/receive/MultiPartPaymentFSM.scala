@@ -16,16 +16,15 @@
 
 package fr.acinq.eclair.payment.receive
 
-import java.util.concurrent.TimeUnit
-
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.RES_SUCCESS
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.wire.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams, wire}
+import fr.acinq.eclair.wire.protocol
+import fr.acinq.eclair.wire.protocol.{FailureMessage, IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, MilliSatoshi, NodeParams}
 
+import java.util.concurrent.TimeUnit
 import scala.collection.immutable.Queue
 
 /**
@@ -51,7 +50,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
   when(WAITING_FOR_HTLC) {
     case Event(PaymentTimeout, d: WaitingForHtlc) =>
       log.warning("multi-part payment timed out (received {} expected {})", d.paidAmount, totalAmount)
-      goto(PAYMENT_FAILED) using PaymentFailed(wire.PaymentTimeout, d.parts)
+      goto(PAYMENT_FAILED) using PaymentFailed(protocol.PaymentTimeout, d.parts)
 
     case Event(part: PaymentPart, d: WaitingForHtlc) =>
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")

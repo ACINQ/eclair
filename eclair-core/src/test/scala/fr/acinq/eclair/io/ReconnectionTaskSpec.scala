@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.ChannelId
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData
-import fr.acinq.eclair.wire.{Color, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, NodeAnnouncement}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 

@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPa
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
-import fr.acinq.eclair.wire.{Color, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{Color, NodeAnnouncement}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike

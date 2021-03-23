@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 

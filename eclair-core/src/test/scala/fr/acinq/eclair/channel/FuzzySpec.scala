@@ -30,8 +30,8 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.router.Router.ChannelHop
-import fr.acinq.eclair.wire.Onion.FinalLegacyPayload
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol.Onion.FinalLegacyPayload
+import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}

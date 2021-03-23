@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, channel, nodeFee}
 
 object ChannelRelay {

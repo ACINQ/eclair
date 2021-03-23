@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, randomKey}
 import org.json4s.JsonAST.JString
 import org.scalatest.funsuite.AnyFunSuite

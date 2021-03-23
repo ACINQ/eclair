@@ -17,7 +17,7 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.wire.CommonCodecs
+import fr.acinq.eclair.wire.protocol.CommonCodecs
 import scodec.Codec
 
 import scala.annotation.tailrec

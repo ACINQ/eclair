@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{ShortChannelId, serializationResult}
 import scodec.bits.ByteVector
 import shapeless.HNil

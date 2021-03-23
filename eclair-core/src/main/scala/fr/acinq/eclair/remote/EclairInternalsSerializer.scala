@@ -25,10 +25,10 @@ import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.router.Router.{GossipDecision, RouterConf, SendChannelQuery}
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.LightningMessageCodecs._
-import fr.acinq.eclair.wire.QueryChannelRangeTlv.queryFlagsCodec
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
+import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.queryFlagsCodec
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features}
 import scodec._
 import scodec.codecs._

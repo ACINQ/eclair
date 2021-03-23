@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.{Btc, MilliBtc, Satoshi, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap

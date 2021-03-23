@@ -27,7 +27,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
-import fr.acinq.eclair.wire.{FailureMessage, TemporaryNodeFailure, UpdateAddHtlc}
+import fr.acinq.eclair.wire.protocol.{FailureMessage, TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{CustomCommitmentsPlugin, MilliSatoshiLong, NodeParams}
 
 import scala.concurrent.Promise

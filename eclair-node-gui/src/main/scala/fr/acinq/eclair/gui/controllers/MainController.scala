@@ -29,7 +29,7 @@ import fr.acinq.eclair.gui.stages._
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction, IndexedObservableList}
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, NodeAnnouncement}
 import fr.acinq.eclair.{CoinUtils, MilliSatoshi, Setup, ShortChannelId}
 import grizzled.slf4j.Logging
 import javafx.animation.{FadeTransition, ParallelTransition, SequentialTransition, TranslateTransition}

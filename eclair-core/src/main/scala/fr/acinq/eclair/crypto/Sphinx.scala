@@ -19,8 +19,8 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.wire
-import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs, Onion, OnionCodecs}
+import fr.acinq.eclair.wire.protocol
+import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
@@ -107,7 +107,7 @@ object Sphinx extends Logging {
    * @param nextPacket   packet for the next node.
    * @param sharedSecret shared secret for the sending node, which we will need to return failure messages.
    */
-  case class DecryptedPacket(payload: ByteVector, nextPacket: wire.OnionRoutingPacket, sharedSecret: ByteVector32) {
+  case class DecryptedPacket(payload: ByteVector, nextPacket: protocol.OnionRoutingPacket, sharedSecret: ByteVector32) {
 
     val isLastPacket: Boolean = nextPacket.hmac == ByteVector32.Zeroes
 
@@ -120,7 +120,7 @@ object Sphinx extends Logging {
    * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
    *                      packet. Empty if you're just forwarding the packet to the next node.
    */
-  case class PacketAndSecrets(packet: wire.OnionRoutingPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
+  case class PacketAndSecrets(packet: protocol.OnionRoutingPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
 
   sealed trait OnionRoutingPacket[T <: Onion.PacketType] {
 
@@ -168,10 +168,10 @@ object Sphinx extends Logging {
      *         - payload is the per-hop payload for this node.
      *         - packet is the next packet, to be forwarded using the info that is given in the payload.
      *         - shared secret is the secret we share with the node that sent the packet. We need it to propagate
-     *         failure messages upstream.
-     *         or a BadOnion error containing the hash of the invalid onion.
+     *           failure messages upstream.
+     *           or a BadOnion error containing the hash of the invalid onion.
      */
-    def peel(privateKey: PrivateKey, associatedData: ByteVector, packet: wire.OnionRoutingPacket): Either[wire.BadOnion, DecryptedPacket] = packet.version match {
+    def peel(privateKey: PrivateKey, associatedData: ByteVector, packet: protocol.OnionRoutingPacket): Either[BadOnion, DecryptedPacket] = packet.version match {
       case 0 => Try(PublicKey(packet.publicKey, checkValid = true)) match {
         case Success(packetEphKey) =>
           val sharedSecret = computeSharedSecret(packetEphKey, privateKey)
@@ -191,13 +191,13 @@ object Sphinx extends Logging {
             val nextOnionPayload = bin.drop(perHopPayloadLength).take(PayloadLength)
             val nextPubKey = blind(packetEphKey, computeBlindingFactor(packetEphKey, sharedSecret))
 
-            Right(DecryptedPacket(perHopPayload, wire.OnionRoutingPacket(Version, nextPubKey.value, nextOnionPayload, hmac), sharedSecret))
+            Right(DecryptedPacket(perHopPayload, protocol.OnionRoutingPacket(Version, nextPubKey.value, nextOnionPayload, hmac), sharedSecret))
           } else {
-            Left(wire.InvalidOnionHmac(hash(packet)))
+            Left(InvalidOnionHmac(hash(packet)))
           }
-        case Failure(_) => Left(wire.InvalidOnionKey(hash(packet)))
+        case Failure(_) => Left(InvalidOnionKey(hash(packet)))
       }
-      case _ => Left(wire.InvalidOnionVersion(hash(packet)))
+      case _ => Left(InvalidOnionVersion(hash(packet)))
     }
 
     /**
@@ -217,7 +217,7 @@ object Sphinx extends Logging {
      * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
      * @return the next packet.
      */
-    def wrap(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Either[ByteVector, wire.OnionRoutingPacket], onionPayloadFiller: ByteVector = ByteVector.empty): wire.OnionRoutingPacket = {
+    def wrap(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Either[ByteVector, protocol.OnionRoutingPacket], onionPayloadFiller: ByteVector = ByteVector.empty): protocol.OnionRoutingPacket = {
       require(payload.length <= PayloadLength - MacLength, s"packet payload cannot exceed ${PayloadLength - MacLength} bytes")
 
       val (currentMac, currentPayload): (ByteVector32, ByteVector) = packet match {
@@ -234,7 +234,7 @@ object Sphinx extends Logging {
       }
 
       val nextHmac = mac(generateKey("mu", sharedSecret), nextOnionPayload ++ associatedData)
-      val nextPacket = wire.OnionRoutingPacket(Version, ephemeralPublicKey.value, nextOnionPayload, nextHmac)
+      val nextPacket = protocol.OnionRoutingPacket(Version, ephemeralPublicKey.value, nextOnionPayload, nextHmac)
       nextPacket
     }
 
@@ -257,7 +257,7 @@ object Sphinx extends Logging {
       val lastPacket = wrap(payloads.last, associatedData, ephemeralPublicKeys.last, sharedsecrets.last, Left(startingBytes), filler)
 
       @tailrec
-      def loop(hopPayloads: Seq[ByteVector], ephKeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: wire.OnionRoutingPacket): wire.OnionRoutingPacket = {
+      def loop(hopPayloads: Seq[ByteVector], ephKeys: Seq[PublicKey], sharedSecrets: Seq[ByteVector32], packet: protocol.OnionRoutingPacket): protocol.OnionRoutingPacket = {
         if (hopPayloads.isEmpty) packet else {
           val nextPacket = wrap(hopPayloads.last, associatedData, ephKeys.last, sharedSecrets.last, Right(packet))
           loop(hopPayloads.dropRight(1), ephKeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
@@ -271,8 +271,8 @@ object Sphinx extends Logging {
     /**
      * When an invalid onion is received, its hash should be included in the failure message.
      */
-    def hash(onion: wire.OnionRoutingPacket): ByteVector32 =
-      Crypto.sha256(wire.OnionCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
+    def hash(onion: protocol.OnionRoutingPacket): ByteVector32 =
+      Crypto.sha256(OnionCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
 
   }
 

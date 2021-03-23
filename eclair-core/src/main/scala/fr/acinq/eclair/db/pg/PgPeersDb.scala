@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import javax.sql.DataSource
 import scodec.bits.BitVector
 

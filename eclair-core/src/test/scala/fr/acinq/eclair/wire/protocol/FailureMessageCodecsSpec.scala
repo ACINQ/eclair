@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
-import fr.acinq.eclair.wire.FailureMessageCodecs._
+import fr.acinq.eclair.wire.protocol.FailureMessageCodecs._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64, randomBytes32, randomBytes64}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._

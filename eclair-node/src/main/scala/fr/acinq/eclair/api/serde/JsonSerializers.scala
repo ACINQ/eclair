@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTx, ClosingTx, HtlcSuccessTx, HtlcTimeoutTx, InputInfo, TransactionWithInputInfo}
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, JsonAST, TypeHints, jackson}

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.eclair.UInt64
 import scodec.bits.ByteVector

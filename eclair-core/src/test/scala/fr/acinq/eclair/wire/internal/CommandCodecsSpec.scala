@@ -17,9 +17,9 @@
 package fr.acinq.eclair.wire.internal
 
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.CommonCodecs.{bytes32, varsizebinarydata}
-import fr.acinq.eclair.wire.FailureMessageCodecs.failureMessageCodec
-import fr.acinq.eclair.wire.{FailureMessageCodecs, TemporaryNodeFailure}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{bytes32, varsizebinarydata}
+import fr.acinq.eclair.wire.protocol.FailureMessageCodecs.failureMessageCodec
+import fr.acinq.eclair.wire.protocol.{FailureMessageCodecs, TemporaryNodeFailure}
 import fr.acinq.eclair.{randomBytes, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
@@ -53,12 +53,12 @@ class CommandCodecsSpec extends AnyFunSuite {
     val data32 = randomBytes32
     val data123 = randomBytes(123)
 
-      val legacyCmdFulfillCodec =
-        (("id" | int64) ::
-          ("r" | bytes32) ::
-          ("commit" | provide(false)))
-      assert(CommandCodecs.cmdFulfillCodec.decode(legacyCmdFulfillCodec.encode(42 :: data32 :: true :: HNil).require).require ===
-        DecodeResult(CMD_FULFILL_HTLC(42, data32, commit = false, None), BitVector.empty))
+    val legacyCmdFulfillCodec =
+      (("id" | int64) ::
+        ("r" | bytes32) ::
+        ("commit" | provide(false)))
+    assert(CommandCodecs.cmdFulfillCodec.decode(legacyCmdFulfillCodec.encode(42 :: data32 :: true :: HNil).require).require ===
+      DecodeResult(CMD_FULFILL_HTLC(42, data32, commit = false, None), BitVector.empty))
 
     val legacyCmdFailCodec =
       (("id" | int64) ::

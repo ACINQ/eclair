@@ -24,9 +24,9 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
-import fr.acinq.eclair.db.{HopSummary, _}
+import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
-import fr.acinq.eclair.wire.CommonCodecs
+import fr.acinq.eclair.wire.protocol.CommonCodecs
 import grizzled.slf4j.Logging
 import javax.sql.DataSource
 import scodec.Attempt

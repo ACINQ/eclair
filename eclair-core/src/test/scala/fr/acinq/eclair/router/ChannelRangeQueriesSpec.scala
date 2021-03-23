@@ -19,10 +19,10 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.router.Sync._
-import fr.acinq.eclair.wire.QueryChannelRangeTlv.QueryFlags
-import fr.acinq.eclair.wire.QueryShortChannelIdsTlv.QueryFlagType._
-import fr.acinq.eclair.wire.ReplyChannelRangeTlv._
-import fr.acinq.eclair.wire.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
+import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.QueryFlags
+import fr.acinq.eclair.wire.protocol.QueryShortChannelIdsTlv.QueryFlagType._
+import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
+import fr.acinq.eclair.wire.protocol.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
 import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector

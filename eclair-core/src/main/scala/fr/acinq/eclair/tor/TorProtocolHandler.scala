@@ -24,7 +24,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import akka.io.Tcp.Connected
 import akka.util.ByteString
 import fr.acinq.eclair.tor.TorProtocolHandler.{Authentication, OnionServiceVersion}
-import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
+import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
 import scodec.bits.Bases.Alphabets

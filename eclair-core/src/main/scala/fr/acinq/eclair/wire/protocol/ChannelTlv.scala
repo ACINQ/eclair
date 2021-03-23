@@ -14,11 +14,11 @@
  * limitations under the License.
  */
 
-package fr.acinq.eclair.wire
+package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.CommonCodecs._
-import fr.acinq.eclair.wire.TlvCodecs.tlvStream
+import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
+import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
