@@ -110,7 +110,7 @@ case class Commitments(channelVersion: ChannelVersion,
    * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
    */
   def getOutgoingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findIncomingHtlcById(htlcId)
+    localSigned <- latestRemoteCommit.spec.findIncomingHtlcById(htlcId)
     remoteSigned <- localCommit.spec.findOutgoingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
@@ -125,7 +125,7 @@ case class Commitments(channelVersion: ChannelVersion,
    * NB: if we're in the middle of fulfilling or failing that HTLC, it will not be returned by this function.
    */
   def getIncomingHtlcCrossSigned(htlcId: Long): Option[UpdateAddHtlc] = for {
-    localSigned <- remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit).spec.findOutgoingHtlcById(htlcId)
+    localSigned <- latestRemoteCommit.spec.findOutgoingHtlcById(htlcId)
     remoteSigned <- localCommit.spec.findIncomingHtlcById(htlcId)
   } yield {
     require(localSigned.add == remoteSigned.add)
@@ -147,6 +147,12 @@ case class Commitments(channelVersion: ChannelVersion,
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
+
+  /** Latest commitment we signed. Be careful when using it:
+   *   - sometimes we may want to ignore it because the previous commitment is not revoked yet
+   *   - sometimes we may want to take both remote commitments into account
+   */
+  val latestRemoteCommit: RemoteCommit = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
 
   val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
 
@@ -186,8 +192,7 @@ case class Commitments(channelVersion: ChannelVersion,
 
   lazy val availableBalanceForSend: MilliSatoshi = {
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-    val remoteCommit1 = remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(remoteCommit)
-    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, remoteChanges.acked, localChanges.proposed)
+    val reduced = CommitmentSpec.reduce(latestRemoteCommit.spec, remoteChanges.acked, localChanges.proposed)
     val balanceNoFees = (reduced.toRemote - remoteParams.channelReserve).max(0 msat)
     if (localParams.isFunder) {
       // The funder always pays the on-chain fees, so we must subtract that from the amount we can send.
@@ -300,8 +305,7 @@ object Commitments {
     // we increment the local htlc index and add an entry to the origins map
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1, originChannels = commitments.originChannels + (add.id -> cmd.origin))
     // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
-    val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
-    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
+    val reduced = CommitmentSpec.reduce(commitments1.latestRemoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val outgoingHtlcs = reduced.htlcs.collect(incoming)
 
