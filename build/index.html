@@ -838,6 +838,8 @@ eclair-cli updaterelayfee <span class="se">\</span>
   <span class="o">}</span>
 <span class="o">}</span>
 </code></pre>
+<p>Returned <code>feeBase</code> is in msat.</p>
+
 <p>Updates the fee policy for the specified <em>channelId</em>. A new update for this channel will be broadcast to the network.
 The endpoint supports receiving multiple channel id(s) or short channel id(s); to update multiple channels, you can use the parameters <code>channelIds</code> or <code>shortChannelIds</code> below.</p>
 <h3 id='http-request-9'>HTTP Request</h3>
@@ -918,6 +920,36 @@ eclair-cli peers
 <span class="c"># with eclair-cli</span>
 eclair-cli channels
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>dustLimit</td>
+<td>sats</td>
+</tr>
+<tr>
+<td>channelReserve</td>
+<td>sats</td>
+</tr>
+<tr>
+<td>htlcMinimum</td>
+<td>msats</td>
+</tr>
+<tr>
+<td>toSelfDelay</td>
+<td>blocks</td>
+</tr>
+<tr>
+<td>feeratePerKw</td>
+<td>sats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -1127,6 +1159,36 @@ eclair-cli channels
 <span class="c"># with eclair-cli</span>
 eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>dustLimit</td>
+<td>sats</td>
+</tr>
+<tr>
+<td>channelReserve</td>
+<td>sats</td>
+</tr>
+<tr>
+<td>htlcMinimum</td>
+<td>msats</td>
+</tr>
+<tr>
+<td>toSelfDelay</td>
+<td>blocks</td>
+</tr>
+<tr>
+<td>feeratePerKw</td>
+<td>sats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -1499,6 +1561,8 @@ eclair-cli allupdates
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
+<p><code>cltvExpiryDelta</code> is expressed as number of blocks.</p>
+
 <p>Returns detailed information about all public channels in the network; the information is mostly taken from the <em>channel_update</em> network messages.</p>
 
 <aside class="warning">
@@ -1582,6 +1646,24 @@ eclair-cli networkstats
 <span class="c"># with eclair-cli</span>
 eclair-cli createinvoice --description<span class="o">=</span>&lt;some_description&gt; --amountMsat<span class="o">=</span>&lt;some_amount&gt;
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>expiry</td>
+<td>seconds</td>
+</tr>
+<tr>
+<td>amount</td>
+<td>msats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -1661,6 +1743,24 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 <span class="c"># with eclair-cli</span>
 eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>expiry</td>
+<td>seconds</td>
+</tr>
+<tr>
+<td>amount</td>
+<td>msats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -1952,6 +2052,28 @@ Go to the <a href="https://github.com/ACINQ/eclair/wiki">wiki</a> for details on
 <span class="c"># with eclair-cli</span>
 eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>recipientAmount</td>
+<td>msats</td>
+</tr>
+<tr>
+<td>amount</td>
+<td>msats</td>
+</tr>
+<tr>
+<td>feesPaid</td>
+<td>msats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -2100,6 +2222,24 @@ The API can be queried by <code>paymentHash</code> OR by <code>uuid</code>.</p>
 <span class="c"># with eclair-cli</span>
 eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>expiry</td>
+<td>seconds</td>
+</tr>
+<tr>
+<td>amount</td>
+<td>msats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -2172,6 +2312,24 @@ as parameter instead of the <code>paymentHash</code> but at least one of the two
 <span class="c"># with eclair-cli</span>
 eclair-cli getinvoice --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>expiry</td>
+<td>seconds</td>
+</tr>
+<tr>
+<td>amount</td>
+<td>msats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -2227,6 +2385,24 @@ eclair-cli getinvoice --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 <span class="c"># with eclair-cli</span>
 eclair-cli listinvoices
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>expiry</td>
+<td>seconds</td>
+</tr>
+<tr>
+<td>amount</td>
+<td>msats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -2309,6 +2485,24 @@ eclair-cli listinvoices
 <span class="c"># with eclair-cli</span>
 eclair-cli listpendinginvoices
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>expiry</td>
+<td>seconds</td>
+</tr>
+<tr>
+<td>amount</td>
+<td>msats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -2591,6 +2785,24 @@ Unconfirmed balance refers to incoming transactions seen in the mempool.</p>
 <span class="c"># with eclair-cli</span>
 eclair-cli onchaintransactions --count<span class="o">=</span>2 --skip<span class="o">=</span>1
 </code></pre>
+<p>The units of returned fields that are not obvious from their names:</p>
+
+<table><thead>
+<tr>
+<th>field</th>
+<th>unit</th>
+</tr>
+</thead><tbody>
+<tr>
+<td>amount</td>
+<td>sats</td>
+</tr>
+<tr>
+<td>fees</td>
+<td>sats</td>
+</tr>
+</tbody></table>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
