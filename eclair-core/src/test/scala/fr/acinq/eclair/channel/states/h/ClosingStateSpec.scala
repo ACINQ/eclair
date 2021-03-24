@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.h
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Script, ScriptFlags, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, SatoshiLong, Script, ScriptFlags, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
@@ -1464,43 +1464,58 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     (1 to 5).foreach(_ => alice2blockchain.expectMsgType[WatchSpent]) // main output penalty and 4 htlc penalties
     alice2blockchain.expectNoMsg(1 second)
 
-    // bob claims multiple htlc-timeout in a single transaction (this is possible with anchor outputs because signatures
+    // bob claims multiple htlc outputs in a single transaction (this is possible with anchor outputs because signatures
     // use sighash_single | sighash_anyonecanpay)
-    val htlcsBob = revokedCloseFixture.htlcsBob.map(_._1.id)
-    val bobHtlcTimeoutTxs = bobRevokedTxs.htlcTxsAndSigs.collect {
-      case HtlcTxAndSigs(txInfo: HtlcTimeoutTx, localSig, remoteSig) if htlcsBob.contains(txInfo.htlcId) =>
+    val bobHtlcTxs = bobRevokedTxs.htlcTxsAndSigs.collect {
+      case HtlcTxAndSigs(txInfo: HtlcSuccessTx, localSig, remoteSig) =>
+        val preimage = revokedCloseFixture.htlcsAlice.collectFirst { case (add, preimage) if add.id == txInfo.htlcId => preimage }.get
+        assert(Crypto.sha256(preimage) === txInfo.paymentHash)
+        Transactions.addSigs(txInfo, localSig, remoteSig, preimage, AnchorOutputsCommitmentFormat)
+      case HtlcTxAndSigs(txInfo: HtlcTimeoutTx, localSig, remoteSig) =>
         Transactions.addSigs(txInfo, localSig, remoteSig, AnchorOutputsCommitmentFormat)
     }
-    assert(bobHtlcTimeoutTxs.map(_.input.outPoint).size === 2)
+    assert(bobHtlcTxs.map(_.input.outPoint).size === 4)
     val bobHtlcTx = Transaction(
       2,
       Seq(
         TxIn(OutPoint(randomBytes32, 4), Nil, 1), // utxo used for fee bumping
-        bobHtlcTimeoutTxs.head.tx.txIn.head,
-        bobHtlcTimeoutTxs.last.tx.txIn.head
+        bobHtlcTxs(0).tx.txIn.head,
+        bobHtlcTxs(1).tx.txIn.head,
+        bobHtlcTxs(2).tx.txIn.head,
+        bobHtlcTxs(3).tx.txIn.head
       ),
       Seq(
         TxOut(10000 sat, Script.pay2wpkh(randomKey.publicKey)), // change output
-        bobHtlcTimeoutTxs.head.tx.txOut.head,
-        bobHtlcTimeoutTxs.last.tx.txOut.head
+        bobHtlcTxs(0).tx.txOut.head,
+        bobHtlcTxs(1).tx.txOut.head,
+        bobHtlcTxs(2).tx.txOut.head,
+        bobHtlcTxs(3).tx.txOut.head
       ),
-      bobHtlcTimeoutTxs.head.tx.lockTime
+      0
     )
 
     // alice reacts by publishing penalty txs that spend bob's htlc transaction
     alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, bobHtlcTx)
-    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 2)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 4)
     val claimHtlcDelayedPenaltyTxs = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs
-    assert(claimHtlcDelayedPenaltyTxs.map(_.input.outPoint).toSet === Set(OutPoint(bobHtlcTx, 1), OutPoint(bobHtlcTx, 2)))
+    val spentOutpoints = Set(OutPoint(bobHtlcTx, 1), OutPoint(bobHtlcTx, 2), OutPoint(bobHtlcTx, 3), OutPoint(bobHtlcTx, 4))
+    assert(claimHtlcDelayedPenaltyTxs.map(_.input.outPoint).toSet === spentOutpoints)
     claimHtlcDelayedPenaltyTxs.foreach(claimHtlcPenalty => Transaction.correctlySpends(claimHtlcPenalty.tx, bobHtlcTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobHtlcTx.txid)
     val publishedPenaltyTxs = Set(
       alice2blockchain.expectMsgType[PublishAsap],
+      alice2blockchain.expectMsgType[PublishAsap],
+      alice2blockchain.expectMsgType[PublishAsap],
       alice2blockchain.expectMsgType[PublishAsap]
     )
     assert(publishedPenaltyTxs.map(_.tx) === claimHtlcDelayedPenaltyTxs.map(_.tx).toSet)
-    assert(alice2blockchain.expectMsgType[WatchSpent].txId === bobHtlcTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchSpent].txId === bobHtlcTx.txid)
+    val watchedOutpoints = Seq(
+      alice2blockchain.expectMsgType[WatchSpent],
+      alice2blockchain.expectMsgType[WatchSpent],
+      alice2blockchain.expectMsgType[WatchSpent],
+      alice2blockchain.expectMsgType[WatchSpent]
+    ).map(w => OutPoint(w.txId.reverse, w.outputIndex)).toSet
+    assert(watchedOutpoints === spentOutpoints)
     alice2blockchain.expectNoMsg(1 second)
   }
 
