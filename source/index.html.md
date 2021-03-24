@@ -359,6 +359,8 @@ eclair-cli updaterelayfee \
 }
 ```
 
+Returned `feeBase` is in msat.
+
 Updates the fee policy for the specified _channelId_. A new update for this channel will be broadcast to the network.
 The endpoint supports receiving multiple channel id(s) or short channel id(s); to update multiple channels, you can use the parameters `channelIds` or `shortChannelIds` below.
 
@@ -422,6 +424,16 @@ curl -u :<eclair_api_password> -X POST "http://localhost:8080/channels"
 # with eclair-cli
 eclair-cli channels
 ```
+
+The units of returned fields that are not obvious from their names:
+
+field          | unit
+---------------|-----
+dustLimit      | sats
+channelReserve | sats
+htlcMinimum    | msats
+toSelfDelay    | blocks
+feeratePerKw   | sats
 
 > The above command returns:
 
@@ -629,6 +641,16 @@ curl -u :<eclair_api_password> -X POST -F channelId=<channel>  "http://localhost
 # with eclair-cli
 eclair-cli channel --channelId=<channel>
 ```
+
+The units of returned fields that are not obvious from their names:
+
+field          | unit
+---------------|-----
+dustLimit      | sats
+channelReserve | sats
+htlcMinimum    | msats
+toSelfDelay    | blocks
+feeratePerKw   | sats
 
 > The above command returns:
 
@@ -1007,6 +1029,8 @@ eclair-cli allupdates
 ]
 ```
 
+`cltvExpiryDelta` is expressed as number of blocks.
+
 Returns detailed information about all public channels in the network; the information is mostly taken from the _channel_update_ network messages.
 
 <aside class="warning">
@@ -1097,6 +1121,13 @@ curl -u :<eclair_api_password> -X POST -F description=<some_description> \
 eclair-cli createinvoice --description=<some_description> --amountMsat=<some_amount>
 ```
 
+The units of returned fields that are not obvious from their names:
+
+field          | unit
+---------------|-----
+expiry         | seconds
+amount         | msats
+
 > The above command returns:
 
 ```json
@@ -1153,6 +1184,13 @@ curl -u :<eclair_api_password> -X POST -F invoice=<some_bolt11invoice> "http://l
 # with eclair-cli
 eclair-cli parseinvoice --invoice=<some_bolt11invoice>
 ```
+
+The units of returned fields that are not obvious from their names:
+
+field          | unit
+---------------|-----
+expiry         | seconds
+amount         | msats
 
 > The above command returns:
 
@@ -1342,6 +1380,14 @@ curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localh
 eclair-cli getsentinfo --paymentHash=<some_hash>
 ```
 
+The units of returned fields that are not obvious from their names:
+
+field           | unit
+----------------|-----
+recipientAmount | msats
+amount          | msats
+feesPaid        | msats
+
 > The above command returns:
 
 ```json
@@ -1483,6 +1529,13 @@ curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localh
 eclair-cli getreceivedinfo --paymentHash=<some_hash>
 ```
 
+The units of returned fields that are not obvious from their names:
+
+field    | unit
+---------|-----
+expiry   | seconds
+amount   | msats
+
 > The above command returns:
 
 ```json
@@ -1548,6 +1601,13 @@ curl -u :<eclair_api_password> -X POST -F paymentHash=<some_hash> "http://localh
 eclair-cli getinvoice --paymentHash=<some_hash>
 ```
 
+The units of returned fields that are not obvious from their names:
+
+field    | unit
+---------|-----
+expiry   | seconds
+amount   | msats
+
 > The above command returns:
 
 ```json
@@ -1600,6 +1660,13 @@ curl -u :<eclair_api_password> -X POST "http://localhost:8080/listinvoices"
 # with eclair-cli
 eclair-cli listinvoices
 ```
+
+The units of returned fields that are not obvious from their names:
+
+field    | unit
+---------|-----
+expiry   | seconds
+amount   | msats
 
 > The above command returns:
 
@@ -1675,6 +1742,13 @@ curl -u :<eclair_api_password> -X POST "http://localhost:8080/listpendinginvoice
 # with eclair-cli
 eclair-cli listpendinginvoices
 ```
+
+The units of returned fields that are not obvious from their names:
+
+field    | unit
+---------|-----
+expiry   | seconds
+amount   | msats
 
 > The above command returns:
 
@@ -1930,6 +2004,13 @@ curl -u :<eclair_api_password> -X -F count=<number_of_results> -F skip=<skipped_
 # with eclair-cli
 eclair-cli onchaintransactions --count=2 --skip=1
 ```
+
+The units of returned fields that are not obvious from their names:
+
+field    | unit
+---------|-----
+amount   | sats
+fees     | sats
 
 > The above command returns:
 
