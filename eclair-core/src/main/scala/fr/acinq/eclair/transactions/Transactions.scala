@@ -232,28 +232,33 @@ object Transactions {
   /** Fee for an un-trimmed HTLC. */
   def htlcOutputFee(feeratePerKw: FeeratePerKw, commitmentFormat: CommitmentFormat): MilliSatoshi = weight2feeMsat(feeratePerKw, commitmentFormat.htlcOutputWeight)
 
-  /**
-   * While fees are generally computed in Satoshis (since this is the smallest on-chain unit), it may be useful in some
-   * cases to calculate it in MilliSatoshi to avoid rounding issues.
-   * If you are adding multiple fees together for example, you should always add them in MilliSatoshi and then round
-   * down to Satoshi.
-   */
+  /** Fee paid by the commit tx (depends on which HTLCs will be trimmed). */
   def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, commitmentFormat)
     val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, commitmentFormat)
     val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
-    val fee = weight2feeMsat(spec.feeratePerKw, weight)
+    weight2feeMsat(spec.feeratePerKw, weight)
+  }
+
+  /**
+   * While on-chain amounts are generally computed in Satoshis (since this is the smallest on-chain unit), it may be
+   * useful in some cases to calculate it in MilliSatoshi to avoid rounding issues.
+   * If you are adding multiple fees together for example, you should always add them in MilliSatoshi and then round
+   * down to Satoshi.
+   */
+  def commitTxTotalCostMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
+    // The funder pays the on-chain fee by deducing it from its main output.
+    val txFee = commitTxFeeMsat(dustLimit, spec, commitmentFormat)
     // When using anchor outputs, the funder pays for *both* anchors all the time, even if only one anchor is present.
-    // This is not technically a fee (it doesn't go to miners) but it has to be deduced from the funder's main output,
-    // so for simplicity we deduce it here.
+    // This is not technically a fee (it doesn't go to miners) but it also has to be deduced from the funder's main output.
     val anchorsCost = commitmentFormat match {
       case DefaultCommitmentFormat => Satoshi(0)
       case AnchorOutputsCommitmentFormat => AnchorOutputsCommitmentFormat.anchorAmount * 2
     }
-    fee + anchorsCost
+    txFee + anchorsCost
   }
 
-  def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxFeeMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
+  def commitTxTotalCost(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxTotalCostMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
 
   /**
    * @param commitTxNumber         commit tx number
@@ -357,9 +362,9 @@ object Transactions {
     val hasHtlcs = outputs.nonEmpty
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (spec.toLocal.truncateToSatoshi - commitTxFee(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
+      (spec.toLocal.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
     } else {
-      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitTxFee(localDustLimit, spec, commitmentFormat))
+      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, commitmentFormat))
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     if (toLocalAmount >= localDustLimit) {
