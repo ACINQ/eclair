@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.h
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, ScriptFlags, Transaction, TxIn}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, SatoshiLong, Script, ScriptFlags, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
@@ -27,10 +27,10 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -1440,6 +1440,83 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testOutputSpentRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
+  }
+
+  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published aggregated htlc tx)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    import f._
+
+    // bob publishes one of his revoked txs
+    val revokedCloseFixture = prepareRevokedClose(f, ChannelVersion.ANCHOR_OUTPUTS)
+    val bobRevokedTxs = revokedCloseFixture.bobRevokedTxs(2)
+    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTxs.commitTx.tx)
+    awaitCond(alice.stateData.isInstanceOf[DATA_CLOSING])
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat === AnchorOutputsCommitmentFormat)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
+    val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
+    assert(rvk.commitTx === bobRevokedTxs.commitTx.tx)
+    assert(rvk.htlcPenaltyTxs.size === 4)
+    assert(rvk.claimHtlcDelayedPenaltyTxs.isEmpty)
+
+    // alice publishes the penalty txs and watches outputs
+    (1 to 6).foreach(_ => alice2blockchain.expectMsgType[PublishAsap]) // 2 main outputs and 4 htlcs
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === rvk.commitTx.txid)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === rvk.claimMainOutputTx.get.tx.txid)
+    (1 to 5).foreach(_ => alice2blockchain.expectMsgType[WatchSpent]) // main output penalty and 4 htlc penalties
+    alice2blockchain.expectNoMsg(1 second)
+
+    // bob claims multiple htlc outputs in a single transaction (this is possible with anchor outputs because signatures
+    // use sighash_single | sighash_anyonecanpay)
+    val bobHtlcTxs = bobRevokedTxs.htlcTxsAndSigs.collect {
+      case HtlcTxAndSigs(txInfo: HtlcSuccessTx, localSig, remoteSig) =>
+        val preimage = revokedCloseFixture.htlcsAlice.collectFirst { case (add, preimage) if add.id == txInfo.htlcId => preimage }.get
+        assert(Crypto.sha256(preimage) === txInfo.paymentHash)
+        Transactions.addSigs(txInfo, localSig, remoteSig, preimage, AnchorOutputsCommitmentFormat)
+      case HtlcTxAndSigs(txInfo: HtlcTimeoutTx, localSig, remoteSig) =>
+        Transactions.addSigs(txInfo, localSig, remoteSig, AnchorOutputsCommitmentFormat)
+    }
+    assert(bobHtlcTxs.map(_.input.outPoint).size === 4)
+    val bobHtlcTx = Transaction(
+      2,
+      Seq(
+        TxIn(OutPoint(randomBytes32, 4), Nil, 1), // utxo used for fee bumping
+        bobHtlcTxs(0).tx.txIn.head,
+        bobHtlcTxs(1).tx.txIn.head,
+        bobHtlcTxs(2).tx.txIn.head,
+        bobHtlcTxs(3).tx.txIn.head
+      ),
+      Seq(
+        TxOut(10000 sat, Script.pay2wpkh(randomKey.publicKey)), // change output
+        bobHtlcTxs(0).tx.txOut.head,
+        bobHtlcTxs(1).tx.txOut.head,
+        bobHtlcTxs(2).tx.txOut.head,
+        bobHtlcTxs(3).tx.txOut.head
+      ),
+      0
+    )
+
+    // alice reacts by publishing penalty txs that spend bob's htlc transaction
+    alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, bobHtlcTx)
+    awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs.size == 4)
+    val claimHtlcDelayedPenaltyTxs = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.claimHtlcDelayedPenaltyTxs
+    val spentOutpoints = Set(OutPoint(bobHtlcTx, 1), OutPoint(bobHtlcTx, 2), OutPoint(bobHtlcTx, 3), OutPoint(bobHtlcTx, 4))
+    assert(claimHtlcDelayedPenaltyTxs.map(_.input.outPoint).toSet === spentOutpoints)
+    claimHtlcDelayedPenaltyTxs.foreach(claimHtlcPenalty => Transaction.correctlySpends(claimHtlcPenalty.tx, bobHtlcTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed].txId === bobHtlcTx.txid)
+    val publishedPenaltyTxs = Set(
+      alice2blockchain.expectMsgType[PublishAsap],
+      alice2blockchain.expectMsgType[PublishAsap],
+      alice2blockchain.expectMsgType[PublishAsap],
+      alice2blockchain.expectMsgType[PublishAsap]
+    )
+    assert(publishedPenaltyTxs.map(_.tx) === claimHtlcDelayedPenaltyTxs.map(_.tx).toSet)
+    val watchedOutpoints = Seq(
+      alice2blockchain.expectMsgType[WatchSpent],
+      alice2blockchain.expectMsgType[WatchSpent],
+      alice2blockchain.expectMsgType[WatchSpent],
+      alice2blockchain.expectMsgType[WatchSpent]
+    ).map(w => OutPoint(w.txId.reverse, w.outputIndex)).toSet
+    assert(watchedOutpoints === spentOutpoints)
+    alice2blockchain.expectNoMsg(1 second)
   }
 
   private def testRevokedTxConfirmed(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
