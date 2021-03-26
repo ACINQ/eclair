@@ -35,12 +35,12 @@ object TestDatabases {
 
   def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
 
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
+  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.SqliteDatabases(connection, connection, connection)
 
   case class TestSqliteDatabases() extends TestDatabases {
     // @formatter:off
   override val connection: Connection = sqliteInMemory()
-  override lazy val db: Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
+  override lazy val db: Databases = Databases.SqliteDatabases(connection, connection, connection)
   override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
   override def close(): Unit = ()
   // @formatter:on
@@ -63,7 +63,7 @@ object TestDatabases {
 
     // @formatter:off
   override val connection: Connection = pg.getPostgresDatabase.getConnection
-  override lazy val db: Databases = Databases.postgresJDBC(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile))
+  override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile))
   override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
   override def close(): Unit = pg.close()
   // @formatter:on

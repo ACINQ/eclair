@@ -28,7 +28,6 @@ import java.io.File
 import java.nio.file._
 import java.sql.{Connection, DriverManager}
 import java.util.UUID
-import javax.sql.DataSource
 import scala.concurrent.duration._
 
 trait Databases {
@@ -54,13 +53,110 @@ object Databases extends Logging {
     def obtainExclusiveLock(): Unit
   }
 
+  case class SqliteDatabases private (network: SqliteNetworkDb,
+                             audit: SqliteAuditDb,
+                             channels: SqliteChannelsDb,
+                             peers: SqlitePeersDb,
+                             payments: SqlitePaymentsDb,
+                             pendingRelay: SqlitePendingRelayDb,
+                             private val backupConnection: Connection) extends Databases with FileBackup {
+    override def backup(backupFile: File): Unit = SqliteUtils.using(backupConnection.createStatement()) {
+      statement => {
+        statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
+      }
+    }
+  }
+
+  object SqliteDatabases {
+    def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = SqliteDatabases(
+      network = new SqliteNetworkDb(networkJdbc),
+      audit = new SqliteAuditDb(auditJdbc),
+      channels = new SqliteChannelsDb(eclairJdbc),
+      peers = new SqlitePeersDb(eclairJdbc),
+      payments = new SqlitePaymentsDb(eclairJdbc),
+      pendingRelay = new SqlitePendingRelayDb(eclairJdbc),
+      backupConnection = eclairJdbc
+    )
+  }
+
+  case class PostgresDatabases private (network: PgNetworkDb,
+                               audit: PgAuditDb,
+                               channels: PgChannelsDb,
+                               peers: PgPeersDb,
+                               payments: PgPaymentsDb,
+                               pendingRelay: PgPendingRelayDb,
+                               dataSource: HikariDataSource,
+                               lock: PgLock) extends Databases with ExclusiveLock {
+    override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock(dataSource)
+  }
+
+  object PostgresDatabases {
+    def apply(hikariConfig: HikariConfig,
+              instanceId: UUID,
+              lock: PgLock = PgLock.NoLock,
+              jdbcUrlFile_opt: Option[File])(implicit system: ActorSystem): PostgresDatabases = {
+
+      jdbcUrlFile_opt.foreach(jdbcUrlFile => checkIfDatabaseUrlIsUnchanged(hikariConfig.getJdbcUrl, jdbcUrlFile))
+
+      implicit val ds: HikariDataSource = new HikariDataSource(hikariConfig)
+      implicit val implicitLock: PgLock = lock
+
+      val databases = PostgresDatabases(
+        network = new PgNetworkDb,
+        audit = new PgAuditDb,
+        channels = new PgChannelsDb,
+        peers = new PgPeersDb,
+        payments = new PgPaymentsDb,
+        pendingRelay = new PgPendingRelayDb,
+        dataSource = ds,
+        lock = lock)
+
+      lock match {
+        case PgLock.NoLock => ()
+        case l: PgLock.LeaseLock => {
+          // we obtain a lock right now...
+          databases.obtainExclusiveLock()
+          // ...and renew the lease regularly
+          import system.dispatcher
+          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(new Runnable {
+            override def run(): Unit = {
+              try {
+                databases.obtainExclusiveLock()
+              } catch {
+                case e: Throwable =>
+                  logger.error("fatal error: Cannot obtain the database lease.\n", e)
+                  sys.exit(-1)
+              }
+            }
+          })
+        }
+      }
+
+      databases
+    }
+
+    private def checkIfDatabaseUrlIsUnchanged(url: String, urlFile: File): Unit = {
+      def readString(path: Path): String = Files.readAllLines(path).get(0)
+
+      def writeString(path: Path, string: String): Unit = Files.write(path, java.util.Arrays.asList(string))
+
+      if (urlFile.exists()) {
+        val oldUrl = readString(urlFile.toPath)
+        if (oldUrl != url)
+          throw new RuntimeException(s"The database URL has changed since the last start. It was `$oldUrl`, now it's `$url`")
+      } else {
+        writeString(urlFile.toPath, url)
+      }
+    }
+  }
+
   def init(dbConfig: Config, instanceId: UUID, datadir: File, chaindir: File, db: Option[Databases] = None)(implicit system: ActorSystem): Databases = {
     db match {
       case Some(d) => d
       case None =>
         dbConfig.getString("driver") match {
-          case "sqlite" => Databases.sqliteJDBC(chaindir)
-          case "postgres" => Databases.setupPgDatabases(dbConfig, instanceId, datadir)
+          case "sqlite" => Databases.sqlite(chaindir)
+          case "postgres" => Databases.postgres(dbConfig, instanceId, datadir)
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")
         }
     }
@@ -72,7 +168,7 @@ object Databases extends Logging {
    * @param dbdir
    * @return
    */
-  def sqliteJDBC(dbdir: File): Databases = {
+  def sqlite(dbdir: File): Databases = {
     dbdir.mkdir()
     var sqliteEclair: Connection = null
     var sqliteNetwork: Connection = null
@@ -83,7 +179,7 @@ object Databases extends Logging {
       sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
       SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
       logger.info("successful lock on eclair.sqlite")
-      sqliteDatabaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
+      SqliteDatabases(sqliteAudit, sqliteNetwork, sqliteEclair)
     } catch {
       case t: Throwable => {
         logger.error("could not create connection to sqlite databases: ", t)
@@ -95,29 +191,7 @@ object Databases extends Logging {
     }
   }
 
-  /**
-   * Utility method that can also be called directly in tests when using an in-memory database
-   */
-  def sqliteDatabaseByConnections(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = new Databases with FileBackup {
-    override val network = new SqliteNetworkDb(networkJdbc)
-    override val audit = new SqliteAuditDb(auditJdbc)
-    override val channels = new SqliteChannelsDb(eclairJdbc)
-    override val peers = new SqlitePeersDb(eclairJdbc)
-    override val payments = new SqlitePaymentsDb(eclairJdbc)
-    override val pendingRelay = new SqlitePendingRelayDb(eclairJdbc)
-
-    override def backup(backupFile: File): Unit = {
-
-      SqliteUtils.using(eclairJdbc.createStatement()) {
-        statement => {
-          statement.executeUpdate(s"backup to ${backupFile.getAbsolutePath}")
-        }
-      }
-
-    }
-  }
-
-  def setupPgDatabases(dbConfig: Config, instanceId: UUID, datadir: File)(implicit system: ActorSystem): Databases with ExclusiveLock = {
+  def postgres(dbConfig: Config, instanceId: UUID, datadir: File)(implicit system: ActorSystem): PostgresDatabases = {
     val database = dbConfig.getString("postgres.database")
     val host = dbConfig.getString("postgres.host")
     val port = dbConfig.getInt("postgres.port")
@@ -136,82 +210,22 @@ object Databases extends Logging {
 
     val lock = dbConfig.getString("postgres.lock-type") match {
       case "none" => PgLock.NoLock
-      case "lease" => {
+      case "lease" =>
         val leaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
         val leaseRenewInterval = dbConfig.getDuration("postgres.lease.renew-interval").toSeconds.seconds
         require(leaseInterval > leaseRenewInterval, "invalid configuration: `db.postgres.lease.interval` must be greater than `db.postgres.lease.renew-interval`")
         PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, PgLock.logAndStopLockExceptionHandler)
-      }
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
 
     val jdbcUrlFile = new File(datadir, "last_jdbcurl")
 
-    Databases.postgresJDBC(
+    Databases.PostgresDatabases(
       hikariConfig = hikariConfig,
       instanceId = instanceId,
       lock = lock,
       jdbcUrlFile_opt = Some(jdbcUrlFile)
     )
-  }
-
-  def postgresJDBC(hikariConfig: HikariConfig,
-                   instanceId: UUID,
-                   lock: PgLock = PgLock.NoLock,
-                   jdbcUrlFile_opt: Option[File])(implicit system: ActorSystem): Databases with ExclusiveLock = {
-
-    jdbcUrlFile_opt.foreach(jdbcUrlFile => checkIfDatabaseUrlIsUnchanged(hikariConfig.getJdbcUrl, jdbcUrlFile))
-
-    implicit val ds: DataSource = new HikariDataSource(hikariConfig)
-    implicit val implicitLock: PgLock = lock
-
-    val databases = new Databases with ExclusiveLock {
-      override val network = new PgNetworkDb
-      override val audit = new PgAuditDb
-      override val channels = new PgChannelsDb
-      override val peers = new PgPeersDb
-      override val payments = new PgPaymentsDb
-      override val pendingRelay = new PgPendingRelayDb
-
-      override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock
-    }
-
-    lock match {
-      case PgLock.NoLock => ()
-      case l: PgLock.LeaseLock => {
-        // we obtain a lock right now...
-        databases.obtainExclusiveLock()
-        // ...and renew the lease regularly
-        import system.dispatcher
-        system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(new Runnable {
-          override def run(): Unit = {
-            try {
-              databases.obtainExclusiveLock()
-            } catch {
-              case e: Throwable =>
-                logger.error("fatal error: Cannot obtain the database lease.\n", e)
-                sys.exit(-1)
-            }
-          }
-        })
-      }
-    }
-
-    databases
-  }
-
-  private def checkIfDatabaseUrlIsUnchanged(url: String, urlFile: File): Unit = {
-    def readString(path: Path): String = Files.readAllLines(path).get(0)
-
-    def writeString(path: Path, string: String): Unit = Files.write(path, java.util.Arrays.asList(string))
-
-    if (urlFile.exists()) {
-      val oldUrl = readString(urlFile.toPath)
-      if (oldUrl != url)
-        throw new RuntimeException(s"The database URL has changed since the last start. It was `$oldUrl`, now it's `$url`")
-    } else {
-      writeString(urlFile.toPath, url)
-    }
   }
 
 }
