@@ -43,7 +43,6 @@ object PgUtils extends JdbcUtils {
       case class AlreadyLocked(lockedBy: UUID) extends LockFailure
       case object LeaseExpired extends LockFailure
       case object NoLeaseInfo extends LockFailure
-      case object PreviousLeaseStillActive extends LockFailure
       case class GeneralLockException(cause: Throwable) extends LockFailure
     }
     // @formatter:on
@@ -147,17 +146,12 @@ object PgUtils extends JdbcUtils {
             checkDatabaseLease(connection, instanceId) match {
               case Right(_) =>
                 Right(updateLease(instanceId, leaseDuration))
-              case Left(_: LockFailure.AlreadyLocked) =>
-                // we have successfully acquired the table lock, but the previous lease is already active
-                // this happens if we stop and immediately restart the app
-                // in that case we wait for the previous lease to expire
-                Left(LockFailure.PreviousLeaseStillActive)
               case Left(LockFailure.LeaseExpired) =>
-                // we have successfully acquired the table lock, and the previous lease has expired
-                // this happens if we have stopped the app, waited some time, and then restarted
+                // the previous lease has expired, we can take over
+                // this happens if we have stopped the app, waited some the previous lease to expire, and then restarted
                 Right(updateLease(instanceId, leaseDuration))
               case Left(LockFailure.NoLeaseInfo) =>
-                // here this isn't an error, because this may be the first lock we ever put on the table
+                // this is the first lock we ever put on the table
                 Right(updateLease(instanceId, leaseDuration, insertNew = true))
               case otherFailure => otherFailure
             }
