@@ -150,7 +150,6 @@ object PgUtils extends JdbcUtils {
         } match {
           case Success(_) => ()
           case Failure(ex) =>
-            ex.printStackTrace()
             val lex = ex match {
               case e: LockException => e
               case t: Throwable => new LockException("Cannot check database lease", Some(t))
