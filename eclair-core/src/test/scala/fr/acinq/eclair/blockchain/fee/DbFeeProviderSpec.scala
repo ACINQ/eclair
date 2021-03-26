@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import akka.util.Timeout
 import fr.acinq.bitcoin.SatoshiLong
-import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.TestDatabases
 import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -31,7 +31,7 @@ class DbFeeProviderSpec extends AnyFunSuite {
   val feerates1: FeeratesPerKB = FeeratesPerKB(FeeratePerKB(800 sat), FeeratePerKB(100 sat), FeeratePerKB(200 sat), FeeratePerKB(300 sat), FeeratePerKB(400 sat), FeeratePerKB(500 sat), FeeratePerKB(600 sat), FeeratePerKB(700 sat), FeeratePerKB(800 sat))
 
   test("db fee provider saves feerates in database") {
-    val sqlite = TestConstants.sqliteInMemory()
+    val sqlite = TestDatabases.sqliteInMemory()
     val db = new SqliteFeeratesDb(sqlite)
     val provider = new DbFeeProvider(db, new ConstantFeeProvider(feerates1))
 

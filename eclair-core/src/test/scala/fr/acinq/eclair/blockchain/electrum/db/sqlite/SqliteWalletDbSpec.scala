@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxI
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
-import fr.acinq.eclair.{TestConstants, randomBytes, randomBytes32}
+import fr.acinq.eclair.{TestDatabases, randomBytes, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Codec
 import scodec.bits.BitVector
@@ -67,7 +67,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
   }
 
   test("add/get/list headers") {
-    val db = new SqliteWalletDb(TestConstants.sqliteInMemory())
+    val db = new SqliteWalletDb(TestDatabases.sqliteInMemory())
     val headers = makeHeaders(100)
     db.addHeaders(2016, headers)
 
@@ -90,7 +90,7 @@ class SqliteWalletDbSpec extends AnyFunSuite {
   }
 
   test("serialize persistent data") {
-    val db = new SqliteWalletDb(TestConstants.sqliteInMemory())
+    val db = new SqliteWalletDb(TestDatabases.sqliteInMemory())
     assert(db.readPersistentData() == None)
 
     for (i <- 0 until 50) {

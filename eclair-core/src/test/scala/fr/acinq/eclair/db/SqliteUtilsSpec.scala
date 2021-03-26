@@ -17,15 +17,14 @@
 package fr.acinq.eclair.db
 
 import java.sql.SQLException
-
-import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.{TestConstants, TestDatabases}
 import fr.acinq.eclair.db.sqlite.SqliteUtils.using
 import org.scalatest.funsuite.AnyFunSuite
 
 class SqliteUtilsSpec extends AnyFunSuite {
 
   test("using with auto-commit disabled") {
-    val conn = TestConstants.sqliteInMemory()
+    val conn = TestDatabases.sqliteInMemory()
 
     using(conn.createStatement()) { statement =>
       statement.executeUpdate("CREATE TABLE utils_test (id INTEGER NOT NULL PRIMARY KEY, updated_at INTEGER)")

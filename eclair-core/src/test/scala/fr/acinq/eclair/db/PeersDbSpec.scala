@@ -17,14 +17,14 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
-import fr.acinq.eclair.{TestConstants, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 
 class PeersDbSpec extends AnyFunSuite {
 
-  import TestConstants.forAllDbs
+  import fr.acinq.eclair.TestDatabases.forAllDbs
 
   test("init database 2 times in a row") {
     forAllDbs { dbs =>

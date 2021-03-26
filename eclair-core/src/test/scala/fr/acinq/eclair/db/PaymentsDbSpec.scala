@@ -18,13 +18,13 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
-import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, UnknownNextPeer}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.util.UUID
@@ -428,7 +428,7 @@ class PaymentsDbSpec extends AnyFunSuite {
   }
 
   test("high level payments overview") {
-    val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
+    val db = new SqlitePaymentsDb(TestDatabases.sqliteInMemory())
 
     // -- feed db with incoming payments
     val expiredInvoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(123 msat), randomBytes32, alicePriv, "incoming #1", CltvExpiryDelta(18), timestamp = 1)

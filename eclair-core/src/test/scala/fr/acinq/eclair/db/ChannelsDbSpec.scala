@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb

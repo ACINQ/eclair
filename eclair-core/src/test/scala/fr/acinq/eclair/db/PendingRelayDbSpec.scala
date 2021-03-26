@@ -17,14 +17,14 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs
-import fr.acinq.eclair.{TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 
 
 class PendingRelayDbSpec extends AnyFunSuite {
 
-  import TestConstants.forAllDbs
+  import fr.acinq.eclair.TestDatabases.forAllDbs
 
   test("init database 2 times in a row") {
     forAllDbs { dbs =>

@@ -16,21 +16,22 @@
 
 package fr.acinq.eclair.db
 
-import java.io.File
-import java.sql.DriverManager
-import java.util.UUID
 import akka.testkit.TestProbe
 import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, TestUtils, randomBytes32}
+import fr.acinq.eclair.{TestConstants, TestDatabases, TestKitBaseClass, TestUtils, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuiteLike
+
+import java.io.File
+import java.sql.DriverManager
+import java.util.UUID
 
 class FileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("process backups") {
-    val db = TestConstants.inMemoryDb()
+    val db = TestDatabases.inMemoryDb()
     val wip = new File(TestUtils.BUILD_DIRECTORY, s"wip-${UUID.randomUUID()}")
     val dest = new File(TestUtils.BUILD_DIRECTORY, s"backup-${UUID.randomUUID()}")
     wip.deleteOnExit()

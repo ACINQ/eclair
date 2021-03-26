@@ -16,28 +16,20 @@
 
 package fr.acinq.eclair
 
-import akka.actor.ActorSystem
-import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Script}
+import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND
-import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf, _}
+import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
-import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.pg.PgUtils.PgLock
-import fr.acinq.eclair.db.pg._
-import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
+import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
 import scodec.bits.ByteVector
 
-import java.io.File
-import java.sql.{Connection, DriverManager, Statement}
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
@@ -48,11 +40,11 @@ import scala.concurrent.duration._
 object TestConstants {
 
   val defaultBlockHeight = 400000
-  val fundingSatoshis = 1000000L sat
-  val pushMsat = 200000000L msat
-  val feeratePerKw = FeeratePerKw(10000 sat)
-  val anchorOutputsFeeratePerKw = FeeratePerKw(2500 sat)
-  val emptyOnionPacket = protocol.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
+  val fundingSatoshis: Satoshi = 1000000L sat
+  val pushMsat: MilliSatoshi = 200000000L msat
+  val feeratePerKw: FeeratePerKw = FeeratePerKw(10000 sat)
+  val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2500 sat)
+  val emptyOnionPacket: OnionRoutingPacket = OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(1300)(0), ByteVector32.Zeroes)
 
   class TestFeeEstimator extends FeeEstimator {
     private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
@@ -66,73 +58,12 @@ object TestConstants {
     }
   }
 
-  /**
-   * Extends the regular [[fr.acinq.eclair.db.Databases]] trait with test-specific methods
-   */
-  sealed trait TestDatabases extends Databases {
-    // @formatter:off
-    val connection: Connection
-    val db: Databases
-    override def network: NetworkDb = db.network
-    override def audit: AuditDb = db.audit
-    override def channels: ChannelsDb = db.channels
-    override def peers: PeersDb = db.peers
-    override def payments: PaymentsDb = db.payments
-    override def pendingRelay: PendingRelayDb = db.pendingRelay
-    def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
-    def close(): Unit
-    // @formatter:on
-  }
-
-  def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
-
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.sqliteDatabaseByConnections(connection, connection, connection)
-
-  case class TestSqliteDatabases() extends TestDatabases {
-    // @formatter:off
-    override val connection: Connection = sqliteInMemory()
-    override lazy val db = Databases.sqliteDatabaseByConnections(connection, connection, connection)
-    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
-    override def close(): Unit = ()
-    // @formatter:on
-  }
-
-  case class TestPgDatabases() extends TestDatabases {
-    private val pg = EmbeddedPostgres.start()
-
-    import com.zaxxer.hikari.HikariConfig
-    val hikariConfig = new HikariConfig
-    hikariConfig.setDataSource(pg.getPostgresDatabase)
-
-    val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, PgLock.logAndStopLockExceptionHandler)
-
-    val jdbcUrlFile: File = new File(sys.props("tmp.dir"), s"jdbcUrlFile_${UUID.randomUUID()}.tmp")
-    jdbcUrlFile.deleteOnExit()
-
-    implicit val system: ActorSystem = ActorSystem()
-
-    // @formatter:off
-    override val connection: Connection = pg.getPostgresDatabase.getConnection
-    override lazy val db = Databases.postgresJDBC(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile))
-    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
-    override def close(): Unit = pg.close()
-    // @formatter:on
-  }
-
-  def forAllDbs(f: TestDatabases => Unit): Unit = {
-    // @formatter:off
-    def using(dbs: TestDatabases)(g: TestDatabases => Unit): Unit = try g(dbs) finally dbs.close()
-    using(TestSqliteDatabases())(f)
-    using(TestPgDatabases())(f)
-    // @formatter:on
-  }
-
   case object TestFeature extends Feature {
     val rfcName = "test_feature"
     val mandatory = 50000
   }
 
-  val pluginParams = new CustomFeaturePlugin {
+  val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
     // @formatter:off
     override def messageTags: Set[Int] = Set(60003)
     override def feature: Feature = TestFeature
@@ -141,12 +72,12 @@ object TestConstants {
   }
 
   object Alice {
-    val seed = ByteVector32(ByteVector.fill(32)(1))
+    val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     // This is a function, and not a val! When called will return a new NodeParams
-    def nodeParams = NodeParams(
+    def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
       blockCount = new AtomicLong(defaultBlockHeight),
@@ -190,7 +121,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      db = inMemoryDb(sqliteInMemory()),
+      db = TestDatabases.inMemoryDb(),
       revocationTimeout = 20 seconds,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -237,7 +168,7 @@ object TestConstants {
       instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
       nodeParams.features,
       Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
@@ -250,11 +181,11 @@ object TestConstants {
   }
 
   object Bob {
-    val seed = ByteVector32(ByteVector.fill(32)(2))
+    val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(2))
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
-    def nodeParams = NodeParams(
+    def nodeParams: NodeParams = NodeParams(
       nodeKeyManager,
       channelKeyManager,
       blockCount = new AtomicLong(defaultBlockHeight),
@@ -295,7 +226,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
-      db = inMemoryDb(sqliteInMemory()),
+      db = TestDatabases.inMemoryDb(),
       revocationTimeout = 20 seconds,
       autoReconnect = false,
       initialRandomReconnectDelay = 5 seconds,
@@ -342,7 +273,7 @@ object TestConstants {
       instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
     )
 
-    def channelParams = Peer.makeChannelParams(
+    def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
       nodeParams.features,
       Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),

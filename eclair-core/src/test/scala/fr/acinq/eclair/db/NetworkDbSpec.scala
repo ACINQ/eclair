@@ -20,19 +20,17 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
-import fr.acinq.eclair.TestConstants.{TestDatabases, TestPgDatabases, TestSqliteDatabases}
+import fr.acinq.eclair.TestDatabases._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.collection.{SortedMap, mutable}
 
 class NetworkDbSpec extends AnyFunSuite {
-
-  import TestConstants.forAllDbs
 
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 
