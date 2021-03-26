@@ -19,6 +19,7 @@ package fr.acinq.eclair.db
 import akka.actor.ActorSystem
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils._
 import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
@@ -118,17 +119,7 @@ object Databases extends Logging {
           databases.obtainExclusiveLock()
           // ...and renew the lease regularly
           import system.dispatcher
-          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(new Runnable {
-            override def run(): Unit = {
-              try {
-                databases.obtainExclusiveLock()
-              } catch {
-                case e: Throwable =>
-                  logger.error("fatal error: Cannot obtain the database lease.\n", e)
-                  sys.exit(-1)
-              }
-            }
-          })
+          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => databases.obtainExclusiveLock())
         }
       }
 
@@ -191,7 +182,7 @@ object Databases extends Logging {
     }
   }
 
-  def postgres(dbConfig: Config, instanceId: UUID, datadir: File)(implicit system: ActorSystem): PostgresDatabases = {
+  def postgres(dbConfig: Config, instanceId: UUID, datadir: File, lockExceptionHandler: LockFailureHandler = LockFailureHandler.logAndStop)(implicit system: ActorSystem): PostgresDatabases = {
     val database = dbConfig.getString("postgres.database")
     val host = dbConfig.getString("postgres.host")
     val port = dbConfig.getInt("postgres.port")
@@ -214,7 +205,7 @@ object Databases extends Logging {
         val leaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
         val leaseRenewInterval = dbConfig.getDuration("postgres.lease.renew-interval").toSeconds.seconds
         require(leaseInterval > leaseRenewInterval, "invalid configuration: `db.postgres.lease.interval` must be greater than `db.postgres.lease.renew-interval`")
-        PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, PgLock.logAndStopLockExceptionHandler)
+        PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, lockExceptionHandler)
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
 

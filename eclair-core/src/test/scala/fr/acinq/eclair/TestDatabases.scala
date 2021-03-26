@@ -6,6 +6,7 @@ import fr.acinq.eclair.db.pg.PgUtils
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.db.sqlite.SqliteUtils
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 
 import java.io.File
 import java.sql.{Connection, DriverManager, Statement}
@@ -54,7 +55,7 @@ object TestDatabases {
     val hikariConfig = new HikariConfig
     hikariConfig.setDataSource(pg.getPostgresDatabase)
 
-    val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, PgLock.logAndStopLockExceptionHandler)
+    val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, LockFailureHandler.logAndThrow)
 
     val jdbcUrlFile: File = new File(sys.props("tmp.dir"), s"jdbcUrlFile_${UUID.randomUUID()}.tmp")
     jdbcUrlFile.deleteOnExit()
