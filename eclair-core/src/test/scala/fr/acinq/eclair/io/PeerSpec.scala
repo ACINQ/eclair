@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.FSM
 import akka.actor.Status.Failure
+import akka.actor.{ActorContext, ActorRef, FSM}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -46,14 +46,20 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
   val fakeIPAddress: NodeAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
 
-  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: TestProbe, relayer: TestProbe, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe)
+
+  case class FakeChannelFactory(channel: TestProbe) extends ChannelFactory {
+    override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
+      assert(remoteNodeId === Bob.nodeParams.nodeId)
+      channel.ref
+    }
+  }
 
   override protected def withFixture(test: OneArgTest): Outcome = {
-    val watcher = TestProbe()
-    val relayer = TestProbe()
     val wallet: EclairWallet = new TestWallet()
     val remoteNodeId = Bob.nodeParams.nodeId
     val peerConnection = TestProbe()
+    val channel = TestProbe()
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
@@ -68,8 +74,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, watcher.ref, relayer.ref, wallet))
-    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, watcher, relayer, peer, peerConnection)))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel)))
+    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, peer, peerConnection, channel)))
   }
 
   def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features)): Unit = {
@@ -198,21 +204,26 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val peerConnection3 = TestProbe()
 
     connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
-    peerConnection1.expectMsgType[ChannelReestablish]
-    // this is just to extract inits
-    val Peer.ConnectedData(_, _, localInit, remoteInit, _) = peer.stateData
+    channel.expectMsg(INPUT_RESTORED(ChannelCodecsSpec.normal))
+    val (localInit, remoteInit) = {
+      val inputReconnected = channel.expectMsgType[INPUT_RECONNECTED]
+      assert(inputReconnected.remote === peerConnection1.ref)
+      (inputReconnected.localInit, inputReconnected.remoteInit)
+    }
 
     peerConnection2.send(peer, PeerConnection.ConnectionReady(peerConnection2.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     peerConnection1.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
+    channel.expectMsg(INPUT_DISCONNECTED)
+    channel.expectMsg(INPUT_RECONNECTED(peerConnection2.ref, localInit, remoteInit))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection2.ref)
-    peerConnection2.expectMsgType[ChannelReestablish]
 
     peerConnection3.send(peer, PeerConnection.ConnectionReady(peerConnection3.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = false, localInit, remoteInit))
     // peer should kill previous connection
     peerConnection2.expectMsg(PeerConnection.Kill(PeerConnection.KillReason.ConnectionReplaced))
+    channel.expectMsg(INPUT_DISCONNECTED)
+    channel.expectMsg(INPUT_RECONNECTED(peerConnection3.ref, localInit, remoteInit))
     awaitCond(peer.stateData.asInstanceOf[Peer.ConnectedData].peerConnection === peerConnection3.ref)
-    peerConnection3.expectMsgType[ChannelReestablish]
   }
 
   test("send state transitions to child reconnection actor", Tag("auto_reconnect"), Tag("with_node_announcement")) { f =>
@@ -251,12 +262,12 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32, 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, 0)
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)
-    assert(probe.expectMsgType[ChannelCreated].temporaryChannelId === open.temporaryChannelId)
-    peerConnection.expectMsgType[AcceptChannel]
+    assert(channel.expectMsgType[INPUT_INIT_FUNDEE].temporaryChannelId === open.temporaryChannelId)
+    channel.expectMsg(open)
 
     // open_channel messages with the same temporary channel id should simply be ignored
     peerConnection.send(peer, open.copy(fundingSatoshis = 100000 sat, fundingPubkey = randomKey.publicKey))
-    probe.expectNoMsg(100 millis)
+    channel.expectNoMsg(100 millis)
     peerConnection.expectNoMsg(100 millis)
     assert(peer.stateData.channels.size === 1)
   }
@@ -307,59 +318,64 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection)
     assert(peer.stateData.channels.isEmpty)
 
     val relayFees = Some(100 msat, 1000)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, relayFees, None, None))
+    val init = channel.expectMsgType[INPUT_INIT_FUNDER]
+    assert(init.channelVersion === ChannelVersion.STANDARD)
+    assert(init.fundingAmount === 12300.sat)
+    assert(init.initialRelayFees_opt === relayFees)
     awaitCond(peer.stateData.channels.nonEmpty)
-
-    val channelCreated = probe.expectMsgType[ChannelCreated]
-    assert(channelCreated.initialFeeratePerKw == nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget))
-    assert(channelCreated.fundingTxFeeratePerKw.get == nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-
-    peer.stateData.channels.foreach { case (_, channelRef) =>
-      probe.send(channelRef, CMD_GETINFO(probe.ref))
-      val info = probe.expectMsgType[RES_GETINFO]
-      assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
-      val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
-      assert(inputInit.initialRelayFees_opt === relayFees)
-    }
   }
 
   test("use correct on-chain fee rates when spawning a channel (anchor outputs)", Tag("anchor_outputs")) { f =>
     import f._
 
     val probe = TestProbe()
-    system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)))
+    assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
     val feeEstimator = nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator]
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
-
-    val channelCreated = probe.expectMsgType[ChannelCreated]
-    assert(channelCreated.initialFeeratePerKw == TestConstants.anchorOutputsFeeratePerKw)
-    assert(channelCreated.fundingTxFeeratePerKw.get == feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
+    val init = channel.expectMsgType[INPUT_INIT_FUNDER]
+    assert(init.channelVersion.hasAnchorOutputs)
+    assert(init.fundingAmount === 15000.sat)
+    assert(init.initialRelayFees_opt === None)
+    assert(init.initialFeeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
+    assert(init.fundingTxFeeratePerKw === feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
   }
 
   test("use correct final script if option_static_remotekey is negotiated", Tag("static_remotekey")) { f =>
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional))) // Bob supports option_static_remotekey
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
-    awaitCond(peer.stateData.channels.nonEmpty)
-    peer.stateData.channels.foreach { case (_, channelRef) =>
-      probe.send(channelRef, CMD_GETINFO(probe.ref))
-      val info = probe.expectMsgType[RES_GETINFO]
-      assert(info.state == WAIT_FOR_ACCEPT_CHANNEL)
-      val inputInit = info.data.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder
-      assert(inputInit.channelVersion.hasStaticRemotekey)
-      assert(inputInit.localParams.walletStaticPaymentBasepoint.isDefined)
-      assert(inputInit.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(inputInit.localParams.walletStaticPaymentBasepoint.get)))
+    val init = channel.expectMsgType[INPUT_INIT_FUNDER]
+    assert(init.channelVersion.hasStaticRemotekey)
+    assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
+    assert(init.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get)))
+  }
+
+  test("set origin_opt when spawning a channel") { f =>
+    import f._
+
+    val probe = TestProbe()
+    val channelFactory = new ChannelFactory {
+      override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
+        assert(origin_opt === Some(probe.ref))
+        channel.ref
+      }
     }
+    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new TestWallet, channelFactory))
+    connect(remoteNodeId, peer, peerConnection)
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 100 msat, None, None, None, None))
+    val init = channel.expectMsgType[INPUT_INIT_FUNDER]
+    assert(init.fundingAmount === 15000.sat)
+    assert(init.pushAmount === 100.msat)
   }
 }

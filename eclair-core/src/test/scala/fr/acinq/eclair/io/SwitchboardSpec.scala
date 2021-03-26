@@ -1,23 +1,23 @@
 package fr.acinq.eclair.io
 
-import akka.actor.ActorRef
+import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
-import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.channel.ChannelIdAssigned
-import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.io.Switchboard.PeerFactory
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, NodeParams, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
 class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
-  class TestSwitchboard(nodeParams: NodeParams, remoteNodeId: PublicKey, remotePeer: TestProbe) extends Switchboard(nodeParams, TestProbe().ref, TestProbe().ref, new TestWallet()) {
-    override def createPeer(remoteNodeId2: PublicKey): ActorRef = {
-      assert(remoteNodeId === remoteNodeId2)
+  case class FakePeerFactory(expectedRemoteNodeId: PublicKey, remotePeer: TestProbe) extends PeerFactory {
+    override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef = {
+      assert(expectedRemoteNodeId === remoteNodeId)
       remotePeer.ref
     }
   }
@@ -29,7 +29,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     // If we have a channel with that remote peer, we will automatically reconnect.
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
 
-    val _ = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
+    val _ = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(remoteNodeId, peer)))
     peer.expectMsg(Peer.Init(Set(ChannelCodecsSpec.normal)))
   }
 
@@ -40,7 +40,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val remoteNodeAddress = NodeAddress.fromParts("127.0.0.1", 9735).get
     nodeParams.db.network.addNode(NodeAnnouncement(ByteVector64.Zeroes, Features.empty, 0, remoteNodeId, Color(0, 0, 0), "alias", remoteNodeAddress :: Nil))
 
-    val switchboard = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(remoteNodeId, peer)))
     probe.send(switchboard, Peer.Connect(remoteNodeId, None))
     peer.expectMsg(Peer.Init(Set.empty))
     peer.expectMsg(Peer.Connect(remoteNodeId, None))
@@ -49,7 +49,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   def sendFeatures(nodeParams: NodeParams, remoteNodeId: PublicKey, expectedFeatures: Features, expectedSync: Boolean) = {
     val peer = TestProbe()
     val peerConnection = TestProbe()
-    val switchboard = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(remoteNodeId, peer)))
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     peerConnection.expectMsg(PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, expectedFeatures, doSync = expectedSync))
   }
@@ -66,7 +66,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val peerConnection = TestProbe()
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
-    val switchboard = TestActorRef(new TestSwitchboard(nodeParams, remoteNodeId, peer))
+    val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(remoteNodeId, peer)))
 
     // We have a channel with our peer, so we trigger a sync when connecting.
     switchboard ! ChannelIdAssigned(TestProbe().ref, remoteNodeId, randomBytes32, randomBytes32)
