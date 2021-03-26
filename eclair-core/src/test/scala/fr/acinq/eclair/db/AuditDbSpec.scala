@@ -35,7 +35,7 @@ import java.util.UUID
 import scala.concurrent.duration._
 import scala.util.Random
 
-class SqliteAuditDbSpec extends AnyFunSuite {
+class AuditDbSpec extends AnyFunSuite {
 
   val ZERO_UUID: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 

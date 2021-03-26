@@ -30,7 +30,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 import scala.collection.{SortedMap, mutable}
 
-class SqliteNetworkDbSpec extends AnyFunSuite {
+class NetworkDbSpec extends AnyFunSuite {
 
   import TestConstants.forAllDbs
 

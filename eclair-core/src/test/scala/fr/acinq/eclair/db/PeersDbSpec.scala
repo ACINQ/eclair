@@ -22,7 +22,7 @@ import fr.acinq.eclair.{TestConstants, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 
-class SqlitePeersDbSpec extends AnyFunSuite {
+class PeersDbSpec extends AnyFunSuite {
 
   import TestConstants.forAllDbs
 

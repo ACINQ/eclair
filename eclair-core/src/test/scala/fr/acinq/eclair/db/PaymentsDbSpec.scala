@@ -30,9 +30,9 @@ import org.scalatest.funsuite.AnyFunSuite
 import java.util.UUID
 import scala.concurrent.duration._
 
-class SqlitePaymentsDbSpec extends AnyFunSuite {
+class PaymentsDbSpec extends AnyFunSuite {
 
-  import SqlitePaymentsDbSpec._
+  import PaymentsDbSpec._
 
   test("init database 2 times in a row") {
     forAllDbs { dbs =>
@@ -503,7 +503,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
 }
 
-object SqlitePaymentsDbSpec {
+object PaymentsDbSpec {
   val (alicePriv, bobPriv, carolPriv, davePriv) = (randomKey, randomKey, randomKey, randomKey)
   val (alice, bob, carol, dave) = (alicePriv.publicKey, bobPriv.publicKey, carolPriv.publicKey, davePriv.publicKey)
   val hop_ab = ChannelHop(alice, bob, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(42), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))

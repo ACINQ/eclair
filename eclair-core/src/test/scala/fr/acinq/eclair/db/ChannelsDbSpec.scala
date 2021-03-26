@@ -31,7 +31,7 @@ import scodec.bits.ByteVector
 
 import java.sql.SQLException
 
-class SqliteChannelsDbSpec extends AnyFunSuite {
+class ChannelsDbSpec extends AnyFunSuite {
 
   test("init database 2 times in a row") {
     forAllDbs { dbs =>

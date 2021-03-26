@@ -22,7 +22,7 @@ import fr.acinq.eclair.{TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 
 
-class SqlitePendingRelayDbSpec extends AnyFunSuite {
+class PendingRelayDbSpec extends AnyFunSuite {
 
   import TestConstants.forAllDbs
 

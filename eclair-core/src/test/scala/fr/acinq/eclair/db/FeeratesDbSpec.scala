@@ -23,7 +23,7 @@ import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import org.scalatest.funsuite.AnyFunSuite
 
-class SqliteFeeratesDbSpec extends AnyFunSuite {
+class FeeratesDbSpec extends AnyFunSuite {
 
   val feerate = FeeratesPerKB(
     mempoolMinFee = FeeratePerKB(10000 sat),
