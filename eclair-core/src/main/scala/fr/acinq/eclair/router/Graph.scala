@@ -243,16 +243,16 @@ object Graph {
       }
     }
 
-    targetFound match {
-      case false => Seq.empty[GraphEdge]
-      case true =>
-        val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
-        var current = bestEdges.get(sourceNode)
-        while (current.isDefined) {
-          edgePath += current.get
-          current = bestEdges.get(current.get.desc.b)
-        }
-        edgePath.toSeq
+    if (targetFound) {
+      val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
+      var current = bestEdges.get(sourceNode)
+      while (current.isDefined) {
+        edgePath += current.get
+        current = bestEdges.get(current.get.desc.b)
+      }
+      edgePath.toSeq
+    } else {
+      Seq.empty[GraphEdge]
     }
   }
 
@@ -421,9 +421,10 @@ object Graph {
        * @return a new graph without this edge
        */
       def removeEdge(desc: ChannelDesc): DirectedGraph = {
-        containsEdge(desc) match {
-          case true => DirectedGraph(vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc)))
-          case false => this
+        if (containsEdge(desc)) {
+          DirectedGraph(vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc)))
+        } else {
+          this
         }
       }
 
@@ -555,9 +556,8 @@ object Graph {
 
         def addDescToMap(desc: ChannelDesc, u: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi]): Unit = {
           mutableMap.put(desc.b, GraphEdge(desc, u, getCapacity(capacity, u), balance_opt) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
-          mutableMap.get(desc.a) match {
-            case None => mutableMap += desc.a -> List.empty[GraphEdge]
-            case _ =>
+          if (!mutableMap.contains(desc.a)) {
+            mutableMap += desc.a -> List.empty[GraphEdge]
           }
         }
 
