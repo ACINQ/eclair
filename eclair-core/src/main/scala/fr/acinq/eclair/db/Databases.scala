@@ -114,13 +114,12 @@ object Databases extends Logging {
 
       lock match {
         case PgLock.NoLock => ()
-        case l: PgLock.LeaseLock => {
+        case l: PgLock.LeaseLock =>
           // we obtain a lock right now...
           databases.obtainExclusiveLock()
           // ...and renew the lease regularly
           import system.dispatcher
           system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => databases.obtainExclusiveLock())
-        }
       }
 
       databases
@@ -141,13 +140,13 @@ object Databases extends Logging {
     }
   }
 
-  def init(dbConfig: Config, instanceId: UUID, datadir: File, chaindir: File, db: Option[Databases] = None)(implicit system: ActorSystem): Databases = {
+  def init(dbConfig: Config, instanceId: UUID, chaindir: File, db: Option[Databases] = None)(implicit system: ActorSystem): Databases = {
     db match {
       case Some(d) => d
       case None =>
         dbConfig.getString("driver") match {
           case "sqlite" => Databases.sqlite(chaindir)
-          case "postgres" => Databases.postgres(dbConfig, instanceId, datadir)
+          case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir)
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")
         }
     }
@@ -155,9 +154,6 @@ object Databases extends Logging {
 
   /**
    * Given a parent folder it creates or loads all the databases from a JDBC connection
-   *
-   * @param dbdir
-   * @return
    */
   def sqlite(dbdir: File): Databases = {
     dbdir.mkdir()
@@ -172,17 +168,16 @@ object Databases extends Logging {
       logger.info("successful lock on eclair.sqlite")
       SqliteDatabases(sqliteAudit, sqliteNetwork, sqliteEclair)
     } catch {
-      case t: Throwable => {
+      case t: Throwable =>
         logger.error("could not create connection to sqlite databases: ", t)
         if (sqliteEclair != null) sqliteEclair.close()
         if (sqliteNetwork != null) sqliteNetwork.close()
         if (sqliteAudit != null) sqliteAudit.close()
         throw t
-      }
     }
   }
 
-  def postgres(dbConfig: Config, instanceId: UUID, datadir: File, lockExceptionHandler: LockFailureHandler = LockFailureHandler.logAndStop)(implicit system: ActorSystem): PostgresDatabases = {
+  def postgres(dbConfig: Config, instanceId: UUID, dbdir: File, lockExceptionHandler: LockFailureHandler = LockFailureHandler.logAndStop)(implicit system: ActorSystem): PostgresDatabases = {
     val database = dbConfig.getString("postgres.database")
     val host = dbConfig.getString("postgres.host")
     val port = dbConfig.getInt("postgres.port")
@@ -190,7 +185,7 @@ object Databases extends Logging {
     val password = if (dbConfig.getIsNull("postgres.password") || dbConfig.getString("postgres.password").isEmpty) None else Some(dbConfig.getString("postgres.password"))
 
     val hikariConfig = new HikariConfig()
-    hikariConfig.setJdbcUrl(s"jdbc:postgresql://${host}:${port}/${database}")
+    hikariConfig.setJdbcUrl(s"jdbc:postgresql://$host:$port/$database")
     username.foreach(hikariConfig.setUsername)
     password.foreach(hikariConfig.setPassword)
     val poolConfig = dbConfig.getConfig("postgres.pool")
@@ -209,7 +204,7 @@ object Databases extends Logging {
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
 
-    val jdbcUrlFile = new File(datadir, "last_jdbcurl")
+    val jdbcUrlFile = new File(dbdir, "last_jdbcurl")
 
     Databases.PostgresDatabases(
       hikariConfig = hikariConfig,
