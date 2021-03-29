@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
+import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteCalculation, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -64,9 +64,11 @@ object NodeRelay {
   }
 
   case class DefaultOutgoingPaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends OutgoingPaymentFactory {
+    val paymentFactory = PaymentInitiator.DefaultPaymentFactory(nodeParams, router, register)
+
     override def spawnOutgoingPayFSM(context: ActorContext[Command], cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
       if (multiPart) {
-        context.toClassic.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, router, register))
+        context.toClassic.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, router, paymentFactory))
       } else {
         context.toClassic.actorOf(PaymentLifecycle.props(nodeParams, cfg, router, register))
       }
