@@ -199,6 +199,7 @@ object Graph {
     val bestEdges = mutable.HashMap.newBuilder[PublicKey, GraphEdge](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
     // NB: we want the elements with smallest weight first, hence the `reverse`.
     val toExplore = mutable.PriorityQueue.empty[WeightedNode](NodeComparator.reverse)
+    val visitedNodes = mutable.HashSet[PublicKey]()
 
     // initialize the queue and cost array with the initial weight
     bestWeights.put(targetNode, initialWeight)
@@ -209,7 +210,8 @@ object Graph {
       // node with the smallest distance from the target
       val current = toExplore.dequeue() // O(log(n))
       targetFound = current.key == sourceNode
-      if (!targetFound && current.weight == bestWeights(current.key)) { // NB: there is always an entry for the current key in the 'bestWeights' map
+      if (!targetFound && !visitedNodes.contains(current.key)) {
+        visitedNodes += current.key
         // build the neighbors with optional extra edges
         val neighborEdges = {
           val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
