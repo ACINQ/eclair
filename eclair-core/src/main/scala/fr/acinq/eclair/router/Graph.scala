@@ -208,8 +208,8 @@ object Graph {
     while (toExplore.nonEmpty && !targetFound) {
       // node with the smallest distance from the target
       val current = toExplore.dequeue() // O(log(n))
-      if (current.key != sourceNode) {
-        val currentWeight = bestWeights(current.key) // NB: there is always an entry for the current in the 'bestWeights' map
+      targetFound = current.key == sourceNode
+      if (!targetFound && current.weight == bestWeights(current.key)) { // NB: there is always an entry for the current key in the 'bestWeights' map
         // build the neighbors with optional extra edges
         val neighborEdges = {
           val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
@@ -220,11 +220,11 @@ object Graph {
           val neighbor = edge.desc.a
           // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
           // will be relayed through that edge is the one in `currentWeight`.
-          val neighborWeight = addEdgeWeight(sender, edge, currentWeight, currentBlockHeight, wr)
-          val canRelayAmount = currentWeight.cost <= edge.capacity &&
-            edge.balance_opt.forall(currentWeight.cost <= _) &&
-            edge.update.htlcMaximumMsat.forall(currentWeight.cost <= _) &&
-            currentWeight.cost >= edge.update.htlcMinimumMsat
+          val neighborWeight = addEdgeWeight(sender, edge, current.weight, currentBlockHeight, wr)
+          val canRelayAmount = current.weight.cost <= edge.capacity &&
+            edge.balance_opt.forall(current.weight.cost <= _) &&
+            edge.update.htlcMaximumMsat.forall(current.weight.cost <= _) &&
+            current.weight.cost >= edge.update.htlcMinimumMsat
           if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)) {
             val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), Double.MaxValue))
             // if this path between neighbor and the target has a shorter distance than previously known, we select it
@@ -238,8 +238,6 @@ object Graph {
             }
           }
         }
-      } else {
-        targetFound = true
       }
     }
 
