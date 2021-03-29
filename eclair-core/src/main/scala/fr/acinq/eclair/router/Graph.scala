@@ -199,6 +199,7 @@ object Graph {
     val bestEdges = mutable.HashMap.newBuilder[PublicKey, GraphEdge](initialCapacity, mutable.HashMap.defaultLoadFactor).result()
     // NB: we want the elements with smallest weight first, hence the `reverse`.
     val toExplore = mutable.PriorityQueue.empty[WeightedNode](NodeComparator.reverse)
+    val visitedNodes = mutable.HashSet[PublicKey]()
 
     // initialize the queue and cost array with the initial weight
     bestWeights.put(targetNode, initialWeight)
@@ -208,8 +209,9 @@ object Graph {
     while (toExplore.nonEmpty && !targetFound) {
       // node with the smallest distance from the target
       val current = toExplore.dequeue() // O(log(n))
-      if (current.key != sourceNode) {
-        val currentWeight = bestWeights(current.key) // NB: there is always an entry for the current in the 'bestWeights' map
+      targetFound = current.key == sourceNode
+      if (!targetFound && !visitedNodes.contains(current.key)) {
+        visitedNodes += current.key
         // build the neighbors with optional extra edges
         val neighborEdges = {
           val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
@@ -220,11 +222,11 @@ object Graph {
           val neighbor = edge.desc.a
           // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
           // will be relayed through that edge is the one in `currentWeight`.
-          val neighborWeight = addEdgeWeight(sender, edge, currentWeight, currentBlockHeight, wr)
-          val canRelayAmount = currentWeight.cost <= edge.capacity &&
-            edge.balance_opt.forall(currentWeight.cost <= _) &&
-            edge.update.htlcMaximumMsat.forall(currentWeight.cost <= _) &&
-            currentWeight.cost >= edge.update.htlcMinimumMsat
+          val neighborWeight = addEdgeWeight(sender, edge, current.weight, currentBlockHeight, wr)
+          val canRelayAmount = current.weight.cost <= edge.capacity &&
+            edge.balance_opt.forall(current.weight.cost <= _) &&
+            edge.update.htlcMaximumMsat.forall(current.weight.cost <= _) &&
+            current.weight.cost >= edge.update.htlcMinimumMsat
           if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)) {
             val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), Double.MaxValue))
             // if this path between neighbor and the target has a shorter distance than previously known, we select it
@@ -238,21 +240,19 @@ object Graph {
             }
           }
         }
-      } else {
-        targetFound = true
       }
     }
 
-    targetFound match {
-      case false => Seq.empty[GraphEdge]
-      case true =>
-        val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
-        var current = bestEdges.get(sourceNode)
-        while (current.isDefined) {
-          edgePath += current.get
-          current = bestEdges.get(current.get.desc.b)
-        }
-        edgePath.toSeq
+    if (targetFound) {
+      val edgePath = new mutable.ArrayBuffer[GraphEdge](RouteCalculation.ROUTE_MAX_LENGTH)
+      var current = bestEdges.get(sourceNode)
+      while (current.isDefined) {
+        edgePath += current.get
+        current = bestEdges.get(current.get.desc.b)
+      }
+      edgePath.toSeq
+    } else {
+      Seq.empty[GraphEdge]
     }
   }
 
@@ -421,9 +421,10 @@ object Graph {
        * @return a new graph without this edge
        */
       def removeEdge(desc: ChannelDesc): DirectedGraph = {
-        containsEdge(desc) match {
-          case true => DirectedGraph(vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc)))
-          case false => this
+        if (containsEdge(desc)) {
+          DirectedGraph(vertices.updated(desc.b, vertices(desc.b).filterNot(_.desc == desc)))
+        } else {
+          this
         }
       }
 
@@ -555,9 +556,8 @@ object Graph {
 
         def addDescToMap(desc: ChannelDesc, u: ChannelUpdate, capacity: Satoshi, balance_opt: Option[MilliSatoshi]): Unit = {
           mutableMap.put(desc.b, GraphEdge(desc, u, getCapacity(capacity, u), balance_opt) +: mutableMap.getOrElse(desc.b, List.empty[GraphEdge]))
-          mutableMap.get(desc.a) match {
-            case None => mutableMap += desc.a -> List.empty[GraphEdge]
-            case _ =>
+          if (!mutableMap.contains(desc.a)) {
+            mutableMap += desc.a -> List.empty[GraphEdge]
           }
         }
 
