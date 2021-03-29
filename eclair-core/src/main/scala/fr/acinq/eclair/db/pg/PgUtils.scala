@@ -131,7 +131,6 @@ object PgUtils extends JdbcUtils {
     object LeaseLock {
 
       private val LeaseTable: String = "lease"
-      private val LockTimeout: FiniteDuration = 5 seconds
 
       /** We use a [[LeaseLock]] mechanism to get a [[LockLease]]. */
       case class LockLease(expiresAt: Timestamp, instanceId: UUID, expired: Boolean)
@@ -182,8 +181,7 @@ object PgUtils extends JdbcUtils {
       private def acquireExclusiveTableLock()(implicit connection: Connection): Unit = {
         using(connection.createStatement()) {
           statement =>
-            statement.executeUpdate(s"SET lock_timeout TO '${LockTimeout.toSeconds}s'")
-            statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE")
+            statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE NOWAIT")
         }
       }
 
