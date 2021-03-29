@@ -28,6 +28,9 @@ import scala.concurrent.duration._
 
 object PgUtils extends JdbcUtils {
 
+  /** We raise this exception when the jdbc url changes, to prevent using a different server involuntarily. */
+  case class JdbcUrlChanged(before: String, after: String) extends RuntimeException(s"The database URL has changed since the last start. It was `$before`, now it's `$after`")
+
   sealed trait PgLock {
     def obtainExclusiveLock(implicit ds: DataSource): Unit
 

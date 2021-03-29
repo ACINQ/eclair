@@ -134,7 +134,7 @@ object Databases extends Logging {
       if (urlFile.exists()) {
         val oldUrl = readString(urlFile.toPath)
         if (oldUrl != url)
-          throw new RuntimeException(s"The database URL has changed since the last start. It was `$oldUrl`, now it's `$url`")
+          throw JdbcUrlChanged(oldUrl, url)
       } else {
         writeString(urlFile.toPath, url)
       }

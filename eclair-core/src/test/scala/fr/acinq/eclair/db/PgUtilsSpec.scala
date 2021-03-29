@@ -4,6 +4,7 @@ import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.TestUtils
+import fr.acinq.eclair.db.pg.PgUtils.JdbcUrlChanged
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LockFailure, LockFailureHandler}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
@@ -62,10 +63,32 @@ class PgUtilsSpec extends AnyFunSuite {
       // this will fail because even if we have acquired the table lock, the previous lease still hasn't expired
       Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
     }.lockFailure === LockFailure.AlreadyLocked(instanceId2))
+
+    pg.close()
   }
 
   test("jdbc url check") {
-    // TODO
+    implicit val system: ActorSystem = ActorSystem()
+    val pg = EmbeddedPostgres.start()
+    val config = PgUtilsSpec.testConfig(pg.getPort)
+    val datadir = new File(TestUtils.BUILD_DIRECTORY, s"pg_test_${UUID.randomUUID()}")
+    datadir.mkdirs()
+    // this will lock the database for this instance id
+    val db = Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+
+    // we close the first connection
+    db.dataSource.close()
+    while (!db.dataSource.isClosed) {
+      Thread.sleep(1000)
+    }
+
+    // here we change the config to simulate an involuntary change in the server we connect to
+    val config1 = ConfigFactory.parseString("postgres.port=1234").withFallback(config)
+    intercept[JdbcUrlChanged] {
+      Databases.postgres(config1, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
+    }
+
+    pg.close()
   }
 
 }
