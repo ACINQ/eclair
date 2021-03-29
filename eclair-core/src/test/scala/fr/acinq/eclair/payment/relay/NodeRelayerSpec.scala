@@ -63,23 +63,23 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val eventListener = TestProbe[PaymentEvent]("event-listener")
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val mockPayFSM = TestProbe[Any]("pay-fsm")
-    val fsmFactory = if (test.tags.contains("mock-fsm")) {
-      new NodeRelay.FsmFactory {
-        override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
+    val outgoingPaymentFactory = if (test.tags.contains("mock-fsm")) {
+      new NodeRelay.OutgoingPaymentFactory {
+        override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
           mockPayFSM.ref ! cfg
           mockPayFSM.ref.toClassic
         }
       }
     } else {
-      new NodeRelay.FsmFactory {
-        override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
-          val fsm = super.spawnOutgoingPayFSM(context, nodeParams, router, register, cfg, multiPart)
-          mockPayFSM.ref ! fsm
-          fsm
+      new NodeRelay.OutgoingPaymentFactory {
+        override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
+          val outgoingPayFSM = NodeRelay.DefaultOutgoingPaymentFactory(nodeParams, router.ref.toClassic, register.ref.toClassic).spawnOutgoingPayFSM(context, cfg, multiPart)
+          mockPayFSM.ref ! outgoingPayFSM
+          outgoingPayFSM
         }
       }
     }
-    val nodeRelay = testKit.spawn(NodeRelay(nodeParams, parent.ref, router.ref.toClassic, register.ref.toClassic, relayId, paymentHash, fsmFactory))
+    val nodeRelay = testKit.spawn(NodeRelay(nodeParams, parent.ref, register.ref.toClassic, relayId, paymentHash, outgoingPaymentFactory))
     withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelay, parent, router, register, mockPayFSM, eventListener)))
   }
 
@@ -431,7 +431,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // Receive an upstream multi-part payment.
     incomingMultiPart.dropRight(1).foreach(p => nodeRelayer ! NodeRelay.Relay(p))
-    router.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a complete upstream payment
+    mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a complete upstream payment
 
     nodeRelayer ! NodeRelay.Relay(incomingMultiPart.last)
 
