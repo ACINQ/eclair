@@ -32,6 +32,7 @@ import org.scalatest.{ParallelTestExecution, Tag}
 import scodec.bits._
 
 import scala.collection.immutable.SortedMap
+import scala.collection.mutable
 import scala.util.{Failure, Random, Success}
 
 /**
@@ -1545,6 +1546,68 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
   }
 
+  test("loop trap") {
+    val g = DirectedGraph(List(
+      makeEdge(1L, a, b, 1000 msat, 1000),
+      makeEdge(2L, b, c, 1000 msat, 1000),
+      makeEdge(3L, c, d, 1000 msat, 1000),
+      makeEdge(4L, d, e, 1000 msat, 1000),
+      makeEdge(5L, b, e, 1000 msat, 1000),
+      makeEdge(6L, c, f, 1000 msat, 1000),
+      makeEdge(7L, f, b, 1000 msat, 1000),
+    ))
+
+    val Success(routes) = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(routes.length == 2)
+    val route1 :: route2 :: Nil = routes
+    assert(route2Ids(route1) === 1 :: 5 :: Nil)
+    assert(route2Ids(route2) === 1 :: 2 :: 3 :: 4 :: Nil)
+  }
+
+  test("reversed loop trap") {
+    val g = DirectedGraph(List(
+      makeEdge(1L, b, a, 1000 msat, 1000),
+      makeEdge(2L, c, b, 1000 msat, 1000),
+      makeEdge(3L, d, c, 1000 msat, 1000),
+      makeEdge(4L, e, d, 1000 msat, 1000),
+      makeEdge(5L, e, b, 1000 msat, 1000),
+      makeEdge(6L, f, c, 1000 msat, 1000),
+      makeEdge(7L, b, f, 1000 msat, 1000),
+    ))
+
+    val Success(routes) = findRoute(g, e, a, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(routes.length == 2)
+    val route1 :: route2 :: Nil = routes
+    assert(route2Ids(route1) === 5 :: 1 :: Nil)
+    assert(route2Ids(route2) === 4 :: 3 :: 2 :: 1 :: Nil)
+  }
+
+  test("k-shortest paths must be distinct") {
+
+    def makeEdges(n: Int): Seq[GraphEdge] = {
+      val nodes = new Array[(PublicKey, PublicKey)](n)
+      for (i <- nodes.indices) {
+        nodes(i) = (randomKey.publicKey, randomKey.publicKey)
+      }
+      val q = new mutable.Queue[GraphEdge]
+      q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 90))
+      q.enqueue(makeEdge(2L, a, nodes(0)._2, 100 msat, 100))
+      for (i <- 0 until(n - 1)) {
+        q.enqueue(makeEdge(4 * i + 3, nodes(i)._1, nodes(i + 1)._1, (100 - i) msat, 90))
+        q.enqueue(makeEdge(4 * i + 4, nodes(i)._1, nodes(i + 1)._2, (100 - i) msat, 90))
+        q.enqueue(makeEdge(4 * i + 5, nodes(i)._2, nodes(i + 1)._1, (100 - i) msat, 100))
+        q.enqueue(makeEdge(4 * i + 6, nodes(i)._2, nodes(i + 1)._2, (100 - i) msat, 100))
+      }
+      q.enqueue(makeEdge(4 * n, nodes(n - 1)._1, b, 100 msat, 90))
+      q.enqueue(makeEdge(4 * n + 1, nodes(n - 1)._2, b, 100 msat, 100))
+      q.toSeq
+    }
+
+    val g = DirectedGraph(makeEdges(10))
+
+    val Success(routes) = findRoute(g, a, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 10, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 105), currentBlockHeight = 400000)
+    assert(routes.distinct.length == 10)
+  }
 }
 
 object RouteCalculationSpec {
