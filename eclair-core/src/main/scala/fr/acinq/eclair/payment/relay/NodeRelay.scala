@@ -63,8 +63,8 @@ object NodeRelay {
     def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): ActorRef
   }
 
-  case class DefaultOutgoingPaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends OutgoingPaymentFactory {
-    val paymentFactory = PaymentInitiator.DefaultPaymentFactory(nodeParams, router, register)
+  case class SimpleOutgoingPaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends OutgoingPaymentFactory {
+    val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
 
     override def spawnOutgoingPayFSM(context: ActorContext[Command], cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
       if (multiPart) {

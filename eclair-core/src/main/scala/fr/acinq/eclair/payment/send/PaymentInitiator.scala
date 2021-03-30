@@ -184,7 +184,7 @@ object PaymentInitiator {
     def spawnOutgoingMultiPartPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef
   }
 
-  case class DefaultPaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends MultiPartPaymentFactory {
+  case class SimplePaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends MultiPartPaymentFactory {
     override def spawnOutgoingPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef = {
       context.actorOf(PaymentLifecycle.props(nodeParams, cfg, router, register))
     }

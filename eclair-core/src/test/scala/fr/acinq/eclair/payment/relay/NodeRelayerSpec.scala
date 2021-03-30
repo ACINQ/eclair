@@ -73,7 +73,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     } else {
       new NodeRelay.OutgoingPaymentFactory {
         override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
-          val outgoingPayFSM = NodeRelay.DefaultOutgoingPaymentFactory(nodeParams, router.ref.toClassic, register.ref.toClassic).spawnOutgoingPayFSM(context, cfg, multiPart)
+          val outgoingPayFSM = NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router.ref.toClassic, register.ref.toClassic).spawnOutgoingPayFSM(context, cfg, multiPart)
           mockPayFSM.ref ! outgoingPayFSM
           outgoingPayFSM
         }

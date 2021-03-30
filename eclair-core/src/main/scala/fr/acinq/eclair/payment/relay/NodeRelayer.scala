@@ -66,7 +66,7 @@ object NodeRelayer {
               case None =>
                 val relayId = UUID.randomUUID()
                 context.log.debug(s"spawning a new handler with relayId=$relayId")
-                val outgoingPaymentFactory = NodeRelay.DefaultOutgoingPaymentFactory(nodeParams, router, register)
+                val outgoingPaymentFactory = NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register)
                 val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, paymentHash, outgoingPaymentFactory), relayId.toString)
                 context.log.debug("forwarding incoming htlc to new handler")
                 handler ! NodeRelay.Relay(nodeRelayPacket)
