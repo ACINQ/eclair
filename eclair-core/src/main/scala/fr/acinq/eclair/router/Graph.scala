@@ -141,7 +141,6 @@ object Graph {
           if (spurPath.nonEmpty) {
             val completePath = spurPath ++ rootPathEdges
             val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr))
-            assert(boundaries(candidatePath.weight) && !shortestPaths.exists(_.p == candidatePath) && !candidates.exists(_.p == candidatePath) && validatePath(completePath, amount))
             candidates.enqueue(PathWithSpur(candidatePath, i))
           }
         }

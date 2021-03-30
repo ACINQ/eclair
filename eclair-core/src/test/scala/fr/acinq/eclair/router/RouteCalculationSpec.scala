@@ -1547,6 +1547,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("loop trap") {
+    //       +-----------------+
+    //       |                 |
+    //       |                 v
+    // A --> B --> C --> D --> E
+    //       ^     |
+    //       |     |
+    //       F <---+
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 1000 msat, 1000),
       makeEdge(2L, b, c, 1000 msat, 1000),
@@ -1565,6 +1572,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("reversed loop trap") {
+    //       +-----------------+
+    //       |                 |
+    //       v                 |
+    // A <-- B <-- C <-- D <-- E
+    //       |     ^
+    //       |     |
+    //       F ----+
     val g = DirectedGraph(List(
       makeEdge(1L, b, a, 1000 msat, 1000),
       makeEdge(2L, c, b, 1000 msat, 1000),
