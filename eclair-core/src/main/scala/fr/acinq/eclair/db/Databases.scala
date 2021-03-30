@@ -157,6 +157,10 @@ object Databases extends Logging {
         dbConfig.getString("driver") match {
           case "sqlite" => Databases.sqlite(chaindir)
           case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir)
+          case "dual" =>
+            val sqlite = Databases.sqlite(chaindir)
+            val postgres = Databases.postgres(dbConfig, instanceId, chaindir)
+            DualDatabases(sqlite, postgres)
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")
         }
     }
