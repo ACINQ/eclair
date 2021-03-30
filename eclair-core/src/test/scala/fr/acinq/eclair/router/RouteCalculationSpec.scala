@@ -1606,7 +1606,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       val q = new mutable.Queue[GraphEdge]
       q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 90))
       q.enqueue(makeEdge(2L, a, nodes(0)._2, 100 msat, 100))
-      for (i <- 0 until(n - 1)) {
+      for (i <- 0 until (n - 1)) {
         q.enqueue(makeEdge(4 * i + 3, nodes(i)._1, nodes(i + 1)._1, (100 - i) msat, 90))
         q.enqueue(makeEdge(4 * i + 4, nodes(i)._1, nodes(i + 1)._2, (100 - i) msat, 90))
         q.enqueue(makeEdge(4 * i + 5, nodes(i)._2, nodes(i + 1)._1, (100 - i) msat, 100))

@@ -103,7 +103,7 @@ object Graph {
       return Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
     }
 
-    case class PathWithSpur(p : WeightedPath, spurIndex : Int)
+    case class PathWithSpur(p: WeightedPath, spurIndex: Int)
     implicit object PathWithSpurComparator extends Ordering[PathWithSpur] {
       override def compare(x: PathWithSpur, y: PathWithSpur): Int = y.p.weight.compare(x.p.weight)
     }
