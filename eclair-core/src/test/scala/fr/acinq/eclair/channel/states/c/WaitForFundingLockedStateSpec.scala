@@ -16,10 +16,12 @@
 
 package fr.acinq.eclair.channel.states.c
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.wire.protocol._
@@ -88,7 +90,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     // bob publishes his commitment tx
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, tx)
-    alice2blockchain.expectMsgType[PublishAsap]
+    alice2blockchain.expectMsgType[PublishTx]
     alice2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(alice.stateName == CLOSING)
   }
@@ -98,8 +100,8 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, Transaction(0, Nil, Nil, 0))
     alice2bob.expectMsgType[Error]
-    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
-    alice2blockchain.expectMsgType[PublishAsap]
+    alice2blockchain.expectMsg(PublishRawTx(alice, tx))
+    alice2blockchain.expectMsgType[PublishTx]
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
   }
 
@@ -108,8 +110,8 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
-    alice2blockchain.expectMsgType[PublishAsap]
+    alice2blockchain.expectMsg(PublishRawTx(alice, tx))
+    alice2blockchain.expectMsgType[PublishTx]
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
   }
 
@@ -127,8 +129,8 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishAsap(tx, PublishStrategy.JustPublish))
-    alice2blockchain.expectMsgType[PublishAsap]
+    alice2blockchain.expectMsg(PublishRawTx(alice, tx))
+    alice2blockchain.expectMsgType[PublishTx]
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
   }
 }

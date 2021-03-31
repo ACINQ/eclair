@@ -21,9 +21,10 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
-import fr.acinq.eclair.blockchain.{EclairWallet, PublishAsap, PublishStrategy}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
+import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SignAndPublishTx}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.ChannelsDb
@@ -589,8 +590,8 @@ object Helpers {
     /**
      * Create tx publishing strategy (target feerate) for our local commit tx and its HTLC txs. Only used for anchor outputs.
      */
-    def createLocalCommitAnchorPublishStrategy(keyManager: ChannelKeyManager, commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets): (PublishAsap, List[PublishAsap]) = {
-      val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
+    def createLocalCommitAnchorPublishStrategy(keyManager: ChannelKeyManager, commitments: Commitments, feeEstimator: FeeEstimator, feeTargets: FeeTargets): (PublishTx, List[PublishTx]) = {
+      val commitTx = commitments.localCommit.publishableTxs.commitTx
       val currentFeerate = commitments.localCommit.spec.feeratePerKw
       val targetFeerate = feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
       val localFundingPubKey = keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath)
@@ -599,11 +600,11 @@ object Helpers {
       val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
 
       // If we have an anchor output available, we will use it to CPFP the commit tx.
-      val publishCommitTx = Transactions.makeClaimLocalAnchorOutputTx(commitTx, localFundingPubKey.publicKey).map(claimAnchorOutputTx => {
+      val publishCommitTx = Transactions.makeClaimLocalAnchorOutputTx(commitTx.tx, localFundingPubKey.publicKey).map(claimAnchorOutputTx => {
         TransactionSigningKit.ClaimAnchorOutputSigningKit(keyManager, claimAnchorOutputTx, localFundingPubKey)
       }) match {
-        case Left(_) => PublishAsap(commitTx, PublishStrategy.JustPublish)
-        case Right(signingKit) => PublishAsap(commitTx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
+        case Left(_) => PublishRawTx(null, commitTx.tx)
+        case Right(signingKit) => SignAndPublishTx(null, commitTx, TxPublisher.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
       }
 
       // HTLC txs will use RBF to add wallet inputs to reach the targeted feerate.
@@ -613,11 +614,11 @@ object Helpers {
           val preimage = preimages(htlcSuccess.paymentHash)
           val signedTx = Transactions.addSigs(htlcSuccess, localSig, remoteSig, preimage, commitments.commitmentFormat)
           val signingKit = TransactionSigningKit.HtlcSuccessSigningKit(keyManager, commitments.commitmentFormat, signedTx, localHtlcBasepoint, localPerCommitmentPoint, remoteSig, preimage)
-          PublishAsap(signedTx.tx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
+          SignAndPublishTx(null, signedTx, TxPublisher.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
         case HtlcTxAndSigs(htlcTimeout: Transactions.HtlcTimeoutTx, localSig, remoteSig) =>
           val signedTx = Transactions.addSigs(htlcTimeout, localSig, remoteSig, commitments.commitmentFormat)
           val signingKit = TransactionSigningKit.HtlcTimeoutSigningKit(keyManager, commitments.commitmentFormat, signedTx, localHtlcBasepoint, localPerCommitmentPoint, remoteSig)
-          PublishAsap(signedTx.tx, PublishStrategy.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
+          SignAndPublishTx(null, signedTx, TxPublisher.SetFeerate(currentFeerate, targetFeerate, commitments.localParams.dustLimit, signingKit))
       }
 
       (publishCommitTx, htlcTxs)

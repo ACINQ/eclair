@@ -16,7 +16,9 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
+import akka.actor.{ActorContext, ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -24,8 +26,10 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, S
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.PendingRelayDb
@@ -47,7 +51,19 @@ import scala.util.{Failure, Success, Try}
  */
 
 object Channel {
-  def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef]): Props = Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, relayer, origin_opt))
+
+  trait TxPublisherFactory {
+    def spawnTxPublisher(context: ActorContext): akka.actor.typed.ActorRef[TxPublisher.Command]
+  }
+
+  case class SimpleTxPublisherFactory(nodeParams: NodeParams, watcher: ActorRef, bitcoinClient: ExtendedBitcoinClient) extends TxPublisherFactory {
+    override def spawnTxPublisher(context: ActorContext): akka.actor.typed.ActorRef[TxPublisher.Command] = {
+      context.spawn(Behaviors.supervise(TxPublisher(nodeParams, watcher, bitcoinClient)).onFailure(akka.actor.typed.SupervisorStrategy.restart), "tx-publisher")
+    }
+  }
+
+  def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, txPublisherFactory: TxPublisherFactory, origin_opt: Option[ActorRef]): Props =
+    Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, relayer, txPublisherFactory, origin_opt))
 
   // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
   val ANNOUNCEMENTS_MINCONF = 6
@@ -100,7 +116,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
+class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, txPublisherFactory: Channel.TxPublisherFactory, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
 
   import Channel._
 
@@ -111,13 +127,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   // we assume that the peer is the channel's parent
   private val peer = context.parent
-  //noinspection ActorMutableStateInspection
+  // noinspection ActorMutableStateInspection
   // the last active connection we are aware of; note that the peer manages connections and asynchronously notifies
   // the channel, which means that if we get disconnected, the previous active connection will die and some messages will
   // be sent to dead letters, before the channel gets notified of the disconnection; knowing that this will happen, we
   // choose to not make this an Option (that would be None before the first connection), and instead embrace the fact
   // that the active connection may point to dead letters at all time
   private var activeConnection = context.system.deadLetters
+
+  private val txPublisher = txPublisherFactory.spawnTxPublisher(context)
 
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
@@ -1341,7 +1359,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
         val (rev1, penaltyTxs) = Closing.claimRevokedHtlcTxOutputs(keyManager, d.commitments, rev, tx, nodeParams.onChainFeeConf.feeEstimator)
-        penaltyTxs.foreach(claimTx => blockchain ! PublishAsap(claimTx.tx, PublishStrategy.JustPublish))
+        penaltyTxs.foreach(claimTx => txPublisher ! PublishRawTx(self, claimTx.tx))
         penaltyTxs.foreach(claimTx => blockchain ! WatchSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT, hints = Set(claimTx.tx.txid)))
         rev1
       }
@@ -1355,7 +1373,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // If the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
           val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommitHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
           claimHtlcTx_opt.foreach(claimHtlcTx => {
-            blockchain ! PublishAsap(claimHtlcTx.tx, PublishStrategy.JustPublish)
+            txPublisher ! PublishRawTx(self, claimHtlcTx.tx)
             blockchain ! WatchConfirmed(self, claimHtlcTx.tx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(claimHtlcTx.tx))
           })
           Closing.updateLocalCommitPublished(localCommitPublished1, tx)
@@ -1990,7 +2008,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           case Some(fundingTx) =>
             // if we are funder, we never give up
             log.info(s"republishing the funding tx...")
-            blockchain ! PublishAsap(fundingTx, PublishStrategy.JustPublish)
+            txPublisher ! PublishRawTx(self, fundingTx)
             // we also check if the funding tx has been double-spent
             checkDoubleSpent(fundingTx)
             context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(txid))
@@ -2142,7 +2160,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   private def doPublish(closingTx: ClosingTx): Unit = {
-    blockchain ! PublishAsap(closingTx.tx, PublishStrategy.JustPublish)
+    txPublisher ! PublishRawTx(self, closingTx.tx)
     blockchain ! WatchConfirmed(self, closingTx.tx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx.tx))
   }
 
@@ -2171,11 +2189,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   /**
    * This helper method will publish txs only if they haven't yet reached minDepth
    */
-  private def publishIfNeeded(txs: Iterable[PublishAsap], irrevocablySpent: Map[OutPoint, Transaction]): Unit = {
+  private def publishIfNeeded(txs: Iterable[PublishTx], irrevocablySpent: Map[OutPoint, Transaction]): Unit = {
     val (skip, process) = txs.partition(publishTx => Closing.inputsAlreadySpent(publishTx.tx, irrevocablySpent))
     process.foreach { publishTx =>
       log.info(s"publishing txid=${publishTx.tx.txid}")
-      blockchain ! publishTx
+      txPublisher ! publishTx
     }
     skip.foreach(publishTx => log.info(s"no need to republish txid=${publishTx.tx.txid}, it has already been confirmed"))
   }
@@ -2210,10 +2228,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val publishQueue = commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         val txs = List(commitTx) ++ claimMainDelayedOutputTx.map(_.tx) ++ htlcTxs.values.flatten.map(_.tx) ++ claimHtlcDelayedTxs.map(_.tx)
-        txs.map(tx => PublishAsap(tx, PublishStrategy.JustPublish))
+        txs.map(tx => PublishRawTx(self, tx))
       case Transactions.AnchorOutputsCommitmentFormat =>
         val (publishCommitTx, htlcTxs) = Helpers.Closing.createLocalCommitAnchorPublishStrategy(keyManager, commitments, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-        List(publishCommitTx) ++ claimMainDelayedOutputTx.map(tx => PublishAsap(tx.tx, PublishStrategy.JustPublish)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishAsap(tx.tx, PublishStrategy.JustPublish))
+        List(publishCommitTx) ++ claimMainDelayedOutputTx.map(tx => PublishRawTx(self, tx.tx)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishRawTx(self, tx.tx))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
@@ -2276,7 +2294,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   private def doPublish(remoteCommitPublished: RemoteCommitPublished): Unit = {
     import remoteCommitPublished._
 
-    val publishQueue = (claimMainOutputTx ++ claimHtlcTxs.values.flatten).map(tx => PublishAsap(tx.tx, PublishStrategy.JustPublish))
+    val publishQueue = (claimMainOutputTx ++ claimHtlcTxs.values.flatten).map(tx => PublishRawTx(self, tx.tx))
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
@@ -2315,7 +2333,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   private def doPublish(revokedCommitPublished: RevokedCommitPublished): Unit = {
     import revokedCommitPublished._
 
-    val publishQueue = (claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs).map(tx => PublishAsap(tx.tx, PublishStrategy.JustPublish))
+    val publishQueue = (claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs).map(tx => PublishRawTx(self, tx.tx))
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:

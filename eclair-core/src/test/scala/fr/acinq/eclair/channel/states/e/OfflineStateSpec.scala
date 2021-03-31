@@ -17,12 +17,14 @@
 package fr.acinq.eclair.channel.states.e
 
 import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.router.Announcements
@@ -273,7 +275,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
     // alice is able to claim its main output
-    val claimMainOutput = alice2blockchain.expectMsgType[PublishAsap].tx
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishTx].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
@@ -318,7 +320,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
     // alice is able to claim its main output
-    val claimMainOutput = alice2blockchain.expectMsgType[PublishAsap].tx
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishTx].tx
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
@@ -338,8 +340,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice then finds out bob is lying
     bob2alice.send(alice, invalidReestablish)
     val error = alice2bob.expectMsgType[Error]
-    assert(alice2blockchain.expectMsgType[PublishAsap].tx === aliceCommitTx)
-    val claimMainOutput = alice2blockchain.expectMsgType[PublishAsap].tx
+    assert(alice2blockchain.expectMsgType[PublishTx].tx === aliceCommitTx)
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishTx].tx
     Transaction.correctlySpends(claimMainOutput, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     assert(error === Error(channelId(alice), InvalidRevokedCommitProof(channelId(alice), 0, 42, invalidReestablish.yourLastPerCommitmentSecret).getMessage))
   }
@@ -482,15 +484,15 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
-    bob2blockchain.expectMsgType[PublishAsap] // main delayed
+    bob2blockchain.expectMsg(PublishRawTx(bob, initialCommitTx))
+    bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
     bob2blockchain.expectMsgType[WatchSpent] // htlc
 
-    bob2blockchain.expectMsg(PublishAsap(initialCommitTx, PublishStrategy.JustPublish))
-    bob2blockchain.expectMsgType[PublishAsap] // main delayed
-    assert(bob2blockchain.expectMsgType[PublishAsap].tx.txOut === htlcSuccessTx.txOut)
+    bob2blockchain.expectMsg(PublishRawTx(bob, initialCommitTx))
+    bob2blockchain.expectMsgType[PublishTx] // main delayed
+    assert(bob2blockchain.expectMsgType[PublishTx].tx.txOut === htlcSuccessTx.txOut)
     assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
     bob2blockchain.expectMsgType[WatchSpent] // htlc
@@ -545,7 +547,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice is funder
     alice ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx, PublishStrategy.JustPublish))
+      alice2blockchain.expectMsg(PublishRawTx(alice, aliceCommitTx))
     } else {
       alice2blockchain.expectNoMsg()
     }
@@ -654,7 +656,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob is fundee
     bob ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      bob2blockchain.expectMsg(PublishAsap(bobCommitTx, PublishStrategy.JustPublish))
+      bob2blockchain.expectMsg(PublishRawTx(bob, bobCommitTx))
     } else {
       bob2blockchain.expectNoMsg()
     }
