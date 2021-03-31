@@ -18,26 +18,26 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
-import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, UnknownNextPeer}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TestConstants, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.util.UUID
 import scala.concurrent.duration._
 
-class SqlitePaymentsDbSpec extends AnyFunSuite {
+class PaymentsDbSpec extends AnyFunSuite {
 
-  import SqlitePaymentsDbSpec._
+  import PaymentsDbSpec._
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
-      val db1 = dbs.payments()
-      val db2 = dbs.payments()
+      val db1 = dbs.payments
+      val db2 = dbs.payments
     }
   }
 
@@ -319,7 +319,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   test("add/retrieve/update incoming payments") {
     forAllDbs { dbs =>
-      val db = dbs.payments()
+      val db = dbs.payments
 
       // can't receive a payment without an invoice associated with it
       assertThrows[IllegalArgumentException](db.receiveIncomingPayment(randomBytes32, 12345678 msat))
@@ -372,7 +372,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
   test("add/retrieve/update outgoing payments") {
     forAllDbs { dbs =>
-      val db = dbs.payments()
+      val db = dbs.payments
 
       val parentId = UUID.randomUUID()
       val i1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(123 msat), paymentHash1, davePriv, "Some invoice", CltvExpiryDelta(18), expirySeconds = None, timestamp = 0)
@@ -428,7 +428,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
   }
 
   test("high level payments overview") {
-    val db = new SqlitePaymentsDb(TestConstants.sqliteInMemory())
+    val db = new SqlitePaymentsDb(TestDatabases.sqliteInMemory())
 
     // -- feed db with incoming payments
     val expiredInvoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(123 msat), randomBytes32, alicePriv, "incoming #1", CltvExpiryDelta(18), timestamp = 1)
@@ -503,7 +503,7 @@ class SqlitePaymentsDbSpec extends AnyFunSuite {
 
 }
 
-object SqlitePaymentsDbSpec {
+object PaymentsDbSpec {
   val (alicePriv, bobPriv, carolPriv, davePriv) = (randomKey, randomKey, randomKey, randomKey)
   val (alice, bob, carol, dave) = (alicePriv.publicKey, bobPriv.publicKey, carolPriv.publicKey, davePriv.publicKey)
   val hop_ab = ChannelHop(alice, bob, ChannelUpdate(randomBytes64, randomBytes32, ShortChannelId(42), 1, 0, 0, CltvExpiryDelta(12), 1 msat, 1 msat, 1, None))

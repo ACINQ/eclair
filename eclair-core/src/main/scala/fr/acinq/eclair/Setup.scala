@@ -98,7 +98,7 @@ class Setup(datadir: File,
 
   logger.info(s"instanceid=$instanceId")
 
-  val databases = Databases.init(config.getConfig("db"), instanceId, datadir, chaindir, db)
+  val databases = Databases.init(config.getConfig("db"), instanceId, chaindir, db)
 
   /**
    * This counter holds the current blockchain height.

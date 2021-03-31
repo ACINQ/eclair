@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
-import fr.acinq.eclair.TestConstants.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
@@ -35,20 +35,20 @@ import java.util.UUID
 import scala.concurrent.duration._
 import scala.util.Random
 
-class SqliteAuditDbSpec extends AnyFunSuite {
+class AuditDbSpec extends AnyFunSuite {
 
   val ZERO_UUID: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
-      val db1 = dbs.audit()
-      val db2 = dbs.audit()
+      val db1 = dbs.audit
+      val db2 = dbs.audit
     }
   }
 
   test("add/list events") {
     forAllDbs { dbs =>
-      val db = dbs.audit()
+      val db = dbs.audit
 
       val e1 = PaymentSent(ZERO_UUID, randomBytes32, randomBytes32, 40000 msat, randomKey.publicKey, PaymentSent.PartialPayment(ZERO_UUID, 42000 msat, 1000 msat, randomBytes32, None) :: Nil)
       val pp2a = PaymentReceived.PartialPayment(42000 msat, randomBytes32)
@@ -94,7 +94,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
 
   test("stats") {
     forAllDbs { dbs =>
-      val db = dbs.audit()
+      val db = dbs.audit
 
       val n2 = randomKey.publicKey
       val n3 = randomKey.publicKey
@@ -140,7 +140,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
 
   ignore("relay stats performance", Tag("perf")) {
     forAllDbs { dbs =>
-      val db = dbs.audit()
+      val db = dbs.audit
       val nodeCount = 100
       val channelCount = 1000
       val eventCount = 100000
@@ -389,7 +389,7 @@ class SqliteAuditDbSpec extends AnyFunSuite {
 
   test("ignore invalid values in the DB") {
     forAllDbs { dbs =>
-      val db = dbs.audit()
+      val db = dbs.audit
       val sqlite = dbs.connection
       val isPg = dbs.isInstanceOf[TestPgDatabases]
 

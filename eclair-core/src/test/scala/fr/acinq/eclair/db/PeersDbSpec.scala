@@ -17,25 +17,25 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
-import fr.acinq.eclair.{TestConstants, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 
-class SqlitePeersDbSpec extends AnyFunSuite {
+class PeersDbSpec extends AnyFunSuite {
 
-  import TestConstants.forAllDbs
+  import fr.acinq.eclair.TestDatabases.forAllDbs
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
-      val db1 = dbs.peers()
-      val db2 = dbs.peers()
+      val db1 = dbs.peers
+      val db2 = dbs.peers
     }
   }
 
   test("add/remove/list peers") {
     forAllDbs { dbs =>
-      val db = dbs.peers()
+      val db = dbs.peers
 
       case class TestCase(nodeId: PublicKey, nodeAddress: NodeAddress)
 

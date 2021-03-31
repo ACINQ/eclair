@@ -23,7 +23,7 @@ import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import org.scalatest.funsuite.AnyFunSuite
 
-class SqliteFeeratesDbSpec extends AnyFunSuite {
+class FeeratesDbSpec extends AnyFunSuite {
 
   val feerate = FeeratesPerKB(
     mempoolMinFee = FeeratePerKB(10000 sat),
@@ -36,14 +36,14 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
     blocks_144 = FeeratePerKB(20000 sat),
     blocks_1008 = FeeratePerKB(10000 sat))
 
-  test("init sqlite 2 times in a row") {
-    val sqlite = TestConstants.sqliteInMemory()
+  test("init database 2 times in a row") {
+    val sqlite = TestDatabases.sqliteInMemory()
     val db1 = new SqliteFeeratesDb(sqlite)
     val db2 = new SqliteFeeratesDb(sqlite)
   }
 
   test("add/get feerates") {
-    val sqlite = TestConstants.sqliteInMemory()
+    val sqlite = TestDatabases.sqliteInMemory()
     val db = new SqliteFeeratesDb(sqlite)
 
     db.addOrUpdateFeerates(feerate)
@@ -51,7 +51,7 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
   }
 
   test("migration 1->2") {
-    val sqlite = TestConstants.sqliteInMemory()
+    val sqlite = TestDatabases.sqliteInMemory()
 
     using(sqlite.createStatement()) { statement =>
       getVersion(statement, "feerates", 1) // this will set version to 1

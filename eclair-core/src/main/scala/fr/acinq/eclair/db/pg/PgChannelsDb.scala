@@ -22,7 +22,7 @@ import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
-import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
+import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
 
@@ -30,7 +30,7 @@ import java.sql.Statement
 import javax.sql.DataSource
 import scala.collection.immutable.Queue
 
-class PgChannelsDb(implicit ds: DataSource, lock: DatabaseLock) extends ChannelsDb with Logging {
+class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
 
   import PgUtils.ExtendedResultSet._
   import PgUtils._

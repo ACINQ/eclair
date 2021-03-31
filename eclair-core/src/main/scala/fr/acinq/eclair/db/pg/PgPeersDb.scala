@@ -20,12 +20,13 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.PeersDb
-import fr.acinq.eclair.db.pg.PgUtils.DatabaseLock
+import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.protocol._
-import javax.sql.DataSource
 import scodec.bits.BitVector
 
-class PgPeersDb(implicit ds: DataSource, lock: DatabaseLock) extends PeersDb {
+import javax.sql.DataSource
+
+class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb {
 
   import PgUtils.ExtendedResultSet._
   import PgUtils._

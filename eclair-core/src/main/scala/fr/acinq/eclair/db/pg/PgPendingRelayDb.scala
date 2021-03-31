@@ -27,7 +27,7 @@ import javax.sql.DataSource
 
 import scala.collection.immutable.Queue
 
-class PgPendingRelayDb(implicit ds: DataSource, lock: DatabaseLock) extends PendingRelayDb {
+class PgPendingRelayDb(implicit ds: DataSource, lock: PgLock) extends PendingRelayDb {
 
   import PgUtils.ExtendedResultSet._
   import PgUtils._

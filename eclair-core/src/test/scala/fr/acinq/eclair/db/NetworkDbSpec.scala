@@ -20,26 +20,24 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
-import fr.acinq.eclair.TestConstants.{TestDatabases, TestPgDatabases, TestSqliteDatabases}
+import fr.acinq.eclair.TestDatabases._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, Tor2}
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.collection.{SortedMap, mutable}
 
-class SqliteNetworkDbSpec extends AnyFunSuite {
-
-  import TestConstants.forAllDbs
+class NetworkDbSpec extends AnyFunSuite {
 
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 
-  test("init sqlite 2 times in a row") {
+  test("init database 2 times in a row") {
     forAllDbs { dbs =>
-      val db1 = dbs.network()
-      val db2 = dbs.network()
+      val db1 = dbs.network
+      val db2 = dbs.network
     }
   }
 
@@ -85,7 +83,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("add/remove/list nodes") {
     forAllDbs { dbs =>
-      val db = dbs.network()
+      val db = dbs.network
 
       val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
       val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
@@ -111,7 +109,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("correctly handle txids that start with 0") {
     forAllDbs { dbs =>
-      val db = dbs.network()
+      val db = dbs.network
       val sig = ByteVector64.Zeroes
       val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
       val txid = ByteVector32.fromValidHex("0001" * 16)
@@ -121,7 +119,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
   }
 
   def simpleTest(dbs: TestDatabases) = {
-    val db = dbs.network()
+    val db = dbs.network
 
     def sig = Crypto.sign(randomBytes32, randomKey)
 
@@ -228,7 +226,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("remove many channels") {
     forAllDbs { dbs =>
-      val db = dbs.network()
+      val db = dbs.network
       val sig = Crypto.sign(randomBytes32, randomKey)
       val priv = randomKey
       val pub = priv.publicKey
@@ -250,7 +248,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
 
   test("prune many channels") {
     forAllDbs { dbs =>
-      val db = dbs.network()
+      val db = dbs.network
 
       db.addToPruned(shortChannelIds)
       shortChannelIds.foreach { id => assert(db.isPruned((id))) }
