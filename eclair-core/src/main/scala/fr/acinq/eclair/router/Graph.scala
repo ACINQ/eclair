@@ -117,9 +117,9 @@ object Graph {
     // main loop
     for (k <- 1 until pathsToFind) {
       if (!allSpurPathsFound) {
-        val prevShortestPath = shortestPaths(k - 1).p.path
+        val PathWithSpur(WeightedPath(prevShortestPath, _), spurIndex) = shortestPaths(k - 1)
         // for every new edge in the path, we will try to find a different path before that edge
-        for (i <- shortestPaths(k - 1).spurIndex until prevShortestPath.length) {
+        for (i <- spurIndex until prevShortestPath.length) {
           // select the spur node as the i-th element from the target of the previous shortest path
           val spurNode = prevShortestPath(prevShortestPath.length - 1 - i).desc.b
           // select the sub-path from the spur node to the target
