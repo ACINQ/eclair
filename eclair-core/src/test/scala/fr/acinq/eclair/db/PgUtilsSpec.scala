@@ -1,21 +1,19 @@
 package fr.acinq.eclair.db
 
-import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.db.pg.PgUtils.JdbcUrlChanged
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LockFailure, LockFailureHandler}
+import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
 import grizzled.slf4j.Logging
-import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.io.File
 import java.util.UUID
 
-class PgUtilsSpec extends AnyFunSuite {
+class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("database lock") {
-    implicit val system: ActorSystem = ActorSystem()
     val pg = EmbeddedPostgres.start()
     val config = PgUtilsSpec.testConfig(pg.getPort)
     val datadir = new File(TestUtils.BUILD_DIRECTORY, s"pg_test_${UUID.randomUUID()}")
@@ -69,7 +67,6 @@ class PgUtilsSpec extends AnyFunSuite {
   }
 
   test("jdbc url check") {
-    implicit val system: ActorSystem = ActorSystem()
     val pg = EmbeddedPostgres.start()
     val config = PgUtilsSpec.testConfig(pg.getPort)
     val datadir = new File(TestUtils.BUILD_DIRECTORY, s"pg_test_${UUID.randomUUID()}")
