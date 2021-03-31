@@ -44,7 +44,7 @@ import java.util.concurrent.TimeUnit
  * Sender for a multi-part payment (see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#basic-multi-part-payments).
  * The payment will be split into multiple sub-payments that will be sent in parallel.
  */
-class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) extends FSMDiagnosticActorLogging[MultiPartPaymentLifecycle.State, MultiPartPaymentLifecycle.Data] {
+class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, paymentFactory: PaymentInitiator.PaymentFactory) extends FSMDiagnosticActorLogging[MultiPartPaymentLifecycle.State, MultiPartPaymentLifecycle.Data] {
 
   import MultiPartPaymentLifecycle._
 
@@ -202,13 +202,13 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(_: Status.Failure, _) => stay
   }
 
-  def spawnChildPaymentFsm(childId: UUID): ActorRef = {
+  private def spawnChildPaymentFsm(childId: UUID): ActorRef = {
     val upstream = cfg.upstream match {
       case Upstream.Local(_) => Upstream.Local(childId)
       case _ => cfg.upstream
     }
     val childCfg = cfg.copy(id = childId, publishEvent = false, upstream = upstream)
-    context.actorOf(PaymentLifecycle.props(nodeParams, childCfg, router, register))
+    paymentFactory.spawnOutgoingPayment(context, childCfg)
   }
 
   private def gotoAbortedOrStop(d: PaymentAborted): State = {
@@ -265,7 +265,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
 object MultiPartPaymentLifecycle {
 
-  def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(new MultiPartPaymentLifecycle(nodeParams, cfg, router, register))
+  def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, paymentFactory: PaymentInitiator.PaymentFactory) = Props(new MultiPartPaymentLifecycle(nodeParams, cfg, router, paymentFactory))
 
   /**
    * Send a payment to a given node. The payment may be split into multiple child payments, for which a path-finding

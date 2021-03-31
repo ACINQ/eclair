@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment
 
-import akka.actor.ActorRef
+import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.FeatureSupport.Optional
@@ -63,25 +63,26 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     BasicMultiPartPayment -> Optional,
   )
 
+  case class FakePaymentFactory(payFsm: TestProbe, multiPartPayFsm: TestProbe) extends PaymentInitiator.MultiPartPaymentFactory {
+    // @formatter:off
+    override def spawnOutgoingPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef = {
+      payFsm.ref ! cfg
+      payFsm.ref
+    }
+    override def spawnOutgoingMultiPartPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef = {
+      multiPartPayFsm.ref ! cfg
+      multiPartPayFsm.ref
+    }
+    // @formatter:on
+  }
+
   override def withFixture(test: OneArgTest): Outcome = {
     val features = if (test.tags.contains("mpp_disabled")) featuresWithoutMpp else featuresWithMpp
     val nodeParams = TestConstants.Alice.nodeParams.copy(features = features)
     val (sender, payFsm, multiPartPayFsm) = (TestProbe(), TestProbe(), TestProbe())
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-    class TestPaymentInitiator extends PaymentInitiator(nodeParams, TestProbe().ref, TestProbe().ref) {
-      // @formatter:off
-      override def spawnPaymentFsm(cfg: SendPaymentConfig): ActorRef = {
-        payFsm.ref ! cfg
-        payFsm.ref
-      }
-      override def spawnMultiPartPaymentFsm(cfg: SendPaymentConfig): ActorRef = {
-        multiPartPayFsm.ref ! cfg
-        multiPartPayFsm.ref
-      }
-      // @formatter:on
-    }
-    val initiator = TestActorRef(new TestPaymentInitiator().asInstanceOf[PaymentInitiator])
+    val initiator = TestActorRef(new PaymentInitiator(nodeParams, FakePaymentFactory(payFsm, multiPartPayFsm)))
     withFixture(test.toNoArgTest(FixtureParam(nodeParams, initiator, payFsm, multiPartPayFsm, sender, eventListener)))
   }
 

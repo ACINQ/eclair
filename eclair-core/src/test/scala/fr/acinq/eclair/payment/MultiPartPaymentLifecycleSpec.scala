@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment
 
-import akka.actor.{ActorRef, Status}
+import akka.actor.{ActorContext, ActorRef, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair._
@@ -25,11 +25,11 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{FailureSummary, FailureType, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
+import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Announcements, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -56,15 +56,16 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
                           childPayFsm: TestProbe,
                           eventListener: TestProbe)
 
+  case class FakePaymentFactory(childPayFsm: TestProbe) extends PaymentInitiator.PaymentFactory {
+    override def spawnOutgoingPayment(context: ActorContext, cfg: SendPaymentConfig): ActorRef = childPayFsm.ref
+  }
+
   override def withFixture(test: OneArgTest): Outcome = {
     val id = UUID.randomUUID()
     val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, finalAmount, finalRecipient, Upstream.Local(id), None, storeInDb = true, publishEvent = true, Nil)
     val nodeParams = TestConstants.Alice.nodeParams
     val (childPayFsm, router, sender, eventListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe())
-    class TestMultiPartPaymentLifecycle extends MultiPartPaymentLifecycle(nodeParams, cfg, router.ref, TestProbe().ref) {
-      override def spawnChildPaymentFsm(childId: UUID): ActorRef = childPayFsm.ref
-    }
-    val paymentHandler = TestFSMRef(new TestMultiPartPaymentLifecycle().asInstanceOf[MultiPartPaymentLifecycle])
+    val paymentHandler = TestFSMRef(new MultiPartPaymentLifecycle(nodeParams, cfg, router.ref, FakePaymentFactory(childPayFsm)))
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
     withFixture(test.toNoArgTest(FixtureParam(cfg, nodeParams, paymentHandler, router, sender, childPayFsm, eventListener)))
   }

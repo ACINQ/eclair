@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.{Actor, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
@@ -48,7 +48,7 @@ import java.net.InetSocketAddress
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWallet, channelFactory: Peer.ChannelFactory) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -57,7 +57,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
   when(INSTANTIATING) {
     case Event(Init(storedChannels), _) =>
       val channels = storedChannels.map { state =>
-        val channel = spawnChannel(nodeParams, origin_opt = None)
+        val channel = spawnChannel(origin_opt = None)
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
@@ -294,12 +294,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRe
         (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash), None)
     }
     val localParams = makeChannelParams(nodeParams, features, finalScript, walletStaticPaymentBasepoint, funder, fundingAmount)
-    val channel = spawnChannel(nodeParams, origin_opt)
+    val channel = spawnChannel(origin_opt)
     (channel, localParams)
   }
 
-  def spawnChannel(nodeParams: NodeParams, origin_opt: Option[ActorRef]): ActorRef = {
-    val channel = context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, origin_opt))
+  def spawnChannel(origin_opt: Option[ActorRef]): ActorRef = {
+    val channel = channelFactory.spawn(context, remoteNodeId, origin_opt)
     context watch channel
     channel
   }
@@ -353,7 +353,16 @@ object Peer {
   val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
   // @formatter:on
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet): Props = Props(new Peer(nodeParams, remoteNodeId, watcher, relayer: ActorRef, wallet))
+  trait ChannelFactory {
+    def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef
+  }
+
+  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends ChannelFactory {
+    override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef =
+      context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, origin_opt))
+  }
+
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWallet, channelFactory: ChannelFactory): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory))
 
   // @formatter:off
 

@@ -29,11 +29,10 @@ import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
-import fr.acinq.eclair.payment.relay.NodeRelay.FsmFactory
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
-import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentLifecycle}
+import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteCalculation, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -60,28 +59,31 @@ object NodeRelay {
   private case class WrappedPaymentFailed(paymentFailed: PaymentFailed) extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, parent: akka.actor.typed.ActorRef[NodeRelayer.Command], router: ActorRef, register: ActorRef, relayId: UUID, paymentHash: ByteVector32, fsmFactory: FsmFactory = new FsmFactory): Behavior[Command] =
-    Behaviors.setup { context =>
-      Behaviors.withMdc(Logs.mdc(
-        category_opt = Some(Logs.LogCategory.PAYMENT),
-        parentPaymentId_opt = Some(relayId), // for a node relay, we use the same identifier for the whole relay itself, and the outgoing payment
-        paymentHash_opt = Some(paymentHash))) {
-        new NodeRelay(nodeParams, parent, router, register, relayId, paymentHash, context, fsmFactory)()
-      }
-    }
+  trait OutgoingPaymentFactory {
+    def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): ActorRef
+  }
 
-  /**
-   * This is supposed to be overridden in tests
-   */
-  class FsmFactory {
-    def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], nodeParams: NodeParams, router: ActorRef, register: ActorRef, cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
+  case class SimpleOutgoingPaymentFactory(nodeParams: NodeParams, router: ActorRef, register: ActorRef) extends OutgoingPaymentFactory {
+    val paymentFactory = PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)
+
+    override def spawnOutgoingPayFSM(context: ActorContext[Command], cfg: SendPaymentConfig, multiPart: Boolean): ActorRef = {
       if (multiPart) {
-        context.toClassic.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, router, register))
+        context.toClassic.actorOf(MultiPartPaymentLifecycle.props(nodeParams, cfg, router, paymentFactory))
       } else {
         context.toClassic.actorOf(PaymentLifecycle.props(nodeParams, cfg, router, register))
       }
     }
   }
+
+  def apply(nodeParams: NodeParams, parent: akka.actor.typed.ActorRef[NodeRelayer.Command], register: ActorRef, relayId: UUID, paymentHash: ByteVector32, outgoingPaymentFactory: OutgoingPaymentFactory): Behavior[Command] =
+    Behaviors.setup { context =>
+      Behaviors.withMdc(Logs.mdc(
+        category_opt = Some(Logs.LogCategory.PAYMENT),
+        parentPaymentId_opt = Some(relayId), // for a node relay, we use the same identifier for the whole relay itself, and the outgoing payment
+        paymentHash_opt = Some(paymentHash))) {
+        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, context, outgoingPaymentFactory)()
+      }
+    }
 
   def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, payloadOut.amountToForward)
@@ -139,12 +141,11 @@ object NodeRelay {
  */
 class NodeRelay private(nodeParams: NodeParams,
                         parent: akka.actor.typed.ActorRef[NodeRelayer.Command],
-                        router: ActorRef,
                         register: ActorRef,
                         relayId: UUID,
                         paymentHash: ByteVector32,
                         context: ActorContext[NodeRelay.Command],
-                        fsmFactory: FsmFactory) {
+                        outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory) {
 
   import NodeRelay._
 
@@ -285,20 +286,20 @@ class NodeRelay private(nodeParams: NodeParams,
           case Some(paymentSecret) if Features(features).hasFeature(Features.BasicMultiPartPayment) =>
             context.log.debug("sending the payment to non-trampoline recipient using MPP")
             val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
-            val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = true)
+            val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
             payFSM ! payment
             payFSM
           case _ =>
             context.log.debug("sending the payment to non-trampoline recipient without MPP")
             val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
             val payment = SendPayment(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
-            val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = false)
+            val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
             payFSM ! payment
             payFSM
         }
       case None =>
         context.log.debug("sending the payment to the next trampoline node")
-        val payFSM = fsmFactory.spawnOutgoingPayFSM(context, nodeParams, router, register, paymentCfg, multiPart = true)
+        val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
         val paymentSecret = randomBytes32 // we generate a new secret to protect against probing attacks
         val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = Some(routeParams), additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
         payFSM ! payment

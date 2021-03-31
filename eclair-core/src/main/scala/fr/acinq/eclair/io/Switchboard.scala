@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -29,7 +29,7 @@ import fr.acinq.eclair.router.Router.RouterConf
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -103,7 +103,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
    */
   def getPeer(remoteNodeId: PublicKey): Option[ActorRef] = context.child(peerActorName(remoteNodeId))
 
-  def createPeer(remoteNodeId: PublicKey): ActorRef = context.actorOf(Peer.props(nodeParams, remoteNodeId, watcher, relayer, wallet), name = peerActorName(remoteNodeId))
+  def createPeer(remoteNodeId: PublicKey): ActorRef = peerFactory.spawn(context, remoteNodeId)
 
   def createOrGetPeer(remoteNodeId: PublicKey, offlineChannels: Set[HasCommitments]): ActorRef = {
     getPeer(remoteNodeId) match {
@@ -124,7 +124,16 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, 
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, watcher, relayer, wallet))
+  trait PeerFactory {
+    def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef
+  }
+
+  case class SimplePeerFactory(nodeParams: NodeParams, wallet: EclairWallet, channelFactory: Peer.ChannelFactory) extends PeerFactory {
+    override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
+      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory), name = peerActorName(remoteNodeId))
+  }
+
+  def props(nodeParams: NodeParams, peerFactory: PeerFactory) = Props(new Switchboard(nodeParams, peerFactory))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
