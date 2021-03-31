@@ -33,8 +33,8 @@ class PgUtilsSpec extends AnyFunSuite {
     // we can renew the lease at will
     db.obtainExclusiveLock()
 
-    // we wait longer than the lease interval, and make sure that the lock is still there
-    Thread.sleep(20_000)
+    // we wait significantly longer than the lease interval, and make sure that the lock is still there
+    Thread.sleep(10_000)
     assert(
       intercept[LockFailureHandler.LockException] {
         // this will fail because the database is already locked for a different instance id
@@ -46,7 +46,8 @@ class PgUtilsSpec extends AnyFunSuite {
     while (!db.dataSource.isClosed) {
       Thread.sleep(1000)
     }
-    Thread.sleep(11_000)
+    // we wait just a bit longer than the lease interval
+    Thread.sleep(6_000)
 
     // now we can put a lock with a different instance id
     val instanceId2 = UUID.randomUUID()
@@ -110,8 +111,8 @@ object PgUtilsSpec extends Logging {
        |    max-life-time = 30 minutes
        |  }
        |  lease {
-       |    interval = 10 seconds // lease-interval must be greater than lease-renew-interval
-       |    renew-interval = 5 seconds
+       |    interval = 5 seconds // lease-interval must be greater than lease-renew-interval
+       |    renew-interval = 2 seconds
        |  }
        |  lock-type = "lease" // lease or none
        |}
