@@ -6,12 +6,13 @@ import fr.acinq.eclair.db.pg.PgUtils.JdbcUrlChanged
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LockFailure, LockFailureHandler}
 import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
 import grizzled.slf4j.Logging
+import org.scalatest.concurrent.Eventually
 import org.scalatest.funsuite.AnyFunSuiteLike
 
 import java.io.File
 import java.util.UUID
 
-class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike {
+class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually {
 
   test("database lock") {
     val pg = EmbeddedPostgres.start()
@@ -41,9 +42,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // we close the first connection
     db.dataSource.close()
-    while (!db.dataSource.isClosed) {
-      Thread.sleep(1000)
-    }
+    eventually(db.dataSource.isClosed)
     // we wait just a bit longer than the lease interval
     Thread.sleep(6_000)
 
@@ -53,9 +52,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // we close the second connection
     db.dataSource.close()
-    while (!db.dataSource.isClosed) {
-      Thread.sleep(1000)
-    }
+    eventually(db.dataSource.isClosed)
 
     // but we don't wait for the previous lease to expire, so we can't take over right now
     assert(intercept[LockFailureHandler.LockException] {
@@ -76,9 +73,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     // we close the first connection
     db.dataSource.close()
-    while (!db.dataSource.isClosed) {
-      Thread.sleep(1000)
-    }
+    eventually(db.dataSource.isClosed)
 
     // here we change the config to simulate an involuntary change in the server we connect to
     val config1 = ConfigFactory.parseString("postgres.port=1234").withFallback(config)
