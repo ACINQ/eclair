@@ -40,11 +40,11 @@ object TestDatabases {
 
   case class TestSqliteDatabases() extends TestDatabases {
     // @formatter:off
-  override val connection: Connection = sqliteInMemory()
-  override lazy val db: Databases = Databases.SqliteDatabases(connection, connection, connection)
-  override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
-  override def close(): Unit = ()
-  // @formatter:on
+    override val connection: Connection = sqliteInMemory()
+    override lazy val db: Databases = Databases.SqliteDatabases(connection, connection, connection)
+    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
+    override def close(): Unit = ()
+    // @formatter:on
   }
 
   case class TestPgDatabases() extends TestDatabases {
@@ -63,11 +63,11 @@ object TestDatabases {
     implicit val system: ActorSystem = ActorSystem()
 
     // @formatter:off
-  override val connection: Connection = pg.getPostgresDatabase.getConnection
-  override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile))
-  override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
-  override def close(): Unit = pg.close()
-  // @formatter:on
+    override val connection: Connection = pg.getPostgresDatabase.getConnection
+    override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile))
+    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
+    override def close(): Unit = pg.close()
+    // @formatter:on
   }
 
   def forAllDbs(f: TestDatabases => Unit): Unit = {
