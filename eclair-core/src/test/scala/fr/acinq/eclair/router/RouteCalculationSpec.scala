@@ -1609,6 +1609,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
         nodes(i) = (randomKey.publicKey, randomKey.publicKey)
       }
       val q = new mutable.Queue[GraphEdge]
+      // One path is shorter to maximise the overlap between the n-shortest paths, they will all be like the shortest path with a single hop changed.
       q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 90))
       q.enqueue(makeEdge(2L, a, nodes(0)._2, 100 msat, 100))
       for (i <- 0 until (n - 1)) {
@@ -1624,8 +1625,42 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val g = DirectedGraph(makeEdges(10))
 
-    val Success(routes) = findRoute(g, a, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 10, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 105), currentBlockHeight = 400000)
+    val Success(routes) = findRoute(g, a, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 10, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(routes.distinct.length == 10)
+  }
+
+  test("all paths are shortest") {
+    //   +----> N ---> N         N ---> N ----+
+    //  /        \    /           \    /        \
+    // A          +--+    (...)    +--+          B
+    //  \        /    \           /    \        /
+    //   +----> N ---> N         N ---> N ----+
+
+    def makeEdges(n: Int): Seq[GraphEdge] = {
+      val nodes = new Array[(PublicKey, PublicKey)](n)
+      for (i <- nodes.indices) {
+        nodes(i) = (randomKey.publicKey, randomKey.publicKey)
+      }
+      val q = new mutable.Queue[GraphEdge]
+      q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 100))
+      q.enqueue(makeEdge(2L, a, nodes(0)._2, 100 msat, 100))
+      for (i <- 0 until (n - 1)) {
+        q.enqueue(makeEdge(4 * i + 3, nodes(i)._1, nodes(i + 1)._1, 100 msat, 100))
+        q.enqueue(makeEdge(4 * i + 4, nodes(i)._1, nodes(i + 1)._2, 100 msat, 100))
+        q.enqueue(makeEdge(4 * i + 5, nodes(i)._2, nodes(i + 1)._1, 100 msat, 100))
+        q.enqueue(makeEdge(4 * i + 6, nodes(i)._2, nodes(i + 1)._2, 100 msat, 100))
+      }
+      q.enqueue(makeEdge(4 * n, nodes(n - 1)._1, b, 100 msat, 100))
+      q.enqueue(makeEdge(4 * n + 1, nodes(n - 1)._2, b, 100 msat, 100))
+      q.toSeq
+    }
+
+    val g = DirectedGraph(makeEdges(10))
+
+    val Success(routes) = findRoute(g, a, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 10, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    assert(routes.distinct.length == 10)
+    val fees = routes.map(_.fee)
+    assert(fees.forall(_ == fees.head))
   }
 }
 
