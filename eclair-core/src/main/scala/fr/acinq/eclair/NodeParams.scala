@@ -110,11 +110,10 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
 object NodeParams extends Logging {
 
+  // @formatter:off
   sealed trait WatcherType
-
   object BITCOIND extends WatcherType
-
-  object ELECTRUM extends WatcherType
+  // @formatter:on
 
   /**
    * Order of precedence for the configuration parameters:
@@ -123,7 +122,7 @@ object NodeParams extends Logging {
    * 3) Optionally provided config
    * 4) Default values in reference.conf
    */
-  def loadConfiguration(datadir: File) =
+  def loadConfiguration(datadir: File): Config =
     ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load())
@@ -214,10 +213,8 @@ object NodeParams extends Logging {
     val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
-    val watcherType = config.getString("watcher-type") match {
-      case "electrum" => ELECTRUM
-      case _ => BITCOIND
-    }
+    require(config.getString("watcher-type") == "bitcoind", s"watcher-type `${config.getString("watcher-type")}` is not supported: `bitcoind` should be used")
+    val watcherType = BITCOIND
 
     val watchSpentWindow = FiniteDuration(config.getDuration("watch-spent-window").getSeconds, TimeUnit.SECONDS)
     require(watchSpentWindow > 0.seconds, "watch-spent-window must be strictly greater than 0")

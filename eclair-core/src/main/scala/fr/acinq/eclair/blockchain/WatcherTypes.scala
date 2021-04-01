@@ -43,7 +43,7 @@ sealed trait Watch {
  *
  * @param replyTo         actor to notify once the transaction is confirmed.
  * @param txId            txid of the transaction to watch.
- * @param publicKeyScript when using electrum, we need to specify a public key script; any of the output scripts should work.
+ * @param publicKeyScript output script of any of the transaction's outputs.
  * @param minDepth        number of confirmations.
  * @param event           channel event related to the transaction.
  */
@@ -72,7 +72,7 @@ object WatchConfirmed {
  * @param replyTo         actor to notify when the outpoint is spent.
  * @param txId            txid of the outpoint to watch.
  * @param outputIndex     index of the outpoint to watch.
- * @param publicKeyScript electrum requires us to specify a public key script; the script of the outpoint must be provided.
+ * @param publicKeyScript output script of the outpoint.
  * @param event           channel event related to the outpoint.
  * @param hints           txids of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
  *                        This argument can safely be ignored by watcher implementations.
@@ -93,7 +93,7 @@ object WatchSpent {
  * @param replyTo         actor to notify when the outpoint is spent.
  * @param txId            txid of the outpoint to watch.
  * @param outputIndex     index of the outpoint to watch.
- * @param publicKeyScript electrum requires us to specify a public key script; the script of the outpoint must be provided.
+ * @param publicKeyScript output script of the outpoint.
  * @param event           channel event related to the outpoint.
  */
 final case class WatchSpentBasic(replyTo: ActorRef, txId: ByteVector32, outputIndex: Int, publicKeyScript: ByteVector, event: BitcoinEvent) extends Watch

@@ -21,7 +21,6 @@ import java.io.File
 import akka.actor.{ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor._
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.payment.PaymentEvent
@@ -100,7 +99,6 @@ class FxApp extends Application with Logging {
           system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
           system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
           system.eventStream.subscribe(guiUpdater, classOf[ZMQEvent])
-          system.eventStream.subscribe(guiUpdater, classOf[ElectrumEvent])
           pKit.completeWith(setup.bootstrap)
           pKit.future.onComplete {
             case Success(kit) =>

@@ -22,17 +22,12 @@ import akka.pattern.after
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
-import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.Setup.Seeds
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
-import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress
-import fr.acinq.eclair.blockchain.electrum._
-import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
-import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
-import fr.acinq.eclair.blockchain.{EclairWallet, _}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
@@ -51,7 +46,6 @@ import scodec.bits.ByteVector
 
 import java.io.File
 import java.net.InetSocketAddress
-import java.sql.DriverManager
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
@@ -129,9 +123,7 @@ class Setup(datadir: File,
   val nodeParams = NodeParams.makeNodeParams(config, instanceId, nodeKeyManager, channelKeyManager, initTor(), databases, blockCount, feeEstimator, pluginParams)
   pluginParams.foreach(param => logger.info(s"using plugin=${param.name}"))
 
-  val serverBindingAddress = new InetSocketAddress(
-    config.getString("server.binding-ip"),
-    config.getInt("server.port"))
+  val serverBindingAddress = new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
@@ -141,76 +133,51 @@ class Setup(datadir: File,
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
-  val bitcoin = nodeParams.watcherType match {
-    case BITCOIND =>
-      val wallet = {
-        val name = config.getString("bitcoind.wallet")
-        if (!name.isBlank) Some(name) else None
+  val bitcoin = {
+    val wallet = {
+      val name = config.getString("bitcoind.wallet")
+      if (!name.isBlank) Some(name) else None
+    }
+    val bitcoinClient = new BasicBitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport"),
+      wallet = wallet)
+    val future = for {
+      json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
+      // Make sure wallet support is enabled in bitcoind.
+      _ <- bitcoinClient.invoke("getbalance").recover { case e => throw BitcoinWalletDisabledException(e) }
+      progress = (json \ "verificationprogress").extract[Double]
+      ibd = (json \ "initialblockdownload").extract[Boolean]
+      blocks = (json \ "blocks").extract[Long]
+      headers = (json \ "headers").extract[Long]
+      chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
+      bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => json \ "version").map(_.extract[Int])
+      unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
+        values
+          .filter(value => (value \ "spendable").extract[Boolean])
+          .map(value => (value \ "address").extract[String])
       }
-      val bitcoinClient = new BasicBitcoinJsonRPCClient(
-        user = config.getString("bitcoind.rpcuser"),
-        password = config.getString("bitcoind.rpcpassword"),
-        host = config.getString("bitcoind.host"),
-        port = config.getInt("bitcoind.rpcport"),
-        wallet = wallet)
-      val future = for {
-        json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
-        // Make sure wallet support is enabled in bitcoind.
-        _ <- bitcoinClient.invoke("getbalance").recover { case e => throw BitcoinWalletDisabledException(e) }
-        progress = (json \ "verificationprogress").extract[Double]
-        ibd = (json \ "initialblockdownload").extract[Boolean]
-        blocks = (json \ "blocks").extract[Long]
-        headers = (json \ "headers").extract[Long]
-        chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
-        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => json \ "version").map(_.extract[Int])
-        unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
-          values
-            .filter(value => (value \ "spendable").extract[Boolean])
-            .map(value => (value \ "address").extract[String])
-        }
-        _ <- chain match {
-          case "mainnet" => bitcoinClient.invoke("getrawtransaction", "2157b554dcfda405233906e461ee593875ae4b1b97615872db6a25130ecc1dd6") // coinbase of #500000
-          case "testnet" => bitcoinClient.invoke("getrawtransaction", "8f38a0dd41dc0ae7509081e262d791f8d53ed6f884323796d5ec7b0966dd3825") // coinbase of #1500000
-          case "regtest" => Future.successful(())
-        }
-      } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
-      // blocking sanity checks
-      val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
-      assert(bitcoinVersion >= 180000, "Eclair requires Bitcoin Core 0.18.0 or higher")
-      assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
-      if (chainHash != Block.RegtestGenesisBlock.hash) {
-        assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
+      _ <- chain match {
+        case "mainnet" => bitcoinClient.invoke("getrawtransaction", "2157b554dcfda405233906e461ee593875ae4b1b97615872db6a25130ecc1dd6") // coinbase of #500000
+        case "testnet" => bitcoinClient.invoke("getrawtransaction", "8f38a0dd41dc0ae7509081e262d791f8d53ed6f884323796d5ec7b0966dd3825") // coinbase of #1500000
+        case "regtest" => Future.successful(())
       }
-      assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
-      assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
-      assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
-      logger.info(s"current blockchain height=$blocks")
-      blockCount.set(blocks)
-      Bitcoind(bitcoinClient)
-    case ELECTRUM =>
-      val addresses = config.hasPath("electrum") match {
-        case true =>
-          val host = config.getString("electrum.host")
-          val port = config.getInt("electrum.port")
-          val address = InetSocketAddress.createUnresolved(host, port)
-          val ssl = config.getString("electrum.ssl") match {
-            case "off" => SSL.OFF
-            case "loose" => SSL.LOOSE
-            case _ => SSL.STRICT // strict mode is the default when we specify a custom electrum server, we don't want to be MITMed
-          }
-          logger.info(s"override electrum default with server=$address ssl=$ssl")
-          Set(ElectrumServerAddress(address, ssl))
-        case false =>
-          val (addressesFile, sslEnabled) = (nodeParams.chainHash: @unchecked) match {
-            case Block.RegtestGenesisBlock.hash => ("/electrum/servers_regtest.json", false) // in regtest we connect in plaintext
-            case Block.TestnetGenesisBlock.hash => ("/electrum/servers_testnet.json", true)
-            case Block.LivenetGenesisBlock.hash => ("/electrum/servers_mainnet.json", true)
-          }
-          val stream = classOf[Setup].getResourceAsStream(addressesFile)
-          ElectrumClientPool.readServerAddresses(stream, sslEnabled)
-      }
-      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(blockCount, addresses, nodeParams.socksProxy_opt)), "electrum-client", SupervisorStrategy.Resume))
-      Electrum(electrumClient)
+    } yield (progress, ibd, chainHash, bitcoinVersion, unspentAddresses, blocks, headers)
+    // blocking sanity checks
+    val (progress, initialBlockDownload, chainHash, bitcoinVersion, unspentAddresses, blocks, headers) = await(future, 30 seconds, "bicoind did not respond after 30 seconds")
+    assert(bitcoinVersion >= 180000, "Eclair requires Bitcoin Core 0.18.0 or higher")
+    assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
+    if (chainHash != Block.RegtestGenesisBlock.hash) {
+      assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Your wallet contains non-segwit UTXOs. You must send those UTXOs to a bech32 address to use Eclair (check out our README for more details).")
+    }
+    assert(!initialBlockDownload, s"bitcoind should be synchronized (initialblockdownload=$initialBlockDownload)")
+    assert(progress > 0.999, s"bitcoind should be synchronized (progress=$progress)")
+    assert(headers - blocks <= 1, s"bitcoind should be synchronized (headers=$headers blocks=$blocks)")
+    logger.info(s"current blockchain height=$blocks")
+    blockCount.set(blocks)
+    bitcoinClient
   }
 
   def bootstrap: Future[Kit] = {
@@ -241,14 +208,11 @@ class Setup(datadir: File,
       }
       minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
       smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
-      readTimeout = FiniteDuration(config.getDuration("on-chain-fees.provider-timeout", TimeUnit.MILLISECONDS), TimeUnit.MILLISECONDS)
-      feeProvider = (nodeParams.chainHash, bitcoin) match {
-        case (Block.RegtestGenesisBlock.hash, _) =>
+      feeProvider = nodeParams.chainHash match {
+        case Block.RegtestGenesisBlock.hash =>
           new FallbackFeeProvider(new ConstantFeeProvider(defaultFeerates) :: Nil, minFeeratePerByte)
-        case (_, Bitcoind(bitcoinClient)) =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
         case _ =>
-          new FallbackFeeProvider(new SmoothFeeProvider(new BitgoFeeProvider(nodeParams.chainHash, readTimeout), smoothFeerateWindow) :: new SmoothFeeProvider(new EarnDotComFeeProvider(readTimeout), smoothFeerateWindow) :: Nil, minFeeratePerByte) // order matters!
+          new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
       _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.onComplete {
         case Success(feerates) =>
@@ -266,29 +230,17 @@ class Setup(datadir: File,
       })
       _ <- feeratesRetrieved.future
 
-      watcher = bitcoin match {
-        case Bitcoind(bitcoinClient) =>
-          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
-          system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
-          system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(nodeParams.chainHash, blockCount, new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
-        case Electrum(electrumClient) =>
-          zmqBlockConnected.success(Done)
-          zmqTxConnected.success(Done)
-          system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(blockCount, electrumClient)), "watcher", SupervisorStrategy.Resume))
+      watcher = {
+        system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
+        system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
+        system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(nodeParams.chainHash, blockCount, new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoin))), "watcher", SupervisorStrategy.Resume))
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
-      wallet = bitcoin match {
-        case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
-        case Electrum(electrumClient) =>
-          val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "wallet.sqlite")}")
-          val walletDb = new SqliteWalletDb(sqlite)
-          val electrumWallet = system.actorOf(ElectrumWallet.props(channelSeed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash, walletDb)), "electrum-wallet")
-          new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
-      }
+      wallet = new BitcoinCoreWallet(bitcoin)
       _ = wallet.getReceiveAddress.map(address => logger.info(s"initial wallet address=$address"))
 
       // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
@@ -385,15 +337,11 @@ class Setup(datadir: File,
 
 }
 
-// @formatter:off
 object Setup {
-  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector)
-}
 
-sealed trait Bitcoin
-case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
-case class Electrum(electrumClient: ActorRef) extends Bitcoin
-// @formatter:on
+  final case class Seeds(nodeSeed: ByteVector, channelSeed: ByteVector)
+
+}
 
 case class Kit(nodeParams: NodeParams,
                system: ActorSystem,
