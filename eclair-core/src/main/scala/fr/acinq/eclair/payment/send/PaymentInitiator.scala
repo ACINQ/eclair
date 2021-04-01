@@ -48,7 +48,10 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
   def main(pending: Map[UUID, PendingPayment]): Receive = {
     case r: SendPaymentRequest =>
       val paymentId = UUID.randomUUID()
-      sender ! paymentId
+      if (!r.blockUntilComplete) {
+        // Immediately return the paymentId
+        sender ! paymentId
+      }
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), r.paymentRequest, storeInDb = true, publishEvent = true, Nil)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.paymentRequest match {
@@ -237,6 +240,7 @@ object PaymentInitiator {
    * @param assistedRoutes           (optional) routing hints (usually from a Bolt 11 invoice).
    * @param routeParams              (optional) parameters to fine-tune the routing algorithm.
    * @param userCustomTlvs           (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
+   * @param blockUntilComplete       (optional) if true, wait until the payment completes before returning a result.
    */
   case class SendPaymentRequest(recipientAmount: MilliSatoshi,
                                 paymentHash: ByteVector32,
@@ -247,7 +251,8 @@ object PaymentInitiator {
                                 externalId: Option[String] = None,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                 routeParams: Option[RouteParams] = None,
-                                userCustomTlvs: Seq[GenericTlv] = Nil) {
+                                userCustomTlvs: Seq[GenericTlv] = Nil,
+                                blockUntilComplete: Boolean = false) {
     // We add one block in order to not have our htlcs fail when a new block has just been found.
     def finalExpiry(currentBlockHeight: Long) = paymentRequest.flatMap(_.minFinalCltvExpiryDelta).getOrElse(fallbackFinalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
   }

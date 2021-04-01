@@ -38,20 +38,18 @@ trait Payment {
   }
 
   val payInvoice: Route = postRequest("payinvoice") { implicit t =>
-    formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?) {
-      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
-        complete(eclairApi.send(
-          externalId_opt, nodeId, amount, invoice.paymentHash, Some(invoice),
-          maxAttempts, feeThresholdSat_opt, maxFeePct_opt
-        ))
-      case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
-        complete(eclairApi.send(
-          externalId_opt, invoice.nodeId, overrideAmount, invoice.paymentHash,
-          Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt
-        ))
-      case _ => reject(MalformedFormFieldRejection(
-        "invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"
-      ))
+    formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "blocking".as[Boolean].?) {
+      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, blocking_opt) =>
+        blocking_opt match {
+          case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, nodeId, amount, invoice.paymentHash, Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+          case _ => complete(eclairApi.send(externalId_opt, nodeId, amount, invoice.paymentHash, Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+        }
+      case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, blocking_opt) =>
+        blocking_opt match {
+          case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, invoice.nodeId, overrideAmount, invoice.paymentHash, Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+          case _ => complete(eclairApi.send(externalId_opt, invoice.nodeId, overrideAmount, invoice.paymentHash, Some(invoice), maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+        }
+      case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
     }
   }
 
