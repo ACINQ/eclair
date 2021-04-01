@@ -138,7 +138,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
       val result = w match {
         case _ if watches.contains(w) => Ignore // we ignore duplicates
 
-        case WatchSpentBasic(_, txid, outputIndex, _, _) =>
+        case WatchSpentBasic(_, txid, outputIndex, _) =>
           // NB: we assume parent tx was published, we just need to make sure this particular output has not been spent
           client.isTransactionOutputSpendable(txid, outputIndex, includeMempool = true).collect {
             case false =>
@@ -147,7 +147,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
           }
           Keep
 
-        case WatchSpent(_, txid, outputIndex, _, _, hints) =>
+        case WatchSpent(_, txid, outputIndex, _, hints) =>
           // first let's see if the parent tx was published or not
           client.getTxConfirmations(txid).collect {
             case Some(_) =>
@@ -209,8 +209,7 @@ class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: Extend
         // time a parent's relative delays are satisfied, so we will eventually succeed.
         csvTimeouts.foreach { case (parentTxId, csvTimeout) =>
           log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", tx)
-          val parentPublicKeyScript = Script.write(Script.pay2wsh(tx.txIn.find(_.outPoint.txid == parentTxId).get.witness.stack.last))
-          self ! WatchConfirmed(self, parentTxId, parentPublicKeyScript, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
+          self ! WatchConfirmed(self, parentTxId, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
         }
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")

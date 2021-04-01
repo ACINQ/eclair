@@ -16,14 +16,11 @@
 
 package fr.acinq.eclair.router
 
-import java.util.UUID
-
 import akka.Done
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -37,10 +34,10 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import kamon.context.Context
 
+import java.util.UUID
 import scala.collection.immutable.SortedMap
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Promise}
@@ -89,10 +86,9 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     initChannels.values.foreach { pc =>
       val txid = pc.fundingTxid
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
-      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(pc.ann.bitcoinKey1, pc.ann.bitcoinKey2)))
       // avoid herd effect at startup because watch-spent are intensive in terms of rpc calls to bitcoind
       context.system.scheduler.scheduleOnce(Random.nextLong(nodeParams.watchSpentWindow.toSeconds).seconds) {
-        watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
+        watcher ! WatchSpentBasic(self, txid, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
       }
     }
 
