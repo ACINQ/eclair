@@ -359,10 +359,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     labelApi.setText(s"${setup.config.getInt("api.port")}")
     labelServer.setText(s"${setup.config.getInt("server.port")}")
 
-    val wallet = setup.nodeParams.watcherType match {
-      case BITCOIND => "Bitcoin-core"
-    }
-    bitcoinWallet.setText(wallet)
+    bitcoinWallet.setText("Bitcoin-core")
     bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
     bitcoinChain.getStyleClass.add(setup.chain)
 
