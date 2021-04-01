@@ -596,34 +596,6 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
   }
 
-  test("PaymentHandler should handle single-part payment success (pay-to-open, timeout)") { f =>
-    val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = featuresWithMpp)
-    val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[PayToOpenRequestEvent])
-
-    val amount = 20000000 msat
-    val fee = 1500 sat
-    val funding = PayToOpenRequest.computeFunding(amount, fee)
-
-    f.sender.send(handler, ReceivePayment(Some(20000000 msat), "1 fast coffee"))
-    val pr = f.sender.expectMsgType[PaymentRequest]
-
-    val p1 = PayToOpenRequest(Block.RegtestGenesisBlock.hash, funding, amount, fee, pr.paymentHash, secondsFromNow(2), None, 0.msat)
-    f.sender.send(handler, p1)
-
-    val e1 = eventListener.expectMsgType[PayToOpenRequestEvent]
-    assert(e1.payToOpenRequest === p1)
-    assert(e1.peer === f.sender.ref)
-    Thread.sleep(3000) // timeout
-
-    val r1 = f.sender.expectMsgType[PayToOpenResponse]
-    assert(r1.paymentPreimage === ByteVector32.Zeroes)
-
-    f.sender.send(handler, GetPendingPayments)
-    f.sender.expectMsgType[PendingPayments].paymentHashes.isEmpty
-  }
-
   test("reject single-part payment with pay-to-open if min amount not reached") { f =>
     val nodeParams = Alice.nodeParams.copy(multiPartPaymentExpiry = 500 millis, features = Features(hex"028a8a"))
     val handler = TestActorRef[PaymentHandler](PaymentHandler.props(nodeParams, f.register.ref))

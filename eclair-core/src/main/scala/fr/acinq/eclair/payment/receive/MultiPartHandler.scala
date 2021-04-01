@@ -174,9 +174,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
                 } else {
                   implicit val ec = ctx.dispatcher
                   val decision = Promise[Boolean]()
-                  val delay = summarizedPayToOpenRequest.expireAt.seconds - Platform.currentTime.millisecond // there will be a race at timeout but it doesn't matter
                   ctx.system.eventStream.publish(PayToOpenRequestEvent(payToOpenParts.head.peer, summarizedPayToOpenRequest, decision))
-                  ctx.system.scheduler.scheduleOnce(delay)(decision.tryFailure(new RuntimeException("pay-to-open timed out")))
                   decision
                     .future
                     .recover { case _: Throwable => false }
