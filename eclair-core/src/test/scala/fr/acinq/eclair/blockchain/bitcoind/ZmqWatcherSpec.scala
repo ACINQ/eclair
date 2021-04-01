@@ -121,11 +121,11 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     val outputIndex = 42
     val utxo = OutPoint(txid.reverse, outputIndex)
 
-    val w1 = WatchSpent(null, txid, outputIndex, BITCOIN_FUNDING_SPENT, hints = Set.empty)
-    val w2 = WatchSpent(null, txid, outputIndex, BITCOIN_FUNDING_SPENT, hints = Set.empty)
-    val w3 = WatchSpentBasic(null, txid, outputIndex, BITCOIN_FUNDING_SPENT)
-    val w4 = WatchSpentBasic(null, randomBytes32, 5, BITCOIN_FUNDING_SPENT)
-    val w5 = WatchConfirmed(null, txid, 3, BITCOIN_FUNDING_SPENT)
+    val w1 = WatchSpent(TestProbe().ref, txid, outputIndex, BITCOIN_FUNDING_SPENT, hints = Set.empty)
+    val w2 = WatchSpent(TestProbe().ref, txid, outputIndex, BITCOIN_FUNDING_SPENT, hints = Set.empty)
+    val w3 = WatchSpentBasic(TestProbe().ref, txid, outputIndex, BITCOIN_FUNDING_SPENT)
+    val w4 = WatchSpentBasic(TestProbe().ref, randomBytes32, 5, BITCOIN_FUNDING_SPENT)
+    val w5 = WatchConfirmed(TestProbe().ref, txid, 3, BITCOIN_FUNDING_SPENT)
 
     // we test as if the collection was immutable
     val m1 = addWatchedUtxos(m0, w1)

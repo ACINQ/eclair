@@ -19,7 +19,6 @@ package fr.acinq.eclair
 import com.typesafe.config.{Config, ConfigFactory, ConfigValueType}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
-import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Channel
@@ -79,7 +78,6 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       maxReconnectInterval: FiniteDuration,
                       chainHash: ByteVector32,
                       channelFlags: Byte,
-                      watcherType: WatcherType,
                       watchSpentWindow: FiniteDuration,
                       paymentRequestExpiry: FiniteDuration,
                       multiPartPaymentExpiry: FiniteDuration,
@@ -212,9 +210,6 @@ object NodeParams extends Logging {
 
     val color = ByteVector.fromValidHex(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
-
-    require(config.getString("watcher-type") == "bitcoind", s"watcher-type `${config.getString("watcher-type")}` is not supported: `bitcoind` should be used")
-    val watcherType = BITCOIND
 
     val watchSpentWindow = FiniteDuration(config.getDuration("watch-spent-window").getSeconds, TimeUnit.SECONDS)
     require(watchSpentWindow > 0.seconds, "watch-spent-window must be strictly greater than 0")
@@ -361,7 +356,6 @@ object NodeParams extends Logging {
       maxReconnectInterval = FiniteDuration(config.getDuration("max-reconnect-interval").getSeconds, TimeUnit.SECONDS),
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
-      watcherType = watcherType,
       watchSpentWindow = watchSpentWindow,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
       multiPartPaymentExpiry = FiniteDuration(config.getDuration("multi-part-payment-expiry").getSeconds, TimeUnit.SECONDS),

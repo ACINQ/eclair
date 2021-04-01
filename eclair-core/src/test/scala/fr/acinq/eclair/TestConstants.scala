@@ -20,7 +20,6 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
-import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf, _}
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
@@ -128,7 +127,6 @@ object TestConstants {
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
-      watcherType = BITCOIND,
       watchSpentWindow = 1 second,
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
@@ -233,7 +231,6 @@ object TestConstants {
       maxReconnectInterval = 1 hour,
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
-      watcherType = BITCOIND,
       watchSpentWindow = 1 second,
       paymentRequestExpiry = 1 hour,
       multiPartPaymentExpiry = 30 seconds,
