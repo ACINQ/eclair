@@ -4,7 +4,6 @@
 
 - [OpenJDK 11](https://adoptopenjdk.net/?variant=openjdk11&jvmVariant=hotspot).
 - [Maven](https://maven.apache.org/download.cgi) 3.6.0 or newer
-- [Docker](https://www.docker.com/) 18.03 or newer (optional) if you want to run all tests
 
 ## Build
 
@@ -22,7 +21,6 @@ Notes:
 
 - This command will build all modules (core, node, gui).
 - If the build fails, you may need to clean previously built artifacts with the `mvn clean` command.
-- Some tests use [Docker](https://www.docker.com/), so make sure your docker daemon is running.
 - Archives can be found in the `target` folder for each module.
 
 ### Skip tests
