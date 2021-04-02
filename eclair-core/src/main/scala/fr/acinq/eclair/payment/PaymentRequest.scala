@@ -108,7 +108,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
    */
   def sign(priv: PrivateKey): PaymentRequest = {
     val sig64 = Crypto.sign(hash, priv)
-    val pub1 = Crypto.recoverPublicKey(sig64, hash, 0.toByte)
+    // in order to tell what the recovery id is, we actually recover the pubkey ourselves and compare it to the real one
+    val pub0 = Crypto.recoverPublicKey(sig64, hash, 0.toByte)
     val recid = if (nodeId == pub1) 0.toByte else 1.toByte
     val signature = sig64 :+ recid
     this.copy(signature = signature)
@@ -574,4 +575,3 @@ object PaymentRequest {
     Bech32.encode(hrp, int5s.toArray)
   }
 }
-
