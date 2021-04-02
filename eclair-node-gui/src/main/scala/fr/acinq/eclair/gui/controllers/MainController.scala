@@ -24,7 +24,7 @@ import java.util.Locale
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
+import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.gui.stages._
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction, IndexedObservableList}
 import fr.acinq.eclair.gui.{FxApp, Handlers}
@@ -359,11 +359,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     labelApi.setText(s"${setup.config.getInt("api.port")}")
     labelServer.setText(s"${setup.config.getInt("server.port")}")
 
-    val wallet = setup.nodeParams.watcherType match {
-      case BITCOIND => "Bitcoin-core"
-      case ELECTRUM => "Electrum"
-    }
-    bitcoinWallet.setText(wallet)
+    bitcoinWallet.setText("Bitcoin-core")
     bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
     bitcoinChain.getStyleClass.add(setup.chain)
 

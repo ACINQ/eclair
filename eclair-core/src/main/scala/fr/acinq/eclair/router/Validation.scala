@@ -103,7 +103,7 @@ object Validation {
             remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.InvalidAnnouncement(c))))
             None
           } else {
-            watcher ! WatchSpentBasic(ctx.self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+            watcher ! WatchSpentBasic(ctx.self, tx.txid, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
             log.debug("added channel channelId={}", c.shortChannelId)
             remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c))))
             val capacity = tx.txOut(outputIndex).amount
