@@ -34,6 +34,7 @@ import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnection}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
+import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest, SendPaymentToRouteResponse}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{NetworkStats, RouteCalculation, Router}
@@ -107,6 +108,8 @@ trait Eclair {
   def receivedInfo(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[IncomingPayment]]
 
   def send(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None)(implicit timeout: Timeout): Future[UUID]
+
+  def sendBlocking(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest] = None, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None)(implicit timeout: Timeout): Future[Either[PreimageReceived, PaymentEvent]]
 
   def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32 = randomBytes32, maxAttempts_opt: Option[Int] = None, feeThresholdSat_opt: Option[Satoshi] = None, maxFeePct_opt: Option[Double] = None)(implicit timeout: Timeout): Future[UUID]
 
@@ -293,7 +296,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     }
   }
 
-  override def send(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
+  private def createPaymentRequest(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double]): Either[IllegalArgumentException, SendPaymentRequest] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     val defaultRouteParams = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf)
     val routeParams = defaultRouteParams.copy(
@@ -302,18 +305,31 @@ class EclairImpl(appKit: Kit) extends Eclair {
     )
 
     externalId_opt match {
-      case Some(externalId) if externalId.length > externalIdMaxLength => Future.failed(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
+      case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
       case _ => invoice_opt match {
-        case Some(invoice) if invoice.isExpired => Future.failed(new IllegalArgumentException("invoice has expired"))
-        case Some(invoice) =>
-          val sendPayment = invoice.minFinalCltvExpiryDelta match {
-            case Some(minFinalCltvExpiryDelta) => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, minFinalCltvExpiryDelta, invoice_opt, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
-            case None => SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, paymentRequest = invoice_opt, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams))
-          }
-          (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
-        case None =>
-          val sendPayment = SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, externalId = externalId_opt, routeParams = Some(routeParams))
-          (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
+        case Some(invoice) if invoice.isExpired => Left(new IllegalArgumentException("invoice has expired"))
+        case Some(invoice) => invoice.minFinalCltvExpiryDelta match {
+          case Some(minFinalCltvExpiryDelta) => Right(SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, minFinalCltvExpiryDelta, invoice_opt, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams)))
+          case None => Right(SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts, paymentRequest = invoice_opt, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams)))
+        }
+        case None => Right(SendPaymentRequest(amount, paymentHash, recipientNodeId, maxAttempts = maxAttempts, externalId = externalId_opt, routeParams = Some(routeParams)))
+      }
+    }
+  }
+
+  override def send(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
+    createPaymentRequest(externalId_opt, recipientNodeId, amount, paymentHash, invoice_opt, maxAttempts_opt, feeThreshold_opt, maxFeePct_opt) match {
+      case Left(ex) => Future.failed(ex)
+      case Right(req) => (appKit.paymentInitiator ? req).mapTo[UUID]
+    }
+  }
+
+  override def sendBlocking(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentHash: ByteVector32, invoice_opt: Option[PaymentRequest], maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[Either[PreimageReceived, PaymentEvent]] = {
+    createPaymentRequest(externalId_opt, recipientNodeId, amount, paymentHash, invoice_opt, maxAttempts_opt, feeThreshold_opt, maxFeePct_opt) match {
+      case Left(ex) => Future.failed(ex)
+      case Right(req) => (appKit.paymentInitiator ? req.copy(blockUntilComplete = true)).map {
+        case e: PreimageReceived => Left(e)
+        case e: PaymentEvent => Right(e)
       }
     }
   }
