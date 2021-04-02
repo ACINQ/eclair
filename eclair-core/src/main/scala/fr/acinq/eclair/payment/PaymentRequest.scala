@@ -108,7 +108,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
    */
   def sign(priv: PrivateKey): PaymentRequest = {
     val sig64 = Crypto.sign(hash, priv)
-    val (pub1, _) = Crypto.recoverPublicKey(sig64, hash)
+    val pub1 = Crypto.recoverPublicKey(sig64, hash, 0.toByte)
     val recid = if (nodeId == pub1) 0.toByte else 1.toByte
     val signature = sig64 :+ recid
     this.copy(signature = signature)
