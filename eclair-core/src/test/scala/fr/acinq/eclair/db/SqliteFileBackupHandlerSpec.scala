@@ -28,7 +28,7 @@ import java.io.File
 import java.sql.DriverManager
 import java.util.UUID
 
-class FileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
+class SqliteFileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("process backups") {
     val db = TestDatabases.inMemoryDb()
