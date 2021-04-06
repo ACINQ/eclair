@@ -18,13 +18,14 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
-import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db.AuditDb.Stats
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
+import fr.acinq.eclair.db.pg.PgAuditDb
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol.Error
@@ -37,12 +38,18 @@ import scala.util.Random
 
 class AuditDbSpec extends AnyFunSuite {
 
+  import fr.acinq.eclair.TestDatabases.forAllDbs
+
   val ZERO_UUID: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
-  test("init database 2 times in a row") {
-    forAllDbs { dbs =>
-      val db1 = dbs.audit
-      val db2 = dbs.audit
+  test("init database two times in a row") {
+    forAllDbs {
+      case sqlite: TestSqliteDatabases =>
+        new SqliteAuditDb(sqlite.connection)
+        new SqliteAuditDb(sqlite.connection)
+      case pg: TestPgDatabases =>
+        new PgAuditDb()(pg.datasource)
+        new PgAuditDb()(pg.datasource)
     }
   }
 

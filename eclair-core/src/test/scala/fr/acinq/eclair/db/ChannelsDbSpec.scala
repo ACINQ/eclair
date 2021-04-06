@@ -18,9 +18,10 @@ package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
+import fr.acinq.eclair.db.pg.PgChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
@@ -33,10 +34,16 @@ import java.sql.SQLException
 
 class ChannelsDbSpec extends AnyFunSuite {
 
-  test("init database 2 times in a row") {
-    forAllDbs { dbs =>
-      val db1 = dbs.channels
-      val db2 = dbs.channels
+  import fr.acinq.eclair.TestDatabases.forAllDbs
+
+  test("init database two times in a row") {
+    forAllDbs {
+      case sqlite: TestSqliteDatabases =>
+        new SqliteChannelsDb(sqlite.connection)
+        new SqliteChannelsDb(sqlite.connection)
+      case pg: TestPgDatabases =>
+        new PgChannelsDb()(pg.datasource, pg.lock)
+        new PgChannelsDb()(pg.datasource, pg.lock)
     }
   }
 

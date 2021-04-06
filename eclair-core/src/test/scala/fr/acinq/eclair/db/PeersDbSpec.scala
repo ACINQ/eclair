@@ -17,6 +17,9 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
+import fr.acinq.eclair.db.pg.PgPeersDb
+import fr.acinq.eclair.db.sqlite.SqlitePeersDb
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
 import org.scalatest.funsuite.AnyFunSuite
@@ -26,10 +29,14 @@ class PeersDbSpec extends AnyFunSuite {
 
   import fr.acinq.eclair.TestDatabases.forAllDbs
 
-  test("init database 2 times in a row") {
-    forAllDbs { dbs =>
-      val db1 = dbs.peers
-      val db2 = dbs.peers
+  test("init database two times in a row") {
+    forAllDbs {
+      case sqlite: TestSqliteDatabases =>
+        new SqlitePeersDb(sqlite.connection)
+        new SqlitePeersDb(sqlite.connection)
+      case pg: TestPgDatabases =>
+        new PgPeersDb()(pg.datasource, pg.lock)
+        new PgPeersDb()(pg.datasource, pg.lock)
     }
   }
 
