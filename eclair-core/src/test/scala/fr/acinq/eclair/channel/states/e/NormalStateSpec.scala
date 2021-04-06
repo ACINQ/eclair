@@ -492,8 +492,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     assert(bob2blockchain.expectMsgType[PublishTx].tx === tx)
-    bob2blockchain.expectMsgType[PublishTx]
-    bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
   test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 1/2)") { f =>
@@ -1647,8 +1645,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     assert(bob2blockchain.expectMsgType[PublishTx].tx === tx) // commit tx
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
@@ -1689,8 +1685,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     assert(bob2blockchain.expectMsgType[PublishTx].tx === commitTx)
-    bob2blockchain.expectMsgType[PublishTx]
-    bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
   test("recv UpdateFee (remote feerate is too small, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
@@ -1710,8 +1704,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // channel should be advertised as down
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === bob.stateData.asInstanceOf[DATA_CLOSING].channelId)
     assert(bob2blockchain.expectMsgType[PublishTx].tx === commitTx)
-    bob2blockchain.expectMsgType[PublishTx]
-    bob2blockchain.expectMsgType[WatchConfirmed]
   }
 
   test("recv UpdateFee (remote feerate is too small)") { f =>
@@ -2240,8 +2232,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! event
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishTx] // commit tx
-    bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(bob.stateName == CLOSING)
   }
 

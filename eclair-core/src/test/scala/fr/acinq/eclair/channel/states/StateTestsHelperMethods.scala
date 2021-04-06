@@ -267,15 +267,18 @@ trait StateTestsHelperMethods extends TestKitBase {
     // an error occurs and s publishes its commit tx
     val commitTx = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
-    assert(s2blockchain.expectMsgType[PublishTx].tx == commitTx)
     awaitCond(s.stateName == CLOSING)
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
 
+    assert(s2blockchain.expectMsgType[PublishTx].tx == commitTx)
+    if (closingState.commitments.commitmentFormat == Transactions.AnchorOutputsCommitmentFormat) {
+      assert(s2blockchain.expectMsgType[SignAndPublishTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+    }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishRawTx(s, tx.tx)))
-    s.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat match {
+    closingState.commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
         s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => PublishRawTx(s, tx.tx) }: _*)
@@ -302,7 +305,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     s2blockchain.expectNoMsg(1 second)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    s.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    closingState.localCommitPublished.get
   }
 
   def remoteClose(rCommitTx: Transaction, s: TestFSMRef[State, Data, Channel], s2blockchain: TestProbe): RemoteCommitPublished = {
@@ -310,12 +313,10 @@ trait StateTestsHelperMethods extends TestKitBase {
     s ! WatchEventSpent(BITCOIN_FUNDING_SPENT, rCommitTx)
     awaitCond(s.stateName == CLOSING)
     val closingData = s.stateData.asInstanceOf[DATA_CLOSING]
-
-    def getRemoteCommitPublished(d: DATA_CLOSING): Option[RemoteCommitPublished] = d.remoteCommitPublished.orElse(d.nextRemoteCommitPublished).orElse(d.futureRemoteCommitPublished)
-
-    assert(getRemoteCommitPublished(closingData).isDefined)
+    val remoteCommitPublished_opt = closingData.remoteCommitPublished.orElse(closingData.nextRemoteCommitPublished).orElse(closingData.futureRemoteCommitPublished)
+    assert(remoteCommitPublished_opt.isDefined)
     assert(closingData.localCommitPublished.isEmpty)
-    val remoteCommitPublished = getRemoteCommitPublished(closingData).get
+    val remoteCommitPublished = remoteCommitPublished_opt.get
 
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
@@ -340,7 +341,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     s2blockchain.expectNoMsg(1 second)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    getRemoteCommitPublished(s.stateData.asInstanceOf[DATA_CLOSING]).get
+    remoteCommitPublished
   }
 
   def channelId(a: TestFSMRef[State, Data, Channel]): ByteVector32 = a.stateData.channelId
