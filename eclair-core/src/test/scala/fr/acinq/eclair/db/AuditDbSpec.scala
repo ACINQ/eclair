@@ -42,7 +42,7 @@ class AuditDbSpec extends AnyFunSuite {
 
   val ZERO_UUID: UUID = UUID.fromString("00000000-0000-0000-0000-000000000000")
 
-  test("init sqlite 2 times in a row") {
+  test("init database two times in a row") {
     forAllDbs {
       case sqlite: TestSqliteDatabases =>
         new SqliteAuditDb(sqlite.connection)

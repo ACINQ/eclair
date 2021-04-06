@@ -38,7 +38,7 @@ class NetworkDbSpec extends AnyFunSuite {
 
   val shortChannelIds: Seq[ShortChannelId] = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 
-  test("init sqlite 2 times in a row") {
+  test("init database two times in a row") {
     forAllDbs {
       case sqlite: TestSqliteDatabases =>
         new SqliteNetworkDb(sqlite.connection)

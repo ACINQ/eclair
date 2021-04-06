@@ -35,7 +35,7 @@ class PaymentsDbSpec extends AnyFunSuite {
 
   import PaymentsDbSpec._
 
-  test("init sqlite 2 times in a row") {
+  test("init database two times in a row") {
     forAllDbs {
       case sqlite: TestSqliteDatabases =>
         new SqlitePaymentsDb(sqlite.connection)

@@ -36,7 +36,7 @@ class ChannelsDbSpec extends AnyFunSuite {
 
   import fr.acinq.eclair.TestDatabases.forAllDbs
 
-  test("init sqlite 2 times in a row") {
+  test("init database two times in a row") {
     forAllDbs {
       case sqlite: TestSqliteDatabases =>
         new SqliteChannelsDb(sqlite.connection)
