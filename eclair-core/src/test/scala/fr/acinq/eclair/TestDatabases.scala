@@ -2,6 +2,7 @@ package fr.acinq.eclair
 
 import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
+import com.zaxxer.hikari.HikariConfig
 import fr.acinq.eclair.db.pg.PgUtils
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.db.sqlite.SqliteUtils
@@ -11,6 +12,7 @@ import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import java.io.File
 import java.sql.{Connection, DriverManager, Statement}
 import java.util.UUID
+import javax.sql.DataSource
 import scala.concurrent.duration._
 
 
@@ -49,12 +51,9 @@ object TestDatabases {
 
   case class TestPgDatabases() extends TestDatabases {
     private val pg = EmbeddedPostgres.start()
-
-    import com.zaxxer.hikari.HikariConfig
-
+    val datasource: DataSource = pg.getPostgresDatabase
     val hikariConfig = new HikariConfig
-    hikariConfig.setDataSource(pg.getPostgresDatabase)
-
+    hikariConfig.setDataSource(datasource)
     val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, LockFailureHandler.logAndThrow)
 
     val jdbcUrlFile: File = new File(sys.props("tmp.dir"), s"jdbcUrlFile_${UUID.randomUUID()}.tmp")

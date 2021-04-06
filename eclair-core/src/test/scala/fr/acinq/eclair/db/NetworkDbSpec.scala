@@ -21,6 +21,8 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, Sat
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.TestDatabases._
+import fr.acinq.eclair.db.pg.PgNetworkDb
+import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
@@ -32,12 +34,18 @@ import scala.collection.{SortedMap, mutable}
 
 class NetworkDbSpec extends AnyFunSuite {
 
-  val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+  import fr.acinq.eclair.TestDatabases.forAllDbs
 
-  test("init database 2 times in a row") {
-    forAllDbs { dbs =>
-      val db1 = dbs.network
-      val db2 = dbs.network
+  val shortChannelIds: Seq[ShortChannelId] = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+
+  test("init sqlite 2 times in a row") {
+    forAllDbs {
+      case sqlite: TestSqliteDatabases =>
+        new SqliteNetworkDb(sqlite.connection)
+        new SqliteNetworkDb(sqlite.connection)
+      case pg: TestPgDatabases =>
+        new PgNetworkDb()(pg.datasource)
+        new PgNetworkDb()(pg.datasource)
     }
   }
 

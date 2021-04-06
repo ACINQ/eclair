@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.db.pg.PgPaymentsDb
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
@@ -34,10 +35,14 @@ class PaymentsDbSpec extends AnyFunSuite {
 
   import PaymentsDbSpec._
 
-  test("init database 2 times in a row") {
-    forAllDbs { dbs =>
-      val db1 = dbs.payments
-      val db2 = dbs.payments
+  test("init sqlite 2 times in a row") {
+    forAllDbs {
+      case sqlite: TestSqliteDatabases =>
+        new SqlitePaymentsDb(sqlite.connection)
+        new SqlitePaymentsDb(sqlite.connection)
+      case pg: TestPgDatabases =>
+        new PgPaymentsDb()(pg.datasource, pg.lock)
+        new PgPaymentsDb()(pg.datasource, pg.lock)
     }
   }
 

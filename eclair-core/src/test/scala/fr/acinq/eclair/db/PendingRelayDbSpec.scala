@@ -16,7 +16,10 @@
 
 package fr.acinq.eclair.db
 
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FAIL_MALFORMED_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.db.pg.PgPendingRelayDb
+import fr.acinq.eclair.db.sqlite.SqlitePendingRelayDb
 import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs
 import org.scalatest.funsuite.AnyFunSuite
@@ -26,10 +29,14 @@ class PendingRelayDbSpec extends AnyFunSuite {
 
   import fr.acinq.eclair.TestDatabases.forAllDbs
 
-  test("init database 2 times in a row") {
-    forAllDbs { dbs =>
-      val db1 = dbs.pendingRelay
-      val db2 = dbs.pendingRelay
+  test("init sqlite 2 times in a row") {
+    forAllDbs {
+      case sqlite: TestSqliteDatabases =>
+        new SqlitePendingRelayDb(sqlite.connection)
+        new SqlitePendingRelayDb(sqlite.connection)
+      case pg: TestPgDatabases =>
+        new PgPendingRelayDb()(pg.datasource, pg.lock)
+        new PgPendingRelayDb()(pg.datasource, pg.lock)
     }
   }
 
