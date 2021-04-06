@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}
+import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SignAndPublishTx}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.PendingRelayDb
@@ -2230,8 +2230,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         val txs = List(commitTx) ++ claimMainDelayedOutputTx.map(_.tx) ++ htlcTxs.values.flatten.map(_.tx) ++ claimHtlcDelayedTxs.map(_.tx)
         txs.map(tx => PublishRawTx(self, tx))
       case Transactions.AnchorOutputsCommitmentFormat =>
-        val (publishCommitTx, htlcTxs) = Helpers.Closing.createLocalCommitAnchorPublishStrategy(keyManager, commitments, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-        List(publishCommitTx) ++ claimMainDelayedOutputTx.map(tx => PublishRawTx(self, tx.tx)) ++ htlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishRawTx(self, tx.tx))
+        val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => SignAndPublishTx(self, tx, commitments) }
+        val redeemableHtlcTxs = htlcTxs.values.collect { case Some(tx) => SignAndPublishTx(self, tx, commitments) }
+        List(PublishRawTx(self, commitTx)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishRawTx(self, tx.tx)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishRawTx(self, tx.tx))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 

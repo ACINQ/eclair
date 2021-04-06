@@ -17,13 +17,11 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
-import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
@@ -121,28 +119,6 @@ object Transactions {
   case class MainPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class HtlcPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClosingTx(input: InputInfo, tx: Transaction, toLocalOutput: Option[OutputInfo]) extends TransactionWithInputInfo
-
-  trait TransactionSigningKit {
-    def keyManager: ChannelKeyManager
-    def commitmentFormat: CommitmentFormat
-    def spentOutpoint: OutPoint
-  }
-  object TransactionSigningKit {
-    case class ClaimAnchorOutputSigningKit(keyManager: ChannelKeyManager, txWithInput: ClaimLocalAnchorOutputTx, localFundingPubKey: ExtendedPublicKey) extends TransactionSigningKit {
-      override val commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
-      override val spentOutpoint  = txWithInput.input.outPoint
-    }
-
-    sealed trait HtlcTxSigningKit extends TransactionSigningKit {
-      def txWithInput: HtlcTx
-      override def spentOutpoint  = txWithInput.input.outPoint
-      def localHtlcBasepoint: ExtendedPublicKey
-      def localPerCommitmentPoint: PublicKey
-      def remoteSig: ByteVector64
-    }
-    case class HtlcSuccessSigningKit(keyManager: ChannelKeyManager, commitmentFormat: CommitmentFormat, txWithInput: HtlcSuccessTx, localHtlcBasepoint: ExtendedPublicKey, localPerCommitmentPoint: PublicKey, remoteSig: ByteVector64, preimage: ByteVector32) extends HtlcTxSigningKit
-    case class HtlcTimeoutSigningKit(keyManager: ChannelKeyManager, commitmentFormat: CommitmentFormat, txWithInput: HtlcTimeoutTx, localHtlcBasepoint: ExtendedPublicKey, localPerCommitmentPoint: PublicKey, remoteSig: ByteVector64) extends HtlcTxSigningKit
-  }
 
   sealed trait TxGenerationSkipped
   case object OutputNotFound extends TxGenerationSkipped { override def toString = "output not found (probably trimmed)" }

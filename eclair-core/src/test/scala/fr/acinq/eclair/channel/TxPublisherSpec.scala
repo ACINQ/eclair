@@ -19,17 +19,17 @@ package fr.acinq.eclair.channel
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BtcAmount, MilliBtcDouble, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransactionResponse, MempoolTx, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel.TxPublisher._
 import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
-import fr.acinq.eclair.transactions.Transactions.TransactionSigningKit.{ClaimAnchorOutputSigningKit, HtlcSuccessSigningKit, HtlcTimeoutSigningKit}
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcSuccessTx, HtlcTimeoutTx}
+import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, HtlcTimeoutTx, addSigs}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
@@ -87,6 +87,11 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
         bitcoinClient.getMempoolTx(tx.txid).pipeTo(probe.ref)
         probe.expectMsgType[MempoolTx]
       })
+    }
+
+    def setOnChainFeerate(feerate: FeeratePerKw): Unit = {
+      alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(feerate))
+      bob.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(feerate))
     }
 
   }
@@ -173,38 +178,37 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     })
   }
 
-  def closeChannelWithoutHtlcs(f: Fixture): SignAndPublishTx = {
+  def closeChannelWithoutHtlcs(f: Fixture): (Transaction, SignAndPublishTx) = {
     import f._
 
     val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    val currentFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
-    val publishCommitTx = alice2blockchain.expectMsgType[PublishTx]
-    assert(publishCommitTx.tx.txid === commitTx.txid)
-    assert(publishCommitTx.isInstanceOf[SignAndPublishTx])
-    val feerateInfo = publishCommitTx.asInstanceOf[SignAndPublishTx].setFeerate
-    assert(feerateInfo.currentFeerate < feerateInfo.targetFeerate)
-    assert(feerateInfo.currentFeerate === currentFeerate)
-    assert(feerateInfo.targetFeerate === TestConstants.feeratePerKw)
-    publishCommitTx.asInstanceOf[SignAndPublishTx]
+    // Forward the commit tx to the publisher.
+    val commit = alice2blockchain.expectMsg(PublishRawTx(alice, commitTx))
+    txPublisher ! commit
+    // Forward the anchor tx to the publisher.
+    val anchor = alice2blockchain.expectMsgType[SignAndPublishTx]
+    assert(anchor.txInfo.input.outPoint.txid === commitTx.txid)
+    assert(anchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+    txPublisher ! anchor
+
+    (commitTx, anchor)
   }
 
   test("commit tx feerate high enough, not spending anchor output") {
     withFixture(Seq(500 millibtc), f => {
       import f._
 
-      val publishCommitTx = closeChannelWithoutHtlcs(f)
-      txPublisher ! publishCommitTx.copy(setFeerate = publishCommitTx.setFeerate.copy(targetFeerate = publishCommitTx.setFeerate.currentFeerate))
+      val commitFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+      assert(commitFeerate < TestConstants.feeratePerKw)
+      setOnChainFeerate(commitFeerate)
+      val (commitTx, _) = closeChannelWithoutHtlcs(f)
 
-      // wait for the commit tx and anchor tx to be published
+      // wait for the commit tx to be published
       val mempoolTx = getMempoolTxs(1).head
-      assert(mempoolTx.txid === publishCommitTx.tx.txid)
-
-      val targetFee = Transactions.weight2fee(publishCommitTx.setFeerate.currentFeerate, mempoolTx.weight.toInt)
-      val actualFee = mempoolTx.fees
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+      assert(mempoolTx.txid === commitTx.txid)
     })
   }
 
@@ -212,12 +216,11 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     withFixture(Seq(10.1 millibtc), f => {
       import f._
 
-      val publishCommitTx = closeChannelWithoutHtlcs(f)
-      txPublisher ! publishCommitTx
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f)
 
       // wait for the commit tx to be published, anchor will not be published because we don't have enough funds
       val mempoolTx1 = getMempoolTxs(1).head
-      assert(mempoolTx1.txid === publishCommitTx.tx.txid)
+      assert(mempoolTx1.txid === commitTx.txid)
 
       // add more funds to our wallet
       bitcoinWallet.getReceiveAddress.pipeTo(probe.ref)
@@ -228,8 +231,9 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       // wait for the anchor tx to be published
       val mempoolTx2 = getMempoolTxs(1).head
       bitcoinClient.getTransaction(mempoolTx2.txid).pipeTo(probe.ref)
-      val anchorTx = probe.expectMsgType[Transaction]
-      assert(anchorTx.txIn.exists(_.outPoint.txid == mempoolTx1.txid))
+      val publishedAnchorTx = probe.expectMsgType[Transaction]
+      assert(publishedAnchorTx.txid !== anchorTx.tx.txid)
+      assert(publishedAnchorTx.txIn.exists(_.outPoint.txid == mempoolTx1.txid))
       val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, (mempoolTx1.weight + mempoolTx2.weight).toInt)
       val actualFee = mempoolTx1.fees + mempoolTx2.fees
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
@@ -240,12 +244,11 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     withFixture(Seq(500 millibtc), f => {
       import f._
 
-      val publishCommitTx = closeChannelWithoutHtlcs(f)
-      txPublisher ! publishCommitTx
+      val (commitTx, _) = closeChannelWithoutHtlcs(f)
 
       // wait for the commit tx and anchor tx to be published
       val mempoolTxs = getMempoolTxs(2)
-      assert(mempoolTxs.map(_.txid).contains(publishCommitTx.tx.txid))
+      assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
 
       val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
@@ -265,17 +268,17 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     withFixture(utxos, f => {
       import f._
 
-      val publishCommitTx = closeChannelWithoutHtlcs(f)
-      txPublisher ! publishCommitTx
+      val (commitTx, _) = closeChannelWithoutHtlcs(f)
 
       // wait for the commit tx and anchor tx to be published
       val mempoolTxs = getMempoolTxs(2)
-      assert(mempoolTxs.map(_.txid).contains(publishCommitTx.tx.txid))
-      val claimAnchorTx = mempoolTxs.find(_.txid != publishCommitTx.tx.txid).map(tx => {
+      assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
+      val claimAnchorTx = mempoolTxs.find(_.txid != commitTx.txid).map(tx => {
         bitcoinClient.getTransaction(tx.txid).pipeTo(probe.ref)
         probe.expectMsgType[Transaction]
       })
       assert(claimAnchorTx.nonEmpty)
+      assert(claimAnchorTx.get.txIn.exists(_.outPoint.txid == commitTx.txid))
       assert(claimAnchorTx.get.txIn.length > 2) // we added more than 1 wallet input
 
       val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, mempoolTxs.map(_.weight).sum.toInt)
@@ -286,17 +289,21 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
 
   test("adjust anchor tx change amount", Tag("fuzzy")) {
     withFixture(Seq(500 millibtc), f => {
-      val SignAndPublishTx(_, commitTx: CommitTx, SetFeerate(currentFeerate, targetFeerate, dustLimit, signingKit: ClaimAnchorOutputSigningKit)) = closeChannelWithoutHtlcs(f)
+      val commitFeerate = f.alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+      assert(commitFeerate < TestConstants.feeratePerKw)
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f)
+      val anchorTxInfo = anchorTx.txInfo.asInstanceOf[ClaimLocalAnchorOutputTx]
+      val dustLimit = anchorTx.commitments.localParams.dustLimit
       for (_ <- 1 to 100) {
         val walletInputsCount = 1 + Random.nextInt(5)
         val walletInputs = (1 to walletInputsCount).map(_ => TxIn(OutPoint(randomBytes32, 0), Nil, 0))
         val amountIn = dustLimit * walletInputsCount + Random.nextInt(25_000_000).sat
         val amountOut = dustLimit + Random.nextLong(amountIn.toLong).sat
-        val unsignedTx = signingKit.txWithInput.copy(tx = signingKit.txWithInput.tx.copy(
-          txIn = signingKit.txWithInput.tx.txIn ++ walletInputs,
+        val unsignedTx = anchorTxInfo.copy(tx = anchorTxInfo.tx.copy(
+          txIn = anchorTxInfo.tx.txIn ++ walletInputs,
           txOut = TxOut(amountOut, Script.pay2wpkh(randomKey.publicKey)) :: Nil,
         ))
-        val adjustedTx = adjustAnchorOutputChange(unsignedTx, commitTx.tx, amountIn, currentFeerate, targetFeerate, dustLimit)
+        val adjustedTx = adjustAnchorOutputChange(unsignedTx, commitTx, amountIn, commitFeerate, TestConstants.feeratePerKw, dustLimit)
         assert(adjustedTx.tx.txIn.size === unsignedTx.tx.txIn.size)
         assert(adjustedTx.tx.txOut.size === 1)
         assert(adjustedTx.tx.txOut.head.amount >= dustLimit)
@@ -308,7 +315,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
             anchorSigned.tx.copy(txIn = anchorSigned.tx.txIn.head +: signedWalletInputs)
           }
           // We want the package anchor tx + commit tx to reach our target feerate, but the commit tx already pays a (smaller) fee
-          val targetFee = Transactions.weight2fee(targetFeerate, signedTx.weight() + commitTx.tx.weight()) - Transactions.weight2fee(currentFeerate, commitTx.tx.weight())
+          val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, signedTx.weight() + commitTx.weight()) - Transactions.weight2fee(commitFeerate, commitTx.weight())
           val actualFee = amountIn - signedTx.txOut.map(_.amount).sum
           assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee amountIn=$amountIn tx=$signedTx")
         }
@@ -316,7 +323,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     })
   }
 
-  def closeChannelWithHtlcs(f: Fixture): (SignAndPublishTx, SignAndPublishTx, SignAndPublishTx) = {
+  def closeChannelWithHtlcs(f: Fixture): (Transaction, SignAndPublishTx, SignAndPublishTx) = {
     import f._
 
     // Add htlcs in both directions and ensure that preimages are available.
@@ -330,20 +337,27 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     // Force-close channel and verify txs sent to watcher.
     val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     val currentFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+    assert(currentFeerate < TestConstants.feeratePerKw)
     assert(commitTx.txOut.size === 6)
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
-    val publishCommitTx = alice2blockchain.expectMsgType[SignAndPublishTx]
-    alice2blockchain.expectMsgType[PublishRawTx] // claim main output
-    val publishHtlcSuccess = alice2blockchain.expectMsgType[SignAndPublishTx]
-    val publishHtlcTimeout = alice2blockchain.expectMsgType[SignAndPublishTx]
-    Seq(publishCommitTx, publishHtlcSuccess, publishHtlcTimeout).foreach(publishTx => {
-      assert(publishTx.setFeerate.currentFeerate === currentFeerate)
-      assert(publishTx.setFeerate.currentFeerate < publishTx.setFeerate.targetFeerate)
-      assert(publishTx.setFeerate.targetFeerate === TestConstants.feeratePerKw)
-    })
 
-    (publishCommitTx, publishHtlcSuccess, publishHtlcTimeout)
+    alice2blockchain.expectMsg(PublishRawTx(alice, commitTx))
+    txPublisher ! PublishRawTx(alice, commitTx)
+    assert(alice2blockchain.expectMsgType[SignAndPublishTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+    alice2blockchain.expectMsgType[PublishRawTx] // claim main output
+    val htlcSuccess = alice2blockchain.expectMsgType[SignAndPublishTx]
+    assert(htlcSuccess.txInfo.isInstanceOf[HtlcSuccessTx])
+    val htlcTimeout = alice2blockchain.expectMsgType[SignAndPublishTx]
+    assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
+
+    alice2blockchain.expectMsgType[WatchConfirmed] // commit tx
+    alice2blockchain.expectMsgType[WatchConfirmed] // claim main output
+    alice2blockchain.expectMsgType[WatchSpent] // htlc-success tx
+    alice2blockchain.expectMsgType[WatchSpent] // htlc-timeout tx
+    alice2blockchain.expectNoMessage(100 millis)
+
+    (commitTx, htlcSuccess, htlcTimeout)
   }
 
   test("htlc tx feerate high enough, not adding wallet inputs") {
@@ -351,19 +365,15 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       import f._
 
       val currentFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
-      val (publishCommitTx, publishHtlcSuccess, publishHtlcTimeout) = closeChannelWithHtlcs(f)
-      val publishHtlcSuccess1 = publishHtlcSuccess.copy(setFeerate = publishHtlcSuccess.setFeerate.copy(targetFeerate = currentFeerate))
-      val publishHtlcTimeout1 = publishHtlcTimeout.copy(setFeerate = publishHtlcTimeout.setFeerate.copy(targetFeerate = currentFeerate))
-
-      // Publish the commit tx.
-      txPublisher ! publishCommitTx
-      txPublisher ! publishHtlcSuccess1
-      txPublisher ! publishHtlcTimeout1
+      setOnChainFeerate(currentFeerate)
+      val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f)
+      txPublisher ! htlcSuccess
+      txPublisher ! htlcTimeout
       // HTLC txs will only be published once the commit tx is confirmed (csv delay)
-      getMempoolTxs(2)
+      getMempoolTxs(1)
       createBlocks(2)
-      txPublisher ! ParentTxConfirmed(publishHtlcSuccess1, publishCommitTx.tx.txid)
-      txPublisher ! ParentTxConfirmed(publishHtlcTimeout1, publishCommitTx.tx.txid)
+      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
+      txPublisher ! ParentTxConfirmed(htlcTimeout, commitTx.txid)
 
       // The HTLC-success tx will be immediately published.
       val htlcSuccessTx = getMempoolTxs(1).head
@@ -372,7 +382,6 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
 
       // The HTLC-timeout tx will be published once its absolute timeout is satisfied.
       createBlocks(144)
-      txPublisher ! ParentTxConfirmed(publishHtlcTimeout, publishCommitTx.tx.txid)
       val htlcTimeoutTx = getMempoolTxs(1).head
       val htlcTimeoutTargetFee = Transactions.weight2fee(currentFeerate, htlcTimeoutTx.weight.toInt)
       assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.1, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
@@ -383,15 +392,12 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     withFixture(Seq(10.1 millibtc), f => {
       import f._
 
-      val (publishCommitTx, publishHtlcSuccess, _) = closeChannelWithHtlcs(f)
-
-      // Publish the commit tx without the anchor.
-      txPublisher ! publishCommitTx.copy(setFeerate = publishCommitTx.setFeerate.copy(targetFeerate = publishCommitTx.setFeerate.currentFeerate))
-      txPublisher ! publishHtlcSuccess
+      val (commitTx, htlcSuccess, _) = closeChannelWithHtlcs(f)
+      txPublisher ! htlcSuccess
       // HTLC txs will only be published once the commit tx is confirmed (csv delay)
       getMempoolTxs(1)
       createBlocks(2)
-      txPublisher ! ParentTxConfirmed(publishHtlcSuccess, publishCommitTx.tx.txid)
+      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
 
       // Add more funds to our wallet to allow bumping HTLC txs.
       bitcoinWallet.getReceiveAddress.pipeTo(probe.ref)
@@ -410,17 +416,14 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     withFixture(Seq(500 millibtc), f => {
       import f._
 
-      val (publishCommitTx, publishHtlcSuccess, publishHtlcTimeout) = closeChannelWithHtlcs(f)
-
-      // Publish the commit tx.
-      txPublisher ! publishCommitTx
-      txPublisher ! publishHtlcSuccess
-      txPublisher ! publishHtlcTimeout
+      val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f)
+      txPublisher ! htlcSuccess
+      txPublisher ! htlcTimeout
       // HTLC txs will only be published once the commit tx is confirmed (csv delay)
-      getMempoolTxs(2)
+      getMempoolTxs(1)
       createBlocks(2)
-      txPublisher ! ParentTxConfirmed(publishHtlcSuccess, publishCommitTx.tx.txid)
-      txPublisher ! ParentTxConfirmed(publishHtlcTimeout, publishCommitTx.tx.txid)
+      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
+      txPublisher ! ParentTxConfirmed(htlcTimeout, commitTx.txid)
 
       // The HTLC-success tx will be immediately published.
       val htlcSuccessTx = getMempoolTxs(1).head
@@ -454,17 +457,14 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     withFixture(utxos, f => {
       import f._
 
-      val (publishCommitTx, publishHtlcSuccess, publishHtlcTimeout) = closeChannelWithHtlcs(f)
-
-      // Publish the commit tx without the anchor.
-      txPublisher ! publishCommitTx.copy(setFeerate = publishCommitTx.setFeerate.copy(targetFeerate = publishCommitTx.setFeerate.currentFeerate))
-      txPublisher ! publishHtlcSuccess
-      txPublisher ! publishHtlcTimeout
+      val (commitTx, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f)
+      txPublisher ! htlcSuccess
+      txPublisher ! htlcTimeout
       // HTLC txs will only be published once the commit tx is confirmed (csv delay)
       getMempoolTxs(1)
       createBlocks(2)
-      txPublisher ! ParentTxConfirmed(publishHtlcSuccess, publishCommitTx.tx.txid)
-      txPublisher ! ParentTxConfirmed(publishHtlcTimeout, publishCommitTx.tx.txid)
+      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
+      txPublisher ! ParentTxConfirmed(htlcTimeout, commitTx.txid)
 
       // The HTLC-success tx will be immediately published.
       val htlcSuccessTx = getMempoolTxs(1).head
@@ -496,7 +496,8 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       assert(commitTx.txOut.size === 5)
       probe.send(alice, CMD_FORCECLOSE(probe.ref))
       probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
-      val publishCommitTx = alice2blockchain.expectMsgType[SignAndPublishTx]
+      alice2blockchain.expectMsg(PublishRawTx(alice, commitTx))
+      val anchorTx = alice2blockchain.expectMsgType[SignAndPublishTx]
       alice2blockchain.expectMsgType[PublishRawTx] // claim main output
       alice2blockchain.expectMsgType[WatchConfirmed] // commit tx
       alice2blockchain.expectMsgType[WatchConfirmed] // claim main output
@@ -504,25 +505,28 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       alice2blockchain.expectNoMessage(100 millis)
 
       // Publish and confirm the commit tx.
-      txPublisher ! publishCommitTx
+      txPublisher ! PublishRawTx(alice, commitTx)
+      txPublisher ! anchorTx
       getMempoolTxs(2)
       createBlocks(2)
 
       probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
       probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
-      alice2blockchain.expectMsg(publishCommitTx)
+      alice2blockchain.expectMsg(PublishRawTx(alice, commitTx))
+      val anchorTx2 = alice2blockchain.expectMsgType[SignAndPublishTx]
+      assert(anchorTx2.txInfo === anchorTx.txInfo)
       alice2blockchain.expectMsgType[PublishRawTx] // claim main output
-      val publishHtlcSuccess = alice2blockchain.expectMsgType[SignAndPublishTx]
+      val htlcSuccess = alice2blockchain.expectMsgType[SignAndPublishTx]
       alice2blockchain.expectMsgType[WatchConfirmed] // commit tx
       alice2blockchain.expectMsgType[WatchConfirmed] // claim main output
       alice2blockchain.expectMsgType[WatchSpent] // htlc output
       alice2blockchain.expectNoMessage(100 millis)
 
-      txPublisher ! publishHtlcSuccess
+      txPublisher ! htlcSuccess
       val w = alice2blockchain.expectMsgType[WatchConfirmed]
       assert(w.txId === commitTx.txid)
       assert(w.minDepth === 1)
-      txPublisher ! ParentTxConfirmed(publishHtlcSuccess, publishCommitTx.tx.txid)
+      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
 
       // The HTLC-success tx will be immediately published.
       val htlcSuccessTx = getMempoolTxs(1).head
@@ -533,31 +537,35 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
 
   test("adjust htlc tx change amount", Tag("fuzzy")) {
     withFixture(Seq(500 millibtc), f => {
-      val (_, publishHtlcSuccess, publishHtlcTimeout) = closeChannelWithHtlcs(f)
-      val SignAndPublishTx(_, htlcSuccessTx: HtlcSuccessTx, SetFeerate(_, targetFeerate, dustLimit, successSigningKit: HtlcSuccessSigningKit)) = publishHtlcSuccess
-      val SignAndPublishTx(_, htlcTimeoutTx: HtlcTimeoutTx, SetFeerate(_, _, _, timeoutSigningKit: HtlcTimeoutSigningKit)) = publishHtlcTimeout
+      val (_, htlcSuccess, htlcTimeout) = closeChannelWithHtlcs(f)
+      val commitments = htlcSuccess.commitments
+      val dustLimit = commitments.localParams.dustLimit
+      val targetFeerate = TestConstants.feeratePerKw
       for (_ <- 1 to 100) {
         val walletInputsCount = 1 + Random.nextInt(5)
         val walletInputs = (1 to walletInputsCount).map(_ => TxIn(OutPoint(randomBytes32, 0), Nil, 0))
         val walletAmountIn = dustLimit * walletInputsCount + Random.nextInt(25_000_000).sat
         val changeOutput = TxOut(Random.nextLong(walletAmountIn.toLong).sat, Script.pay2wpkh(randomKey.publicKey))
-        val unsignedHtlcSuccessTx = successSigningKit.txWithInput.copy(tx = htlcSuccessTx.tx.copy(
-          txIn = htlcSuccessTx.tx.txIn ++ walletInputs,
-          txOut = htlcSuccessTx.tx.txOut ++ Seq(changeOutput)
+        val unsignedHtlcSuccessTx = htlcSuccess.txInfo.asInstanceOf[HtlcSuccessTx].copy(tx = htlcSuccess.tx.copy(
+          txIn = htlcSuccess.tx.txIn ++ walletInputs,
+          txOut = htlcSuccess.tx.txOut ++ Seq(changeOutput)
         ))
-        val unsignedHtlcTimeoutTx = timeoutSigningKit.txWithInput.copy(tx = htlcTimeoutTx.tx.copy(
-          txIn = htlcTimeoutTx.tx.txIn ++ walletInputs,
-          txOut = htlcTimeoutTx.tx.txOut ++ Seq(changeOutput)
+        val unsignedHtlcTimeoutTx = htlcTimeout.txInfo.asInstanceOf[HtlcTimeoutTx].copy(tx = htlcTimeout.tx.copy(
+          txIn = htlcTimeout.tx.txIn ++ walletInputs,
+          txOut = htlcTimeout.tx.txOut ++ Seq(changeOutput)
         ))
-        for ((unsignedTx, signingKit) <- Seq((unsignedHtlcSuccessTx, successSigningKit), (unsignedHtlcTimeoutTx, timeoutSigningKit))) {
+        for (unsignedTx <- Seq(unsignedHtlcSuccessTx, unsignedHtlcTimeoutTx)) {
           val totalAmountIn = unsignedTx.input.txOut.amount + walletAmountIn
-          val adjustedTx = adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, dustLimit, signingKit)
+          val adjustedTx = adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, commitments)
           assert(adjustedTx.tx.txIn.size === unsignedTx.tx.txIn.size)
           assert(adjustedTx.tx.txOut.size === 1 || adjustedTx.tx.txOut.size === 2)
           if (adjustedTx.tx.txOut.size == 2) {
             // Simulate tx signing to check final feerate.
             val signedTx = {
-              val htlcSigned = addHtlcTxSigs(adjustedTx, Transactions.PlaceHolderSig, signingKit)
+              val htlcSigned = adjustedTx match {
+                case tx: HtlcSuccessTx => addSigs(tx, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, ByteVector32.Zeroes, commitments.commitmentFormat)
+                case tx: HtlcTimeoutTx => addSigs(tx, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, commitments.commitmentFormat)
+              }
               val signedWalletInputs = htlcSigned.tx.txIn.tail.map(txIn => txIn.copy(witness = ScriptWitness(Seq(Scripts.der(Transactions.PlaceHolderSig), Transactions.PlaceHolderPubKey.value))))
               htlcSigned.tx.copy(txIn = htlcSigned.tx.txIn.head +: signedWalletInputs)
             }
