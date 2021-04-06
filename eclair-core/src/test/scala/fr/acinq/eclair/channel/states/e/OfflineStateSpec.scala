@@ -17,7 +17,6 @@
 package fr.acinq.eclair.channel.states.e
 
 import akka.actor.ActorRef
-import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
@@ -484,13 +483,13 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    bob2blockchain.expectMsg(PublishRawTx(bob, initialCommitTx))
+    bob2blockchain.expectMsg(PublishRawTx(initialCommitTx))
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
     bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
     bob2blockchain.expectMsgType[WatchSpent] // htlc
 
-    bob2blockchain.expectMsg(PublishRawTx(bob, initialCommitTx))
+    bob2blockchain.expectMsg(PublishRawTx(initialCommitTx))
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[PublishTx].tx.txOut === htlcSuccessTx.txOut)
     assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
@@ -547,7 +546,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice is funder
     alice ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      alice2blockchain.expectMsg(PublishRawTx(alice, aliceCommitTx))
+      alice2blockchain.expectMsg(PublishRawTx(aliceCommitTx))
     } else {
       alice2blockchain.expectNoMsg()
     }
@@ -656,7 +655,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob is fundee
     bob ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      bob2blockchain.expectMsg(PublishRawTx(bob, bobCommitTx))
+      bob2blockchain.expectMsg(PublishRawTx(bobCommitTx))
     } else {
       bob2blockchain.expectNoMsg()
     }

@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.channel.states.h
 
-import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, SatoshiLong, Script, ScriptFlags, Transaction, TxIn, TxOut}
@@ -191,7 +190,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // test starts here
     alice ! GetTxWithMetaResponse(fundingTx.txid, None, System.currentTimeMillis.milliseconds.toSeconds)
     alice2bob.expectNoMsg(200 millis)
-    alice2blockchain.expectMsg(PublishRawTx(alice, fundingTx)) // we republish the funding tx
+    alice2blockchain.expectMsg(PublishRawTx(fundingTx)) // we republish the funding tx
     assert(alice.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
   }
 
@@ -301,7 +300,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // let's make alice publish this closing tx
     alice ! Error(ByteVector32.Zeroes, "")
     awaitCond(alice.stateName == CLOSING)
-    alice2blockchain.expectMsg(PublishRawTx(alice, mutualCloseTx.tx))
+    alice2blockchain.expectMsg(PublishRawTx(mutualCloseTx.tx))
     assert(mutualCloseTx === alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.last)
 
     // actual test starts here
@@ -774,10 +773,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice receives the preimage for the first HTLC from downstream; she can now claim the corresponding HTLC output.
     alice ! CMD_FULFILL_HTLC(htlc1.id, r1, commit = true)
-    alice2blockchain.expectMsg(PublishRawTx(alice, closingState.claimMainOutputTx.get.tx))
+    alice2blockchain.expectMsg(PublishRawTx(closingState.claimMainOutputTx.get.tx))
     val claimHtlcSuccessTx = getClaimHtlcSuccessTxs(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get).head.tx
     Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    alice2blockchain.expectMsg(PublishRawTx(alice, claimHtlcSuccessTx))
+    alice2blockchain.expectMsg(PublishRawTx(claimHtlcSuccessTx))
 
     // Alice resets watches on all relevant transactions.
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
@@ -942,11 +941,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Alice receives the preimage for the first HTLC from downstream; she can now claim the corresponding HTLC output.
     alice ! CMD_FULFILL_HTLC(htlc1.id, r1, commit = true)
-    alice2blockchain.expectMsg(PublishRawTx(alice, closingState.claimMainOutputTx.get.tx))
+    alice2blockchain.expectMsg(PublishRawTx(closingState.claimMainOutputTx.get.tx))
     val claimHtlcSuccessTx = getClaimHtlcSuccessTxs(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get).head.tx
     Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    alice2blockchain.expectMsg(PublishRawTx(alice, claimHtlcSuccessTx))
-    alice2blockchain.expectMsg(PublishRawTx(alice, claimHtlcTimeoutTx))
+    alice2blockchain.expectMsg(PublishRawTx(claimHtlcSuccessTx))
+    alice2blockchain.expectMsg(PublishRawTx(claimHtlcTimeoutTx))
 
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
     assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(closingState.claimMainOutputTx.get.tx))
@@ -1185,9 +1184,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice publishes the penalty txs
     if (!channelVersion.paysDirectlyToWallet) {
-      alice2blockchain.expectMsg(PublishRawTx(alice, rvk.claimMainOutputTx.get.tx))
+      alice2blockchain.expectMsg(PublishRawTx(rvk.claimMainOutputTx.get.tx))
     }
-    alice2blockchain.expectMsg(PublishRawTx(alice, rvk.mainPenaltyTx.get.tx))
+    alice2blockchain.expectMsg(PublishRawTx(rvk.mainPenaltyTx.get.tx))
     assert(Set(alice2blockchain.expectMsgType[PublishTx].tx, alice2blockchain.expectMsgType[PublishTx].tx) === rvk.htlcPenaltyTxs.map(_.tx).toSet)
     for (penaltyTx <- penaltyTxs) {
       Transaction.correctlySpends(penaltyTx.tx, bobRevokedTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

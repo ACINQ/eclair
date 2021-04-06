@@ -1359,7 +1359,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
         val (rev1, penaltyTxs) = Closing.claimRevokedHtlcTxOutputs(keyManager, d.commitments, rev, tx, nodeParams.onChainFeeConf.feeEstimator)
-        penaltyTxs.foreach(claimTx => txPublisher ! PublishRawTx(self, claimTx.tx))
+        penaltyTxs.foreach(claimTx => txPublisher ! PublishRawTx(claimTx.tx))
         penaltyTxs.foreach(claimTx => blockchain ! WatchSpent(self, tx.txid, claimTx.input.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT, hints = Set(claimTx.tx.txid)))
         rev1
       }
@@ -1373,7 +1373,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // If the tx is one of our HTLC txs, we now publish a 3rd-stage claim-htlc-tx that claims its output.
           val (localCommitPublished1, claimHtlcTx_opt) = Closing.claimLocalCommitHtlcTxOutput(localCommitPublished, keyManager, d.commitments, tx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
           claimHtlcTx_opt.foreach(claimHtlcTx => {
-            txPublisher ! PublishRawTx(self, claimHtlcTx.tx)
+            txPublisher ! PublishRawTx(claimHtlcTx.tx)
             blockchain ! WatchConfirmed(self, claimHtlcTx.tx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(claimHtlcTx.tx))
           })
           Closing.updateLocalCommitPublished(localCommitPublished1, tx)
@@ -2008,7 +2008,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           case Some(fundingTx) =>
             // if we are funder, we never give up
             log.info(s"republishing the funding tx...")
-            txPublisher ! PublishRawTx(self, fundingTx)
+            txPublisher ! PublishRawTx(fundingTx)
             // we also check if the funding tx has been double-spent
             checkDoubleSpent(fundingTx)
             context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(txid))
@@ -2160,7 +2160,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   private def doPublish(closingTx: ClosingTx): Unit = {
-    txPublisher ! PublishRawTx(self, closingTx.tx)
+    txPublisher ! PublishRawTx(closingTx.tx)
     blockchain ! WatchConfirmed(self, closingTx.tx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(closingTx.tx))
   }
 
@@ -2228,11 +2228,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val publishQueue = commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         val txs = List(commitTx) ++ claimMainDelayedOutputTx.map(_.tx) ++ htlcTxs.values.flatten.map(_.tx) ++ claimHtlcDelayedTxs.map(_.tx)
-        txs.map(tx => PublishRawTx(self, tx))
+        txs.map(tx => PublishRawTx(tx))
       case Transactions.AnchorOutputsCommitmentFormat =>
-        val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => SignAndPublishTx(self, tx, commitments) }
-        val redeemableHtlcTxs = htlcTxs.values.collect { case Some(tx) => SignAndPublishTx(self, tx, commitments) }
-        List(PublishRawTx(self, commitTx)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishRawTx(self, tx.tx)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishRawTx(self, tx.tx))
+        val claimLocalAnchor = claimAnchorTxs.collect { case tx: Transactions.ClaimLocalAnchorOutputTx => SignAndPublishTx(tx, commitments) }
+        val redeemableHtlcTxs = htlcTxs.values.collect { case Some(tx) => SignAndPublishTx(tx, commitments) }
+        List(PublishRawTx(commitTx)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishRawTx(tx.tx)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishRawTx(tx.tx))
     }
     publishIfNeeded(publishQueue, irrevocablySpent)
 
@@ -2295,7 +2295,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   private def doPublish(remoteCommitPublished: RemoteCommitPublished): Unit = {
     import remoteCommitPublished._
 
-    val publishQueue = (claimMainOutputTx ++ claimHtlcTxs.values.flatten).map(tx => PublishRawTx(self, tx.tx))
+    val publishQueue = (claimMainOutputTx ++ claimHtlcTxs.values.flatten).map(tx => PublishRawTx(tx.tx))
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
@@ -2334,7 +2334,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   private def doPublish(revokedCommitPublished: RevokedCommitPublished): Unit = {
     import revokedCommitPublished._
 
-    val publishQueue = (claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs).map(tx => PublishRawTx(self, tx.tx))
+    val publishQueue = (claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs).map(tx => PublishRawTx(tx.tx))
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:

@@ -25,7 +25,7 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, WatchConfirmed, WatchEvent, WatchEventConfirmed}
+import fr.acinq.eclair.blockchain.{CurrentBlockCount, WatchConfirmed, WatchEventConfirmed}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.UpdateFulfillHtlc
@@ -47,17 +47,15 @@ object TxPublisher {
   // @formatter:off
   sealed trait Command
   sealed trait PublishTx extends Command {
-    /** Actor that should receive a [[WatchEventConfirmed]] once the transaction has been confirmed. */
-    def replyTo: ActorRef[WatchEvent]
     def tx: Transaction
   }
   /**  Publish a fully signed transaction without modifying it. */
-  case class PublishRawTx(replyTo: ActorRef[WatchEvent], tx: Transaction) extends PublishTx
+  case class PublishRawTx(tx: Transaction) extends PublishTx
   /**
    * Publish an unsigned transaction. Once (csv and cltv) delays have been satisfied, the tx publisher will set the fees,
    * sign the transaction and broadcast it.
    */
-  case class SignAndPublishTx(replyTo: ActorRef[WatchEvent], txInfo: TransactionWithInputInfo, commitments: Commitments) extends PublishTx {
+  case class SignAndPublishTx(txInfo: TransactionWithInputInfo, commitments: Commitments) extends PublishTx {
     override def tx: Transaction = txInfo.tx
   }
   case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
@@ -65,10 +63,14 @@ object TxPublisher {
   private case class PublishNextBlock(p: PublishTx) extends Command
   // @formatter:on
 
+  // NOTE: we use a single thread to publish transactions so that it preserves order.
+  // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS!
+  val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
+
   def apply(nodeParams: NodeParams, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
-      new TxPublisher(nodeParams, watcher, client, context).run(SortedMap.empty, Map.empty)
+      new TxPublisher(nodeParams, watcher, client, context)(singleThreadExecutionContext).run(SortedMap.empty, Map.empty)
     }
 
   /**
@@ -160,16 +162,15 @@ object TxPublisher {
 
 }
 
-private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient, context: ActorContext[TxPublisher.Command]) {
+private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient, context: ActorContext[TxPublisher.Command])(implicit val ec: ExecutionContext) {
 
   import TxPublisher._
+  import nodeParams.onChainFeeConf.{feeEstimator, feeTargets}
+  import nodeParams.{channelKeyManager => keyManager}
 
   private case class TxWithRelativeDelay(childTx: PublishTx, parentTxIds: Set[ByteVector32])
 
   val log = context.log
-  val keyManager = nodeParams.channelKeyManager
-  val feeEstimator = nodeParams.onChainFeeConf.feeEstimator
-  val feeTargets = nodeParams.onChainFeeConf.feeTargets
 
   val watchConfirmedResponseMapper: ActorRef[WatchEventConfirmed] = context.messageAdapter(w => w.event match {
     case BITCOIN_PARENT_TX_CONFIRMED(childTx) => ParentTxConfirmed(childTx, w.tx.txid)
@@ -239,15 +240,9 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
         run(cltvDelayedTxs1, csvDelayedTxs)
     }
 
-  implicit val ec: ExecutionContext = ExecutionContext.global
-
-  // NOTE: we use a single thread to publish transactions so that it preserves order.
-  // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS!
-  val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
-
   private def publish(p: PublishTx): Future[ByteVector32] = {
     p match {
-      case SignAndPublishTx(_, txInfo, commitments) =>
+      case SignAndPublishTx(txInfo, commitments) =>
         log.info("publishing tx: input={}:{} txid={} tx={}", txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid, p.tx)
         val publishF = txInfo match {
           case tx: ClaimLocalAnchorOutputTx => publishLocalAnchorTx(tx, commitments)
@@ -265,7 +260,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
             log.error("cannot publish tx: reason={} input={}:{} txid={}", t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
             Future.failed(t)
         }
-      case PublishRawTx(_, tx) =>
+      case PublishRawTx(tx) =>
         log.info("publishing tx: txid={} tx={}", tx.txid, tx)
         publish(tx)
     }
