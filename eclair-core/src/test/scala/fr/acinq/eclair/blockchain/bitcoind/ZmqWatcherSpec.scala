@@ -124,14 +124,29 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       val tx = sendToAddress(address, Btc(1), probe)
 
       val listener = TestProbe()
-      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 4, BITCOIN_FUNDING_DEPTHOK))
-      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 4, BITCOIN_FUNDING_DEPTHOK)) // setting the watch multiple times should be a no-op
-      generateBlocks(5)
-      assert(listener.expectMsgType[WatchEventConfirmed].tx.txid === tx.txid)
+      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 1, BITCOIN_FUNDING_DEPTHOK))
+      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 4, BITCOIN_FUNDING_DEEPLYBURIED))
+      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 4, BITCOIN_FUNDING_DEEPLYBURIED)) // setting the watch multiple times should be a no-op
+      listener.expectNoMsg(1 second)
+
+      generateBlocks(1)
+      val w1 = listener.expectMsgType[WatchEventConfirmed]
+      assert(w1.tx.txid === tx.txid)
+      assert(w1.event === BITCOIN_FUNDING_DEPTHOK)
+      listener.expectNoMsg(1 second)
+
+      generateBlocks(3)
+      val w2 = listener.expectMsgType[WatchEventConfirmed]
+      assert(w2.tx.txid === tx.txid)
+      assert(w2.event === BITCOIN_FUNDING_DEEPLYBURIED)
       listener.expectNoMsg(1 second)
 
       // If we try to watch a transaction that has already been confirmed, we should immediately receive a WatchEventConfirmed.
-      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 4, BITCOIN_FUNDING_DEPTHOK))
+      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 1, BITCOIN_FUNDING_DEPTHOK))
+      assert(listener.expectMsgType[WatchEventConfirmed].tx.txid === tx.txid)
+      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 2, BITCOIN_FUNDING_DEPTHOK))
+      assert(listener.expectMsgType[WatchEventConfirmed].tx.txid === tx.txid)
+      probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, 4, BITCOIN_FUNDING_DEEPLYBURIED))
       assert(listener.expectMsgType[WatchEventConfirmed].tx.txid === tx.txid)
       listener.expectNoMsg(1 second)
     })

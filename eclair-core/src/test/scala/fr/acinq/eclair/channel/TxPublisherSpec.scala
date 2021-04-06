@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SIGHASH_ALL, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -175,6 +175,62 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       // after 4 more blocks, the absolute delay is elapsed
       createBlocks(4)
       awaitCond(getMempool.exists(_.txid === tx3.txid), max = 20 seconds, interval = 1 second)
+    })
+  }
+
+  test("publish transaction spending parent multiple times with different relative delays") {
+    withFixture(Seq(500 millibtc, 500 millibtc), f => {
+      import f._
+
+      val priv = dumpPrivateKey(getNewAddress(probe), probe)
+      val outputAmount = 125000 sat
+      val Seq(parentTx1, parentTx2) = (1 to 2).map(_ => {
+        val outputs = Seq(TxOut(outputAmount, Script.pay2wpkh(priv.publicKey)), TxOut(outputAmount, Script.pay2wpkh(priv.publicKey)))
+        bitcoinWallet.fundTransaction(Transaction(2, Nil, outputs, 0), lockUtxos = true, FeeratePerKw(250 sat)).pipeTo(probe.ref)
+        val funded = probe.expectMsgType[FundTransactionResponse].tx
+        bitcoinWallet.signTransaction(funded).pipeTo(probe.ref)
+        probe.expectMsgType[SignTransactionResponse].tx
+      })
+      txPublisher ! PublishRawTx(probe.ref, parentTx1)
+      txPublisher ! PublishRawTx(probe.ref, parentTx2)
+      assert(getMempoolTxs(2).map(_.txid).toSet === Set(parentTx1.txid, parentTx2.txid))
+
+      val tx = {
+        val Right(outputIndexes1) = Transactions.findPubKeyScriptIndexes(parentTx1, Script.write(Script.pay2wpkh(priv.publicKey)))
+        val Right(outputIndexes2) = Transactions.findPubKeyScriptIndexes(parentTx2, Script.write(Script.pay2wpkh(priv.publicKey)))
+        val inputs = Seq(
+          TxIn(OutPoint(parentTx1, outputIndexes1.head), Nil, 1),
+          TxIn(OutPoint(parentTx1, outputIndexes1.last), Nil, 2),
+          TxIn(OutPoint(parentTx2, outputIndexes2.head), Nil, 3),
+          TxIn(OutPoint(parentTx2, outputIndexes2.last), Nil, 4),
+        )
+        val unsigned = Transaction(2, inputs, TxOut(450000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, 0)
+        (0 to 3).foldLeft(unsigned) {
+          case (current, i) =>
+            val sig = Transaction.signInput(current, i, Script.pay2pkh(priv.publicKey), SIGHASH_ALL, outputAmount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+            current.updateWitness(i, ScriptWitness(sig :: priv.publicKey.value :: Nil))
+        }
+      }
+
+      Transaction.correctlySpends(tx, parentTx1 :: parentTx2 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      txPublisher ! PublishRawTx(probe.ref, tx)
+      val watches = Seq(
+        alice2blockchain.expectMsgType[WatchConfirmed],
+        alice2blockchain.expectMsgType[WatchConfirmed],
+      )
+      watches.foreach(w => assert(w.event.isInstanceOf[BITCOIN_PARENT_TX_CONFIRMED]))
+      val w1 = watches.find(_.txId == parentTx1.txid).get
+      assert(w1.minDepth === 2)
+      val w2 = watches.find(_.txId == parentTx2.txid).get
+      assert(w2.minDepth === 4)
+      alice2blockchain.expectNoMsg(1 second)
+
+      createBlocks(2)
+      txPublisher ! ParentTxConfirmed(w1.event.asInstanceOf[BITCOIN_PARENT_TX_CONFIRMED].childTx, w1.txId)
+      assert(!getMempool.exists(_.txid === tx.txid))
+      createBlocks(2)
+      txPublisher ! ParentTxConfirmed(w2.event.asInstanceOf[BITCOIN_PARENT_TX_CONFIRMED].childTx, w2.txId)
+      awaitCond(getMempool.exists(_.txid === tx.txid))
     })
   }
 
