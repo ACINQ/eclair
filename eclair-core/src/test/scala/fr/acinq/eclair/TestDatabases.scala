@@ -71,11 +71,11 @@ object TestDatabases {
   }
 
   def forAllDbs(f: TestDatabases => Unit): Unit = {
+    def using(dbs: TestDatabases)(g: TestDatabases => Unit): Unit = try g(dbs) finally dbs.close()
     // @formatter:off
-  def using(dbs: TestDatabases)(g: TestDatabases => Unit): Unit = try g(dbs) finally dbs.close()
-  using(TestSqliteDatabases())(f)
-  using(TestPgDatabases())(f)
-  // @formatter:on
+    using(TestSqliteDatabases())(f)
+    using(TestPgDatabases())(f)
+    // @fodmatter:on
   }
 
 }
