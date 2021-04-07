@@ -70,7 +70,7 @@ object TxPublisher {
   def apply(nodeParams: NodeParams, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
-      new TxPublisher(nodeParams, watcher, client, context)(singleThreadExecutionContext).run(SortedMap.empty, Map.empty)
+      new TxPublisher(nodeParams, watcher, client, context).run(SortedMap.empty, Map.empty)
     }
 
   /**
@@ -162,7 +162,7 @@ object TxPublisher {
 
 }
 
-private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient, context: ActorContext[TxPublisher.Command])(implicit val ec: ExecutionContext) {
+private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient, context: ActorContext[TxPublisher.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import TxPublisher._
   import nodeParams.onChainFeeConf.{feeEstimator, feeTargets}
@@ -291,9 +291,9 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
         val claimAnchorSig = keyManager.sign(claimAnchorTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitments.commitmentFormat)
         val signedClaimAnchorTx = addSigs(claimAnchorTx, claimAnchorSig)
         val commitInfo = ExtendedBitcoinClient.PreviousTx(signedClaimAnchorTx.input, signedClaimAnchorTx.tx.txIn.head.witness)
-        client.signTransaction(signedClaimAnchorTx.tx, Seq(commitInfo))(singleThreadExecutionContext)
+        client.signTransaction(signedClaimAnchorTx.tx, Seq(commitInfo))
       }).flatMap(signTxResponse => {
-        client.publishTransaction(signTxResponse.tx)(singleThreadExecutionContext)
+        publish(signTxResponse.tx)
       })
     }
   }
@@ -318,7 +318,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
     // to cover the weight of our anchor input, which is why we set it to the following value.
     val dummyChangeAmount = weight2fee(anchorFeerate, claimAnchorOutputMinWeight) + dustLimit
     val txNotFunded = Transaction(2, Nil, TxOut(dummyChangeAmount, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil, 0)
-    client.fundTransaction(txNotFunded, FundTransactionOptions(anchorFeerate, lockUtxos = true))(singleThreadExecutionContext).flatMap(fundTxResponse => {
+    client.fundTransaction(txNotFunded, FundTransactionOptions(anchorFeerate, lockUtxos = true)).flatMap(fundTxResponse => {
       // We merge the outputs if there's more than one.
       fundTxResponse.changePosition match {
         case Some(changePos) =>
@@ -326,7 +326,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
           val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(changeOutput.copy(amount = changeOutput.amount + dummyChangeAmount)))
           Future.successful(fundTxResponse.copy(tx = txSingleOutput))
         case None =>
-          client.getChangeAddress()(singleThreadExecutionContext).map(pubkeyHash => {
+          client.getChangeAddress().map(pubkeyHash => {
             val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(TxOut(dummyChangeAmount, Script.pay2wpkh(pubkeyHash))))
             fundTxResponse.copy(tx = txSingleOutput)
           })
@@ -354,19 +354,19 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
           val localSig = keyManager.sign(txInfo, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
           val signedHtlcTx = txWithWitnessData.addSigs(localSig, commitments.commitmentFormat)
           log.info("publishing htlc tx without adding inputs: txid={}", signedHtlcTx.tx.txid)
-          client.publishTransaction(signedHtlcTx.tx)(singleThreadExecutionContext)
+          publish(signedHtlcTx.tx)
         } else {
           log.info("publishing htlc tx with additional inputs: commit input={}:{} target feerate={}", txInfo.input.outPoint.txid, txInfo.input.outPoint.index, targetFeerate)
           addInputs(txInfo, targetFeerate, commitments).flatMap(unsignedTx => {
             val localSig = keyManager.sign(unsignedTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
             val signedHtlcTx = txWithWitnessData.updateTx(unsignedTx.tx).addSigs(localSig, commitments.commitmentFormat)
             val inputInfo = ExtendedBitcoinClient.PreviousTx(signedHtlcTx.input, signedHtlcTx.tx.txIn.head.witness)
-            client.signTransaction(signedHtlcTx.tx, Seq(inputInfo), allowIncomplete = true)(singleThreadExecutionContext).flatMap(signTxResponse => {
+            client.signTransaction(signedHtlcTx.tx, Seq(inputInfo), allowIncomplete = true).flatMap(signTxResponse => {
               // NB: bitcoind messes up the witness stack for our htlc input, so we need to restore it.
               // See https://github.com/bitcoin/bitcoin/issues/21151
               val completeTx = signedHtlcTx.tx.copy(txIn = signedHtlcTx.tx.txIn.head +: signTxResponse.tx.txIn.tail)
               log.info("publishing bumped htlc tx: commit input={}:{} txid={} tx={}", txInfo.input.outPoint.txid, txInfo.input.outPoint.index, completeTx.txid, completeTx)
-              client.publishTransaction(completeTx)(singleThreadExecutionContext)
+              publish(completeTx)
             })
           })
         }
@@ -394,7 +394,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
     // NB: we don't take into account the fee paid by our HTLC input: we will take it into account when we adjust the
     // change output amount (unless bitcoind didn't add any change output, in that case we will overpay the fee slightly).
     val weightRatio = 1.0 + (htlcInputMaxWeight.toDouble / (htlcTxWeight + claimP2WPKHOutputWeight))
-    client.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, lockUtxos = true, changePosition = Some(1)))(singleThreadExecutionContext).map(fundTxResponse => {
+    client.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, lockUtxos = true, changePosition = Some(1))).map(fundTxResponse => {
       log.info(s"added ${fundTxResponse.tx.txIn.length} wallet input(s) and ${fundTxResponse.tx.txOut.length - 1} wallet output(s) to htlc tx spending commit input=${txInfo.input.outPoint.txid}:${txInfo.input.outPoint.index}")
       // We add the HTLC input (from the commit tx) and restore the HTLC output.
       // NB: we can't modify them because they are signed by our peer (with SIGHASH_SINGLE | SIGHASH_ANYONECANPAY).
