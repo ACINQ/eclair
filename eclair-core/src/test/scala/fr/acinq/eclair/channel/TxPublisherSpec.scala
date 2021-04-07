@@ -126,7 +126,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     blockCount.set(probe.expectMsgType[Long])
 
     // Execute our test.
-    val txPublisher = system.spawn(TxPublisher(aliceNodeParams, alice2blockchain.ref, bitcoinClient), testId.toString)
+    val txPublisher = system.spawn(TxPublisher(aliceNodeParams, TestConstants.Bob.nodeParams.nodeId, alice2blockchain.ref, bitcoinClient), testId.toString)
     try {
       testFun(Fixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, blockCount, bitcoinClient, bitcoinWallet, txPublisher, probe))
     } finally {

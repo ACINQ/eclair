@@ -20,8 +20,8 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, Script, Transaction, TxOut}
-import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.{CurrentBlockCount, WatchConfirmed, WatchEvent
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.UpdateFulfillHtlc
+import fr.acinq.eclair.{Logs, NodeParams}
 
 import java.util.concurrent.Executors
 import scala.collection.immutable.SortedMap
@@ -61,16 +62,19 @@ object TxPublisher {
   case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   case class ParentTxConfirmed(childTx: PublishTx, parentTxId: ByteVector32) extends Command
   private case class PublishNextBlock(p: PublishTx) extends Command
+  case class SetChannelId(channelId: ByteVector32, remoteNodeId: PublicKey) extends Command
   // @formatter:on
 
   // NOTE: we use a single thread to publish transactions so that it preserves order.
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS!
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
-  def apply(nodeParams: NodeParams, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient): Behavior[Command] =
+  def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
-      new TxPublisher(nodeParams, watcher, client, context).run(SortedMap.empty, Map.empty)
+      Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
+        new TxPublisher(nodeParams, watcher, client, context).run(SortedMap.empty, Map.empty)
+      }
     }
 
   /**
@@ -238,6 +242,11 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
         val nextBlockCount = nodeParams.currentBlockHeight + 1
         val cltvDelayedTxs1 = cltvDelayedTxs + (nextBlockCount -> (cltvDelayedTxs.getOrElse(nextBlockCount, Seq.empty) :+ p))
         run(cltvDelayedTxs1, csvDelayedTxs)
+
+      case SetChannelId(channelId, remoteNodeId) =>
+        Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(channelId))) {
+          run(cltvDelayedTxs, csvDelayedTxs)
+        }
     }
 
   private def publish(p: PublishTx): Future[ByteVector32] = {

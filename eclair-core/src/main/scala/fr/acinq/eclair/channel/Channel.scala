@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, actorRefAdapter}
+import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{ActorContext, ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SignAndPublishTx}
+import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SetChannelId, SignAndPublishTx}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.PendingRelayDb
@@ -53,12 +53,12 @@ import scala.util.{Failure, Success, Try}
 object Channel {
 
   trait TxPublisherFactory {
-    def spawnTxPublisher(context: ActorContext): akka.actor.typed.ActorRef[TxPublisher.Command]
+    def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): akka.actor.typed.ActorRef[TxPublisher.Command]
   }
 
   case class SimpleTxPublisherFactory(nodeParams: NodeParams, watcher: ActorRef, bitcoinClient: ExtendedBitcoinClient) extends TxPublisherFactory {
-    override def spawnTxPublisher(context: ActorContext): akka.actor.typed.ActorRef[TxPublisher.Command] = {
-      context.spawn(Behaviors.supervise(TxPublisher(nodeParams, watcher, bitcoinClient)).onFailure(akka.actor.typed.SupervisorStrategy.restart), "tx-publisher")
+    override def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): akka.actor.typed.ActorRef[TxPublisher.Command] = {
+      context.spawn(Behaviors.supervise(TxPublisher(nodeParams, remoteNodeId, watcher, bitcoinClient)).onFailure(akka.actor.typed.SupervisorStrategy.restart), "tx-publisher")
     }
   }
 
@@ -135,7 +135,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   // that the active connection may point to dead letters at all time
   private var activeConnection = context.system.deadLetters
 
-  private val txPublisher = txPublisherFactory.spawnTxPublisher(context)
+  private val txPublisher = txPublisherFactory.spawnTxPublisher(context, remoteNodeId)
 
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
@@ -183,6 +183,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, _, localParams, remote, _, channelFlags, channelVersion), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = true, temporaryChannelId, initialFeeratePerKw, Some(fundingTxFeeratePerKw)))
       activeConnection = remote
+      txPublisher ! SetChannelId(temporaryChannelId, remoteNodeId)
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
       val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
       val open = OpenChannel(nodeParams.chainHash,
@@ -210,11 +211,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _), Nothing) if !localParams.isFunder =>
       activeConnection = remote
+      txPublisher ! SetChannelId(inputFundee.temporaryChannelId, remoteNodeId)
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
 
     case Event(INPUT_RESTORED(data), _) =>
       log.info("restoring channel")
       context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data.commitments.localParams.isFunder, data.commitments))
+      txPublisher ! SetChannelId(data.channelId, remoteNodeId)
       data match {
         // NB: order matters!
         case closing: DATA_CLOSING if Closing.nothingAtStake(closing) =>
@@ -431,6 +434,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           )
           val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
           peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+          txPublisher ! SetChannelId(channelId, remoteNodeId)
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
           // NB: we don't send a ChannelSignatureSent for the first commit
           goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, fundingTxFee, initialRelayFees_opt, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), open.channelFlags, channelVersion, fundingCreated) sending fundingCreated
@@ -487,6 +491,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
                 commitInput, ShaChain.init, channelId = channelId)
               peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+              txPublisher ! SetChannelId(channelId, remoteNodeId)
               context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
               context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
               // NB: we don't send a ChannelSignatureSent for the first commit

@@ -135,7 +135,9 @@ trait StateTestsHelperMethods extends TestKitBase {
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
+    assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
+    assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[AcceptChannel]
@@ -144,8 +146,10 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
+    assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     alice2blockchain.expectMsgType[WatchSpent]
     alice2blockchain.expectMsgType[WatchConfirmed]
+    assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
@@ -359,7 +363,7 @@ trait StateTestsHelperMethods extends TestKitBase {
 object StateTestsHelperMethods {
 
   case class FakeTxPublisherFactory(txPublisher: TestProbe) extends Channel.TxPublisherFactory {
-    override def spawnTxPublisher(context: ActorContext): akka.actor.typed.ActorRef[TxPublisher.Command] = txPublisher.ref
+    override def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): akka.actor.typed.ActorRef[TxPublisher.Command] = txPublisher.ref
   }
 
 }
