@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
@@ -32,6 +30,9 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, channel, nodeFee}
+
+import java.util.UUID
+import scala.util.Random
 
 object ChannelRelay {
 
@@ -203,8 +204,9 @@ class ChannelRelay private(nodeParams: NodeParams,
       case Some(_) =>
         // we then filter out channels that we have already tried
         val candidateChannels: Map[ShortChannelId, OutgoingChannel] = channels -- alreadyTried
-        // and we filter again to keep the ones that are compatible with this payment (mainly fees, expiry delta)
-        candidateChannels
+        // we filter again to keep the ones that are compatible with this payment (mainly fees, expiry delta) and select
+        // a matching channel at random (to make probing our channels less efficient)
+        Random.shuffle(candidateChannels
           .map { case (shortChannelId, channelInfo) =>
             val relayResult = relayOrFail(Some(channelInfo.channelUpdate))
             context.log.debug(s"candidate channel: shortChannelId=$shortChannelId availableForSend={} capacity={} channelUpdate={} result={}",
@@ -222,12 +224,7 @@ class ChannelRelay private(nodeParams: NodeParams,
             // we only keep channels that have enough balance to handle this payment
             case (shortChannelId, channelInfo, _: RelaySuccess) if channelInfo.commitments.availableBalanceForSend > r.payload.amountToForward => (shortChannelId, channelInfo.commitments)
           }
-          .toList // needed for ordering
-          // we want to use the channel with:
-          //  - the lowest available capacity to ensure we keep high-capacity channels for big payments
-          //  - the lowest available balance to increase our incoming liquidity
-          .sortBy { case (_, commitments) => (commitments.capacity, commitments.availableBalanceForSend) }
-          .headOption match {
+        ).headOption match {
           case Some((preferredShortChannelId, commitments)) if preferredShortChannelId != requestedShortChannelId =>
             context.log.info("replacing requestedShortChannelId={} by preferredShortChannelId={} with availableBalanceMsat={}", requestedShortChannelId, preferredShortChannelId, commitments.availableBalanceForSend)
             Some(preferredShortChannelId)
