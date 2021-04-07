@@ -70,11 +70,15 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     // alice and bob will both have 1 000 000 sat
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000 sat, 1000000000 msat, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), None, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
+    alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelVersion.STANDARD)
+    bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
     pipe ! (alice, bob)
     within(30 seconds) {
+      alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
+      bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)

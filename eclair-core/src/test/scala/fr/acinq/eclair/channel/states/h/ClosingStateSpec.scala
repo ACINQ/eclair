@@ -66,7 +66,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         val aliceInit = Init(Alice.channelParams.features)
         val bobInit = Init(Bob.channelParams.features)
         alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
+        alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
         bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, ChannelVersion.STANDARD)
+        bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
         alice2bob.expectMsgType[OpenChannel]
         alice2bob.forward(bob)
         bob2alice.expectMsgType[AcceptChannel]
@@ -75,8 +77,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         alice2bob.forward(bob)
         bob2alice.expectMsgType[FundingSigned]
         bob2alice.forward(alice)
+        alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
         alice2blockchain.expectMsgType[WatchSpent]
         alice2blockchain.expectMsgType[WatchConfirmed]
+        bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
         bob2blockchain.expectMsgType[WatchSpent]
         bob2blockchain.expectMsgType[WatchConfirmed]
         awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
@@ -574,6 +578,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
     alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
     alice ! INPUT_RESTORED(beforeRestart)
+    alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
     awaitCond(alice.stateName == CLOSING)
 
     // the commit tx hasn't been confirmed yet, so we watch the funding output first
@@ -598,6 +603,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // simulate another node restart
     alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
     alice ! INPUT_RESTORED(beforeSecondRestart)
+    alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
     awaitCond(alice.stateName == CLOSING)
 
     // we should re-publish unconfirmed transactions
@@ -813,6 +819,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
     alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
     alice ! INPUT_RESTORED(beforeRestart)
+    alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
     awaitCond(alice.stateName == CLOSING)
 
     // we should re-publish unconfirmed transactions
@@ -975,6 +982,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
     alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
     alice ! INPUT_RESTORED(beforeRestart)
+    alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
     awaitCond(alice.stateName == CLOSING)
 
     // the commit tx hasn't been confirmed yet, so we watch the funding output first
@@ -1304,6 +1312,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
     alice.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
     alice ! INPUT_RESTORED(beforeRestart)
+    alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
     awaitCond(alice.stateName == CLOSING)
 
     // the commit tx hasn't been confirmed yet, so we watch the funding output first
