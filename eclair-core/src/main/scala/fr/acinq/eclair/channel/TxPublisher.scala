@@ -275,6 +275,10 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
     }
   }
 
+  /**
+   * This method uses a single thread to publish transactions so that it preserves the order of publication.
+   * We need that to prevent concurrency issues while publishing parent and child transactions.
+   */
   private def publish(tx: Transaction): Future[ByteVector32] = {
     client.publishTransaction(tx)(singleThreadExecutionContext).recoverWith {
       case t: Throwable =>
