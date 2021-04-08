@@ -18,24 +18,31 @@ package fr.acinq.eclair.db
 
 import fr.acinq.eclair.KamonExt
 import kamon.Kamon
+import kamon.metric.Metric
 
 object Monitoring {
 
   object Metrics {
-    val FileBackupCompleted = Kamon.counter("db.file-backup.completed")
-    val FileBackupDuration = Kamon.timer("db.file-backup.duration")
+    val FileBackupCompleted: Metric.Counter = Kamon.counter("db.file-backup.completed")
+    val FileBackupDuration: Metric.Timer = Kamon.timer("db.file-backup.duration")
 
-    val DbOperation = Kamon.counter("db.operation.execute")
-    val DbOperationDuration = Kamon.timer("db.operation.duration")
+    private val DbOperation: Metric.Counter = Kamon.counter("db.operation.execute")
+    private val DbOperationDuration: Metric.Timer = Kamon.timer("db.operation.duration")
 
-    def withMetrics[T](name: String)(operation: => T): T = KamonExt.time(DbOperationDuration.withTag(Tags.DbOperation, name)) {
-      DbOperation.withTag(Tags.DbOperation, name).increment()
+    def withMetrics[T](name: String, backend: String)(operation: => T): T = KamonExt.time(DbOperationDuration.withTag(Tags.DbOperation, name).withTag(Tags.DbBackend, backend)) {
+      DbOperation.withTag(Tags.DbOperation, name).withTag(Tags.DbBackend, backend).increment()
       operation
     }
   }
 
   object Tags {
     val DbOperation = "operation"
+    val DbBackend = "backend"
+
+    object DbBackends {
+      val Sqlite = "sqlite"
+      val Postgres = "postgres"
+    }
   }
 
 }
