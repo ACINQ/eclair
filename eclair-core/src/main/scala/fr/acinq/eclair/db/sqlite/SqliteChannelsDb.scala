@@ -22,6 +22,7 @@ import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
+import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
@@ -77,7 +78,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   }
 
-  override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel") {
+  override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
     val data = stateDataCodec.encode(state).require.toByteArray
     using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
       update.setBytes(1, data)
@@ -115,7 +116,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     timestampColumn_opt.foreach(updateChannelMetaTimestampColumn(channelId, _))
   }
 
-  override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel") {
+  override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
@@ -132,14 +133,14 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  override def listLocalChannels(): Seq[HasCommitments] = withMetrics("channels/list-local-channels") {
+  override def listLocalChannels(): Seq[HasCommitments] = withMetrics("channels/list-local-channels", DbBackends.Sqlite) {
     using(sqlite.createStatement) { statement =>
       val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
       codecSequence(rs, stateDataCodec)
     }
   }
 
-  override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info") {
+  override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
@@ -149,7 +150,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
-  override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = withMetrics("channels/list-htlc-infos") {
+  override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = withMetrics("channels/list-htlc-infos", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)

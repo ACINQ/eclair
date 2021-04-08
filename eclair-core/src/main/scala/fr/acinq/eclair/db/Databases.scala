@@ -69,7 +69,7 @@ object Databases extends Logging {
   }
 
   object SqliteDatabases {
-    def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): Databases = SqliteDatabases(
+    def apply(auditJdbc: Connection, networkJdbc: Connection, eclairJdbc: Connection): SqliteDatabases = SqliteDatabases(
       network = new SqliteNetworkDb(networkJdbc),
       audit = new SqliteAuditDb(auditJdbc),
       channels = new SqliteChannelsDb(eclairJdbc),
@@ -155,7 +155,7 @@ object Databases extends Logging {
   /**
    * Given a parent folder it creates or loads all the databases from a JDBC connection
    */
-  def sqlite(dbdir: File): Databases = {
+  def sqlite(dbdir: File): SqliteDatabases = {
     dbdir.mkdir()
     var sqliteEclair: Connection = null
     var sqliteNetwork: Connection = null
