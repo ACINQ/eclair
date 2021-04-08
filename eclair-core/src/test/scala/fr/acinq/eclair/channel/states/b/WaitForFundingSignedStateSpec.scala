@@ -19,7 +19,8 @@ package fr.acinq.eclair.channel.states.b
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}

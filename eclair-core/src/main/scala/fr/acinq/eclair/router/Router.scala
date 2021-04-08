@@ -17,6 +17,8 @@
 package fr.acinq.eclair.router
 
 import akka.Done
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import akka.actor.typed.{ActorRef => TypedActorRef}
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
@@ -24,7 +26,8 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchEventSpentBasic, WatchSpentBasic}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
@@ -46,7 +49,7 @@ import scala.util.{Random, Try}
 /**
  * Created by PM on 24/05/2016.
  */
-class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
+class Router(val nodeParams: NodeParams, watcher: TypedActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
 
   import Router._
 
@@ -293,7 +296,7 @@ object Router {
   val shortChannelIdKey = Context.key[ShortChannelId]("shortChannelId", ShortChannelId(0))
   val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
+  def props(nodeParams: NodeParams, watcher: TypedActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
   case class RouterConf(randomizeRouteSelection: Boolean,
                         channelExcludeDuration: FiniteDuration,

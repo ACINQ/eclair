@@ -16,14 +16,16 @@
 
 package fr.acinq.eclair.integration
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
@@ -93,7 +95,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val watches = nodes.values.foldLeft(Set.empty[Watch]) {
         case (watches, setup) =>
-          sender.send(setup.watcher, Symbol("watches"))
+          setup.watcher !  ZmqWatcher.Watches(sender.ref)
           watches ++ sender.expectMsgType[Set[Watch]]
       }
       watches.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount

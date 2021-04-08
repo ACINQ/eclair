@@ -20,7 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Btc, OutPoint, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
-import fr.acinq.eclair.blockchain.WatchEventSpent
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchEventSpent
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._

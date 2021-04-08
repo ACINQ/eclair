@@ -24,7 +24,8 @@ import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}

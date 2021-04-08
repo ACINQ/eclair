@@ -20,7 +20,7 @@ import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.Bob
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}

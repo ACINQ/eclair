@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.Register.{ForwardShortId, ForwardShortIdFailure}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
@@ -628,7 +628,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_bh)
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_bh)
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_hb)
-    watcher.expectMsg(ValidateRequest(chan_bh))
+    assert(watcher.expectMsgType[ValidateRequest].ann === chan_bh)
     watcher.send(router, ValidateResult(chan_bh, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_h)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
     watcher.expectMsgType[WatchSpentBasic]
 

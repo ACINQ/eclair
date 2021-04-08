@@ -22,7 +22,7 @@ import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi, SatoshiLong}
-import fr.acinq.eclair.blockchain.WatchEventConfirmed
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchEventConfirmed
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}

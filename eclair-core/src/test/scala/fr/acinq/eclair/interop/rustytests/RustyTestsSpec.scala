@@ -16,11 +16,13 @@
 
 package fr.acinq.eclair.interop.rustytests
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods.FakeTxPublisherFactory

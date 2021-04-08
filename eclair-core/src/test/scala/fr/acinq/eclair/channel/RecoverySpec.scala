@@ -4,7 +4,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.WatchEventSpent
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchEventSpent
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager

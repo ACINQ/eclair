@@ -17,7 +17,8 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, TypedActorRefOps, actorRefAdapter}
+import akka.actor.typed.{ActorRef => TypedActorRef, SupervisorStrategy => TypedSupervisorStrategy}
 import akka.actor.{ActorContext, ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
@@ -26,6 +27,8 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, S
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
@@ -53,16 +56,16 @@ import scala.util.{Failure, Success, Try}
 object Channel {
 
   trait TxPublisherFactory {
-    def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): akka.actor.typed.ActorRef[TxPublisher.Command]
+    def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): TypedActorRef[TxPublisher.Command]
   }
 
-  case class SimpleTxPublisherFactory(nodeParams: NodeParams, watcher: ActorRef, bitcoinClient: ExtendedBitcoinClient) extends TxPublisherFactory {
-    override def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): akka.actor.typed.ActorRef[TxPublisher.Command] = {
-      context.spawn(Behaviors.supervise(TxPublisher(nodeParams, remoteNodeId, watcher, bitcoinClient)).onFailure(akka.actor.typed.SupervisorStrategy.restart), "tx-publisher")
+  case class SimpleTxPublisherFactory(nodeParams: NodeParams, watcher: TypedActorRef[ZmqWatcher.Command], bitcoinClient: ExtendedBitcoinClient) extends TxPublisherFactory {
+    override def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): TypedActorRef[TxPublisher.Command] = {
+      context.spawn(Behaviors.supervise(TxPublisher(nodeParams, remoteNodeId, watcher, bitcoinClient)).onFailure(TypedSupervisorStrategy.restart), "tx-publisher")
     }
   }
 
-  def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, txPublisherFactory: TxPublisherFactory, origin_opt: Option[ActorRef]): Props =
+  def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: TypedActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: TxPublisherFactory, origin_opt: Option[ActorRef]): Props =
     Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, relayer, txPublisherFactory, origin_opt))
 
   // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
@@ -116,7 +119,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, relayer: ActorRef, txPublisherFactory: Channel.TxPublisherFactory, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
+class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: TypedActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: Channel.TxPublisherFactory, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
 
   import Channel._
 
@@ -253,7 +256,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
               // if commitment number is zero, we also need to make sure that the funding tx has been published
               if (closing.commitments.localCommit.index == 0 && closing.commitments.remoteCommit.index == 0) {
-                blockchain ! GetTxWithMeta(closing.commitments.commitInput.outPoint.txid)
+                blockchain ! GetTxWithMeta(self, closing.commitments.commitInput.outPoint.txid)
               }
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
@@ -299,7 +302,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
           watchFundingTx(funding.commitments)
           // we make sure that the funding tx has been published
-          blockchain ! GetTxWithMeta(funding.commitments.commitInput.outPoint.txid)
+          blockchain ! GetTxWithMeta(self, funding.commitments.commitInput.outPoint.txid)
           if (funding.waitingSinceBlock > 1500000) {
             // we were using timestamps instead of block heights when the channel was created: we reset it *and* we use block heights
             goto(OFFLINE) using funding.copy(waitingSinceBlock = nodeParams.currentBlockHeight) storing()
@@ -1950,7 +1953,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSED)
   }
 
-  private def handleCommandSuccess(c: Command, newData: Data) = {
+  private def handleCommandSuccess(c: channel.Command, newData: Data) = {
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender) else Some(hasReplyTo.replyTo)
@@ -1969,7 +1972,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     stay
   }
 
-  private def handleCommandError(cause: ChannelException, c: Command) = {
+  private def handleCommandError(cause: ChannelException, c: channel.Command) = {
     log.warning(s"${cause.getMessage} while processing cmd=${c.getClass.getSimpleName} in state=$stateName")
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
@@ -2016,7 +2019,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             txPublisher ! PublishRawTx(fundingTx, "funding-tx")
             // we also check if the funding tx has been double-spent
             checkDoubleSpent(fundingTx)
-            context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(txid))
+            context.system.scheduler.scheduleOnce(1 day, blockchain.toClassic, GetTxWithMeta(self, txid))
           case None if (nodeParams.currentBlockHeight - waitingSinceBlock) > FUNDING_TIMEOUT_FUNDEE =>
             // if we are fundee, we give up after some time
             log.warning(s"funding tx hasn't been published in ${nodeParams.currentBlockHeight - waitingSinceBlock} blocks")
@@ -2024,7 +2027,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           case None =>
             // let's wait a little longer
             log.info(s"funding tx still hasn't been published in ${nodeParams.currentBlockHeight - waitingSinceBlock} blocks, will wait ${FUNDING_TIMEOUT_FUNDEE - nodeParams.currentBlockHeight + waitingSinceBlock} more blocks...")
-            context.system.scheduler.scheduleOnce(1 day, blockchain, GetTxWithMeta(txid))
+            context.system.scheduler.scheduleOnce(1 day, blockchain.toClassic, GetTxWithMeta(self, txid))
         }
     }
     stay

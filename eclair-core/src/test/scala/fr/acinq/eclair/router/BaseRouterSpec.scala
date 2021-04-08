@@ -17,12 +17,13 @@
 package fr.acinq.eclair.router
 
 import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
@@ -151,11 +152,11 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       // then private channels
       sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32, channelId_ag, g, None, update_ag, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests
-      watcher.expectMsg(ValidateRequest(chan_ab))
-      watcher.expectMsg(ValidateRequest(chan_bc))
-      watcher.expectMsg(ValidateRequest(chan_cd))
-      watcher.expectMsg(ValidateRequest(chan_ef))
-      watcher.expectMsg(ValidateRequest(chan_gh))
+      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
+      assert(watcher.expectMsgType[ValidateRequest].ann === chan_bc)
+      assert(watcher.expectMsgType[ValidateRequest].ann === chan_cd)
+      assert(watcher.expectMsgType[ValidateRequest].ann === chan_ef)
+      assert(watcher.expectMsgType[ValidateRequest].ann === chan_gh)
       // and answers with valid scripts
       watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       watcher.send(router, ValidateResult(chan_bc, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))

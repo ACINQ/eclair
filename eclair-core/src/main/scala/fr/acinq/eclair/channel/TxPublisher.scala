@@ -17,15 +17,16 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.typed.eventstream.EventStream
-import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchConfirmed, WatchEvent, WatchEventConfirmed}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, WatchConfirmed, WatchEventConfirmed}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.UpdateFulfillHtlc
@@ -74,7 +75,7 @@ object TxPublisher {
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS!
   val singleThreadExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
-  def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient): Behavior[Command] =
+  def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef[ZmqWatcher.Command], client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
         context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
@@ -171,7 +172,7 @@ object TxPublisher {
 
 }
 
-private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient, context: ActorContext[TxPublisher.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], client: ExtendedBitcoinClient, context: ActorContext[TxPublisher.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import TxPublisher._
   import nodeParams.onChainFeeConf.{feeEstimator, feeTargets}
@@ -181,8 +182,8 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
 
   private val log = context.log
 
-  private val watchConfirmedResponseMapper: ActorRef[WatchEventConfirmed] = context.messageAdapter(w => w.event match {
-    case BITCOIN_PARENT_TX_CONFIRMED(childTx) => ParentTxConfirmed(childTx, w.tx.txid)
+  val watchConfirmedResponseMapper: ActorRef[WatchEvent] = context.messageAdapter(w => (w: @unchecked) match {
+    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(childTx), _, _, tx) => ParentTxConfirmed(childTx, tx.txid)
   })
 
   /**
@@ -199,7 +200,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
           csvTimeouts.foreach {
             case (parentTxId, csvTimeout) =>
               log.info(s"${p.desc} txid=${p.tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", p.tx)
-              watcher ! WatchConfirmed(watchConfirmedResponseMapper.toClassic, parentTxId, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
+              watcher ! WatchConfirmed(watchConfirmedResponseMapper, parentTxId, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
           }
           run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> TxWithRelativeDelay(p, csvTimeouts.keySet)))
         } else if (cltvTimeout > blockCount) {

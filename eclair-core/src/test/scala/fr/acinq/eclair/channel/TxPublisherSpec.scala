@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps}
+import akka.actor.typed.scaladsl.adapter.{actorRefAdapter, ClassicActorSystemOps, TypedActorRefOps}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SIGHASH_ALL, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
@@ -25,8 +25,8 @@ import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransactionResponse, MempoolTx, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel.TxPublisher._
 import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, HtlcTimeoutTx, addSigs}
@@ -223,7 +223,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       assert(w1.minDepth === 2)
       val w2 = watches.find(_.txId == parentTx2.txid).get
       assert(w2.minDepth === 4)
-      alice2blockchain.expectNoMsg(1 second)
+      alice2blockchain.expectNoMessage(1 second)
 
       createBlocks(2)
       txPublisher ! ParentTxConfirmed(w1.event.asInstanceOf[BITCOIN_PARENT_TX_CONFIRMED].childTx, w1.txId)

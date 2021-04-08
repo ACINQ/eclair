@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.WatchEventSpent
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchEventSpent
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
