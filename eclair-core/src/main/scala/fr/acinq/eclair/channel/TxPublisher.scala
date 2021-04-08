@@ -33,7 +33,7 @@ import fr.acinq.eclair.{Logs, NodeParams}
 
 import java.util.concurrent.Executors
 import scala.collection.immutable.SortedMap
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
 
 /**
  * Created by t-bast on 25/03/2021.
@@ -62,12 +62,12 @@ object TxPublisher {
   case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   case class ParentTxConfirmed(childTx: PublishTx, parentTxId: ByteVector32) extends Command
   private case class PublishNextBlock(p: PublishTx) extends Command
-  case class SetChannelId(channelId: ByteVector32, remoteNodeId: PublicKey) extends Command
+  case class SetChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
   // @formatter:on
 
   // NOTE: we use a single thread to publish transactions so that it preserves order.
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS!
-  val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
+  val singleThreadExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
   def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: akka.actor.ActorRef, client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
@@ -174,9 +174,9 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
 
   private case class TxWithRelativeDelay(childTx: PublishTx, parentTxIds: Set[ByteVector32])
 
-  val log = context.log
+  private val log = context.log
 
-  val watchConfirmedResponseMapper: ActorRef[WatchEventConfirmed] = context.messageAdapter(w => w.event match {
+  private val watchConfirmedResponseMapper: ActorRef[WatchEventConfirmed] = context.messageAdapter(w => w.event match {
     case BITCOIN_PARENT_TX_CONFIRMED(childTx) => ParentTxConfirmed(childTx, w.tx.txid)
   })
 
@@ -243,7 +243,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
         val cltvDelayedTxs1 = cltvDelayedTxs + (nextBlockCount -> (cltvDelayedTxs.getOrElse(nextBlockCount, Seq.empty) :+ p))
         run(cltvDelayedTxs1, csvDelayedTxs)
 
-      case SetChannelId(channelId, remoteNodeId) =>
+      case SetChannelId(remoteNodeId, channelId) =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(channelId))) {
           run(cltvDelayedTxs, csvDelayedTxs)
         }
@@ -335,7 +335,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
       // We merge the outputs if there's more than one.
       fundTxResponse.changePosition match {
         case Some(changePos) =>
-          val changeOutput = fundTxResponse.tx.txOut(changePos.toInt)
+          val changeOutput = fundTxResponse.tx.txOut(changePos)
           val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(changeOutput.copy(amount = changeOutput.amount + dummyChangeAmount)))
           Future.successful(fundTxResponse.copy(tx = txSingleOutput))
         case None =>
