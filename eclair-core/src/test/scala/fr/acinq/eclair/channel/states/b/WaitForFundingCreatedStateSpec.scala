@@ -80,9 +80,10 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-    bob2blockchain.expectMsgType[WatchSpent]
-    val watchConfirmed = bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchSpent[BITCOIN_FUNDING_SPENT.type]]
+    val watchConfirmed = bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_FUNDING_DEPTHOK.type]]
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
+    assert(watchConfirmed.event === BITCOIN_FUNDING_DEPTHOK)
   }
 
   test("recv FundingCreated (wumbo)", Tag(StateTestsTags.Wumbo)) { f =>
@@ -92,10 +93,11 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     bob2alice.expectMsgType[FundingSigned]
     bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-    bob2blockchain.expectMsgType[WatchSpent]
-    val watchConfirmed = bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchSpent[BITCOIN_FUNDING_SPENT.type]]
+    val watchConfirmed = bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_FUNDING_DEPTHOK.type]]
     // when we are fundee, we use a higher min depth for wumbo channels
     assert(watchConfirmed.minDepth > Bob.nodeParams.minDepthBlocks)
+    assert(watchConfirmed.event === BITCOIN_FUNDING_DEPTHOK)
   }
 
   test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { f =>

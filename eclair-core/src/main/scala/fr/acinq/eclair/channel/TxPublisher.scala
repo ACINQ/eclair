@@ -182,9 +182,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.C
 
   private val log = context.log
 
-  val watchConfirmedResponseMapper: ActorRef[WatchEvent] = context.messageAdapter(w => (w: @unchecked) match {
-    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(childTx), _, _, tx) => ParentTxConfirmed(childTx, tx.txid)
-  })
+  val watchConfirmedResponseMapper: ActorRef[WatchEventConfirmed[BITCOIN_PARENT_TX_CONFIRMED]] = context.messageAdapter(w => ParentTxConfirmed(w.event.childTx, w.tx.txid))
 
   /**
    * @param cltvDelayedTxs when transactions are cltv-delayed, we wait until the target blockchain height is reached.
@@ -200,7 +198,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.C
           csvTimeouts.foreach {
             case (parentTxId, csvTimeout) =>
               log.info(s"${p.desc} txid=${p.tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", p.tx)
-              watcher ! WatchConfirmed(watchConfirmedResponseMapper, parentTxId, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
+              watcher ! WatchConfirmed(watchConfirmedResponseMapper.unsafeUpcast[WatchEvent[BITCOIN_PARENT_TX_CONFIRMED]], parentTxId, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
           }
           run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> TxWithRelativeDelay(p, csvTimeouts.keySet)))
         } else if (cltvTimeout > blockCount) {

@@ -189,7 +189,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv UpdateFulfillHtlc (invalid preimage)") { f =>
@@ -202,7 +202,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv CMD_FAIL_HTLC") { f =>
@@ -293,7 +293,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv UpdateFailMalformedHtlc") { f =>
@@ -316,7 +316,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv CMD_SIGN") { f =>
@@ -382,7 +382,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx) // commit tx
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv CommitSig (invalid signature)") { f =>
@@ -393,7 +393,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx) // commit tx
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv RevokeAndAck (with remaining htlcs on both sides)") { f =>
@@ -450,7 +450,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx) // commit tx
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     bob2blockchain.expectMsgType[PublishTx] // htlc success
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv RevokeAndAck (unexpectedly)") { f =>
@@ -464,7 +464,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv RevokeAndAck (forward UpdateFailHtlc)") { f =>
@@ -552,7 +552,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv UpdateFee (sender can't afford it)") { f =>
@@ -567,7 +567,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx) // commit tx
     //bob2blockchain.expectMsgType[PublishTx] // main delayed (removed because of the high fees)
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv UpdateFee (local/remote feerates are too different)") { f =>
@@ -579,7 +579,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx) // commit tx
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv UpdateFee (remote feerate is too small)") { f =>
@@ -591,7 +591,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx) // commit tx
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
   }
 
   test("recv CMD_UPDATE_RELAY_FEE ") { f =>
@@ -620,8 +620,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2blockchain.expectMsgType[PublishTx] // main delayed
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 1
     alice2blockchain.expectMsgType[PublishTx] // htlc timeout 2
-    val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-    assert(watch.event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === aliceCommitTx)
   }
 
   test("recv CurrentFeerate (when funder, triggers an UpdateFee)") { f =>
@@ -669,7 +668,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishTx] // commit tx
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]]
     awaitCond(bob.stateName == CLOSING)
   }
 
@@ -692,10 +691,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
     assert(amountClaimed === 774040.sat)
 
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxs(0)))
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === bobCommitTx)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === claimTxs(0))
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT)
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT)
     alice2blockchain.expectNoMsg(1 second)
 
     awaitCond(alice.stateName == CLOSING)
@@ -739,9 +738,9 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
     assert(amountClaimed === 481210.sat)
 
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxs(0)))
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === bobCommitTx)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === claimTxs(0))
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT)
     alice2blockchain.expectNoMsg(1 second)
 
     awaitCond(alice.stateName == CLOSING)
@@ -772,11 +771,11 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val mainPenaltyTx = alice2blockchain.expectMsgType[PublishTx].tx
     val htlc1PenaltyTx = alice2blockchain.expectMsgType[PublishTx].tx
     val htlc2PenaltyTx = alice2blockchain.expectMsgType[PublishTx].tx
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc1-penalty
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc2-penalty
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === revokedTx)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === mainTx)
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT) // main-penalty
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT) // htlc1-penalty
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT) // htlc2-penalty
     alice2blockchain.expectNoMsg(1 second)
 
     Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -817,10 +816,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val mainTx = alice2blockchain.expectMsgType[PublishTx].tx
     val mainPenaltyTx = alice2blockchain.expectMsgType[PublishTx].tx
     val htlcPenaltyTx = alice2blockchain.expectMsgType[PublishTx].tx
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // htlc-penalty
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === revokedTx)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === mainTx)
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT) // main-penalty
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT) // htlc-penalty
     alice2blockchain.expectNoMsg(1 second)
 
     Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -863,20 +862,20 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val htlc1 = alice2blockchain.expectMsgType[PublishTx].tx
     val htlc2 = alice2blockchain.expectMsgType[PublishTx].tx
     Seq(claimMain, htlc1, htlc2).foreach(tx => Transaction.correctlySpends(tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimMain))
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === aliceCommitTx)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === claimMain)
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT)
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT)
     alice2blockchain.expectNoMsg(1 second)
 
     // 3rd-stage txs are published when htlc txs confirm
     Seq(htlc1, htlc2).foreach(htlcTimeoutTx => {
       alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, htlcTimeoutTx)
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(htlcTimeoutTx))
+      assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === htlcTimeoutTx)
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 2701, 3, htlcTimeoutTx)
       val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishTx].tx
       Transaction.correctlySpends(claimHtlcDelayedTx, htlcTimeoutTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimHtlcDelayedTx))
+      assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === claimHtlcDelayedTx)
     })
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.claimHtlcDelayedTxs.length == 2)
     alice2blockchain.expectNoMsg(1 second)
@@ -898,10 +897,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val claimTxs = for (_ <- 0 until 3) yield alice2blockchain.expectMsgType[PublishTx].tx
     // the main delayed output and htlc txs spend the commitment transaction
     claimTxs.foreach(tx => Transaction.correctlySpends(tx, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
-    assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxs(0))) // main-delayed
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
-    assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === aliceCommitTx)
+    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === claimTxs(0)) // main-delayed
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT)
+    assert(alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]].event === BITCOIN_OUTPUT_SPENT)
     alice2blockchain.expectNoMsg(1 second)
   }
 

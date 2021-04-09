@@ -79,9 +79,10 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    alice2blockchain.expectMsgType[WatchSpent]
-    val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchSpent[BITCOIN_FUNDING_SPENT.type]]
+    val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_FUNDING_DEPTHOK.type]]
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
+    assert(watchConfirmed.event === BITCOIN_FUNDING_DEPTHOK)
   }
 
   test("recv FundingSigned with valid signature (wumbo)", Tag(StateTestsTags.Wumbo)) { f =>
@@ -89,10 +90,11 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    alice2blockchain.expectMsgType[WatchSpent]
-    val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchSpent[BITCOIN_FUNDING_SPENT.type]]
+    val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_FUNDING_DEPTHOK.type]]
     // when we are funder, we keep our regular min depth even for wumbo channels
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
+    assert(watchConfirmed.event === BITCOIN_FUNDING_DEPTHOK)
   }
 
   test("recv FundingSigned with invalid signature") { f =>

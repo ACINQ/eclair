@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, CommitmentsSpec, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, BitcoinEvent, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -64,7 +64,7 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ac))
       peerConnection.expectMsg(GossipDecision.Accepted(chan_ac))
       assert(peerConnection.sender() == router)
-      watcher.expectMsgType[WatchSpentBasic]
+      assert(watcher.expectMsgType[WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT]].event.shortChannelId === chan_ac.shortChannelId)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ac))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ac))
       peerConnection.expectMsg(GossipDecision.Accepted(update_ac))
@@ -98,7 +98,7 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_uc))
       peerConnection.expectMsg(GossipDecision.Accepted(chan_uc))
       assert(peerConnection.sender() == router)
-      watcher.expectMsgType[WatchSpentBasic]
+      assert(watcher.expectMsgType[WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT]].event.shortChannelId === chan_uc.shortChannelId)
       peerConnection.expectMsg(GossipDecision.Accepted(update_uc))
       peerConnection.expectMsg(GossipDecision.Accepted(node_u))
       eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_uc, 2000000 sat, None, None) :: Nil))

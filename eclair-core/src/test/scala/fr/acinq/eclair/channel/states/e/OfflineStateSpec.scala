@@ -486,16 +486,16 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === initialCommitTx)
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
-    bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
-    bob2blockchain.expectMsgType[WatchSpent] // htlc
+    assert(bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === initialCommitTx)
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]] // main delayed
+    bob2blockchain.expectMsgType[WatchSpent[BITCOIN_OUTPUT_SPENT.type]] // htlc
 
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === initialCommitTx)
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[PublishTx].tx.txOut === htlcSuccessTx.txOut)
-    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
-    bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
-    bob2blockchain.expectMsgType[WatchSpent] // htlc
+    assert(bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === initialCommitTx)
+    bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]] // main delayed
+    bob2blockchain.expectMsgType[WatchSpent[BITCOIN_OUTPUT_SPENT.type]] // htlc
     bob2blockchain.expectNoMsg(500 millis)
   }
 

@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
-import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, BitcoinEvent, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -164,11 +164,14 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       watcher.send(router, ValidateResult(chan_ef, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       watcher.send(router, ValidateResult(chan_gh, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_g, funding_h)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
       // watcher receives watch-spent request
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
+      val watchedShortChannelIds = Set(
+        watcher.expectMsgType[WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT]].event.shortChannelId,
+        watcher.expectMsgType[WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT]].event.shortChannelId,
+        watcher.expectMsgType[WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT]].event.shortChannelId,
+        watcher.expectMsgType[WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT]].event.shortChannelId,
+        watcher.expectMsgType[WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT]].event.shortChannelId,
+      )
+      assert(watchedShortChannelIds === Set(channelId_ab, channelId_bc, channelId_cd, channelId_ef, channelId_gh))
       // all messages are acked
       peerConnection.expectMsgAllOf(
         GossipDecision.Accepted(chan_ab),

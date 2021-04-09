@@ -91,7 +91,7 @@ class Router(val nodeParams: NodeParams, watcher: TypedActorRef[ZmqWatcher.Comma
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
       // avoid herd effect at startup because watch-spent are intensive in terms of rpc calls to bitcoind
       context.system.scheduler.scheduleOnce(Random.nextLong(nodeParams.watchSpentWindow.toSeconds).seconds) {
-        watcher ! WatchSpentBasic(self, txid, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
+        watcher ! WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT](self, txid, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
       }
     }
 

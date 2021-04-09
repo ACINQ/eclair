@@ -630,7 +630,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_hb)
     assert(watcher.expectMsgType[ValidateRequest].ann === chan_bh)
     watcher.send(router, ValidateResult(chan_bh, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_h)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-    watcher.expectMsgType[WatchSpentBasic]
+    watcher.expectMsgType[WatchSpentBasic[BitcoinEvent]]
 
     val payFixture = createPaymentLifecycle()
     import payFixture._
