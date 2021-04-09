@@ -24,7 +24,6 @@ import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{ShortChannelId, TxCoordinates}
 
 import scala.collection.mutable
-import scala.compat.Platform
 import scala.concurrent.duration._
 
 object StaleChannels {

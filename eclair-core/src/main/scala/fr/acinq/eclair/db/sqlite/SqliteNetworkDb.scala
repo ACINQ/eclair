@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
 import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
@@ -27,6 +26,7 @@ import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncement
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import grizzled.slf4j.Logging
 
+import java.sql.Connection
 import scala.collection.immutable.SortedMap
 
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
@@ -132,12 +132,16 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   }
 
   override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = withMetrics("network/remove-channels", DbBackends.Sqlite) {
-    using(sqlite.createStatement) { statement =>
+    val batchSize = 100
+    using(sqlite.prepareStatement(s"DELETE FROM channels WHERE short_channel_id IN (${List.fill(batchSize)("?").mkString(",")})")) { statement =>
       shortChannelIds
-        .grouped(1000) // remove channels by batch of 1000
-        .foreach { _ =>
-          val ids = shortChannelIds.map(_.toLong).mkString(",")
-          statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id IN ($ids)")
+        .grouped(batchSize)
+        .foreach { group =>
+          val padded = group.toArray.padTo(batchSize, ShortChannelId(0L))
+          for (i <- 0 until batchSize) {
+            statement.setLong(1 + i, padded(i).toLong) // index for jdbc parameters starts at 1
+          }
+          statement.executeUpdate()
         }
     }
   }
@@ -153,8 +157,9 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   }
 
   override def removeFromPruned(shortChannelId: ShortChannelId): Unit = withMetrics("network/remove-from-pruned", DbBackends.Sqlite) {
-    using(sqlite.createStatement) { statement =>
-      statement.executeUpdate(s"DELETE FROM pruned WHERE short_channel_id=${shortChannelId.toLong}")
+    using(sqlite.prepareStatement(s"DELETE FROM pruned WHERE short_channel_id=?")) { statement =>
+      statement.setLong(1, shortChannelId.toLong)
+      statement.executeUpdate()
     }
   }
 
