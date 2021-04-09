@@ -22,7 +22,8 @@ import akka.actor.typed.{ActorRef => TypedActorRef}
 import akka.actor.{ActorRef, Props}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{Block, Btc, OutPoint, SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxOut}
+import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewTransaction}
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -67,17 +68,19 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     super.afterAll()
   }
 
-  case class Fixture(blockCount: AtomicLong, bitcoinClient: ExtendedBitcoinClient, bitcoinWallet: BitcoinCoreWallet, watcher: TypedActorRef[ZmqWatcher.Command], probe: TestProbe)
+  case class Fixture(blockCount: AtomicLong, bitcoinClient: ExtendedBitcoinClient, bitcoinWallet: BitcoinCoreWallet, watcher: TypedActorRef[ZmqWatcher.Command], probe: TestProbe, listener: TestProbe)
 
   // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
   private def withWatcher(testFun: Fixture => Any): Unit = {
     val blockCount = new AtomicLong()
     val probe = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[CurrentBlockCount])
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     val bitcoinWallet = new BitcoinCoreWallet(bitcoinrpcclient)
     val watcher = system.spawn(ZmqWatcher(Block.RegtestGenesisBlock.hash, blockCount, bitcoinClient), UUID.randomUUID().toString)
     try {
-      testFun(Fixture(blockCount, bitcoinClient, bitcoinWallet, watcher, probe))
+      testFun(Fixture(blockCount, bitcoinClient, bitcoinWallet, watcher, probe, listener))
     } finally {
       system.stop(watcher.ref.toClassic)
     }
@@ -118,6 +121,27 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     assert(m10.isEmpty)
   }
 
+  test("send event when new block is found") {
+    withWatcher(f => {
+      import f._
+
+      // When the watcher starts, it broadcasts the current height.
+      val block1 = listener.expectMsgType[CurrentBlockCount]
+      assert(blockCount.get() === block1.blockCount)
+      listener.expectNoMessage(100 millis)
+
+      generateBlocks(1)
+      assert(listener.expectMsgType[CurrentBlockCount].blockCount === block1.blockCount + 1)
+      assert(blockCount.get() === block1.blockCount + 1)
+      listener.expectNoMessage(100 millis)
+
+      generateBlocks(5)
+      assert(listener.expectMsgType[CurrentBlockCount].blockCount === block1.blockCount + 6)
+      assert(blockCount.get() === block1.blockCount + 6)
+      listener.expectNoMessage(100 millis)
+    })
+  }
+
   test("watch for confirmed transactions") {
     withWatcher(f => {
       import f._
@@ -131,17 +155,26 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! WatchConfirmed(listener.ref, tx.txid, 4, BITCOIN_FUNDING_DEEPLYBURIED) // setting the watch multiple times should be a no-op
       listener.expectNoMsg(1 second)
 
+      watcher ! Watches(listener.ref)
+      assert(listener.expectMsgType[Set[Watch]].size === 2)
+
       generateBlocks(1)
       val w1 = listener.expectMsgType[WatchEventConfirmed]
       assert(w1.tx.txid === tx.txid)
       assert(w1.event === BITCOIN_FUNDING_DEPTHOK)
       listener.expectNoMsg(1 second)
 
+      watcher ! Watches(listener.ref)
+      assert(listener.expectMsgType[Set[Watch]].size === 1)
+
       generateBlocks(3)
       val w2 = listener.expectMsgType[WatchEventConfirmed]
       assert(w2.tx.txid === tx.txid)
       assert(w2.event === BITCOIN_FUNDING_DEEPLYBURIED)
       listener.expectNoMsg(1 second)
+
+      watcher ! Watches(listener.ref)
+      assert(listener.expectMsgType[Set[Watch]].isEmpty)
 
       // If we try to watch a transaction that has already been confirmed, we should immediately receive a WatchEventConfirmed.
       watcher ! WatchConfirmed(listener.ref, tx.txid, 1, BITCOIN_FUNDING_DEPTHOK)
@@ -151,6 +184,9 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! WatchConfirmed(listener.ref, tx.txid, 4, BITCOIN_FUNDING_DEEPLYBURIED)
       assert(listener.expectMsgType[WatchEventConfirmed].tx.txid === tx.txid)
       listener.expectNoMsg(1 second)
+
+      watcher ! Watches(listener.ref)
+      assert(listener.expectMsgType[Set[Watch]].isEmpty)
     })
   }
 
@@ -168,6 +204,10 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! WatchSpentBasic(listener.ref, tx.txid, outputIndex, BITCOIN_FUNDING_SPENT)
       watcher ! WatchSpent(listener.ref, tx.txid, outputIndex, BITCOIN_FUNDING_SPENT, hints = Set.empty)
       listener.expectNoMsg(1 second)
+
+      watcher ! Watches(listener.ref)
+      assert(listener.expectMsgType[Set[Watch]].size === 2)
+
       bitcoinClient.publishTransaction(tx1).pipeTo(probe.ref)
       probe.expectMsg(tx1.txid)
       // tx and tx1 aren't confirmed yet, but we trigger the WatchEventSpent when we see tx1 in the mempool.
@@ -180,25 +220,43 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       generateBlocks(2)
       listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx1))
 
+      watcher ! Watches(listener.ref)
+      val watches1 = listener.expectMsgType[Set[Watch]]
+      assert(watches1.size === 1)
+      assert(watches1.forall(_.isInstanceOf[WatchSpent]))
+
       // Let's submit tx2, and set a watch after it has been confirmed this time.
       bitcoinClient.publishTransaction(tx2).pipeTo(probe.ref)
       probe.expectMsg(tx2.txid)
-      listener.expectNoMsg(1 second)
+      listener.expectNoMessage(1 second)
+      system.eventStream.subscribe(probe.ref, classOf[CurrentBlockCount])
       generateBlocks(1)
+      probe.expectMsgType[CurrentBlockCount]
       watcher ! WatchSpentBasic(listener.ref, tx1.txid, 0, BITCOIN_FUNDING_SPENT)
+      listener.expectMsg(WatchEventSpentBasic(BITCOIN_FUNDING_SPENT))
       watcher ! WatchSpent(listener.ref, tx1.txid, 0, BITCOIN_FUNDING_SPENT, hints = Set.empty)
-      listener.expectMsgAllOf(
-        WatchEventSpentBasic(BITCOIN_FUNDING_SPENT),
-        WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2)
-      )
+      listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2))
+      listener.expectNoMessage(1 second)
+
+      watcher ! Watches(listener.ref)
+      val watches2 = listener.expectMsgType[Set[Watch]]
+      assert(watches2.size === 2)
+      assert(watches2.forall(_.isInstanceOf[WatchSpent]))
+      watcher ! StopWatching(listener.ref)
 
       // We use hints and see if we can find tx2
       watcher ! WatchSpent(listener.ref, tx1.txid, 0, BITCOIN_FUNDING_SPENT, hints = Set(tx2.txid))
       listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2))
+      watcher ! StopWatching(listener.ref)
 
       // We should still find tx2 if the provided hint is wrong
-      watcher ! WatchSpent(listener.ref, tx1.txid, 0, BITCOIN_FUNDING_SPENT, hints = Set(randomBytes32))
-      listener.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2))
+      watcher ! WatchSpent(listener.ref, tx1.txid, 0, BITCOIN_OUTPUT_SPENT, hints = Set(randomBytes32))
+      listener.expectMsg(WatchEventSpent(BITCOIN_OUTPUT_SPENT, tx2))
+      watcher ! StopWatching(listener.ref)
+
+      // We should find txs that have already been confirmed
+      watcher ! WatchSpent(listener.ref, tx.txid, outputIndex, BITCOIN_OUTPUT_SPENT, hints = Set.empty)
+      listener.expectMsg(WatchEventSpent(BITCOIN_OUTPUT_SPENT, tx1))
     })
   }
 
@@ -231,6 +289,72 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.expectMsg(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx2)) // tx2 is confirmed which triggers WatchEventSpent again
       generateBlocks(1)
       assert(probe.expectMsgType[WatchEventConfirmed].tx === tx1) // tx1 now has 3 confirmations
+    })
+  }
+
+  test("receive every transaction from new blocks through ZMQ") {
+    val probe = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[NewTransaction])
+
+    // we receive txs when they enter the mempool
+    val tx1 = sendToAddress(getNewAddress(probe), 50 millibtc, probe)
+    listener.expectMsg(NewTransaction(tx1))
+    val tx2 = sendToAddress(getNewAddress(probe), 25 millibtc, probe)
+    listener.expectMsg(NewTransaction(tx2))
+    listener.expectNoMessage(100 millis)
+
+    // It may happen that transactions get included in a block without getting into our mempool first (e.g. a miner could
+    // try to hide a revoked commit tx from the network until it gets confirmed, in an attempt to steal funds).
+    // When we receive that block, we must send an event for every transaction inside it to analyze them and potentially
+    // trigger `WatchSpent` / `WatchSpentBasic`.
+    generateBlocks(1)
+    // NB: a miner coinbase transaction is also included in the block
+    val txs = Set(
+      listener.expectMsgType[NewTransaction],
+      listener.expectMsgType[NewTransaction],
+      listener.expectMsgType[NewTransaction]
+    ).map(_.tx)
+    listener.expectNoMessage(100 millis)
+    assert(txs.contains(tx1))
+    assert(txs.contains(tx2))
+  }
+
+  test("stop watching when requesting actor dies") {
+    withWatcher(f => {
+      import f._
+
+      val actor1 = TestProbe()
+      val actor2 = TestProbe()
+
+      val txid = randomBytes32
+      watcher ! WatchConfirmed(actor1.ref, txid, 2, BITCOIN_FUNDING_DEPTHOK)
+      watcher ! WatchConfirmed(actor1.ref, txid, 3, BITCOIN_FUNDING_DEPTHOK)
+      watcher ! WatchConfirmed(actor1.ref, txid, 3, BITCOIN_FUNDING_DEEPLYBURIED)
+      watcher ! WatchConfirmed(actor1.ref, txid.reverse, 3, BITCOIN_FUNDING_DEPTHOK)
+      watcher ! WatchSpent(actor1.ref, txid, 0, BITCOIN_OUTPUT_SPENT, Set.empty)
+      watcher ! WatchSpent(actor1.ref, txid, 1, BITCOIN_OUTPUT_SPENT, Set.empty)
+      watcher ! Watches(actor1.ref)
+      val watches1 = actor1.expectMsgType[Set[Watch]]
+      assert(watches1.size === 6)
+
+      watcher ! WatchConfirmed(actor2.ref, txid, 2, BITCOIN_FUNDING_DEPTHOK)
+      watcher ! WatchConfirmed(actor2.ref, txid, 3, BITCOIN_FUNDING_DEEPLYBURIED)
+      watcher ! WatchConfirmed(actor2.ref, txid.reverse, 3, BITCOIN_FUNDING_DEPTHOK)
+      watcher ! WatchSpent(actor2.ref, txid, 0, BITCOIN_OUTPUT_SPENT, Set.empty)
+      watcher ! WatchSpent(actor2.ref, txid, 1, BITCOIN_OUTPUT_SPENT, Set.empty)
+      watcher ! Watches(actor2.ref)
+      val watches2 = actor2.expectMsgType[Set[Watch]]
+      assert(watches2.size === 11)
+      assert(watches1.forall(w => watches2.contains(w)))
+
+      watcher ! StopWatching(actor2.ref)
+      watcher ! Watches(actor1.ref)
+      actor1.expectMsg(watches1)
+
+      watcher ! StopWatching(actor1.ref)
+      watcher ! Watches(actor1.ref)
+      assert(actor1.expectMsgType[Set[Watch]].isEmpty)
     })
   }
 

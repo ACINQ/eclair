@@ -268,7 +268,7 @@ object ZmqWatcher {
     def event: BitcoinEvent
   }
   private case class TriggerEvent(watch: Watch, event: WatchEvent) extends Command
-  private case class StopWatching(sender: ActorRef[WatchEvent]) extends Command
+  private[bitcoind] case class StopWatching(sender: ActorRef[WatchEvent]) extends Command
   case class Watches(replyTo: ActorRef[Set[Watch]]) extends Command
 
   private case object TickNewBlock extends Command
