@@ -30,12 +30,12 @@ import scala.concurrent.duration._
 
 class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
 
-  val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
-  val channels = Map(Peer.FinalChannelId(randomBytes32) -> system.deadLetters)
+  private val fakeIPAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
+  private val channels = Map(Peer.FinalChannelId(randomBytes32) -> system.deadLetters)
 
-  val PeerNothingData = Peer.Nothing
-  val PeerDisconnectedData = Peer.DisconnectedData(channels)
-  val PeerConnectedData = Peer.ConnectedData(fakeIPAddress.socketAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) })
+  private val PeerNothingData = Peer.Nothing
+  private val PeerDisconnectedData = Peer.DisconnectedData(channels)
+  private val PeerConnectedData = Peer.ConnectedData(fakeIPAddress.socketAddress, system.deadLetters, null, null, channels.map { case (k: ChannelId, v) => (k, v) })
 
   case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, reconnectionTask: TestFSMRef[ReconnectionTask.State, ReconnectionTask.Data, ReconnectionTask], monitor: TestProbe)
 
@@ -166,6 +166,34 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // the auto reconnect kicks off again, but this time we pick up the reconnect delay where we left it
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, waitingData3: WaitingData) = monitor.expectMsgType[TransitionWithData]
     assert(waitingData3.nextReconnectionDelay === (waitingData0.nextReconnectionDelay * 8))
+  }
+
+  test("all kind of connection failures should be caught by the reconnection task", Tag("auto_reconnect")) { f =>
+    import f._
+
+    val peer = TestProbe()
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress)
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
+    val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, connectingData: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
+
+    val failures = List(
+      PeerConnection.ConnectionResult.ConnectionFailed(connectingData.to),
+      PeerConnection.ConnectionResult.NoAddressFound,
+      PeerConnection.ConnectionResult.InitializationFailed("incompatible features"),
+      PeerConnection.ConnectionResult.AuthenticationFailed("authentication timeout")
+    )
+
+    failures.foreach { failure =>
+      // we simulate a connection error
+      reconnectionTask ! failure
+      // a new reconnection task will be scheduled
+      val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
+      // we send the tick manually so we don't wait
+      reconnectionTask ! ReconnectionTask.TickReconnect
+      // this triggers a reconnection
+      val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _) = monitor.expectMsgType[TransitionWithData]
+    }
   }
 
   test("reconnect using the address from node_announcement") { f =>
