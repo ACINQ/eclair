@@ -31,6 +31,9 @@ import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
 import java.sql.SQLException
+import java.util.concurrent.Executors
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
+import scala.concurrent.duration._
 
 class ChannelsDbSpec extends AnyFunSuite {
 
@@ -76,6 +79,19 @@ class ChannelsDbSpec extends AnyFunSuite {
       db.removeChannel(channel.channelId)
       assert(db.listLocalChannels() === Nil)
       assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
+    }
+  }
+
+  test("concurrent channel updates") {
+    forAllDbs { dbs =>
+      val db = dbs.channels
+      implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(8))
+      val channel = ChannelCodecsSpec.normal
+      val futures = for (_ <- 0 until 10000) yield {
+        Future(db.addOrUpdateChannel(channel.modify(_.commitments.channelId).setTo(randomBytes32)))
+      }
+      val res = Future.sequence(futures)
+      Await.result(res, 60 seconds)
     }
   }
 
