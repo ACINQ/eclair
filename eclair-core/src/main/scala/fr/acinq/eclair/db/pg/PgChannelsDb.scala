@@ -67,16 +67,16 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
   override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Postgres) {
     withLock { pg =>
       val data = stateDataCodec.encode(state).require.toByteArray
-      using(pg.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
-        update.setBytes(1, data)
-        update.setString(2, state.channelId.toHex)
-        if (update.executeUpdate() == 0) {
-          using(pg.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, FALSE)")) { statement =>
-            statement.setString(1, state.channelId.toHex)
-            statement.setBytes(2, data)
-            statement.executeUpdate()
-          }
-        }
+      using(pg.prepareStatement(
+        """
+          | INSERT INTO local_channels (channel_id, data, is_closed)
+          | VALUES (?, ?, FALSE)
+          | ON CONFLICT ON CONSTRAINT local_channels_pkey
+          | DO UPDATE SET data = EXCLUDED.data ;
+          | """.stripMargin)) { statement =>
+        statement.setString(1, state.channelId.toHex)
+        statement.setBytes(2, data)
+        statement.executeUpdate()
       }
     }
   }
