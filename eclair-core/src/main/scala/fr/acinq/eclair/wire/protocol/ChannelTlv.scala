@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
@@ -107,5 +108,13 @@ object ShutdownTlv {
 sealed trait ClosingSignedTlv extends Tlv
 
 object ClosingSignedTlv {
-  val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint))
+
+  case class FeeRange(min: Satoshi, max: Satoshi) extends ClosingSignedTlv
+
+  private val feeRange: Codec[FeeRange] = (("min_fee_satoshis" | satoshi) :: ("max_fee_satoshis" | satoshi)).as[FeeRange]
+
+  val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint)
+    .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, feeRange))
+  )
+
 }
