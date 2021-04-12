@@ -53,8 +53,8 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   startWith(IDLE, IdleData(Nothing))
 
   when(CONNECTING) {
-    case Event(_: PeerConnection.ConnectionResult.ConnectionFailed, d: ConnectingData) =>
-      log.info(s"connection failed, next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds")
+    case Event(failure: PeerConnection.ConnectionResult.Failure, d: ConnectingData) =>
+      log.info(s"connection failed (reason=$failure), next reconnection in ${d.nextReconnectionDelay.toSeconds} seconds")
       setReconnectTimer(d.nextReconnectionDelay)
       goto(WAITING) using WaitingData(nextReconnectionDelay(d.nextReconnectionDelay, nodeParams.maxReconnectInterval))
 
