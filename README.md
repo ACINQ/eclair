@@ -197,6 +197,13 @@ Here is how to run Eclair with plugins:
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar> <...>
 ```
 
+### Non-exhaustive plugins list
+
+Here are some plugins created by the eclair community.
+If you need support for these plugins, head over to their respective github repository.
+
+- [Telegram Bot for eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
+
 ## Testnet usage
 
 Eclair is configured to run on mainnet by default, but you can still run it on testnet (or regtest): start your Bitcoin Node in
