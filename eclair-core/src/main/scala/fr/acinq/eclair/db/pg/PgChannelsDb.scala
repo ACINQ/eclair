@@ -71,7 +71,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         """
           | INSERT INTO local_channels (channel_id, data, is_closed)
           | VALUES (?, ?, FALSE)
-          | ON CONFLICT ON CONSTRAINT local_channels_pkey
+          | ON CONFLICT (channel_id)
           | DO UPDATE SET data = EXCLUDED.data ;
           | """.stripMargin)) { statement =>
         statement.setString(1, state.channelId.toHex)
