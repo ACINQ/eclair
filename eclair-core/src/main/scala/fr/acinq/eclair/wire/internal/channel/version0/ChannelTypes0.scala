@@ -57,7 +57,7 @@ private[channel] object ChannelTypes0 {
       val claimHtlcDelayedTxsNew = claimHtlcDelayedTxs.map(tx => {
         val htlcTx = htlcTxs.find(_.txid == tx.txIn.head.outPoint.txid)
         require(htlcTx.nonEmpty, s"3rd-stage htlc tx doesn't spend one of our htlc txs: claim-htlc-tx=$tx, htlc-txs=${htlcTxs.mkString(",")}")
-        ClaimLocalDelayedOutputTx(getPartialInputInfo(htlcTx.get, tx), tx)
+        HtlcDelayedTx(getPartialInputInfo(htlcTx.get, tx), tx)
       })
       channel.LocalCommitPublished(commitTx, claimMainDelayedOutputTxNew, htlcTxsNew, claimHtlcDelayedTxsNew, Nil, irrevocablySpentNew)
     }

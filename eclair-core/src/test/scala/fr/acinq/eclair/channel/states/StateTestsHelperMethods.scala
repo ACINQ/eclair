@@ -16,14 +16,17 @@
 
 package fr.acinq.eclair.channel.states
 
-import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
+import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SignAndPublishTx}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Router.ChannelHop
@@ -95,8 +98,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref), alicePeer.ref)
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB.ref), bobPeer.ref)
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
   }
 
@@ -132,7 +135,9 @@ trait StateTestsHelperMethods extends TestKitBase {
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
+    assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
+    assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[AcceptChannel]
@@ -141,8 +146,10 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
+    assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     alice2blockchain.expectMsgType[WatchSpent]
     alice2blockchain.expectMsgType[WatchConfirmed]
+    assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
@@ -251,9 +258,9 @@ trait StateTestsHelperMethods extends TestKitBase {
       rCloseFee = r2s.expectMsgType[ClosingSigned].feeSatoshis
       r2s.forward(s)
     } while (sCloseFee != rCloseFee)
-    s2blockchain.expectMsgType[PublishAsap]
+    s2blockchain.expectMsgType[PublishTx]
     s2blockchain.expectMsgType[WatchConfirmed]
-    r2blockchain.expectMsgType[PublishAsap]
+    r2blockchain.expectMsgType[PublishTx]
     r2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(s.stateName == CLOSING)
     awaitCond(r.stateName == CLOSING)
@@ -264,25 +271,28 @@ trait StateTestsHelperMethods extends TestKitBase {
     // an error occurs and s publishes its commit tx
     val commitTx = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
-    assert(s2blockchain.expectMsgType[PublishAsap].tx == commitTx)
     awaitCond(s.stateName == CLOSING)
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
 
+    assert(s2blockchain.expectMsgType[PublishTx].tx == commitTx)
+    if (closingState.commitments.commitmentFormat == Transactions.AnchorOutputsCommitmentFormat) {
+      assert(s2blockchain.expectMsgType[SignAndPublishTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+    }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishAsap(tx.tx, PublishStrategy.JustPublish)))
-    s.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat match {
+    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishRawTx(tx)))
+    closingState.commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
-        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => PublishAsap(tx.tx, PublishStrategy.JustPublish) }: _*)
+        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => PublishRawTx(tx) }: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
       case Transactions.AnchorOutputsCommitmentFormat =>
         // all htlcs success/timeout should be published with a fee bumping strategy, without claiming their outputs
         val htlcTxs = localCommitPublished.htlcTxs.values.collect { case Some(tx: HtlcTx) => tx.tx }
-        val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[PublishAsap])
+        val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[PublishTx])
         assert(publishedTxs.map(_.tx).toSet == htlcTxs.toSet)
-        publishedTxs.foreach(p => p.strategy.isInstanceOf[PublishStrategy.SetFeerate])
+        publishedTxs.foreach(p => p.isInstanceOf[SignAndPublishTx])
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
     }
 
@@ -299,7 +309,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     s2blockchain.expectNoMsg(1 second)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    s.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
+    closingState.localCommitPublished.get
   }
 
   def remoteClose(rCommitTx: Transaction, s: TestFSMRef[State, Data, Channel], s2blockchain: TestProbe): RemoteCommitPublished = {
@@ -307,22 +317,20 @@ trait StateTestsHelperMethods extends TestKitBase {
     s ! WatchEventSpent(BITCOIN_FUNDING_SPENT, rCommitTx)
     awaitCond(s.stateName == CLOSING)
     val closingData = s.stateData.asInstanceOf[DATA_CLOSING]
-
-    def getRemoteCommitPublished(d: DATA_CLOSING): Option[RemoteCommitPublished] = d.remoteCommitPublished.orElse(d.nextRemoteCommitPublished).orElse(d.futureRemoteCommitPublished)
-
-    assert(getRemoteCommitPublished(closingData).isDefined)
+    val remoteCommitPublished_opt = closingData.remoteCommitPublished.orElse(closingData.nextRemoteCommitPublished).orElse(closingData.futureRemoteCommitPublished)
+    assert(remoteCommitPublished_opt.isDefined)
     assert(closingData.localCommitPublished.isEmpty)
-    val remoteCommitPublished = getRemoteCommitPublished(closingData).get
+    val remoteCommitPublished = remoteCommitPublished_opt.get
 
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      s2blockchain.expectMsg(PublishAsap(claimMain.tx, PublishStrategy.JustPublish))
+      s2blockchain.expectMsg(PublishRawTx(claimMain))
     })
     // all htlcs success/timeout should be claimed
     val claimHtlcTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTx) => tx }.toSeq
     claimHtlcTxs.foreach(claimHtlc => Transaction.correctlySpends(claimHtlc.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => PublishAsap(claimHtlc.tx, PublishStrategy.JustPublish)): _*)
+    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => PublishRawTx(claimHtlc)): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(rCommitTx))
@@ -337,7 +345,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     s2blockchain.expectNoMsg(1 second)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
-    getRemoteCommitPublished(s.stateData.asInstanceOf[DATA_CLOSING]).get
+    remoteCommitPublished
   }
 
   def channelId(a: TestFSMRef[State, Data, Channel]): ByteVector32 = a.stateData.channelId
@@ -349,5 +357,13 @@ trait StateTestsHelperMethods extends TestKitBase {
   def getClaimHtlcSuccessTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcSuccessTx] = rcp.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcSuccessTx) => tx }.toSeq
 
   def getClaimHtlcTimeoutTxs(rcp: RemoteCommitPublished): Seq[ClaimHtlcTimeoutTx] = rcp.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTimeoutTx) => tx }.toSeq
+
+}
+
+object StateTestsHelperMethods {
+
+  case class FakeTxPublisherFactory(txPublisher: TestProbe) extends Channel.TxPublisherFactory {
+    override def spawnTxPublisher(context: ActorContext, remoteNodeId: PublicKey): akka.actor.typed.ActorRef[TxPublisher.Command] = txPublisher.ref
+  }
 
 }

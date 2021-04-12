@@ -17,10 +17,8 @@
 package fr.acinq.eclair.blockchain
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.channel.BitcoinEvent
-import fr.acinq.eclair.transactions.Transactions.TransactionSigningKit
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 
 /**
@@ -109,19 +107,6 @@ final case class WatchEventSpentBasic(event: BitcoinEvent) extends WatchEvent
 
 // TODO: not implemented yet.
 final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
-
-// @formatter:off
-sealed trait PublishStrategy
-object PublishStrategy {
-  case object JustPublish extends PublishStrategy
-  case class SetFeerate(currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi, signingKit: TransactionSigningKit) extends PublishStrategy {
-    override def toString = s"SetFeerate(target=$targetFeerate)"
-  }
-}
-// @formatter:on
-
-/** Publish the provided tx as soon as possible depending on lock time, csv and publishing strategy. */
-final case class PublishAsap(tx: Transaction, strategy: PublishStrategy)
 
 // @formatter:off
 sealed trait UtxoStatus
