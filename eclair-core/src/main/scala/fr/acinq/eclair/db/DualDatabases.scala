@@ -6,8 +6,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
-import fr.acinq.eclair.db.pg._
-import fr.acinq.eclair.db.sqlite._
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
@@ -23,25 +22,30 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 /**
- * An implementation of [[Databases]] where there are two separate underlying db, one sqlite and one postgres.
- * Sqlite is the main database, but we also replicate all calls to postgres.
- * Calls to postgres are made asynchronously in a dedicated thread pool, so that it doesn't have any performance impact.
+ * An implementation of [[Databases]] where there are two separate underlying db, one primary and one secondary.
+ * All calls to primary are replicated asynchronously to secondary.
+ * Calls to secondary are made asynchronously in a dedicated thread pool, so that it doesn't have any performance impact.
  */
-case class DualDatabases(sqlite: SqliteDatabases, postgres: PostgresDatabases) extends Databases with FileBackup {
+case class DualDatabases(primary: Databases, secondary: Databases) extends Databases with FileBackup {
 
-  override val network: NetworkDb = DualNetworkDb(sqlite.network, postgres.network)
+  override val network: NetworkDb = DualNetworkDb(primary.network, secondary.network)
 
-  override val audit: AuditDb = DualAuditDb(sqlite.audit, postgres.audit)
+  override val audit: AuditDb = DualAuditDb(primary.audit, secondary.audit)
 
-  override val channels: ChannelsDb = DualChannelsDb(sqlite.channels, postgres.channels)
+  override val channels: ChannelsDb = DualChannelsDb(primary.channels, secondary.channels)
 
-  override val peers: PeersDb = DualPeersDb(sqlite.peers, postgres.peers)
+  override val peers: PeersDb = DualPeersDb(primary.peers, secondary.peers)
 
-  override val payments: PaymentsDb = DualPaymentsDb(sqlite.payments, postgres.payments)
+  override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
 
-  override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(sqlite.pendingCommands, postgres.pendingCommands)
+  override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
 
-  override def backup(backupFile: File): Unit = sqlite.backup(backupFile)
+  /** if one of the database supports file backup, we use it */
+  override def backup(backupFile: File): Unit = (primary, secondary) match {
+    case (f: FileBackup, _) => f.backup(backupFile)
+    case (_, f: FileBackup) => f.backup(backupFile)
+    case _ => ()
+  }
 }
 
 object DualDatabases extends Logging {
@@ -55,360 +59,369 @@ object DualDatabases extends Logging {
         throw t
     }
   }
+
+  def getDatabases(dualDatabases: DualDatabases): (SqliteDatabases, PostgresDatabases) =
+    (dualDatabases.primary, dualDatabases.secondary) match {
+      case (sqliteDb: SqliteDatabases, postgresDb: PostgresDatabases) =>
+        (sqliteDb, postgresDb)
+      case (postgresDb: PostgresDatabases, sqliteDb: SqliteDatabases) =>
+        (sqliteDb, postgresDb)
+      case _ => ???
+    }
 }
 
-case class DualNetworkDb(sqlite: SqliteNetworkDb, postgres: PgNetworkDb) extends NetworkDb {
+case class DualNetworkDb(primary: NetworkDb, secondary: NetworkDb) extends NetworkDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-network").build()))
 
   override def addNode(n: NodeAnnouncement): Unit = {
-    runAsync(postgres.addNode(n))
-    sqlite.addNode(n)
+    runAsync(secondary.addNode(n))
+    primary.addNode(n)
   }
 
   override def updateNode(n: NodeAnnouncement): Unit = {
-    runAsync(postgres.updateNode(n))
-    sqlite.updateNode(n)
+    runAsync(secondary.updateNode(n))
+    primary.updateNode(n)
   }
 
   override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
-    runAsync(postgres.getNode(nodeId))
-    sqlite.getNode(nodeId)
+    runAsync(secondary.getNode(nodeId))
+    primary.getNode(nodeId)
   }
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
-    runAsync(postgres.removeNode(nodeId))
-    sqlite.removeNode(nodeId)
+    runAsync(secondary.removeNode(nodeId))
+    primary.removeNode(nodeId)
   }
 
   override def listNodes(): Seq[NodeAnnouncement] = {
-    runAsync(postgres.listNodes())
-    sqlite.listNodes()
+    runAsync(secondary.listNodes())
+    primary.listNodes()
   }
 
   override def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit = {
-    runAsync(postgres.addChannel(c, txid, capacity))
-    sqlite.addChannel(c, txid, capacity)
+    runAsync(secondary.addChannel(c, txid, capacity))
+    primary.addChannel(c, txid, capacity)
   }
 
   override def updateChannel(u: ChannelUpdate): Unit = {
-    runAsync(postgres.updateChannel(u))
-    sqlite.updateChannel(u)
+    runAsync(secondary.updateChannel(u))
+    primary.updateChannel(u)
   }
 
   override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = {
-    runAsync(postgres.removeChannels(shortChannelIds))
-    sqlite.removeChannels(shortChannelIds)
+    runAsync(secondary.removeChannels(shortChannelIds))
+    primary.removeChannels(shortChannelIds)
   }
 
   override def listChannels(): SortedMap[ShortChannelId, Router.PublicChannel] = {
-    runAsync(postgres.listChannels())
-    sqlite.listChannels()
+    runAsync(secondary.listChannels())
+    primary.listChannels()
   }
 
   override def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit = {
-    runAsync(postgres.addToPruned(shortChannelIds))
-    sqlite.addToPruned(shortChannelIds)
+    runAsync(secondary.addToPruned(shortChannelIds))
+    primary.addToPruned(shortChannelIds)
   }
 
   override def removeFromPruned(shortChannelId: ShortChannelId): Unit = {
-    runAsync(postgres.removeFromPruned(shortChannelId))
-    sqlite.removeFromPruned(shortChannelId)
+    runAsync(secondary.removeFromPruned(shortChannelId))
+    primary.removeFromPruned(shortChannelId)
   }
 
   override def isPruned(shortChannelId: ShortChannelId): Boolean = {
-    runAsync(postgres.isPruned(shortChannelId))
-    sqlite.isPruned(shortChannelId)
+    runAsync(secondary.isPruned(shortChannelId))
+    primary.isPruned(shortChannelId)
   }
 
   override def close(): Unit = {
-    runAsync(postgres.close())
-    sqlite.close()
+    runAsync(secondary.close())
+    primary.close()
   }
 }
 
-case class DualAuditDb(sqlite: SqliteAuditDb, postgres: PgAuditDb) extends AuditDb {
+case class DualAuditDb(primary: AuditDb, secondary: AuditDb) extends AuditDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-audit").build()))
 
   override def add(channelLifecycle: DbEventHandler.ChannelEvent): Unit = {
-    runAsync(postgres.add(channelLifecycle))
-    sqlite.add(channelLifecycle)
+    runAsync(secondary.add(channelLifecycle))
+    primary.add(channelLifecycle)
   }
 
   override def add(paymentSent: PaymentSent): Unit = {
-    runAsync(postgres.add(paymentSent))
-    sqlite.add(paymentSent)
+    runAsync(secondary.add(paymentSent))
+    primary.add(paymentSent)
   }
 
   override def add(paymentReceived: PaymentReceived): Unit = {
-    runAsync(postgres.add(paymentReceived))
-    sqlite.add(paymentReceived)
+    runAsync(secondary.add(paymentReceived))
+    primary.add(paymentReceived)
   }
 
   override def add(paymentRelayed: PaymentRelayed): Unit = {
-    runAsync(postgres.add(paymentRelayed))
-    sqlite.add(paymentRelayed)
+    runAsync(secondary.add(paymentRelayed))
+    primary.add(paymentRelayed)
   }
 
   override def add(txPublished: TransactionPublished): Unit = {
-    runAsync(postgres.add(txPublished))
-    sqlite.add(txPublished)
+    runAsync(secondary.add(txPublished))
+    primary.add(txPublished)
   }
 
   override def add(txConfirmed: TransactionConfirmed): Unit = {
-    runAsync(postgres.add(txConfirmed))
-    sqlite.add(txConfirmed)
+    runAsync(secondary.add(txConfirmed))
+    primary.add(txConfirmed)
   }
 
   override def add(channelErrorOccurred: ChannelErrorOccurred): Unit = {
-    runAsync(postgres.add(channelErrorOccurred))
-    sqlite.add(channelErrorOccurred)
+    runAsync(secondary.add(channelErrorOccurred))
+    primary.add(channelErrorOccurred)
   }
 
   override def addChannelUpdate(channelUpdateParametersChanged: ChannelUpdateParametersChanged): Unit = {
-    runAsync(postgres.addChannelUpdate(channelUpdateParametersChanged))
-    sqlite.addChannelUpdate(channelUpdateParametersChanged)
+    runAsync(secondary.addChannelUpdate(channelUpdateParametersChanged))
+    primary.addChannelUpdate(channelUpdateParametersChanged)
   }
 
   override def addPathFindingExperimentMetrics(metrics: PathFindingExperimentMetrics): Unit = {
-    runAsync(postgres.addPathFindingExperimentMetrics(metrics))
-    sqlite.addPathFindingExperimentMetrics(metrics)
+    runAsync(secondary.addPathFindingExperimentMetrics(metrics))
+    primary.addPathFindingExperimentMetrics(metrics)
   }
 
   override def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent] = {
-    runAsync(postgres.listSent(from, to))
-    sqlite.listSent(from, to)
+    runAsync(secondary.listSent(from, to))
+    primary.listSent(from, to)
   }
 
   override def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived] = {
-    runAsync(postgres.listReceived(from, to))
-    sqlite.listReceived(from, to)
+    runAsync(secondary.listReceived(from, to))
+    primary.listReceived(from, to)
   }
 
   override def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed] = {
-    runAsync(postgres.listRelayed(from, to))
-    sqlite.listRelayed(from, to)
+    runAsync(secondary.listRelayed(from, to))
+    primary.listRelayed(from, to)
   }
 
   override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[AuditDb.NetworkFee] = {
-    runAsync(postgres.listNetworkFees(from, to))
-    sqlite.listNetworkFees(from, to)
+    runAsync(secondary.listNetworkFees(from, to))
+    primary.listNetworkFees(from, to)
   }
 
   override def stats(from: TimestampMilli, to: TimestampMilli): Seq[AuditDb.Stats] = {
-    runAsync(postgres.stats(from, to))
-    sqlite.stats(from, to)
+    runAsync(secondary.stats(from, to))
+    primary.stats(from, to)
   }
 
   override def close(): Unit = {
-    runAsync(postgres.close())
-    sqlite.close()
+    runAsync(secondary.close())
+    primary.close()
   }
 }
 
-case class DualChannelsDb(sqlite: SqliteChannelsDb, postgres: PgChannelsDb) extends ChannelsDb {
+case class DualChannelsDb(primary: ChannelsDb, secondary: ChannelsDb) extends ChannelsDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-channels").build()))
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
-    runAsync(postgres.addOrUpdateChannel(state))
-    sqlite.addOrUpdateChannel(state)
+    runAsync(secondary.addOrUpdateChannel(state))
+    primary.addOrUpdateChannel(state)
   }
 
   override def getChannel(channelId: ByteVector32): Option[HasCommitments] = {
-    runAsync(postgres.getChannel(channelId))
-    sqlite.getChannel(channelId)
+    runAsync(secondary.getChannel(channelId))
+    primary.getChannel(channelId)
   }
 
   override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
-    runAsync(postgres.updateChannelMeta(channelId, event))
-    sqlite.updateChannelMeta(channelId, event)
+    runAsync(secondary.updateChannelMeta(channelId, event))
+    primary.updateChannelMeta(channelId, event)
   }
 
   override def removeChannel(channelId: ByteVector32): Unit = {
-    runAsync(postgres.removeChannel(channelId))
-    sqlite.removeChannel(channelId)
+    runAsync(secondary.removeChannel(channelId))
+    primary.removeChannel(channelId)
   }
 
   override def listLocalChannels(): Seq[HasCommitments] = {
-    runAsync(postgres.listLocalChannels())
-    sqlite.listLocalChannels()
+    runAsync(secondary.listLocalChannels())
+    primary.listLocalChannels()
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = {
-    runAsync(postgres.addHtlcInfo(channelId, commitmentNumber, paymentHash, cltvExpiry))
-    sqlite.addHtlcInfo(channelId, commitmentNumber, paymentHash, cltvExpiry)
+    runAsync(secondary.addHtlcInfo(channelId, commitmentNumber, paymentHash, cltvExpiry))
+    primary.addHtlcInfo(channelId, commitmentNumber, paymentHash, cltvExpiry)
   }
 
   override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = {
-    runAsync(postgres.listHtlcInfos(channelId, commitmentNumber))
-    sqlite.listHtlcInfos(channelId, commitmentNumber)
+    runAsync(secondary.listHtlcInfos(channelId, commitmentNumber))
+    primary.listHtlcInfos(channelId, commitmentNumber)
   }
 
   override def close(): Unit = {
-    runAsync(postgres.close())
-    sqlite.close()
+    runAsync(secondary.close())
+    primary.close()
   }
 }
 
-case class DualPeersDb(sqlite: SqlitePeersDb, postgres: PgPeersDb) extends PeersDb {
+case class DualPeersDb(primary: PeersDb, secondary: PeersDb) extends PeersDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-peers").build()))
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress): Unit = {
-    runAsync(postgres.addOrUpdatePeer(nodeId, address))
-    sqlite.addOrUpdatePeer(nodeId, address)
+    runAsync(secondary.addOrUpdatePeer(nodeId, address))
+    primary.addOrUpdatePeer(nodeId, address)
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
-    runAsync(postgres.removePeer(nodeId))
-    sqlite.removePeer(nodeId)
+    runAsync(secondary.removePeer(nodeId))
+    primary.removePeer(nodeId)
   }
 
   override def getPeer(nodeId: Crypto.PublicKey): Option[NodeAddress] = {
-    runAsync(postgres.getPeer(nodeId))
-    sqlite.getPeer(nodeId)
+    runAsync(secondary.getPeer(nodeId))
+    primary.getPeer(nodeId)
   }
 
   override def listPeers(): Map[Crypto.PublicKey, NodeAddress] = {
-    runAsync(postgres.listPeers())
-    sqlite.listPeers()
+    runAsync(secondary.listPeers())
+    primary.listPeers()
   }
 
   override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = {
-    runAsync(postgres.addOrUpdateRelayFees(nodeId, fees))
-    sqlite.addOrUpdateRelayFees(nodeId, fees)
+    runAsync(secondary.addOrUpdateRelayFees(nodeId, fees))
+    primary.addOrUpdateRelayFees(nodeId, fees)
   }
 
   override def getRelayFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
-    runAsync(postgres.getRelayFees(nodeId))
-    sqlite.getRelayFees(nodeId)
+    runAsync(secondary.getRelayFees(nodeId))
+    primary.getRelayFees(nodeId)
   }
 
   override def close(): Unit = {
-    runAsync(postgres.close())
-    sqlite.close()
+    runAsync(secondary.close())
+    primary.close()
   }
 }
 
-case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) extends PaymentsDb {
+case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends PaymentsDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-payments").build()))
 
   override def listPaymentsOverview(limit: Int): Seq[PlainPayment] = {
-    runAsync(postgres.listPaymentsOverview(limit))
-    sqlite.listPaymentsOverview(limit)
+    runAsync(secondary.listPaymentsOverview(limit))
+    primary.listPaymentsOverview(limit)
   }
 
   override def close(): Unit = {
-    runAsync(postgres.close())
-    sqlite.close()
+    runAsync(secondary.close())
+    primary.close()
   }
 
   override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit = {
-    runAsync(postgres.addIncomingPayment(pr, preimage, paymentType))
-    sqlite.addIncomingPayment(pr, preimage, paymentType)
+    runAsync(secondary.addIncomingPayment(pr, preimage, paymentType))
+    primary.addIncomingPayment(pr, preimage, paymentType)
   }
 
   override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = {
-    runAsync(postgres.receiveIncomingPayment(paymentHash, amount, receivedAt))
-    sqlite.receiveIncomingPayment(paymentHash, amount, receivedAt)
+    runAsync(secondary.receiveIncomingPayment(paymentHash, amount, receivedAt))
+    primary.receiveIncomingPayment(paymentHash, amount, receivedAt)
   }
 
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = {
-    runAsync(postgres.getIncomingPayment(paymentHash))
-    sqlite.getIncomingPayment(paymentHash)
+    runAsync(secondary.getIncomingPayment(paymentHash))
+    primary.getIncomingPayment(paymentHash)
   }
 
   override def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit] = {
-    runAsync(postgres.removeIncomingPayment(paymentHash))
-    sqlite.removeIncomingPayment(paymentHash)
+    runAsync(secondary.removeIncomingPayment(paymentHash))
+    primary.removeIncomingPayment(paymentHash)
   }
 
   override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
-    runAsync(postgres.listIncomingPayments(from, to))
-    sqlite.listIncomingPayments(from, to)
+    runAsync(secondary.listIncomingPayments(from, to))
+    primary.listIncomingPayments(from, to)
   }
 
   override def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
-    runAsync(postgres.listPendingIncomingPayments(from, to))
-    sqlite.listPendingIncomingPayments(from, to)
+    runAsync(secondary.listPendingIncomingPayments(from, to))
+    primary.listPendingIncomingPayments(from, to)
   }
 
   override def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
-    runAsync(postgres.listExpiredIncomingPayments(from, to))
-    sqlite.listExpiredIncomingPayments(from, to)
+    runAsync(secondary.listExpiredIncomingPayments(from, to))
+    primary.listExpiredIncomingPayments(from, to)
   }
 
   override def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
-    runAsync(postgres.listReceivedIncomingPayments(from, to))
-    sqlite.listReceivedIncomingPayments(from, to)
+    runAsync(secondary.listReceivedIncomingPayments(from, to))
+    primary.listReceivedIncomingPayments(from, to)
   }
 
   override def addOutgoingPayment(outgoingPayment: OutgoingPayment): Unit = {
-    runAsync(postgres.addOutgoingPayment(outgoingPayment))
-    sqlite.addOutgoingPayment(outgoingPayment)
+    runAsync(secondary.addOutgoingPayment(outgoingPayment))
+    primary.addOutgoingPayment(outgoingPayment)
   }
 
   override def updateOutgoingPayment(paymentResult: PaymentSent): Unit = {
-    runAsync(postgres.updateOutgoingPayment(paymentResult))
-    sqlite.updateOutgoingPayment(paymentResult)
+    runAsync(secondary.updateOutgoingPayment(paymentResult))
+    primary.updateOutgoingPayment(paymentResult)
   }
 
   override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit = {
-    runAsync(postgres.updateOutgoingPayment(paymentResult))
-    sqlite.updateOutgoingPayment(paymentResult)
+    runAsync(secondary.updateOutgoingPayment(paymentResult))
+    primary.updateOutgoingPayment(paymentResult)
   }
 
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] = {
-    runAsync(postgres.getOutgoingPayment(id))
-    sqlite.getOutgoingPayment(id)
+    runAsync(secondary.getOutgoingPayment(id))
+    primary.getOutgoingPayment(id)
   }
 
   override def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment] = {
-    runAsync(postgres.listOutgoingPayments(parentId))
-    sqlite.listOutgoingPayments(parentId)
+    runAsync(secondary.listOutgoingPayments(parentId))
+    primary.listOutgoingPayments(parentId)
   }
 
   override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] = {
-    runAsync(postgres.listOutgoingPayments(paymentHash))
-    sqlite.listOutgoingPayments(paymentHash)
+    runAsync(secondary.listOutgoingPayments(paymentHash))
+    primary.listOutgoingPayments(paymentHash)
   }
 
   override def listOutgoingPayments(from: TimestampMilli, to: TimestampMilli): Seq[OutgoingPayment] = {
-    runAsync(postgres.listOutgoingPayments(from, to))
-    sqlite.listOutgoingPayments(from, to)
+    runAsync(secondary.listOutgoingPayments(from, to))
+    primary.listOutgoingPayments(from, to)
   }
 
 }
 
-case class DualPendingCommandsDb(sqlite: SqlitePendingCommandsDb, postgres: PgPendingCommandsDb) extends PendingCommandsDb {
+case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingCommandsDb) extends PendingCommandsDb {
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-pending-commands").build()))
 
   override def addSettlementCommand(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
-    runAsync(postgres.addSettlementCommand(channelId, cmd))
-    sqlite.addSettlementCommand(channelId, cmd)
+    runAsync(secondary.addSettlementCommand(channelId, cmd))
+    primary.addSettlementCommand(channelId, cmd)
   }
 
   override def removeSettlementCommand(channelId: ByteVector32, htlcId: Long): Unit = {
-    runAsync(postgres.removeSettlementCommand(channelId, htlcId))
-    sqlite.removeSettlementCommand(channelId, htlcId)
+    runAsync(secondary.removeSettlementCommand(channelId, htlcId))
+    primary.removeSettlementCommand(channelId, htlcId)
   }
 
   override def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand] = {
-    runAsync(postgres.listSettlementCommands(channelId))
-    sqlite.listSettlementCommands(channelId)
+    runAsync(secondary.listSettlementCommands(channelId))
+    primary.listSettlementCommands(channelId)
   }
 
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = {
-    runAsync(postgres.listSettlementCommands())
-    sqlite.listSettlementCommands()
+    runAsync(secondary.listSettlementCommands())
+    primary.listSettlementCommands()
   }
 
   override def close(): Unit = {
-    runAsync(postgres.close())
-    sqlite.close()
+    runAsync(secondary.close())
+    primary.close()
   }
 }

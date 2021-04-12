@@ -81,17 +81,17 @@ class SqliteUtilsSpec extends AnyFunSuite {
 
   test("jdbc url check") {
     val datadir = new File(TestUtils.BUILD_DIRECTORY, s"sqlite_test_${UUID.randomUUID()}")
-    val jdbcUrlPath = new File(datadir, "last_jdbcurl")
     datadir.mkdirs()
+    val jdbcUrlPath = new File(datadir, "last_jdbcurl")
 
     // first start : write to file
-    val db1 = Databases.sqlite(datadir)
+    val db1 = Databases.sqlite(datadir, Some(jdbcUrlPath))
     db1.channels.close()
 
     assert(Files.readString(jdbcUrlPath.toPath).trim == "sqlite")
 
     // 2nd start : no-op
-    val db2 = Databases.sqlite(datadir)
+    val db2 = Databases.sqlite(datadir, Some(jdbcUrlPath))
     db2.channels.close()
 
     // we modify the file
@@ -99,7 +99,7 @@ class SqliteUtilsSpec extends AnyFunSuite {
 
     // boom
     intercept[JdbcUrlChanged] {
-      Databases.sqlite(datadir)
+      Databases.sqlite(datadir, Some(jdbcUrlPath))
     }
   }
 
