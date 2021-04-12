@@ -49,15 +49,17 @@ object TxPublisher {
   sealed trait Command
   sealed trait PublishTx extends Command {
     def tx: Transaction
+    def desc: String
   }
   /**  Publish a fully signed transaction without modifying it. */
-  case class PublishRawTx(tx: Transaction) extends PublishTx
+  case class PublishRawTx(tx: Transaction, desc: String) extends PublishTx
   /**
    * Publish an unsigned transaction. Once (csv and cltv) delays have been satisfied, the tx publisher will set the fees,
    * sign the transaction and broadcast it.
    */
   case class SignAndPublishTx(txInfo: TransactionWithInputInfo, commitments: Commitments) extends PublishTx {
     override def tx: Transaction = txInfo.tx
+    override def desc: String = txInfo.desc
   }
   case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   case class ParentTxConfirmed(childTx: PublishTx, parentTxId: ByteVector32) extends Command
@@ -193,12 +195,12 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
         if (csvTimeouts.nonEmpty) {
           csvTimeouts.foreach {
             case (parentTxId, csvTimeout) =>
-              log.info(s"txid=${p.tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", p.tx)
+              log.info(s"${p.desc} txid=${p.tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", p.tx)
               watcher ! WatchConfirmed(watchConfirmedResponseMapper.toClassic, parentTxId, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
           }
           run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> TxWithRelativeDelay(p, csvTimeouts.keySet)))
         } else if (cltvTimeout > blockCount) {
-          log.info(s"delaying publication of txid=${p.tx.txid} until block=$cltvTimeout (current block=$blockCount)")
+          log.info(s"delaying publication of ${p.desc} txid=${p.tx.txid} until block=$cltvTimeout (current block=$blockCount)")
           val cltvDelayedTxs1 = cltvDelayedTxs + (cltvTimeout -> (cltvDelayedTxs.getOrElse(cltvTimeout, Seq.empty) :+ p))
           run(cltvDelayedTxs1, csvDelayedTxs)
         } else {
@@ -207,17 +209,17 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
         }
 
       case ParentTxConfirmed(p, parentTxId) =>
-        log.info(s"parent tx of txid=${p.tx.txid} has been confirmed (parent txid=$parentTxId)")
+        log.info(s"parent tx of ${p.desc} txid=${p.tx.txid} has been confirmed (parent txid=$parentTxId)")
         val blockCount = nodeParams.currentBlockHeight
         csvDelayedTxs.get(p.tx.txid) match {
           case Some(TxWithRelativeDelay(_, parentTxIds)) =>
             val txWithRelativeDelay1 = TxWithRelativeDelay(p, parentTxIds - parentTxId)
             if (txWithRelativeDelay1.parentTxIds.isEmpty) {
-              log.info(s"all parent txs of txid=${p.tx.txid} have been confirmed")
+              log.info(s"all parent txs of ${p.desc} txid=${p.tx.txid} have been confirmed")
               val csvDelayedTx1 = csvDelayedTxs - p.tx.txid
               val cltvTimeout = Scripts.cltvTimeout(p.tx)
               if (cltvTimeout > blockCount) {
-                log.info(s"delaying publication of txid=${p.tx.txid} until block=$cltvTimeout (current block=$blockCount)")
+                log.info(s"delaying publication of ${p.desc} txid=${p.tx.txid} until block=$cltvTimeout (current block=$blockCount)")
                 val cltvDelayedTxs1 = cltvDelayedTxs + (cltvTimeout -> (cltvDelayedTxs.getOrElse(cltvTimeout, Seq.empty) :+ p))
                 run(cltvDelayedTxs1, csvDelayedTx1)
               } else {
@@ -225,11 +227,11 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
                 run(cltvDelayedTxs, csvDelayedTx1)
               }
             } else {
-              log.info(s"some parent txs of txid=${p.tx.txid} are still unconfirmed (parent txids=${txWithRelativeDelay1.parentTxIds.mkString(",")})")
+              log.info(s"some parent txs of ${p.desc} txid=${p.tx.txid} are still unconfirmed (parent txids=${txWithRelativeDelay1.parentTxIds.mkString(",")})")
               run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> txWithRelativeDelay1))
             }
           case None =>
-            log.warn(s"txid=${p.tx.txid} not found for parent txid=$parentTxId")
+            log.warn(s"${p.desc} txid=${p.tx.txid} not found for parent txid=$parentTxId")
             Behaviors.same
         }
 
@@ -252,7 +254,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
   private def publish(p: PublishTx): Future[ByteVector32] = {
     p match {
       case SignAndPublishTx(txInfo, commitments) =>
-        log.info("publishing tx: input={}:{} txid={} tx={}", txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid, p.tx)
+        log.info("publishing {}: input={}:{} txid={} tx={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid, p.tx)
         val publishF = txInfo match {
           case tx: ClaimLocalAnchorOutputTx => publishLocalAnchorTx(tx, commitments)
           case tx: HtlcTx => publishHtlcTx(tx, commitments)
@@ -262,16 +264,16 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
         }
         publishF.recoverWith {
           case t: Throwable if t.getMessage.contains("(code: -4)") || t.getMessage.contains("(code: -6)") =>
-            log.warn("not enough funds to publish tx, will retry next block: reason={} input={}:{} txid={}", t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
+            log.warn("not enough funds to publish {}, will retry next block: reason={} input={}:{} txid={}", txInfo.desc, t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
             context.self ! PublishNextBlock(p)
             Future.failed(t)
           case t: Throwable =>
-            log.error("cannot publish tx: reason={} input={}:{} txid={}", t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
+            log.error("cannot publish {}: reason={} input={}:{} txid={}", txInfo.desc, t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
             Future.failed(t)
         }
-      case PublishRawTx(tx) =>
-        log.info("publishing tx: txid={} tx={}", tx.txid, tx)
-        publish(tx)
+      case PublishRawTx(tx, desc) =>
+        log.info("publishing {}: txid={} tx={}", desc, tx.txid, tx)
+        publish(tx, desc)
     }
   }
 
@@ -279,10 +281,10 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
    * This method uses a single thread to publish transactions so that it preserves the order of publication.
    * We need that to prevent concurrency issues while publishing parent and child transactions.
    */
-  private def publish(tx: Transaction): Future[ByteVector32] = {
+  private def publish(tx: Transaction, desc: String): Future[ByteVector32] = {
     client.publishTransaction(tx)(singleThreadExecutionContext).recoverWith {
       case t: Throwable =>
-        log.error("cannot publish tx: reason={} txid={}", t.getMessage, tx.txid)
+        log.error("cannot publish {}: reason={} txid={}", desc, t.getMessage, tx.txid)
         Future.failed(t)
     }
   }
@@ -296,17 +298,17 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
     val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
     val targetFeerate = feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
     if (targetFeerate <= commitFeerate) {
-      log.info(s"publishing commit tx without the anchor (current feerate=$commitFeerate): txid=${commitTx.txid}")
+      log.info(s"publishing commit-tx without the anchor (current feerate=$commitFeerate): txid=${commitTx.txid}")
       Future.successful(commitTx.txid)
     } else {
-      log.info(s"bumping commit tx with the anchor (target feerate=$targetFeerate): txid=${commitTx.txid}")
+      log.info(s"bumping commit-tx with the anchor (target feerate=$targetFeerate): txid=${commitTx.txid}")
       addInputs(txInfo, targetFeerate, commitments).flatMap(claimAnchorTx => {
         val claimAnchorSig = keyManager.sign(claimAnchorTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitments.commitmentFormat)
         val signedClaimAnchorTx = addSigs(claimAnchorTx, claimAnchorSig)
         val commitInfo = ExtendedBitcoinClient.PreviousTx(signedClaimAnchorTx.input, signedClaimAnchorTx.tx.txIn.head.witness)
         client.signTransaction(signedClaimAnchorTx.tx, Seq(commitInfo))
       }).flatMap(signTxResponse => {
-        publish(signTxResponse.tx)
+        publish(signTxResponse.tx, txInfo.desc)
       })
     }
   }
@@ -366,10 +368,10 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
         if (targetFeerate <= currentFeerate) {
           val localSig = keyManager.sign(txInfo, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
           val signedHtlcTx = txWithWitnessData.addSigs(localSig, commitments.commitmentFormat)
-          log.info("publishing htlc tx without adding inputs: txid={}", signedHtlcTx.tx.txid)
-          publish(signedHtlcTx.tx)
+          log.info("publishing {} without adding inputs: txid={}", txInfo.desc, signedHtlcTx.tx.txid)
+          publish(signedHtlcTx.tx, txInfo.desc)
         } else {
-          log.info("publishing htlc tx with additional inputs: commit input={}:{} target feerate={}", txInfo.input.outPoint.txid, txInfo.input.outPoint.index, targetFeerate)
+          log.info("publishing {} with additional inputs: commit input={}:{} target feerate={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, targetFeerate)
           addInputs(txInfo, targetFeerate, commitments).flatMap(unsignedTx => {
             val localSig = keyManager.sign(unsignedTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
             val signedHtlcTx = txWithWitnessData.updateTx(unsignedTx.tx).addSigs(localSig, commitments.commitmentFormat)
@@ -378,8 +380,8 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
               // NB: bitcoind messes up the witness stack for our htlc input, so we need to restore it.
               // See https://github.com/bitcoin/bitcoin/issues/21151
               val completeTx = signedHtlcTx.tx.copy(txIn = signedHtlcTx.tx.txIn.head +: signTxResponse.tx.txIn.tail)
-              log.info("publishing bumped htlc tx: commit input={}:{} txid={} tx={}", txInfo.input.outPoint.txid, txInfo.input.outPoint.index, completeTx.txid, completeTx)
-              publish(completeTx)
+              log.info("publishing bumped {}: commit input={}:{} txid={} tx={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, completeTx.txid, completeTx)
+              publish(completeTx, txInfo.desc)
             })
           })
         }
@@ -408,7 +410,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: akka.actor.ActorRef, 
     // change output amount (unless bitcoind didn't add any change output, in that case we will overpay the fee slightly).
     val weightRatio = 1.0 + (htlcInputMaxWeight.toDouble / (htlcTxWeight + claimP2WPKHOutputWeight))
     client.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, lockUtxos = true, changePosition = Some(1))).map(fundTxResponse => {
-      log.info(s"added ${fundTxResponse.tx.txIn.length} wallet input(s) and ${fundTxResponse.tx.txOut.length - 1} wallet output(s) to htlc tx spending commit input=${txInfo.input.outPoint.txid}:${txInfo.input.outPoint.index}")
+      log.info(s"added ${fundTxResponse.tx.txIn.length} wallet input(s) and ${fundTxResponse.tx.txOut.length - 1} wallet output(s) to ${txInfo.desc} spending commit input=${txInfo.input.outPoint.txid}:${txInfo.input.outPoint.index}")
       // We add the HTLC input (from the commit tx) and restore the HTLC output.
       // NB: we can't modify them because they are signed by our peer (with SIGHASH_SINGLE | SIGHASH_ANYONECANPAY).
       val txWithHtlcInput = fundTxResponse.tx.copy(

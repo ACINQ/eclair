@@ -146,7 +146,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
         bitcoinWallet.signTransaction(funded).pipeTo(probe.ref)
         probe.expectMsgType[SignTransactionResponse].tx
       }
-      txPublisher ! PublishRawTx(tx1)
+      txPublisher ! PublishRawTx(tx1, "funding-tx")
       createBlocks(4)
       assert(!getMempool.exists(_.txid === tx1.txid)) // tx should not be broadcast yet
       createBlocks(1)
@@ -154,7 +154,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
 
       // tx2 has a relative delay but no absolute delay
       val tx2 = createSpendP2WPKH(tx1, priv, priv.publicKey, 10000 sat, sequence = 2, lockTime = 0)
-      txPublisher ! PublishRawTx(tx2)
+      txPublisher ! PublishRawTx(tx2, "child-tx")
       val watchParentTx2 = alice2blockchain.expectMsgType[WatchConfirmed]
       assert(watchParentTx2.txId === tx1.txid)
       assert(watchParentTx2.minDepth === 2)
@@ -164,7 +164,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
 
       // tx3 has both relative and absolute delays
       val tx3 = createSpendP2WPKH(tx2, priv, priv.publicKey, 10000 sat, sequence = 1, lockTime = blockCount.get + 5)
-      txPublisher ! PublishRawTx(tx3)
+      txPublisher ! PublishRawTx(tx3, "grand-child-tx")
       val watchParentTx3 = alice2blockchain.expectMsgType[WatchConfirmed]
       assert(watchParentTx3.txId === tx2.txid)
       assert(watchParentTx3.minDepth === 1)
@@ -191,8 +191,8 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
         bitcoinWallet.signTransaction(funded).pipeTo(probe.ref)
         probe.expectMsgType[SignTransactionResponse].tx
       })
-      txPublisher ! PublishRawTx(parentTx1)
-      txPublisher ! PublishRawTx(parentTx2)
+      txPublisher ! PublishRawTx(parentTx1, "parent-tx-1")
+      txPublisher ! PublishRawTx(parentTx2, "parent-tx-2")
       assert(getMempoolTxs(2).map(_.txid).toSet === Set(parentTx1.txid, parentTx2.txid))
 
       val tx = {
@@ -213,7 +213,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       }
 
       Transaction.correctlySpends(tx, parentTx1 :: parentTx2 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      txPublisher ! PublishRawTx(tx)
+      txPublisher ! PublishRawTx(tx, "child-tx")
       val watches = Seq(
         alice2blockchain.expectMsgType[WatchConfirmed],
         alice2blockchain.expectMsgType[WatchConfirmed],
@@ -237,20 +237,20 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
   def closeChannelWithoutHtlcs(f: Fixture): (Transaction, SignAndPublishTx) = {
     import f._
 
-    val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
     // Forward the commit tx to the publisher.
-    val commit = alice2blockchain.expectMsg(PublishRawTx(commitTx))
+    val commit = alice2blockchain.expectMsg(PublishRawTx(commitTx.tx, commitTx.desc))
     txPublisher ! commit
     // Forward the anchor tx to the publisher.
     val anchor = alice2blockchain.expectMsgType[SignAndPublishTx]
-    assert(anchor.txInfo.input.outPoint.txid === commitTx.txid)
+    assert(anchor.txInfo.input.outPoint.txid === commitTx.tx.txid)
     assert(anchor.txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     txPublisher ! anchor
 
-    (commitTx, anchor)
+    (commitTx.tx, anchor)
   }
 
   test("commit tx feerate high enough, not spending anchor output") {
@@ -391,15 +391,15 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
     // Force-close channel and verify txs sent to watcher.
-    val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx
     val currentFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
     assert(currentFeerate < TestConstants.feeratePerKw)
-    assert(commitTx.txOut.size === 6)
+    assert(commitTx.tx.txOut.size === 6)
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
-    alice2blockchain.expectMsg(PublishRawTx(commitTx))
-    txPublisher ! PublishRawTx(commitTx)
+    alice2blockchain.expectMsg(PublishRawTx(commitTx.tx, commitTx.desc))
+    txPublisher ! PublishRawTx(commitTx.tx, commitTx.desc)
     assert(alice2blockchain.expectMsgType[SignAndPublishTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     alice2blockchain.expectMsgType[PublishRawTx] // claim main output
     val htlcSuccess = alice2blockchain.expectMsgType[SignAndPublishTx]
@@ -413,7 +413,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     alice2blockchain.expectMsgType[WatchSpent] // htlc-timeout tx
     alice2blockchain.expectNoMessage(100 millis)
 
-    (commitTx, htlcSuccess, htlcTimeout)
+    (commitTx.tx, htlcSuccess, htlcTimeout)
   }
 
   test("htlc tx feerate high enough, not adding wallet inputs") {
@@ -548,11 +548,11 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       crossSign(bob, alice, bob2alice, alice2bob)
 
       // Force-close channel and verify txs sent to watcher.
-      val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      assert(commitTx.txOut.size === 5)
+      val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx
+      assert(commitTx.tx.txOut.size === 5)
       probe.send(alice, CMD_FORCECLOSE(probe.ref))
       probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
-      alice2blockchain.expectMsg(PublishRawTx(commitTx))
+      alice2blockchain.expectMsg(PublishRawTx(commitTx.tx, commitTx.desc))
       val anchorTx = alice2blockchain.expectMsgType[SignAndPublishTx]
       alice2blockchain.expectMsgType[PublishRawTx] // claim main output
       alice2blockchain.expectMsgType[WatchConfirmed] // commit tx
@@ -561,14 +561,14 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       alice2blockchain.expectNoMessage(100 millis)
 
       // Publish and confirm the commit tx.
-      txPublisher ! PublishRawTx(commitTx)
+      txPublisher ! PublishRawTx(commitTx.tx, commitTx.desc)
       txPublisher ! anchorTx
       getMempoolTxs(2)
       createBlocks(2)
 
       probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
       probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
-      alice2blockchain.expectMsg(PublishRawTx(commitTx))
+      alice2blockchain.expectMsg(PublishRawTx(commitTx.tx, commitTx.desc))
       val anchorTx2 = alice2blockchain.expectMsgType[SignAndPublishTx]
       assert(anchorTx2.txInfo === anchorTx.txInfo)
       alice2blockchain.expectMsgType[PublishRawTx] // claim main output
@@ -580,9 +580,9 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
 
       txPublisher ! htlcSuccess
       val w = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(w.txId === commitTx.txid)
+      assert(w.txId === commitTx.tx.txid)
       assert(w.minDepth === 1)
-      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
+      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.tx.txid)
 
       // The HTLC-success tx will be immediately published.
       val htlcSuccessTx = getMempoolTxs(1).head

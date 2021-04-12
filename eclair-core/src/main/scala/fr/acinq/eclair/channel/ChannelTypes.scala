@@ -293,7 +293,7 @@ sealed trait CommitPublished {
  * @param claimHtlcDelayedTxs      3rd-stage txs (spending the output of HTLC txs).
  * @param claimAnchorTxs           txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
  */
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[ClaimLocalDelayedOutputTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
+case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
   /**
    * A local commit is considered done when:
    * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
