@@ -242,7 +242,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
     // Forward the commit tx to the publisher.
-    val commit = alice2blockchain.expectMsg(PublishRawTx(commitTx.tx, commitTx.desc))
+    val commit = alice2blockchain.expectMsg(PublishRawTx(commitTx))
     txPublisher ! commit
     // Forward the anchor tx to the publisher.
     val anchor = alice2blockchain.expectMsgType[SignAndPublishTx]
@@ -398,8 +398,8 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
-    alice2blockchain.expectMsg(PublishRawTx(commitTx.tx, commitTx.desc))
-    txPublisher ! PublishRawTx(commitTx.tx, commitTx.desc)
+    alice2blockchain.expectMsg(PublishRawTx(commitTx))
+    txPublisher ! PublishRawTx(commitTx)
     assert(alice2blockchain.expectMsgType[SignAndPublishTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     alice2blockchain.expectMsgType[PublishRawTx] // claim main output
     val htlcSuccess = alice2blockchain.expectMsgType[SignAndPublishTx]
@@ -552,7 +552,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       assert(commitTx.tx.txOut.size === 5)
       probe.send(alice, CMD_FORCECLOSE(probe.ref))
       probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
-      alice2blockchain.expectMsg(PublishRawTx(commitTx.tx, commitTx.desc))
+      alice2blockchain.expectMsg(PublishRawTx(commitTx))
       val anchorTx = alice2blockchain.expectMsgType[SignAndPublishTx]
       alice2blockchain.expectMsgType[PublishRawTx] // claim main output
       alice2blockchain.expectMsgType[WatchConfirmed] // commit tx
@@ -561,14 +561,14 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       alice2blockchain.expectNoMessage(100 millis)
 
       // Publish and confirm the commit tx.
-      txPublisher ! PublishRawTx(commitTx.tx, commitTx.desc)
+      txPublisher ! PublishRawTx(commitTx)
       txPublisher ! anchorTx
       getMempoolTxs(2)
       createBlocks(2)
 
       probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
       probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
-      alice2blockchain.expectMsg(PublishRawTx(commitTx.tx, commitTx.desc))
+      alice2blockchain.expectMsg(PublishRawTx(commitTx))
       val anchorTx2 = alice2blockchain.expectMsgType[SignAndPublishTx]
       assert(anchorTx2.txInfo === anchorTx.txInfo)
       alice2blockchain.expectMsgType[PublishRawTx] // claim main output
