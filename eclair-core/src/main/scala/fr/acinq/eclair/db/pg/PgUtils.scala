@@ -60,7 +60,10 @@ object PgUtils extends JdbcUtils {
           logger.error(s"cannot obtain lock on the database ($other).")
       }
 
-      case class LockException(lockFailure: LockFailure) extends RuntimeException("a lock exception occurred")
+      case class LockException(lockFailure: LockFailure) extends RuntimeException("a lock exception occurred", lockFailure match {
+        case LockFailure.GeneralLockException(cause) => cause // when the origin is an exception, we provide it to have a nice stack trace
+        case _ => null
+      })
 
       /**
        * This handler is useful in tests

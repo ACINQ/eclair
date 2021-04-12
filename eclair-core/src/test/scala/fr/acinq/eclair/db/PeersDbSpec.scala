@@ -24,6 +24,10 @@ import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
 import org.scalatest.funsuite.AnyFunSuite
 
+import java.util.concurrent.Executors
+import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
+import scala.util.Success
 
 class PeersDbSpec extends AnyFunSuite {
 
@@ -65,6 +69,19 @@ class PeersDbSpec extends AnyFunSuite {
       db.addOrUpdatePeer(peer_1_bis.nodeId, peer_1_bis.nodeAddress)
       assert(db.getPeer(peer_1.nodeId) === Some(peer_1_bis.nodeAddress))
       assert(db.listPeers().map(p => TestCase(p._1, p._2)).toSet === Set(peer_1_bis, peer_3))
+    }
+  }
+
+  test("concurrent peer updates") {
+    forAllDbs { dbs =>
+      val db = dbs.peers
+      implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(8))
+      val Success(peerAddress) = NodeAddress.fromParts("127.0.0.1", 42000)
+      val futures = for (_ <- 0 until 10000) yield {
+        Future(db.addOrUpdatePeer(randomKey.publicKey, peerAddress))
+      }
+      val res = Future.sequence(futures)
+      Await.result(res, 60 seconds)
     }
   }
 

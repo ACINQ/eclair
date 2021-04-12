@@ -8,6 +8,8 @@ import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.db.sqlite.SqliteUtils
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
+import org.postgresql.jdbc.PgConnection
+import org.sqlite.SQLiteConnection
 
 import java.io.File
 import java.sql.{Connection, DriverManager, Statement}
@@ -36,13 +38,16 @@ sealed trait TestDatabases extends Databases {
 
 object TestDatabases {
 
-  def sqliteInMemory(): Connection = DriverManager.getConnection("jdbc:sqlite::memory:")
+  def sqliteInMemory(): SQLiteConnection = DriverManager.getConnection("jdbc:sqlite::memory:").asInstanceOf[SQLiteConnection]
 
-  def inMemoryDb(connection: Connection = sqliteInMemory()): Databases = Databases.SqliteDatabases(connection, connection, connection)
+  def inMemoryDb(): Databases = {
+    val connection = sqliteInMemory()
+    Databases.SqliteDatabases(connection, connection, connection)
+  }
 
   case class TestSqliteDatabases() extends TestDatabases {
     // @formatter:off
-    override val connection: Connection = sqliteInMemory()
+    override val connection: SQLiteConnection = sqliteInMemory()
     override lazy val db: Databases = Databases.SqliteDatabases(connection, connection, connection)
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = ()
@@ -62,7 +67,7 @@ object TestDatabases {
     implicit val system: ActorSystem = ActorSystem()
 
     // @formatter:off
-    override val connection: Connection = pg.getPostgresDatabase.getConnection
+    override val connection: PgConnection = pg.getPostgresDatabase.getConnection.asInstanceOf[PgConnection]
     override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile))
     override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = pg.close()

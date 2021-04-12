@@ -46,16 +46,16 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb {
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = withMetrics("peers/add-or-update", DbBackends.Postgres) {
     withLock { pg =>
       val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
-      using(pg.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
-        update.setBytes(1, data)
-        update.setString(2, nodeId.value.toHex)
-        if (update.executeUpdate() == 0) {
-          using(pg.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
-            statement.setString(1, nodeId.value.toHex)
-            statement.setBytes(2, data)
-            statement.executeUpdate()
-          }
-        }
+      using(pg.prepareStatement(
+        """
+          | INSERT INTO peers (node_id, data)
+          | VALUES (?, ?)
+          | ON CONFLICT (node_id)
+          | DO UPDATE SET data = EXCLUDED.data ;
+          | """.stripMargin)) { statement =>
+        statement.setString(1, nodeId.value.toHex)
+        statement.setBytes(2, data)
+        statement.executeUpdate()
       }
     }
   }

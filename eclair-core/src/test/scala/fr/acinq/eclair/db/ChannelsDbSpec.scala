@@ -26,11 +26,14 @@ import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, ShortChannelId, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
 import java.sql.SQLException
+import java.util.concurrent.Executors
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
+import scala.concurrent.duration._
 
 class ChannelsDbSpec extends AnyFunSuite {
 
@@ -52,7 +55,9 @@ class ChannelsDbSpec extends AnyFunSuite {
       val db = dbs.channels
       dbs.pendingRelay // needed by db.removeChannel
 
-      val channel = ChannelCodecsSpec.normal
+      val channel1 = ChannelCodecsSpec.normal
+      val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(randomBytes32)
+      val channel2b = channel2a.modify(_.shortChannelId).setTo(ShortChannelId(189371))
 
       val commitNumber = 42
       val paymentHash1 = ByteVector32.Zeroes
@@ -60,22 +65,41 @@ class ChannelsDbSpec extends AnyFunSuite {
       val paymentHash2 = ByteVector32(ByteVector.fill(32)(1))
       val cltvExpiry2 = CltvExpiry(656)
 
-      intercept[SQLException](db.addHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
+      intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
 
       assert(db.listLocalChannels().toSet === Set.empty)
-      db.addOrUpdateChannel(channel)
-      db.addOrUpdateChannel(channel)
-      assert(db.listLocalChannels() === List(channel))
+      db.addOrUpdateChannel(channel1)
+      db.addOrUpdateChannel(channel1)
+      assert(db.listLocalChannels() === List(channel1))
+      db.addOrUpdateChannel(channel2a)
+      assert(db.listLocalChannels() === List(channel1, channel2a))
+      db.addOrUpdateChannel(channel2b)
+      assert(db.listLocalChannels() === List(channel1, channel2b))
 
-      assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
-      db.addHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)
-      db.addHtlcInfo(channel.channelId, commitNumber, paymentHash2, cltvExpiry2)
-      assert(db.listHtlcInfos(channel.channelId, commitNumber).toList.toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
-      assert(db.listHtlcInfos(channel.channelId, 43).toList == Nil)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
+      db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)
+      db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash2, cltvExpiry2)
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList.toSet == Set((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
+      assert(db.listHtlcInfos(channel1.channelId, 43).toList == Nil)
 
-      db.removeChannel(channel.channelId)
+      db.removeChannel(channel1.channelId)
+      assert(db.listLocalChannels() === List(channel2b))
+      assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
+      db.removeChannel(channel2b.channelId)
       assert(db.listLocalChannels() === Nil)
-      assert(db.listHtlcInfos(channel.channelId, commitNumber).toList == Nil)
+    }
+  }
+
+  test("concurrent channel updates") {
+    forAllDbs { dbs =>
+      val db = dbs.channels
+      implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(8))
+      val channel = ChannelCodecsSpec.normal
+      val futures = for (_ <- 0 until 10000) yield {
+        Future(db.addOrUpdateChannel(channel.modify(_.commitments.channelId).setTo(randomBytes32)))
+      }
+      val res = Future.sequence(futures)
+      Await.result(res, 60 seconds)
     }
   }
 
