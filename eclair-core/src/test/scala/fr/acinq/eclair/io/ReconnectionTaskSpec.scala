@@ -196,6 +196,28 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     }
   }
 
+  test("concurrent incoming/outgoing reconnection", Tag("auto_reconnect")) { f =>
+    import f._
+
+    val peer = TestProbe()
+    nodeParams.db.peers.addOrUpdatePeer(remoteNodeId, fakeIPAddress)
+    peer.send(reconnectionTask, Peer.Transition(PeerNothingData, PeerDisconnectedData))
+    val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.CONNECTING, _, _: ReconnectionTask.ConnectingData) = monitor.expectMsgType[TransitionWithData]
+
+    // at this point, we are attempting to connect to the peer
+    // let's assume that an incoming connection arrives from the peer right before our outgoing connection, but we haven't
+    // yes received the peer transition
+    reconnectionTask ! PeerConnection.ConnectionResult.AlreadyConnected
+    // we will schedule a reconnection
+    val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
+    // but immediately after that we finally get notified that the peer is connected
+    peer.send(reconnectionTask, Peer.Transition(PeerDisconnectedData, PeerConnectedData))
+    // we cancel the reconnection and go to idle state
+    val TransitionWithData(ReconnectionTask.WAITING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
+
+  }
+
   test("reconnect using the address from node_announcement") { f =>
     import f._
 
