@@ -197,9 +197,12 @@ Here is how to run Eclair with plugins:
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar> <...>
 ```
 
-### List of current usable plugins
+### Non-exhaustive plugins list
 
-- https://github.com/engenegr/eclair-alarmbot-plugin
+Here are some plugins created by the eclair community.
+If you need support for these plugins, head over to their respective github repository.
+
+- [Telegram Bot for eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
 
 ## Testnet usage
 
