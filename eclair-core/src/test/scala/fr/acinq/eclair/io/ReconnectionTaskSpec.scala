@@ -207,7 +207,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // at this point, we are attempting to connect to the peer
     // let's assume that an incoming connection arrives from the peer right before our outgoing connection, but we haven't
-    // yes received the peer transition
+    // yet received the peer transition
     reconnectionTask ! PeerConnection.ConnectionResult.AlreadyConnected
     // we will schedule a reconnection
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
