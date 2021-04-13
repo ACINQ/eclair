@@ -30,7 +30,10 @@ trait EclairWallet {
 
   def getBalance: Future[OnChainBalance]
 
-  def getReceiveAddress: Future[String]
+  /**
+   * @param label used if implemented with bitcoin core, can be ignored by implementation
+   */
+  def getReceiveAddress(label: String = ""): Future[String]
 
   def getReceivePubkey(receiveAddress: Option[String] = None): Future[PublicKey]
 

@@ -32,7 +32,7 @@ class TestWallet extends EclairWallet {
 
   override def getBalance: Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress: Future[String] = Future.successful("bcrt1qwcv8naajwn8fjhu8z59q9e6ucrqr068rlcenux")
+  override def getReceiveAddress(label: String): Future[String] = Future.successful("bcrt1qwcv8naajwn8fjhu8z59q9e6ucrqr068rlcenux")
 
   override def getReceivePubkey(receiveAddress: Option[String] = None): Future[Crypto.PublicKey] = Future.successful(PublicKey(hex"028feba10d0eafd0fad8fe20e6d9206e6bd30242826de05c63f459a00aced24b12"))
 

@@ -175,7 +175,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
 
-    wallet.getReceiveAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress().pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
@@ -231,7 +231,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     wallet.getBalance.pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
 
-    wallet.getReceiveAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress().pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
     assert(Try(addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)).isSuccess)
 
@@ -274,7 +274,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
 
-    wallet.getReceiveAddress.pipeTo(sender.ref)
+    wallet.getReceiveAddress().pipeTo(sender.ref)
     val address = sender.expectMsgType[String]
 
     wallet.getReceivePubkey(receiveAddress = Some(address)).pipeTo(sender.ref)
