@@ -33,14 +33,17 @@ import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SetChannelI
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.db.pg.PgUtils.PgLock.logger
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentSettlingOnChain
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, TxOwner}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
+import org.sqlite.SQLiteException
 import scodec.bits.ByteVector
 
+import java.sql.SQLException
 import scala.collection.immutable.Queue
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -2448,6 +2451,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       try {
         s(event)
       } catch {
+        case t: SQLException =>
+          log.error(t, "fatal database error\n")
+          sys.exit(-2)
         case t: Throwable => handleLocalError(t, event.stateData, None)
       }
   }
