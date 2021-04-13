@@ -105,7 +105,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     val bitcoinWallet = new BitcoinCoreWallet(walletRpcClient)
     val probe = TestProbe()
     utxos.foreach(amount => {
-      bitcoinWallet.getReceiveAddress.pipeTo(probe.ref)
+      bitcoinWallet.getReceiveAddress().pipeTo(probe.ref)
       val walletAddress = probe.expectMsgType[String]
       sendToAddress(walletAddress, amount, probe)
     })
@@ -279,7 +279,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       assert(mempoolTx1.txid === commitTx.txid)
 
       // add more funds to our wallet
-      bitcoinWallet.getReceiveAddress.pipeTo(probe.ref)
+      bitcoinWallet.getReceiveAddress().pipeTo(probe.ref)
       val walletAddress = probe.expectMsgType[String]
       sendToAddress(walletAddress, 1 millibtc, probe)
       createBlocks(1)
@@ -456,7 +456,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
 
       // Add more funds to our wallet to allow bumping HTLC txs.
-      bitcoinWallet.getReceiveAddress.pipeTo(probe.ref)
+      bitcoinWallet.getReceiveAddress().pipeTo(probe.ref)
       val walletAddress = probe.expectMsgType[String]
       sendToAddress(walletAddress, 1 millibtc, probe)
       createBlocks(1)
