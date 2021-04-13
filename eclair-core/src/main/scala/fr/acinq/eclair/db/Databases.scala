@@ -211,7 +211,8 @@ object Databases extends Logging {
         val leaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
         val leaseRenewInterval = dbConfig.getDuration("postgres.lease.renew-interval").toSeconds.seconds
         require(leaseInterval > leaseRenewInterval, "invalid configuration: `db.postgres.lease.interval` must be greater than `db.postgres.lease.renew-interval`")
-        PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, lockExceptionHandler)
+        val lockTimeout = dbConfig.getDuration("postgres.lease.lock-timeout").toSeconds.seconds
+        PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, lockTimeout, lockExceptionHandler)
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
 
