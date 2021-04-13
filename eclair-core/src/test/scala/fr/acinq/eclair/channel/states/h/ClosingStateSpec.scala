@@ -63,11 +63,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     if (unconfirmedFundingTx) {
       within(30 seconds) {
+        val channelVersion = ChannelVersion.STANDARD
         val aliceInit = Init(Alice.channelParams.features)
         val bobInit = Init(Bob.channelParams.features)
-        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, ChannelVersion.STANDARD)
+        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
         alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, ChannelVersion.STANDARD)
+        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, channelVersion)
         bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
         alice2bob.expectMsgType[OpenChannel]
         alice2bob.forward(bob)
