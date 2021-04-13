@@ -25,7 +25,7 @@ import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, NodeAnnouncement}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 
-import java.net.{InetAddress, ServerSocket}
+import java.net.ServerSocket
 import scala.concurrent.duration._
 
 class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
@@ -222,7 +222,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     // we create a dummy tcp server and update bob's announcement to point to it
-    val mockServer = new ServerSocket(0, 1, InetAddress.getLocalHost) // port will be assigned automatically
+    val mockServer = new ServerSocket(0, 1) // port will be assigned automatically
     val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
     val bobAnnouncement = NodeAnnouncement(randomBytes64, Features.empty, 1, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(bobAnnouncement)
