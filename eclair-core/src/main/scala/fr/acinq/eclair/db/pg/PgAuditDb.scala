@@ -25,9 +25,9 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 import grizzled.slf4j.Logging
-import scodec.bits._
 
 import java.sql.Statement
 import java.util.UUID
@@ -290,7 +290,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
                 case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
               }
               case Some(RelayedPart(_, _, _, "trampoline", timestamp)) =>
-                val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PublicKey(hex"020000000000000000000000000000000000000000000000000000000000000000")))
+                val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
                 TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, timestamp) :: Nil
               case _ => Nil
             }
