@@ -290,7 +290,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
                 case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
               }
               case Some(RelayedPart(_, _, _, "trampoline", timestamp)) =>
-                val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PublicKey(hex"000000000000000000000000000000000000000000000000000000000000000000")))
+                val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PublicKey(hex"020000000000000000000000000000000000000000000000000000000000000000")))
                 TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, timestamp) :: Nil
               case _ => Nil
             }

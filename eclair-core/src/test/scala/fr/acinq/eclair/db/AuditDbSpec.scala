@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair._
@@ -26,13 +26,16 @@ import fr.acinq.eclair.db.AuditDb.Stats
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgAuditDb
+import fr.acinq.eclair.db.pg.PgUtils.inTransaction
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol.Error
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.bits._
 
 import java.util.UUID
+import javax.sql.DataSource
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -389,6 +392,197 @@ class AuditDbSpec extends AnyFunSuite {
 
         postMigrationDb.add(ps2)
         assert(postMigrationDb.listSent(155, 200) === Seq(ps2))
+        postMigrationDb.add(relayed3)
+        assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
+    }
+  }
+
+  test("handle migration version 4 -> 5") {
+    forAllDbs {
+      case dbs: TestPgDatabases =>
+        import fr.acinq.eclair.db.pg.PgUtils.getVersion
+        implicit val datasource: DataSource = dbs.datasource
+
+        // simulate existing previous version db
+        inTransaction { pg =>
+          using(pg.createStatement()) { statement =>
+            getVersion(statement, "audit", 4)
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, tx_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp BIGINT NOT NULL)")
+
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_timestamp_idx ON received(timestamp)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_payment_hash_idx ON relayed(payment_hash)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
+            statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
+          }
+        }
+
+        inTransaction { pg =>
+          using(pg.createStatement()) { statement =>
+            assert(getVersion(statement, "audit", 5) == 4) // version 4 is deployed now
+          }
+        }
+
+        val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32, randomBytes32, randomBytes32, 105)
+        val relayed2 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(300 msat, randomBytes32), PaymentRelayed.Part(350 msat, randomBytes32)), Seq(PaymentRelayed.Part(600 msat, randomBytes32)), PublicKey(hex"020000000000000000000000000000000000000000000000000000000000000000"), 0 msat, 110)
+
+        inTransaction { pg =>
+          using(pg.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+            statement.setString(1, relayed1.paymentHash.toHex)
+            statement.setLong(2, relayed1.amountIn.toLong)
+            statement.setString(3, relayed1.fromChannelId.toHex)
+            statement.setString(4, "IN")
+            statement.setString(5, "channel")
+            statement.setLong(6, relayed1.timestamp)
+            statement.executeUpdate()
+          }
+          using(pg.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+            statement.setString(1, relayed1.paymentHash.toHex)
+            statement.setLong(2, relayed1.amountOut.toLong)
+            statement.setString(3, relayed1.toChannelId.toHex)
+            statement.setString(4, "OUT")
+            statement.setString(5, "channel")
+            statement.setLong(6, relayed1.timestamp)
+            statement.executeUpdate()
+          }
+          for (incoming <- relayed2.incoming) {
+            using(pg.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setString(1, relayed2.paymentHash.toHex)
+              statement.setLong(2, incoming.amount.toLong)
+              statement.setString(3, incoming.channelId.toHex)
+              statement.setString(4, "IN")
+              statement.setString(5, "trampoline")
+              statement.setLong(6, relayed2.timestamp)
+              statement.executeUpdate()
+            }
+          }
+          for (outgoing <- relayed2.outgoing) {
+            using(pg.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+              statement.setString(1, relayed2.paymentHash.toHex)
+              statement.setLong(2, outgoing.amount.toLong)
+              statement.setString(3, outgoing.channelId.toHex)
+              statement.setString(4, "OUT")
+              statement.setString(5, "trampoline")
+              statement.setLong(6, relayed2.timestamp)
+              statement.executeUpdate()
+            }
+          }
+        }
+
+        val migratedDb = new PgAuditDb()(datasource)
+        inTransaction { pg =>
+          using(pg.createStatement()) { statement =>
+            assert(getVersion(statement, "audit", 5) == 5) // version changed from 4 -> 5
+          }
+        }
+
+        assert(migratedDb.listRelayed(100, 120) === Seq(relayed1, relayed2))
+
+        val postMigrationDb = new PgAuditDb()(datasource)
+
+        inTransaction { pg =>
+          using(pg.createStatement()) { statement =>
+            assert(getVersion(statement, "audit", 5) == 5) // version 5
+          }
+        }
+
+        val relayed3 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(450 msat, randomBytes32), PaymentRelayed.Part(500 msat, randomBytes32)), Seq(PaymentRelayed.Part(800 msat, randomBytes32)), randomKey.publicKey, 700 msat, 150)
+
+        postMigrationDb.add(relayed3)
+        assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
+      case dbs: TestSqliteDatabases =>
+
+        val connection = dbs.connection
+
+        // simulate existing previous version db
+        using(connection.createStatement()) { statement =>
+          getVersion(statement, "audit", 4)
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_timestamp_idx ON sent(timestamp)")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_timestamp_idx ON received(timestamp)")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_payment_hash_idx ON relayed(payment_hash)")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
+        }
+
+        using(connection.createStatement()) { statement =>
+          assert(getVersion(statement, "audit", 5) == 4) // version 4 is deployed now
+        }
+
+        val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32, randomBytes32, randomBytes32, 105)
+        val relayed2 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(300 msat, randomBytes32), PaymentRelayed.Part(350 msat, randomBytes32)), Seq(PaymentRelayed.Part(600 msat, randomBytes32)), PublicKey(hex"020000000000000000000000000000000000000000000000000000000000000000"), 0 msat, 110)
+
+        using(connection.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+          statement.setBytes(1, relayed1.paymentHash.toArray)
+          statement.setLong(2, relayed1.amountIn.toLong)
+          statement.setBytes(3, relayed1.fromChannelId.toArray)
+          statement.setString(4, "IN")
+          statement.setString(5, "channel")
+          statement.setLong(6, relayed1.timestamp)
+          statement.executeUpdate()
+        }
+        using(connection.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+          statement.setBytes(1, relayed1.paymentHash.toArray)
+          statement.setLong(2, relayed1.amountOut.toLong)
+          statement.setBytes(3, relayed1.toChannelId.toArray)
+          statement.setString(4, "OUT")
+          statement.setString(5, "channel")
+          statement.setLong(6, relayed1.timestamp)
+          statement.executeUpdate()
+        }
+        for (incoming <- relayed2.incoming) {
+          using(connection.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+            statement.setBytes(1, relayed2.paymentHash.toArray)
+            statement.setLong(2, incoming.amount.toLong)
+            statement.setBytes(3, incoming.channelId.toArray)
+            statement.setString(4, "IN")
+            statement.setString(5, "trampoline")
+            statement.setLong(6, relayed2.timestamp)
+            statement.executeUpdate()
+          }
+        }
+        for (outgoing <- relayed2.outgoing) {
+          using(connection.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+            statement.setBytes(1, relayed2.paymentHash.toArray)
+            statement.setLong(2, outgoing.amount.toLong)
+            statement.setBytes(3, outgoing.channelId.toArray)
+            statement.setString(4, "OUT")
+            statement.setString(5, "trampoline")
+            statement.setLong(6, relayed2.timestamp)
+            statement.executeUpdate()
+          }
+        }
+
+        val migratedDb = new SqliteAuditDb(connection)
+        using(connection.createStatement()) { statement =>
+          assert(getVersion(statement, "audit", 5) == 5) // version changed from 3 -> 5
+        }
+
+        assert(migratedDb.listRelayed(100, 120) === Seq(relayed1, relayed2))
+
+        val postMigrationDb = new SqliteAuditDb(connection)
+
+        using(connection.createStatement()) { statement =>
+          assert(getVersion(statement, "audit", 5) == 5) // version 5
+        }
+
+        val relayed3 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(450 msat, randomBytes32), PaymentRelayed.Part(500 msat, randomBytes32)), Seq(PaymentRelayed.Part(800 msat, randomBytes32)), randomKey.publicKey, 700 msat, 150)
+
         postMigrationDb.add(relayed3)
         assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
     }
