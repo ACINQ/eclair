@@ -85,7 +85,7 @@ sealed trait PaymentRelayed extends PaymentEvent {
 
 case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: Long = System.currentTimeMillis) extends PaymentRelayed
 
-case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, timestamp: Long = System.currentTimeMillis) extends PaymentRelayed {
+case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, recipientNodeId: PublicKey, recipientAmount: MilliSatoshi, timestamp: Long = System.currentTimeMillis) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
 }

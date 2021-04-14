@@ -69,7 +69,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
         .withTag(PaymentTags.Relay, PaymentTags.RelayType(e))
         .record((e.amountIn - e.amountOut).truncateToSatoshi.toLong)
       e match {
-        case TrampolinePaymentRelayed(_, incoming, outgoing, _) =>
+        case TrampolinePaymentRelayed(_, incoming, outgoing, _, _, _) =>
           PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Received).record(incoming.length)
           PaymentMetrics.PaymentParts.withTag(PaymentTags.Direction, PaymentTags.Directions.Sent).record(outgoing.length)
           incoming.foreach(p => channelsDb.updateChannelMeta(p.channelId, ChannelEvent.EventType.PaymentReceived))

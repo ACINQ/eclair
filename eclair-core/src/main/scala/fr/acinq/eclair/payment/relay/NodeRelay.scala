@@ -349,7 +349,7 @@ class NodeRelay private(nodeParams: NodeParams,
     }
     val incoming = upstream.adds.map(add => PaymentRelayed.Part(add.amountMsat, add.channelId))
     val outgoing = paymentSent.parts.map(part => PaymentRelayed.Part(part.amountWithFees, part.toChannelId))
-    context.system.eventStream ! EventStream.Publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing))
+    context.system.eventStream ! EventStream.Publish(TrampolinePaymentRelayed(paymentHash, incoming, outgoing, paymentSent.recipientNodeId, paymentSent.recipientAmount))
   }
 
 }
