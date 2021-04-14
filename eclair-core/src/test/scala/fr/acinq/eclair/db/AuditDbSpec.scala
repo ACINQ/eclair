@@ -498,7 +498,7 @@ class AuditDbSpec extends AnyFunSuite {
         postMigrationDb.add(relayed3)
         assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
       case dbs: TestSqliteDatabases =>
-
+        import fr.acinq.eclair.db.sqlite.SqliteUtils.getVersion
         val connection = dbs.connection
 
         // simulate existing previous version db
