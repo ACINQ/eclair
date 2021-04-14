@@ -89,7 +89,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       relayerB.expectMsgType[RelayForward]
       relayerB.expectMsgType[RelayForward]
       // alice initiates a closing
-      alice ! CMD_CLOSE(sender.ref, None)
+      alice ! CMD_CLOSE(sender.ref, None, None)
       alice2bob.expectMsgType[Shutdown]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[Shutdown]
@@ -837,8 +837,17 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_CLOSE") { f =>
     import f._
     val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
+  }
+
+  test("recv CMD_CLOSE with updated feerates") { f =>
+    import f._
+    val sender = TestProbe()
+    val closingFeerates = ClosingFeerates(FeeratePerKw(500 sat), FeeratePerKw(250 sat), FeeratePerKw(2500 sat))
+    alice ! CMD_CLOSE(sender.ref, None, Some(closingFeerates))
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates === Some(closingFeerates))
   }
 
   test("recv CMD_FORCECLOSE") { f =>

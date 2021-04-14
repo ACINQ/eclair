@@ -287,7 +287,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
   def mutualClose(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, s2blockchain: TestProbe, r2blockchain: TestProbe): Unit = {
     val sender = TestProbe()
     // s initiates a closing
-    s ! CMD_CLOSE(sender.ref, None)
+    s ! CMD_CLOSE(sender.ref, None, None)
     s2r.expectMsgType[Shutdown]
     s2r.forward(r)
     r2s.expectMsgType[Shutdown]

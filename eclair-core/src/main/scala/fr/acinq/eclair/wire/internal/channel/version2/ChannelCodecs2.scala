@@ -282,12 +282,14 @@ private[channel] object ChannelCodecs2 {
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec)))).as[DATA_NORMAL]
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_NORMAL]
 
     val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
-        ("remoteShutdown" | lengthDelimited(shutdownCodec))).as[DATA_SHUTDOWN]
+        ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_SHUTDOWN]
 
     val DATA_NEGOTIATING_Codec: Codec[DATA_NEGOTIATING] = (
       ("commitments" | commitmentsCodec) ::
