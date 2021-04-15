@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.crypto
 
-import java.math.BigInteger
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Crypto, Protocol}
 import fr.acinq.eclair.randomBytes
@@ -27,6 +24,9 @@ import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
 import scodec.bits.ByteVector
+
+import java.math.BigInteger
+import java.nio.ByteOrder
 
 /**
  * see http://noiseprotocol.org/
