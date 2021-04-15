@@ -25,9 +25,11 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 import grizzled.slf4j.Logging
 
+import java.sql.Statement
 import java.util.UUID
 import javax.sql.DataSource
 import scala.collection.immutable.Queue
@@ -38,18 +40,28 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   import ExtendedResultSet._
 
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 4
+  val CURRENT_VERSION = 5
 
   case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
+      def migration45(statement: Statement): Int = {
+        statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
+        statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
+      }
 
       getVersion(statement, DB_NAME, CURRENT_VERSION) match {
+        case 4 =>
+          logger.warn(s"migrating db $DB_NAME, found version=4 current=$CURRENT_VERSION")
+          migration45(statement)
+          setVersion(statement, DB_NAME, CURRENT_VERSION)
         case CURRENT_VERSION =>
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp BIGINT NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS network_fees (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, tx_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp BIGINT NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp BIGINT NOT NULL)")
@@ -58,6 +70,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_timestamp_idx ON received(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_payment_hash_idx ON relayed(payment_hash)")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
@@ -124,7 +138,14 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         case ChannelPaymentRelayed(amountIn, amountOut, _, fromChannelId, toChannelId, ts) =>
           // non-trampoline relayed payments have one input and one output
           Seq(RelayedPart(fromChannelId, amountIn, "IN", "channel", ts), RelayedPart(toChannelId, amountOut, "OUT", "channel", ts))
-        case TrampolinePaymentRelayed(_, incoming, outgoing, ts) =>
+        case TrampolinePaymentRelayed(_, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, ts) =>
+          using(pg.prepareStatement("INSERT INTO relayed_trampoline VALUES (?, ?, ?, ?)")) { statement =>
+            statement.setString(1, e.paymentHash.toHex)
+            statement.setLong(2, nextTrampolineAmount.toLong)
+            statement.setString(3, nextTrampolineNodeId.value.toHex)
+            statement.setLong(4, e.timestamp)
+            statement.executeUpdate()
+          }
           // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
           incoming.map(i => RelayedPart(i.channelId, i.amount, "IN", "trampoline", ts)) ++ outgoing.map(o => RelayedPart(o.channelId, o.amount, "OUT", "trampoline", ts))
       }
@@ -231,6 +252,18 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
     inTransaction { pg =>
+      var trampolineByHash = Map.empty[ByteVector32, (MilliSatoshi, PublicKey)]
+      using(pg.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+        statement.setLong(1, from)
+        statement.setLong(2, to)
+        val rs = statement.executeQuery()
+        while (rs.next()) {
+          val paymentHash = rs.getByteVector32FromHex("payment_hash")
+          val amount = MilliSatoshi(rs.getLong("amount_msat"))
+          val nodeId = PublicKey(rs.getByteVectorFromHex("next_node_id"))
+          trampolineByHash += (paymentHash -> (amount, nodeId))
+        }
+      }
       using(pg.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
@@ -256,7 +289,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
               case Some(RelayedPart(_, _, _, "channel", timestamp)) => incoming.zip(outgoing).map {
                 case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
               }
-              case Some(RelayedPart(_, _, _, "trampoline", timestamp)) => TrampolinePaymentRelayed(paymentHash, incoming, outgoing, timestamp) :: Nil
+              case Some(RelayedPart(_, _, _, "trampoline", timestamp)) =>
+                val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
+                TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, timestamp) :: Nil
               case _ => Nil
             }
         }.toSeq.sortBy(_.timestamp)
