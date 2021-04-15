@@ -237,6 +237,11 @@
             <version>3.4.2</version>
         </dependency>
         <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk15on</artifactId>
+            <version>1.68</version>
+        </dependency>
+        <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->
             <groupId>com.google.code.findbugs</groupId>
             <artifactId>jsr305</artifactId>

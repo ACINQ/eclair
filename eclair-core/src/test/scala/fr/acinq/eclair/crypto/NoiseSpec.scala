@@ -17,10 +17,9 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.eclair.crypto.Noise._
+import org.bouncycastle.crypto.ec.CustomNamedCurves
 import org.scalatest.funsuite.AnyFunSuite
-import org.spongycastle.crypto.ec.CustomNamedCurves
 import scodec.bits._
-
 
 class NoiseSpec extends AnyFunSuite {
 
@@ -298,23 +297,23 @@ object NoiseSpec {
   }
 
   /**
-    * ByteStream implementation that always returns the same data.
-    */
+   * ByteStream implementation that always returns the same data.
+   */
   case class FixedStream(data: ByteVector) extends ByteStream {
     override def nextBytes(length: Int): ByteVector = data
   }
 
   /**
-    * Performs a Noise handshake. Initiator and responder must use the same handshake pattern.
-    *
-    * @param init    initiator
-    * @param resp    responder
-    * @param inputs  inputs messages (can all be empty, but the number of input messages must be equal to the number of
-    *                remaining handshake patterns)
-    * @param outputs accumulator, for internal use only
-    * @return the list of output messages produced during the handshake, and the pair of cipherstates produced during the
-    *         final stage of the handshake
-    */
+   * Performs a Noise handshake. Initiator and responder must use the same handshake pattern.
+   *
+   * @param init    initiator
+   * @param resp    responder
+   * @param inputs  inputs messages (can all be empty, but the number of input messages must be equal to the number of
+   *                remaining handshake patterns)
+   * @param outputs accumulator, for internal use only
+   * @return the list of output messages produced during the handshake, and the pair of cipherstates produced during the
+   *         final stage of the handshake
+   */
   def handshake(init: HandshakeStateWriter, resp: HandshakeStateReader, inputs: List[ByteVector], outputs: List[ByteVector] = Nil): (List[ByteVector], (CipherState, CipherState)) = {
     assert(init.messages == resp.messages)
     assert(init.messages.length == inputs.length)
