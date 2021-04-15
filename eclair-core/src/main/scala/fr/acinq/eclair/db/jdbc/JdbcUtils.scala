@@ -22,7 +22,7 @@ import org.sqlite.SQLiteConnection
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 
-import java.sql.{Connection, ResultSet, Statement}
+import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.util.UUID
 import javax.sql.DataSource
 import scala.collection.immutable.Queue
@@ -123,18 +123,16 @@ trait JdbcUtils {
 
     def getByteVector32FromHexNullable(columnLabel: String): Option[ByteVector32] = {
       val s = rs.getString(columnLabel)
-      if (rs.wasNull()) None else {
-        Some(ByteVector32(ByteVector.fromValidHex(s)))
-      }
+      if (rs.wasNull()) None else Some(ByteVector32(ByteVector.fromValidHex(s)))
     }
 
     def getBitVectorOpt(columnLabel: String): Option[BitVector] = Option(rs.getBytes(columnLabel)).map(BitVector(_))
 
     def getByteVector(columnLabel: String): ByteVector = ByteVector(rs.getBytes(columnLabel))
 
-    def getByteVectorNullable(columnLabel: String): ByteVector = {
+    def getByteVectorNullable(columnLabel: String): Option[ByteVector] = {
       val result = rs.getBytes(columnLabel)
-      if (rs.wasNull()) ByteVector.empty else ByteVector(result)
+      if (rs.wasNull()) None else Some(ByteVector(result))
     }
 
     def getByteVector32(columnLabel: String): ByteVector32 = ByteVector32(ByteVector(rs.getBytes(columnLabel)))
@@ -162,6 +160,11 @@ trait JdbcUtils {
     def getMilliSatoshiNullable(label: String): Option[MilliSatoshi] = {
       val result = rs.getLong(label)
       if (rs.wasNull()) None else Some(MilliSatoshi(result))
+    }
+
+    def getTimestampNullable(label: String): Option[Timestamp] = {
+      val result = rs.getTimestamp(label)
+      if (rs.wasNull()) None else Some(result)
     }
 
   }

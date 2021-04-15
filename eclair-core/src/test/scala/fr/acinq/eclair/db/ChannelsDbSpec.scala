@@ -18,23 +18,25 @@ package fr.acinq.eclair.db
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
+import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
+import fr.acinq.eclair.db.ChannelsDbSpec.{getPgTimestamp, getTimestamp, testCases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
-import fr.acinq.eclair.db.pg.PgChannelsDb
 import fr.acinq.eclair.db.pg.PgUtils.{getVersion, setVersion}
+import fr.acinq.eclair.db.pg.{PgChannelsDb, PgUtils}
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.{CltvExpiry, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, ShortChannelId, TestDatabases, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
-import java.sql.SQLException
+import java.sql.{Connection, SQLException}
 import java.util.concurrent.Executors
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutor, Future}
+import scala.util.Random
 
 class ChannelsDbSpec extends AnyFunSuite {
 
@@ -107,56 +109,42 @@ class ChannelsDbSpec extends AnyFunSuite {
   test("channel metadata") {
     forAllDbs { dbs =>
       val db = dbs.channels
-      val connection = dbs.connection
 
       val channel1 = ChannelCodecsSpec.normal
       val channel2 = channel1.modify(_.commitments.channelId).setTo(randomBytes32)
-
-      def getTimestamp(channelId: ByteVector32, columnName: String): Option[Long] = {
-        using(connection.prepareStatement(s"SELECT $columnName FROM local_channels WHERE channel_id=?")) { statement =>
-          // data type differs depending on underlying database system
-          dbs match {
-            case _: TestPgDatabases => statement.setString(1, channelId.toHex)
-            case _: TestSqliteDatabases => statement.setBytes(1, channelId.toArray)
-          }
-          val rs = statement.executeQuery()
-          rs.next()
-          rs.getLongNullable(columnName)
-        }
-      }
 
       // first we add channels
       db.addOrUpdateChannel(channel1)
       db.addOrUpdateChannel(channel2)
 
       // make sure initially all metadata are empty
-      assert(getTimestamp(channel1.channelId, "created_timestamp").isEmpty)
-      assert(getTimestamp(channel1.channelId, "last_payment_sent_timestamp").isEmpty)
-      assert(getTimestamp(channel1.channelId, "last_payment_received_timestamp").isEmpty)
-      assert(getTimestamp(channel1.channelId, "last_connected_timestamp").isEmpty)
-      assert(getTimestamp(channel1.channelId, "closed_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "created_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "last_payment_sent_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "last_payment_received_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "closed_timestamp").isEmpty)
 
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Created)
-      assert(getTimestamp(channel1.channelId, "created_timestamp").nonEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "created_timestamp").nonEmpty)
 
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.PaymentSent)
-      assert(getTimestamp(channel1.channelId, "last_payment_sent_timestamp").nonEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "last_payment_sent_timestamp").nonEmpty)
 
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.PaymentReceived)
-      assert(getTimestamp(channel1.channelId, "last_payment_received_timestamp").nonEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "last_payment_received_timestamp").nonEmpty)
 
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Connected)
-      assert(getTimestamp(channel1.channelId, "last_connected_timestamp").nonEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "last_connected_timestamp").nonEmpty)
 
       db.updateChannelMeta(channel1.channelId, ChannelEvent.EventType.Closed(null))
-      assert(getTimestamp(channel1.channelId, "closed_timestamp").nonEmpty)
+      assert(getTimestamp(dbs, channel1.channelId, "closed_timestamp").nonEmpty)
 
       // make sure all metadata are still empty for channel 2
-      assert(getTimestamp(channel2.channelId, "created_timestamp").isEmpty)
-      assert(getTimestamp(channel2.channelId, "last_payment_sent_timestamp").isEmpty)
-      assert(getTimestamp(channel2.channelId, "last_payment_received_timestamp").isEmpty)
-      assert(getTimestamp(channel2.channelId, "last_connected_timestamp").isEmpty)
-      assert(getTimestamp(channel2.channelId, "closed_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "created_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "last_payment_sent_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "last_payment_received_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "last_connected_timestamp").isEmpty)
+      assert(getTimestamp(dbs, channel2.channelId, "closed_timestamp").isEmpty)
     }
   }
 
@@ -175,13 +163,22 @@ class ChannelsDbSpec extends AnyFunSuite {
           setVersion(statement, "channels", 1)
         }
 
-        // insert 1 row
-        val channel = ChannelCodecsSpec.normal
-        val data = stateDataCodec.encode(channel).require.toByteArray
-        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?)")) { statement =>
-          statement.setBytes(1, channel.channelId.toArray)
-          statement.setBytes(2, data)
-          statement.executeUpdate()
+        // insert data
+        for (testCase <- testCases) {
+          using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?)")) { statement =>
+            statement.setBytes(1, testCase.channelId.toArray)
+            statement.setBytes(2, testCase.data.toArray)
+            statement.executeUpdate()
+          }
+          for (commitmentNumber <- testCase.commitmentNumbers) {
+            using(sqlite.prepareStatement("INSERT INTO htlc_infos (channel_id, commitment_number, payment_hash, cltv_expiry) VALUES (?, ?, ?, ?)")) { statement =>
+              statement.setBytes(1, testCase.channelId.toArray)
+              statement.setLong(2, commitmentNumber)
+              statement.setBytes(3, randomBytes32.toArray)
+              statement.setLong(4, 500000 + Random.nextInt(500000))
+              statement.executeUpdate()
+            }
+          }
         }
 
         // check that db migration works
@@ -189,71 +186,194 @@ class ChannelsDbSpec extends AnyFunSuite {
         using(sqlite.createStatement()) { statement =>
           assert(getVersion(statement, "channels").contains(3))
         }
-        assert(db.listLocalChannels() === List(channel))
-        db.updateChannelMeta(channel.channelId, ChannelEvent.EventType.Created) // this call must not fail
+        assert(db.listLocalChannels().size === testCases.size)
+        for (testCase <- testCases) {
+          db.updateChannelMeta(testCase.channelId, ChannelEvent.EventType.Created) // this call must not fail
+          for (commitmentNumber <- testCase.commitmentNumbers) {
+            assert(db.listHtlcInfos(testCase.channelId, commitmentNumber).size === testCase.commitmentNumbers.count(_ == commitmentNumber))
+          }
+        }
     }
   }
 
-  test("migrate channel database v2 -> v3") {
+  test("migrate channel database v2 -> v3/v4") {
+    def postCheck(channelsDb: ChannelsDb): Unit = {
+      assert(channelsDb.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
+      for (testCase <- testCases.filterNot(_.isClosed)) {
+        channelsDb.updateChannelMeta(testCase.channelId, ChannelEvent.EventType.Created) // this call must not fail
+        for (commitmentNumber <- testCase.commitmentNumbers) {
+          assert(channelsDb.listHtlcInfos(testCase.channelId, commitmentNumber).size === testCase.commitmentNumbers.count(_ == commitmentNumber))
+        }
+      }
+    }
+
     forAllDbs {
       case dbs: TestPgDatabases =>
-        val pg = dbs.connection
-
-        // create a v2 channels database
-        using(pg.createStatement()) { statement =>
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id TEXT NOT NULL, commitment_number TEXT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
-          statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-          setVersion(statement, "channels", 2)
-        }
-
-        // insert 1 row
-        val channel = ChannelCodecsSpec.normal
-        val data = stateDataCodec.encode(channel).require.toByteArray
-        using(pg.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, ?)")) { statement =>
-          statement.setString(1, channel.channelId.toHex)
-          statement.setBytes(2, data)
-          statement.setBoolean(3, false)
-          statement.executeUpdate()
-        }
-
-        // check that db migration works
-        val db = dbs.channels
-        using(pg.createStatement()) { statement =>
-          assert(getVersion(statement, "channels").contains(3))
-        }
-        assert(db.listLocalChannels() === List(channel))
-        db.updateChannelMeta(channel.channelId, ChannelEvent.EventType.Created) // this call must not fail
-
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // initialize a v2 database
+            using(connection.createStatement()) { statement =>
+              statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
+              statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id TEXT NOT NULL, commitment_number TEXT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+              statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+              setVersion(statement, "channels", 2)
+            }
+            // insert data
+            testCases.foreach { testCase =>
+              using(connection.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, ?)")) { statement =>
+                statement.setString(1, testCase.channelId.toHex)
+                statement.setBytes(2, testCase.data.toArray)
+                statement.setBoolean(3, testCase.isClosed)
+                statement.executeUpdate()
+                for (commitmentNumber <- testCase.commitmentNumbers) {
+                  using(connection.prepareStatement("INSERT INTO htlc_infos (channel_id, commitment_number, payment_hash, cltv_expiry) VALUES (?, ?, ?, ?)")) { statement =>
+                    statement.setString(1, testCase.channelId.toHex)
+                    statement.setLong(2, commitmentNumber)
+                    statement.setString(3, randomBytes32.toHex)
+                    statement.setLong(4, 500000 + Random.nextInt(500000))
+                    statement.executeUpdate()
+                  }
+                }
+              }
+            }
+          },
+          dbName = "channels",
+          targetVersion = 4,
+          postCheck = _ => postCheck(dbs.channels)
+        )
       case dbs: TestSqliteDatabases =>
-        val sqlite = dbs.connection
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // create a v2 channels database
+            using(connection.createStatement()) { statement =>
+              statement.execute("PRAGMA foreign_keys = ON")
+              statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
+              statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+              statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+              setVersion(statement, "channels", 2)
+            }
+            // insert data
+            testCases.foreach { testCase =>
+              using(connection.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, ?)")) { statement =>
+                statement.setBytes(1, testCase.channelId.toArray)
+                statement.setBytes(2, testCase.data.toArray)
+                statement.setBoolean(3, testCase.isClosed)
+                statement.executeUpdate()
+                for (commitmentNumber <- testCase.commitmentNumbers) {
+                  using(connection.prepareStatement("INSERT INTO htlc_infos (channel_id, commitment_number, payment_hash, cltv_expiry) VALUES (?, ?, ?, ?)")) { statement =>
+                    statement.setBytes(1, testCase.channelId.toArray)
+                    statement.setLong(2, commitmentNumber)
+                    statement.setBytes(3, randomBytes32.toArray)
+                    statement.setLong(4, 500000 + Random.nextInt(500000))
+                    statement.executeUpdate()
+                  }
+                }
+              }
+            }
+          },
+          dbName = "channels",
+          targetVersion = 3,
+          postCheck = _ => postCheck(dbs.channels)
+        )
+    }
+  }
 
-        // create a v2 channels database
-        using(sqlite.createStatement()) { statement =>
-          statement.execute("PRAGMA foreign_keys = ON")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
-          statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-          setVersion(statement, "channels", 2)
-        }
+  test("migrate pg channel database v3->v4") {
+    val dbs = TestPgDatabases()
 
-        // insert 1 row
-        val channel = ChannelCodecsSpec.normal
-        val data = stateDataCodec.encode(channel).require.toByteArray
-        using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?, ?)")) { statement =>
-          statement.setBytes(1, channel.channelId.toArray)
-          statement.setBytes(2, data)
-          statement.setBoolean(3, false)
-          statement.executeUpdate()
+    migrationCheck(
+      dbs = dbs,
+      initializeTables = connection => {
+        using(connection.createStatement()) { statement =>
+          // initialize a v3 database
+          statement.executeUpdate("CREATE TABLE local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp BIGINT, last_payment_sent_timestamp BIGINT, last_payment_received_timestamp BIGINT, last_connected_timestamp BIGINT, closed_timestamp BIGINT)")
+          statement.executeUpdate("CREATE TABLE htlc_infos (channel_id TEXT NOT NULL, commitment_number TEXT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+          statement.executeUpdate("CREATE INDEX htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+          PgUtils.setVersion(statement, "channels", 3)
         }
+        // insert data
+        testCases.foreach { testCase =>
+          using(connection.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed, created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp, closed_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+            statement.setString(1, testCase.channelId.toHex)
+            statement.setBytes(2, testCase.data.toArray)
+            statement.setBoolean(3, testCase.isClosed)
+            statement.setObject(4, testCase.createdTimestamp.orNull)
+            statement.setObject(5, testCase.lastPaymentSentTimestamp.orNull)
+            statement.setObject(6, testCase.lastPaymentReceivedTimestamp.orNull)
+            statement.setObject(7, testCase.lastConnectedTimestamp.orNull)
+            statement.setObject(8, testCase.closedTimestamp.orNull)
+            statement.executeUpdate()
+          }
+        }
+      },
+      dbName = "channels",
+      targetVersion = 4,
+      postCheck = connection => {
+        assert(dbs.channels.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
+        testCases.foreach { testCase =>
+          assert(getPgTimestamp(connection, testCase.channelId, "created_timestamp") === testCase.createdTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "last_payment_sent_timestamp") === testCase.lastPaymentSentTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "last_payment_received_timestamp") === testCase.lastPaymentReceivedTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "last_connected_timestamp") === testCase.lastConnectedTimestamp)
+          assert(getPgTimestamp(connection, testCase.channelId, "closed_timestamp") === testCase.closedTimestamp)
+        }
+      }
+    )
 
-        // check that db migration works
-        val db = dbs.channels
-        using(sqlite.createStatement()) { statement =>
-          assert(getVersion(statement, "channels").contains(3))
-        }
-        assert(db.listLocalChannels() === List(channel))
-        db.updateChannelMeta(channel.channelId, ChannelEvent.EventType.Created) // this call must not fail
+  }
+}
+
+object ChannelsDbSpec {
+
+  case class TestCase(
+                       channelId: ByteVector32,
+                       data: ByteVector,
+                       isClosed: Boolean,
+                       createdTimestamp: Option[Long],
+                       lastPaymentSentTimestamp: Option[Long],
+                       lastPaymentReceivedTimestamp: Option[Long],
+                       lastConnectedTimestamp: Option[Long],
+                       closedTimestamp: Option[Long],
+                       commitmentNumbers: Seq[Int]
+                     )
+
+  private val data = stateDataCodec.encode(ChannelCodecsSpec.normal).require.bytes
+  val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield TestCase(
+    channelId = randomBytes32,
+    data = data,
+    isClosed = Random.nextBoolean(),
+    createdTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+    lastPaymentSentTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+    lastPaymentReceivedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+    lastConnectedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+    closedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+    commitmentNumbers = for (_ <- 0 until Random.nextInt(10)) yield Random.nextInt(5) // there will be repetitions, on purpose
+  )
+
+  def getTimestamp(dbs: TestDatabases, channelId: ByteVector32, columnName: String): Option[Long] = {
+    dbs match {
+      case _: TestPgDatabases => getPgTimestamp(dbs.connection, channelId, columnName)
+      case _: TestSqliteDatabases => getSqliteTimestamp(dbs.connection, channelId, columnName)
+    }
+  }
+
+  def getSqliteTimestamp(connection: Connection, channelId: ByteVector32, columnName: String): Option[Long] = {
+    using(connection.prepareStatement(s"SELECT $columnName FROM local_channels WHERE channel_id=?")) { statement =>
+      statement.setBytes(1, channelId.toArray)
+      val rs = statement.executeQuery()
+      rs.next()
+      rs.getLongNullable(columnName)
+    }
+  }
+
+  def getPgTimestamp(connection: Connection, channelId: ByteVector32, columnName: String): Option[Long] = {
+    using(connection.prepareStatement(s"SELECT $columnName FROM local_channels WHERE channel_id=?")) { statement =>
+      statement.setString(1, channelId.toHex)
+      val rs = statement.executeQuery()
+      rs.next()
+      rs.getTimestampNullable(columnName).map(_.getTime)
     }
   }
 }
