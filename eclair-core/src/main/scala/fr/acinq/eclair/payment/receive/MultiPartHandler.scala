@@ -26,7 +26,7 @@ import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams}
 
 import scala.util.{Failure, Success, Try}
 
@@ -54,7 +54,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType) =>
       Try {
-        val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
+        val paymentPreimage = paymentPreimage_opt.getOrElse(PaymentRequest.generatePreimage())
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).

@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.Onion.FinalTlvPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -213,6 +213,26 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(pr.features.allowMultiPart)
       assert(pr.features.allowTrampoline)
     }
+  }
+
+  test("Payment request generation uses current timestamp in preimage") { f =>
+    import f._
+
+    val now = System.currentTimeMillis()
+    val timestampLength = BigInt(now).toByteArray.length
+    assert(timestampLength < 8)
+
+    sender.send(handlerWithoutMpp, ReceivePayment(None, "1 coffee now"))
+    val pr1 = sender.expectMsgType[PaymentRequest]
+    val incoming = nodeParams.db.payments.getIncomingPayment(pr1.paymentHash)
+    assert(incoming.isDefined)
+    val preimageTimestamp = BigInt(incoming.get.paymentPreimage.takeRight(timestampLength).toArray).toLong
+    assert(now <= preimageTimestamp)
+    assert(preimageTimestamp <= now + 5000)
+
+    sender.send(handlerWithoutMpp, ReceivePayment(None, "1 other coffee now"))
+    val pr2 = sender.expectMsgType[PaymentRequest]
+    assert(pr1.paymentHash !== pr2.paymentHash)
   }
 
   test("Generated payment request contains the provided extra hops") { f =>

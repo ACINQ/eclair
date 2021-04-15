@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, randomBytes, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -482,6 +482,17 @@ object PaymentRequest {
         case Some(amt) if unit(amt) == 'm' => s"${amt.toLong / 100000000L}m"
       }
     }
+  }
+
+  /**
+   * To avoid collision on payment preimages, we use a mix of randomness and timestamping.
+   * The end of the preimage contains a timestamp and the rest (at least 192 bits) comes from our RNG.
+   * This ensures that even if the randomness fails, it's unlikely that preimages will be reused.
+   */
+  def generatePreimage(): ByteVector32 = {
+    val timestamp = BigInt(System.currentTimeMillis()).toByteArray
+    val random = randomBytes(32 - timestamp.length)
+    ByteVector32(random ++ ByteVector.view(timestamp))
   }
 
   // char -> 5 bits value
