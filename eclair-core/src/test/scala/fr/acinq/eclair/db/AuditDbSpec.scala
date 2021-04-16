@@ -34,6 +34,8 @@ import fr.acinq.eclair.wire.protocol.Error
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
 
+import java.sql.Timestamp
+import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import scala.concurrent.duration._
@@ -182,7 +184,7 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("handle migration version 1 -> 5") {
+  test("migrate audit database v1 -> v5/v6") {
     forAllDbs {
       case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
@@ -255,7 +257,7 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("handle migration version 2 -> 5") {
+  test("migrate audit database v2 -> v5/v6") {
     forAllDbs {
       case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
@@ -306,7 +308,7 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("handle migration version 3 -> 5") {
+  test("migrate audit database v3 -> v5/v6") {
     forAllDbs {
       case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
@@ -400,7 +402,7 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("handle migration version 4 -> 5") {
+  test("migrate audit database v4 -> v5/v6") {
     forAllDbs {
       case dbs: TestPgDatabases =>
         import fr.acinq.eclair.db.pg.PgUtils.getVersion
@@ -483,7 +485,7 @@ class AuditDbSpec extends AnyFunSuite {
         val migratedDb = new PgAuditDb()(datasource)
         inTransaction { pg =>
           using(pg.createStatement()) { statement =>
-            assert(getVersion(statement, "audit").contains(5))
+            assert(getVersion(statement, "audit").contains(6))
           }
         }
 
@@ -493,7 +495,7 @@ class AuditDbSpec extends AnyFunSuite {
 
         inTransaction { pg =>
           using(pg.createStatement()) { statement =>
-            assert(getVersion(statement, "audit").contains(5))
+            assert(getVersion(statement, "audit").contains(6))
           }
         }
 
@@ -605,7 +607,7 @@ class AuditDbSpec extends AnyFunSuite {
         if (isPg) statement.setString(3, randomBytes32.toHex) else statement.setBytes(3, randomBytes32.toArray)
         statement.setString(4, "IN")
         statement.setString(5, "unknown") // invalid relay type
-        statement.setLong(6, 10)
+        if (isPg) statement.setTimestamp(6, Timestamp.from(Instant.ofEpochMilli(10))) else statement.setLong(6, 10)
         statement.executeUpdate()
       }
 
@@ -615,7 +617,7 @@ class AuditDbSpec extends AnyFunSuite {
         if (isPg) statement.setString(3, randomBytes32.toHex) else statement.setBytes(3, randomBytes32.toArray)
         statement.setString(4, "UP") // invalid direction
         statement.setString(5, "channel")
-        statement.setLong(6, 20)
+        if (isPg) statement.setTimestamp(6, Timestamp.from(Instant.ofEpochMilli(20))) else statement.setLong(6, 20)
         statement.executeUpdate()
       }
 
@@ -628,7 +630,7 @@ class AuditDbSpec extends AnyFunSuite {
         if (isPg) statement.setString(3, channelId.toHex) else statement.setBytes(3, channelId.toArray)
         statement.setString(4, "IN") // missing a corresponding OUT
         statement.setString(5, "channel")
-        statement.setLong(6, 30)
+        if (isPg) statement.setTimestamp(6, Timestamp.from(Instant.ofEpochMilli(30))) else statement.setLong(6, 30)
         statement.executeUpdate()
       }
 
