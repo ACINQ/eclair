@@ -96,6 +96,7 @@ object PgUtilsSpec extends Logging {
        |  port = $port
        |  username = "postgres"
        |  password = ""
+       |  readonly-user = ""
        |  pool {
        |    max-size = 10 // recommended value = number_of_cpu_cores * 2
        |    connection-timeout = 30 seconds

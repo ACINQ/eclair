@@ -95,7 +95,8 @@ object Databases extends Logging {
     def apply(hikariConfig: HikariConfig,
               instanceId: UUID,
               lock: PgLock = PgLock.NoLock,
-              jdbcUrlFile_opt: Option[File])(implicit system: ActorSystem): PostgresDatabases = {
+              jdbcUrlFile_opt: Option[File],
+              readOnlyUser_opt: Option[String])(implicit system: ActorSystem): PostgresDatabases = {
 
       jdbcUrlFile_opt.foreach(jdbcUrlFile => checkIfDatabaseUrlIsUnchanged(hikariConfig.getJdbcUrl, jdbcUrlFile))
 
@@ -120,6 +121,15 @@ object Databases extends Logging {
           // ...and renew the lease regularly
           import system.dispatcher
           system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => databases.obtainExclusiveLock())
+      }
+
+      readOnlyUser_opt.foreach { readOnlyUser =>
+        PgUtils.inTransaction { connection =>
+          using(connection.createStatement()) { statement =>
+            logger.info(s"granting read-only access to user=$readOnlyUser")
+            statement.executeUpdate(s"GRANT SELECT ON ALL TABLES IN SCHEMA public TO $readOnlyUser")
+          }
+        }
       }
 
       databases
@@ -183,6 +193,7 @@ object Databases extends Logging {
     val port = dbConfig.getInt("postgres.port")
     val username = if (dbConfig.getIsNull("postgres.username") || dbConfig.getString("postgres.username").isEmpty) None else Some(dbConfig.getString("postgres.username"))
     val password = if (dbConfig.getIsNull("postgres.password") || dbConfig.getString("postgres.password").isEmpty) None else Some(dbConfig.getString("postgres.password"))
+    val readOnlyUser_opt =  if (dbConfig.getIsNull("postgres.readonly-user") || dbConfig.getString("postgres.readonly-user").isEmpty) None else Some(dbConfig.getString("postgres.readonly-user"))
 
     val hikariConfig = new HikariConfig()
     hikariConfig.setJdbcUrl(s"jdbc:postgresql://$host:$port/$database")
@@ -210,7 +221,8 @@ object Databases extends Logging {
       hikariConfig = hikariConfig,
       instanceId = instanceId,
       lock = lock,
-      jdbcUrlFile_opt = Some(jdbcUrlFile)
+      jdbcUrlFile_opt = Some(jdbcUrlFile),
+      readOnlyUser_opt = readOnlyUser_opt
     )
   }
 
