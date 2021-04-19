@@ -38,8 +38,13 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb {
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
-      require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
-      statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+      getVersion(statement, DB_NAME) match {
+        case None =>
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+        case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+        case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+      }
+      setVersion(statement, DB_NAME, CURRENT_VERSION)
     }
   }
 

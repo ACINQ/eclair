@@ -40,27 +40,29 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
   val DB_NAME = "channels"
   val CURRENT_VERSION = 3
 
-  def migration23(statement: Statement): Unit = {
-    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN created_timestamp BIGINT")
-    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_sent_timestamp BIGINT")
-    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_received_timestamp BIGINT")
-    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_connected_timestamp BIGINT")
-    statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed_timestamp BIGINT")
-  }
-
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
-      getVersion(statement, DB_NAME, CURRENT_VERSION) match {
-        case 2 =>
-          logger.warn(s"migrating db $DB_NAME, found version=2 current=$CURRENT_VERSION")
+
+      def migration23(statement: Statement): Unit = {
+        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN created_timestamp BIGINT")
+        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_sent_timestamp BIGINT")
+        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_received_timestamp BIGINT")
+        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_connected_timestamp BIGINT")
+        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed_timestamp BIGINT")
+      }
+
+      getVersion(statement, DB_NAME) match {
+        case Some(v@2) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration23(statement)
-          setVersion(statement, DB_NAME, CURRENT_VERSION)
-        case CURRENT_VERSION =>
+        case None =>
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp BIGINT, last_payment_sent_timestamp BIGINT, last_payment_received_timestamp BIGINT, last_connected_timestamp BIGINT, closed_timestamp BIGINT)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id TEXT NOT NULL, commitment_number TEXT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-        case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+        case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+        case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
+      setVersion(statement, DB_NAME, CURRENT_VERSION)
     }
   }
 

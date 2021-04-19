@@ -45,14 +45,14 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
-    def migration12(statement: Statement): Int = {
+    def migration12(statement: Statement): Unit = {
       // Version 2 is "backwards compatible" in the sense that it uses separate tables from version 1 (which used a single "payments" table).
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
       statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
     }
 
-    def migration23(statement: Statement): Int = {
+    def migration23(statement: Statement): Unit = {
       // We add many more columns to the sent_payments table.
       statement.executeUpdate("DROP index payment_hash_idx")
       statement.executeUpdate("ALTER TABLE sent_payments RENAME TO _sent_payments_old")
@@ -76,7 +76,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_created_idx ON received_payments(created_at)")
     }
 
-    def migration34(statement: Statement): Int = {
+    def migration34(statement: Statement): Unit = {
       // We add a recipient_amount_msat and payment_type columns, rename some columns and change column order.
       statement.executeUpdate("DROP index sent_parent_id_idx")
       statement.executeUpdate("DROP index sent_payment_hash_idx")
@@ -98,23 +98,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_created_idx ON received_payments(created_at)")
     }
 
-    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
-      case 1 =>
-        logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
-        migration12(statement)
-        migration23(statement)
-        migration34(statement)
-        setVersion(statement, DB_NAME, CURRENT_VERSION)
-      case 2 =>
-        logger.warn(s"migrating db $DB_NAME, found version=2 current=$CURRENT_VERSION")
-        migration23(statement)
-        migration34(statement)
-        setVersion(statement, DB_NAME, CURRENT_VERSION)
-      case 3 =>
-        logger.warn(s"migrating db $DB_NAME, found version=3 current=$CURRENT_VERSION")
-        migration34(statement)
-        setVersion(statement, DB_NAME, CURRENT_VERSION)
-      case CURRENT_VERSION =>
+    getVersion(statement, DB_NAME) match {
+      case None =>
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_type TEXT NOT NULL, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
         statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, payment_preimage BLOB, payment_type TEXT NOT NULL, amount_msat INTEGER NOT NULL, fees_msat INTEGER, recipient_amount_msat INTEGER NOT NULL, recipient_node_id BLOB NOT NULL, payment_request TEXT, payment_route BLOB, failures BLOB, created_at INTEGER NOT NULL, completed_at INTEGER)")
 
@@ -122,8 +107,22 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_created_idx ON sent_payments(created_at)")
         statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_created_idx ON received_payments(created_at)")
-      case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+      case Some(v@1) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+        migration12(statement)
+        migration23(statement)
+        migration34(statement)
+      case Some(v@2) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+        migration23(statement)
+        migration34(statement)
+      case Some(v@3) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+        migration34(statement)
+      case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+      case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
+    setVersion(statement, DB_NAME, CURRENT_VERSION)
 
   }
 

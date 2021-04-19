@@ -19,6 +19,7 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.SatoshiLong
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
+import fr.acinq.eclair.db.pg.PgUtils.setVersion
 import fr.acinq.eclair.db.sqlite.SqliteFeeratesDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, using}
 import org.scalatest.funsuite.AnyFunSuite
@@ -54,16 +55,16 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
     val sqlite = TestDatabases.sqliteInMemory()
 
     using(sqlite.createStatement()) { statement =>
-      getVersion(statement, "feerates", 1) // this will set version to 1
       statement.executeUpdate(
         """
           |CREATE TABLE IF NOT EXISTS feerates_per_kb (
           |rate_block_1 INTEGER NOT NULL, rate_blocks_2 INTEGER NOT NULL, rate_blocks_6 INTEGER NOT NULL, rate_blocks_12 INTEGER NOT NULL, rate_blocks_36 INTEGER NOT NULL, rate_blocks_72 INTEGER NOT NULL, rate_blocks_144 INTEGER NOT NULL,
           |timestamp INTEGER NOT NULL)""".stripMargin)
+      setVersion(statement, "feerates", 1)
     }
 
     using(sqlite.createStatement()) { statement =>
-      assert(getVersion(statement, "feerates", 2) == 1) // version 1 is deployed now
+      assert(getVersion(statement, "feerates").contains(1))
     }
 
     // Version 1 was missing the 1008 block target.
@@ -81,7 +82,7 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
 
     val migratedDb = new SqliteFeeratesDb(sqlite)
     using(sqlite.createStatement()) { statement =>
-      assert(getVersion(statement, "feerates", 2) == 2) // version changed from 1 -> 2
+      assert(getVersion(statement, "feerates").contains(2))
     }
 
     // When migrating, we simply copy the estimate for blocks 144 to blocks 1008.

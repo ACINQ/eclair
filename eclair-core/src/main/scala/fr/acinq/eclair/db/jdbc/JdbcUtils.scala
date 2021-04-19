@@ -16,15 +16,15 @@
 
 package fr.acinq.eclair.db.jdbc
 
-import java.sql.{Connection, ResultSet, Statement}
-import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
-import javax.sql.DataSource
+import org.sqlite.SQLiteConnection
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 
+import java.sql.{Connection, ResultSet, Statement}
+import java.util.UUID
+import javax.sql.DataSource
 import scala.collection.immutable.Queue
 
 trait JdbcUtils {
@@ -57,6 +57,42 @@ trait JdbcUtils {
     } finally {
       if (inTransaction) statement.getConnection.setAutoCommit(autoCommit)
       if (statement != null) statement.close()
+    }
+  }
+
+  private def createVersionTable(statement: Statement): Unit = {
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
+  }
+
+  /**
+   * Several logical databases (channels, network, peers) may be stored in the same physical sqlite database.
+   * We keep track of their respective version using a dedicated table. The version entry will be created if
+   * there is none but will never be updated here (use setVersion to do that).
+   */
+  def getVersion(statement: Statement, db_name: String): Option[Int] = {
+    createVersionTable(statement)
+    // if there was a previous version installed, this will return a different value from current version
+    val rs = statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
+    if (rs.next()) Some(rs.getInt("version")) else None
+  }
+
+  /**
+   * Updates the version for a particular logical database, it will overwrite the previous version.
+   *
+   * NB: we could define this method in [[fr.acinq.eclair.db.sqlite.SqliteUtils]] and [[fr.acinq.eclair.db.pg.PgUtils]]
+   *     but it would make testing more complicated because we need to use one or the other depending on the backend.
+   */
+  def setVersion(statement: Statement, db_name: String, newVersion: Int): Unit = {
+    createVersionTable(statement)
+    statement.getConnection match {
+      case _: SQLiteConnection =>
+        // if there was no version for the current db, then insert the current version
+        statement.executeUpdate(s"INSERT OR IGNORE INTO versions VALUES ('$db_name', $newVersion)")
+        // if there was an existing version, then previous step was a no-op, now we overwrite the existing version
+        statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
+      case _ => // if it isn't an sqlite connection, we assume it's postgres
+        // insert or update the version
+        statement.executeUpdate(s"INSERT INTO versions VALUES ('$db_name', $newVersion) ON CONFLICT (db_name) DO UPDATE SET version = EXCLUDED.version ;")
     }
   }
 

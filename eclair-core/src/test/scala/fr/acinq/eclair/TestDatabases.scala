@@ -3,16 +3,14 @@ package fr.acinq.eclair
 import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.zaxxer.hikari.HikariConfig
-import fr.acinq.eclair.db.pg.PgUtils
-import fr.acinq.eclair.db.pg.PgUtils.PgLock
-import fr.acinq.eclair.db.sqlite.SqliteUtils
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import org.postgresql.jdbc.PgConnection
 import org.sqlite.SQLiteConnection
 
 import java.io.File
-import java.sql.{Connection, DriverManager, Statement}
+import java.sql.{Connection, DriverManager}
 import java.util.UUID
 import javax.sql.DataSource
 import scala.concurrent.duration._
@@ -31,7 +29,6 @@ sealed trait TestDatabases extends Databases {
   override def peers: PeersDb = db.peers
   override def payments: PaymentsDb = db.payments
   override def pendingRelay: PendingRelayDb = db.pendingRelay
-  def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int
   def close(): Unit
   // @formatter:on
 }
@@ -49,7 +46,6 @@ object TestDatabases {
     // @formatter:off
     override val connection: SQLiteConnection = sqliteInMemory()
     override lazy val db: Databases = Databases.SqliteDatabases(connection, connection, connection)
-    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = SqliteUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = ()
     // @formatter:on
   }
@@ -69,7 +65,6 @@ object TestDatabases {
     // @formatter:off
     override val connection: PgConnection = pg.getPostgresDatabase.getConnection.asInstanceOf[PgConnection]
     override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile), readOnlyUser_opt = None)
-    override def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = PgUtils.getVersion(statement, db_name, currentVersion)
     override def close(): Unit = pg.close()
     // @formatter:on
   }
@@ -79,7 +74,7 @@ object TestDatabases {
     // @formatter:off
     using(TestSqliteDatabases())(f)
     using(TestPgDatabases())(f)
-    // @fodmatter:on
+    // @formatter:on
   }
 
 }
