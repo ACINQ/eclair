@@ -103,6 +103,16 @@ object Databases extends Logging {
       implicit val ds: HikariDataSource = new HikariDataSource(hikariConfig)
       implicit val implicitLock: PgLock = lock
 
+      lock match {
+        case PgLock.NoLock => ()
+        case l: PgLock.LeaseLock =>
+          // we obtain a lock right now...
+          l.obtainExclusiveLock(ds)
+          // ...and renew the lease regularly
+          import system.dispatcher
+          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => l.obtainExclusiveLock(ds))
+      }
+
       val databases = PostgresDatabases(
         network = new PgNetworkDb,
         audit = new PgAuditDb,
@@ -112,16 +122,6 @@ object Databases extends Logging {
         pendingRelay = new PgPendingRelayDb,
         dataSource = ds,
         lock = lock)
-
-      lock match {
-        case PgLock.NoLock => ()
-        case l: PgLock.LeaseLock =>
-          // we obtain a lock right now...
-          databases.obtainExclusiveLock()
-          // ...and renew the lease regularly
-          import system.dispatcher
-          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => databases.obtainExclusiveLock())
-      }
 
       readOnlyUser_opt.foreach { readOnlyUser =>
         PgUtils.inTransaction { connection =>
