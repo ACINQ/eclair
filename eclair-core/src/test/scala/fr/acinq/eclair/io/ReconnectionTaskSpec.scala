@@ -218,7 +218,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   }
 
-  test("reconnect using the address from node_announcement") { f =>
+  ignore("reconnect using the address from node_announcement") { f =>
     import f._
 
     // we create a dummy tcp server and update bob's announcement to point to it
