@@ -22,7 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, RemoteFailure}
 import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
-import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, secureRandom}
+import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, randomLong}
 
 import scala.concurrent.duration._
 
@@ -96,7 +96,7 @@ object Autoprobe {
     if (peers.isEmpty) {
       None
     } else {
-      peers.drop(secureRandom.nextInt(peers.size)).headOption
+      peers.drop(randomLong.toInt % peers.size).headOption
     }
   }
 
