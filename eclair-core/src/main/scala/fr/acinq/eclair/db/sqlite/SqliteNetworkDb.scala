@@ -51,9 +51,9 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
 
     getVersion(statement, DB_NAME) match {
       case None =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+        statement.executeUpdate("CREATE TABLE nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
+        statement.executeUpdate("CREATE TABLE pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
       case Some(v@1) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)

@@ -47,7 +47,7 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
         // Create feerates table. Rates are in kb.
         statement.executeUpdate(
           """
-            |CREATE TABLE IF NOT EXISTS feerates_per_kb (
+            |CREATE TABLE feerates_per_kb (
             |rate_block_1 INTEGER NOT NULL, rate_blocks_2 INTEGER NOT NULL, rate_blocks_6 INTEGER NOT NULL, rate_blocks_12 INTEGER NOT NULL, rate_blocks_36 INTEGER NOT NULL, rate_blocks_72 INTEGER NOT NULL, rate_blocks_144 INTEGER NOT NULL, rate_blocks_1008 INTEGER NOT NULL,
             |timestamp INTEGER NOT NULL)""".stripMargin)
       case Some(v@1) =>

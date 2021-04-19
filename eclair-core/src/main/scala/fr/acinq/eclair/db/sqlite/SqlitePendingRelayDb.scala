@@ -38,7 +38,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     getVersion(statement, DB_NAME) match {
       case None =>
         // note: should we use a foreign key to local_channels table here?
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+        statement.executeUpdate("CREATE TABLE pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }

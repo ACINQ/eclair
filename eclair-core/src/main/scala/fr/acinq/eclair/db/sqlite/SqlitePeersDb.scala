@@ -37,7 +37,7 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
   using(sqlite.createStatement(), inTransaction = true) { statement =>
     getVersion(statement, DB_NAME) match {
       case None =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }

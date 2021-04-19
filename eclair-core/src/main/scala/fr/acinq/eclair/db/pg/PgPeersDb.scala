@@ -40,7 +40,7 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb {
     using(pg.createStatement()) { statement =>
       getVersion(statement, DB_NAME) match {
         case None =>
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+          statement.executeUpdate("CREATE TABLE peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
