@@ -211,8 +211,11 @@ object Databases extends Logging {
         val leaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
         val leaseRenewInterval = dbConfig.getDuration("postgres.lease.renew-interval").toSeconds.seconds
         require(leaseInterval > leaseRenewInterval, "invalid configuration: `db.postgres.lease.interval` must be greater than `db.postgres.lease.renew-interval`")
+        // We use a timeout for locks, because we might not be able to get the lock right away due to concurrent access
+        // by other threads. That timeout gives time for other transactions to complete, then ours can take the lock
         val lockTimeout = dbConfig.getDuration("postgres.lease.lock-timeout").toSeconds.seconds
-        PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, lockTimeout, lockExceptionHandler)
+        hikariConfig.setConnectionInitSql(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
+        PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, lockExceptionHandler)
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
 

@@ -106,12 +106,12 @@ object PgUtils extends JdbcUtils {
      *
      * `lockExceptionHandler` provides a lock exception handler to customize the behavior when locking errors occur.
      */
-    case class LeaseLock(instanceId: UUID, leaseDuration: FiniteDuration, leaseRenewInterval: FiniteDuration, lockTimeout: FiniteDuration, lockFailureHandler: LockFailureHandler) extends PgLock {
+    case class LeaseLock(instanceId: UUID, leaseDuration: FiniteDuration, leaseRenewInterval: FiniteDuration, lockFailureHandler: LockFailureHandler) extends PgLock {
 
       import LeaseLock._
 
       override def obtainExclusiveLock(implicit ds: DataSource): Unit = {
-        obtainDatabaseLease(instanceId, leaseDuration, lockTimeout) match {
+        obtainDatabaseLease(instanceId, leaseDuration) match {
           case Right(_) => ()
           case Left(ex) => lockFailureHandler(ex)
         }
@@ -140,7 +140,7 @@ object PgUtils extends JdbcUtils {
       /** We use a [[LeaseLock]] mechanism to get a [[LockLease]]. */
       case class LockLease(expiresAt: Timestamp, instanceId: UUID, expired: Boolean)
 
-      private def obtainDatabaseLease(instanceId: UUID, leaseDuration: FiniteDuration, lockTimeout: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Either[LockFailure, LockLease] = synchronized {
+      private def obtainDatabaseLease(instanceId: UUID, leaseDuration: FiniteDuration, attempt: Int = 1)(implicit ds: DataSource): Either[LockFailure, LockLease] = synchronized {
         logger.debug(s"trying to acquire database lease (attempt #$attempt) instance ID=$instanceId")
 
         // this is a recursive method, we need to make sure we don't enter an infinite loop
@@ -148,7 +148,7 @@ object PgUtils extends JdbcUtils {
 
         try {
           inTransaction { implicit connection =>
-            acquireExclusiveTableLock(lockTimeout)
+            acquireExclusiveTableLock()
             logger.debug("database lease was successfully acquired")
             checkDatabaseLease(connection, instanceId) match {
               case Right(_) =>
@@ -169,7 +169,7 @@ object PgUtils extends JdbcUtils {
               connection =>
                 logger.warn(s"table $LeaseTable does not exist, trying to create it")
                 initializeLeaseTable(connection)
-                obtainDatabaseLease(instanceId, leaseDuration, lockTimeout, attempt + 1)
+                obtainDatabaseLease(instanceId, leaseDuration, attempt + 1)
             }
           case t: Throwable => Left(LockFailure.GeneralLockException(t))
         }
@@ -183,12 +183,9 @@ object PgUtils extends JdbcUtils {
         }
       }
 
-      private def acquireExclusiveTableLock(lockTimeout: FiniteDuration)(implicit connection: Connection): Unit = {
+      private def acquireExclusiveTableLock()(implicit connection: Connection): Unit = {
         using(connection.createStatement()) {
           statement =>
-            // We use a timeout here, because we might not be able to get the lock right away due to concurrent access
-            // by other threads. That timeout gives time for other transactions to complete, then ours can take the lock
-            statement.executeUpdate(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
             withMetrics("utils/lock", Tags.DbBackends.Postgres) {
               statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE")
             }

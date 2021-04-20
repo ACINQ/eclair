@@ -59,7 +59,7 @@ object TestDatabases {
     val datasource: DataSource = pg.getPostgresDatabase
     val hikariConfig = new HikariConfig
     hikariConfig.setDataSource(datasource)
-    val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, 5 seconds, LockFailureHandler.logAndThrow)
+    val lock: PgLock.LeaseLock = PgLock.LeaseLock(UUID.randomUUID(), 10 minutes, 8 minute, LockFailureHandler.logAndThrow)
 
     val jdbcUrlFile: File = new File(sys.props("tmp.dir"), s"jdbcUrlFile_${UUID.randomUUID()}.tmp")
     jdbcUrlFile.deleteOnExit()
