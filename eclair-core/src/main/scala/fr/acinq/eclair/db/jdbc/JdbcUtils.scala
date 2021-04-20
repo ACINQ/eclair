@@ -65,7 +65,7 @@ trait JdbcUtils {
   }
 
   /**
-   * Several logical databases (channels, network, peers) may be stored in the same physical sqlite database.
+   * Several logical databases (channels, network, peers) may be stored in the same physical database.
    * We keep track of their respective version using a dedicated table. The version entry will be created if
    * there is none but will never be updated here (use setVersion to do that).
    */
