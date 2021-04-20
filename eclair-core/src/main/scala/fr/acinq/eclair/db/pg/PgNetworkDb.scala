@@ -139,13 +139,17 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit = withMetrics("network/remove-channels", DbBackends.Postgres) {
+    val batchSize = 100
     inTransaction { pg =>
-      using(pg.createStatement) { statement =>
+      using(pg.prepareStatement(s"DELETE FROM channels WHERE short_channel_id IN (${List.fill(batchSize)("?").mkString(",")})")) { statement =>
         shortChannelIds
-          .grouped(1000) // remove channels by batch of 1000
-          .foreach { _ =>
-            val ids = shortChannelIds.map(_.toLong).mkString(",")
-            statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id IN ($ids)")
+          .grouped(batchSize)
+          .foreach { group =>
+            val padded = group.toArray.padTo(batchSize, ShortChannelId(0L))
+            for (i <- 0 until batchSize) {
+              statement.setLong(1 + i, padded(i).toLong) // index for jdbc parameters starts at 1
+            }
+            statement.executeUpdate()
           }
       }
     }
@@ -165,8 +169,9 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
 
   override def removeFromPruned(shortChannelId: ShortChannelId): Unit = withMetrics("network/remove-from-pruned", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.createStatement) { statement =>
-        statement.executeUpdate(s"DELETE FROM pruned WHERE short_channel_id=${shortChannelId.toLong}")
+      using(pg.prepareStatement(s"DELETE FROM pruned WHERE short_channel_id=?")) { statement =>
+        statement.setLong(1, shortChannelId.toLong)
+        statement.executeUpdate()
       }
     }
   }

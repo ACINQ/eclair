@@ -30,7 +30,8 @@ import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, Tor2}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.collection.{SortedMap, mutable}
+import scala.collection.{SortedMap, SortedSet, mutable}
+import scala.util.Random
 
 class NetworkDbSpec extends AnyFunSuite {
 
@@ -248,7 +249,7 @@ class NetworkDbSpec extends AnyFunSuite {
       updates.foreach(u => db.updateChannel(u))
       assert(db.listChannels().keySet === channels.map(_.shortChannelId).toSet)
 
-      val toDelete = channels.map(_.shortChannelId).drop(500).take(2500)
+      val toDelete = channels.map(_.shortChannelId).take(1 + Random.nextInt(2500))
       db.removeChannels(toDelete)
       assert(db.listChannels().keySet === (channels.map(_.shortChannelId).toSet -- toDelete))
     }

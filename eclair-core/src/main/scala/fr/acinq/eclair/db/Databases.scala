@@ -95,12 +95,23 @@ object Databases extends Logging {
     def apply(hikariConfig: HikariConfig,
               instanceId: UUID,
               lock: PgLock = PgLock.NoLock,
-              jdbcUrlFile_opt: Option[File])(implicit system: ActorSystem): PostgresDatabases = {
+              jdbcUrlFile_opt: Option[File],
+              readOnlyUser_opt: Option[String])(implicit system: ActorSystem): PostgresDatabases = {
 
       jdbcUrlFile_opt.foreach(jdbcUrlFile => checkIfDatabaseUrlIsUnchanged(hikariConfig.getJdbcUrl, jdbcUrlFile))
 
       implicit val ds: HikariDataSource = new HikariDataSource(hikariConfig)
       implicit val implicitLock: PgLock = lock
+
+      lock match {
+        case PgLock.NoLock => ()
+        case l: PgLock.LeaseLock =>
+          // we obtain a lock right now...
+          l.obtainExclusiveLock(ds)
+          // ...and renew the lease regularly
+          import system.dispatcher
+          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => l.obtainExclusiveLock(ds))
+      }
 
       val databases = PostgresDatabases(
         network = new PgNetworkDb,
@@ -112,14 +123,13 @@ object Databases extends Logging {
         dataSource = ds,
         lock = lock)
 
-      lock match {
-        case PgLock.NoLock => ()
-        case l: PgLock.LeaseLock =>
-          // we obtain a lock right now...
-          databases.obtainExclusiveLock()
-          // ...and renew the lease regularly
-          import system.dispatcher
-          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => databases.obtainExclusiveLock())
+      readOnlyUser_opt.foreach { readOnlyUser =>
+        PgUtils.inTransaction { connection =>
+          using(connection.createStatement()) { statement =>
+            logger.info(s"granting read-only access to user=$readOnlyUser")
+            statement.executeUpdate(s"GRANT SELECT ON ALL TABLES IN SCHEMA public TO $readOnlyUser")
+          }
+        }
       }
 
       databases
@@ -183,6 +193,7 @@ object Databases extends Logging {
     val port = dbConfig.getInt("postgres.port")
     val username = if (dbConfig.getIsNull("postgres.username") || dbConfig.getString("postgres.username").isEmpty) None else Some(dbConfig.getString("postgres.username"))
     val password = if (dbConfig.getIsNull("postgres.password") || dbConfig.getString("postgres.password").isEmpty) None else Some(dbConfig.getString("postgres.password"))
+    val readOnlyUser_opt =  if (dbConfig.getIsNull("postgres.readonly-user") || dbConfig.getString("postgres.readonly-user").isEmpty) None else Some(dbConfig.getString("postgres.readonly-user"))
 
     val hikariConfig = new HikariConfig()
     hikariConfig.setJdbcUrl(s"jdbc:postgresql://$host:$port/$database")
@@ -200,6 +211,10 @@ object Databases extends Logging {
         val leaseInterval = dbConfig.getDuration("postgres.lease.interval").toSeconds.seconds
         val leaseRenewInterval = dbConfig.getDuration("postgres.lease.renew-interval").toSeconds.seconds
         require(leaseInterval > leaseRenewInterval, "invalid configuration: `db.postgres.lease.interval` must be greater than `db.postgres.lease.renew-interval`")
+        // We use a timeout for locks, because we might not be able to get the lock right away due to concurrent access
+        // by other threads. That timeout gives time for other transactions to complete, then ours can take the lock
+        val lockTimeout = dbConfig.getDuration("postgres.lease.lock-timeout").toSeconds.seconds
+        hikariConfig.setConnectionInitSql(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
         PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, lockExceptionHandler)
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
@@ -210,7 +225,8 @@ object Databases extends Logging {
       hikariConfig = hikariConfig,
       instanceId = instanceId,
       lock = lock,
-      jdbcUrlFile_opt = Some(jdbcUrlFile)
+      jdbcUrlFile_opt = Some(jdbcUrlFile),
+      readOnlyUser_opt = readOnlyUser_opt
     )
   }
 

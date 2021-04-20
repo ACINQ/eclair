@@ -96,17 +96,19 @@ object PgUtilsSpec extends Logging {
        |  port = $port
        |  username = "postgres"
        |  password = ""
+       |  readonly-user = ""
        |  pool {
        |    max-size = 10 // recommended value = number_of_cpu_cores * 2
        |    connection-timeout = 30 seconds
        |    idle-timeout = 10 minutes
        |    max-life-time = 30 minutes
        |  }
+       |  lock-type = "lease" // lease or none (do not use none in production)
        |  lease {
        |    interval = 5 seconds // lease-interval must be greater than lease-renew-interval
        |    renew-interval = 2 seconds
+       |    lock-timeout = 5 seconds // timeout for the lock statement on the lease table
        |  }
-       |  lock-type = "lease" // lease or none
        |}
        |""".stripMargin
   )

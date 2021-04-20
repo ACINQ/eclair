@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.db.pg
 
+import fr.acinq.eclair.db.Monitoring.Metrics._
+import fr.acinq.eclair.db.Monitoring.Tags
 import fr.acinq.eclair.db.jdbc.JdbcUtils
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler.LockException
 import grizzled.slf4j.Logging
@@ -177,14 +179,16 @@ object PgUtils extends JdbcUtils {
         using(connection.createStatement()) {
           statement =>
             // allow only one row in the ownership lease table
-            statement.executeUpdate(s"CREATE TABLE IF NOT EXISTS $LeaseTable (id INTEGER PRIMARY KEY default(1), expires_at TIMESTAMP NOT NULL, instance VARCHAR NOT NULL, CONSTRAINT one_row CHECK (id = 1))")
+            statement.executeUpdate(s"CREATE TABLE IF NOT EXISTS $LeaseTable (id INTEGER PRIMARY KEY default(1), expires_at TIMESTAMP WITH TIME ZONE NOT NULL, instance VARCHAR NOT NULL, CONSTRAINT one_row CHECK (id = 1))")
         }
       }
 
       private def acquireExclusiveTableLock()(implicit connection: Connection): Unit = {
         using(connection.createStatement()) {
           statement =>
-            statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE NOWAIT")
+            withMetrics("utils/lock", Tags.DbBackends.Postgres) {
+              statement.executeUpdate(s"LOCK TABLE $LeaseTable IN ACCESS EXCLUSIVE MODE")
+            }
         }
       }
 
