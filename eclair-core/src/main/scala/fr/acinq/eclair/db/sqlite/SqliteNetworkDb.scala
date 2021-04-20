@@ -26,7 +26,7 @@ import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncement
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import grizzled.slf4j.Logging
 
-import java.sql.Connection
+import java.sql.{Connection, Statement}
 import scala.collection.immutable.SortedMap
 
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
@@ -38,24 +38,29 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   val CURRENT_VERSION = 2
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
-    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
-      case 1 =>
-        // channel_update are cheap to retrieve, so let's just wipe them out and they'll get resynced
-        statement.execute("PRAGMA foreign_keys = ON")
-        logger.warn("migrating network db version 1->2")
-        statement.executeUpdate("ALTER TABLE channels RENAME COLUMN data TO channel_announcement")
-        statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_1 BLOB NULL")
-        statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_2 BLOB NULL")
-        statement.executeUpdate("DROP TABLE channel_updates")
-        statement.execute("PRAGMA foreign_keys = OFF")
-        setVersion(statement, DB_NAME, CURRENT_VERSION)
-        logger.warn("migration complete")
-      case 2 => () // nothing to do
-      case unknown => throw new IllegalArgumentException(s"unknown version $unknown for network db")
+
+    def migration12(statement: Statement): Unit = {
+      // channel_update are cheap to retrieve, so let's just wipe them out and they'll get resynced
+      statement.execute("PRAGMA foreign_keys = ON")
+      statement.executeUpdate("ALTER TABLE channels RENAME COLUMN data TO channel_announcement")
+      statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_1 BLOB NULL")
+      statement.executeUpdate("ALTER TABLE channels ADD COLUMN channel_update_2 BLOB NULL")
+      statement.executeUpdate("DROP TABLE channel_updates")
+      statement.execute("PRAGMA foreign_keys = OFF")
     }
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+
+    getVersion(statement, DB_NAME) match {
+      case None =>
+        statement.executeUpdate("CREATE TABLE nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BLOB NOT NULL, capacity_sat INTEGER NOT NULL, channel_update_1 BLOB NULL, channel_update_2 BLOB NULL)")
+        statement.executeUpdate("CREATE TABLE pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+      case Some(v@1) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+        migration12(statement)
+      case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+      case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+    }
+    setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
   override def addNode(n: NodeAnnouncement): Unit = withMetrics("network/add-node", DbBackends.Sqlite) {

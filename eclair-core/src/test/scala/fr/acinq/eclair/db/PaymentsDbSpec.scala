@@ -54,12 +54,12 @@ class PaymentsDbSpec extends AnyFunSuite {
         val connection = dbs.connection
 
         using(connection.createStatement()) { statement =>
-          getVersion(statement, "payments", 1)
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS payments (payment_hash BLOB NOT NULL PRIMARY KEY, amount_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+          setVersion(statement, "payments", 1)
         }
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 1) == 1) // version 1 is deployed now
+          assert(getVersion(statement, "payments").contains(1))
         }
 
         // Changes between version 1 and 2:
@@ -75,7 +75,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         val preMigrationDb = new SqlitePaymentsDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 1) == 4) // version changed from 1 -> 4
+          assert(getVersion(statement, "payments").contains(4))
         }
 
         // the existing received payment can NOT be queried anymore
@@ -96,7 +96,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         val postMigrationDb = new SqlitePaymentsDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 4) == 4) // version still to 4
+          assert(getVersion(statement, "payments").contains(4))
         }
 
         assert(postMigrationDb.listIncomingPayments(1, 1500) === Seq(pr1))
@@ -112,14 +112,14 @@ class PaymentsDbSpec extends AnyFunSuite {
         val connection = dbs.connection
 
         using(connection.createStatement()) { statement =>
-          getVersion(statement, "payments", 2)
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER, received_at INTEGER)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, payment_hash BLOB NOT NULL, preimage BLOB, amount_msat INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER, status VARCHAR NOT NULL)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS payment_hash_idx ON sent_payments(payment_hash)")
+          setVersion(statement, "payments", 2)
         }
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 2) == 2) // version 2 is deployed now
+          assert(getVersion(statement, "payments").contains(2))
         }
 
         // Insert a bunch of old version 2 rows.
@@ -198,7 +198,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         val preMigrationDb = new SqlitePaymentsDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 2) == 4) // version changed from 2 -> 4
+          assert(getVersion(statement, "payments").contains(4))
         }
 
         assert(preMigrationDb.getIncomingPayment(i1.paymentHash) === Some(pr1))
@@ -208,7 +208,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         val postMigrationDb = new SqlitePaymentsDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 4) == 4) // version still to 4
+          assert(getVersion(statement, "payments").contains(4))
         }
 
         val i3 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(561 msat), paymentHash3, alicePriv, "invoice #3", CltvExpiryDelta(18), expirySeconds = Some(30))
@@ -238,7 +238,6 @@ class PaymentsDbSpec extends AnyFunSuite {
         val connection = dbs.connection
 
         using(connection.createStatement()) { statement =>
-          getVersion(statement, "payments", 3)
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received_payments (payment_hash BLOB NOT NULL PRIMARY KEY, payment_preimage BLOB NOT NULL, payment_request TEXT NOT NULL, received_msat INTEGER, created_at INTEGER NOT NULL, expire_at INTEGER NOT NULL, received_at INTEGER)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, target_node_id BLOB NOT NULL, created_at INTEGER NOT NULL, payment_request TEXT, completed_at INTEGER, payment_preimage BLOB, fees_msat INTEGER, payment_route BLOB, failures BLOB)")
 
@@ -246,10 +245,12 @@ class PaymentsDbSpec extends AnyFunSuite {
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_payment_hash_idx ON sent_payments(payment_hash)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS sent_created_idx ON sent_payments(created_at)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS received_created_idx ON received_payments(created_at)")
+
+          setVersion(statement, "payments", 3)
         }
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 3) == 3) // version 3 is deployed now
+          assert(getVersion(statement, "payments").contains(3))
         }
 
         // Insert a bunch of old version 3 rows.
@@ -308,7 +309,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         val preMigrationDb = new SqlitePaymentsDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 3) == 4) // version changed from 3 -> 4
+          assert(getVersion(statement, "payments").contains(4))
         }
 
         assert(preMigrationDb.getOutgoingPayment(id1) === Some(ps1))
@@ -317,7 +318,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         val postMigrationDb = new SqlitePaymentsDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "payments", 4) == 4) // version still to 4
+          assert(getVersion(statement, "payments").contains(4))
         }
     }
   }

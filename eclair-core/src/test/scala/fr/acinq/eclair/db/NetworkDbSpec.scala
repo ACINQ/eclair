@@ -56,24 +56,24 @@ class NetworkDbSpec extends AnyFunSuite {
       case dbs: TestSqliteDatabases =>
 
         using(dbs.connection.createStatement()) { statement =>
-          dbs.getVersion(statement, "network", 1) // this will set version to 1
           statement.execute("PRAGMA foreign_keys = ON")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+          setVersion(statement, "network", 1)
         }
 
         using(dbs.connection.createStatement()) { statement =>
-          assert(dbs.getVersion(statement, "network", 2) == 1)
+          assert(getVersion(statement, "network").contains(1))
         }
 
         // first round: this will trigger a migration
         simpleTest(dbs)
 
         using(dbs.connection.createStatement()) { statement =>
-          assert(dbs.getVersion(statement, "network", 2) == 2)
+          assert(getVersion(statement, "network").contains(2))
         }
 
         using(dbs.connection.createStatement()) { statement =>
@@ -85,7 +85,7 @@ class NetworkDbSpec extends AnyFunSuite {
         simpleTest(dbs)
 
         using(dbs.connection.createStatement()) { statement =>
-          assert(dbs.getVersion(statement, "network", 2) == 2)
+          assert(getVersion(statement, "network").contains(2))
         }
     }
   }

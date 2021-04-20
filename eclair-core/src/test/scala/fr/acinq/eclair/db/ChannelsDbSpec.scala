@@ -22,6 +22,7 @@ import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgChannelsDb
+import fr.acinq.eclair.db.pg.PgUtils.{getVersion, setVersion}
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.ExtendedResultSet._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
@@ -167,11 +168,11 @@ class ChannelsDbSpec extends AnyFunSuite {
 
         // create a v1 channels database
         using(sqlite.createStatement()) { statement =>
-          dbs.getVersion(statement, "channels", 1)
           statement.execute("PRAGMA foreign_keys = ON")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+          setVersion(statement, "channels", 1)
         }
 
         // insert 1 row
@@ -186,7 +187,7 @@ class ChannelsDbSpec extends AnyFunSuite {
         // check that db migration works
         val db = new SqliteChannelsDb(sqlite)
         using(sqlite.createStatement()) { statement =>
-          assert(dbs.getVersion(statement, "channels", 1) == 3) // version changed from 1 -> 3
+          assert(getVersion(statement, "channels").contains(3))
         }
         assert(db.listLocalChannels() === List(channel))
         db.updateChannelMeta(channel.channelId, ChannelEvent.EventType.Created) // this call must not fail
@@ -200,10 +201,10 @@ class ChannelsDbSpec extends AnyFunSuite {
 
         // create a v2 channels database
         using(pg.createStatement()) { statement =>
-          dbs.getVersion(statement, "channels", 2)
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id TEXT NOT NULL, commitment_number TEXT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+          setVersion(statement, "channels", 2)
         }
 
         // insert 1 row
@@ -219,7 +220,7 @@ class ChannelsDbSpec extends AnyFunSuite {
         // check that db migration works
         val db = dbs.channels
         using(pg.createStatement()) { statement =>
-          assert(dbs.getVersion(statement, "channels", 2) == 3) // version changed from 2 -> 3
+          assert(getVersion(statement, "channels").contains(3))
         }
         assert(db.listLocalChannels() === List(channel))
         db.updateChannelMeta(channel.channelId, ChannelEvent.EventType.Created) // this call must not fail
@@ -229,11 +230,11 @@ class ChannelsDbSpec extends AnyFunSuite {
 
         // create a v2 channels database
         using(sqlite.createStatement()) { statement =>
-          dbs.getVersion(statement, "channels", 2)
           statement.execute("PRAGMA foreign_keys = ON")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+          setVersion(statement, "channels", 2)
         }
 
         // insert 1 row
@@ -249,7 +250,7 @@ class ChannelsDbSpec extends AnyFunSuite {
         // check that db migration works
         val db = dbs.channels
         using(sqlite.createStatement()) { statement =>
-          assert(dbs.getVersion(statement, "channels", 2) == 3) // version changed from 2 -> 3
+          assert(getVersion(statement, "channels").contains(3))
         }
         assert(db.listLocalChannels() === List(channel))
         db.updateChannelMeta(channel.channelId, ChannelEvent.EventType.Created) // this call must not fail

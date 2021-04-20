@@ -16,15 +16,16 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PeersDb
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, getVersion, using}
+import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, getVersion, setVersion, using}
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.BitVector
+
+import java.sql.Connection
 
 class SqlitePeersDb(sqlite: Connection) extends PeersDb {
 
@@ -34,8 +35,13 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+    getVersion(statement, DB_NAME) match {
+      case None =>
+        statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+      case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+      case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+    }
+    setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {

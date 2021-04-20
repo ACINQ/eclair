@@ -267,28 +267,4 @@ object PgUtils extends JdbcUtils {
     }
   }
 
-  /**
-   * Several logical databases (channels, network, peers) may be stored in the same physical postgres database.
-   * We keep track of their respective version using a dedicated table. The version entry will be created if
-   * there is none but will never be updated here (use setVersion to do that).
-   */
-  def getVersion(statement: Statement, db_name: String, currentVersion: Int): Int = {
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
-    // if there was no version for the current db, then insert the current version
-    statement.executeUpdate(s"INSERT INTO versions VALUES ('$db_name', $currentVersion) ON CONFLICT DO NOTHING")
-    // if there was a previous version installed, this will return a different value from current version
-    val res = statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
-    res.next()
-    res.getInt("version")
-  }
-
-  /**
-   * Updates the version for a particular logical database, it will overwrite the previous version.
-   */
-  def setVersion(statement: Statement, db_name: String, newVersion: Int): Unit = {
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS versions (db_name TEXT NOT NULL PRIMARY KEY, version INTEGER NOT NULL)")
-    // overwrite the existing version
-    statement.executeUpdate(s"UPDATE versions SET version=$newVersion WHERE db_name='$db_name'")
-  }
-
 }

@@ -38,20 +38,22 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   val DB_NAME = "channels"
   val CURRENT_VERSION = 3
 
-  // The SQLite documentation states that "It is not possible to enable or disable foreign key constraints in the middle
-  // of a multi-statement transaction (when SQLite is not in autocommit mode).".
-  // So we need to set foreign keys before we initialize tables / migrations (which is done inside a transaction).
+  /**
+   * The SQLite documentation states that "It is not possible to enable or disable foreign key constraints in the middle
+   * of a multi-statement transaction (when SQLite is not in autocommit mode).".
+   * So we need to set foreign keys before we initialize tables / migrations (which is done inside a transaction).
+   */
   using(sqlite.createStatement()) { statement =>
     statement.execute("PRAGMA foreign_keys = ON")
   }
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
-    def migration12(statement: Statement) = {
+    def migration12(statement: Statement): Unit = {
       statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN is_closed BOOLEAN NOT NULL DEFAULT 0")
     }
 
-    def migration23(statement: Statement) = {
+    def migration23(statement: Statement): Unit = {
       statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN created_timestamp INTEGER")
       statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_sent_timestamp INTEGER")
       statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN last_payment_received_timestamp INTEGER")
@@ -59,23 +61,22 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed_timestamp INTEGER")
     }
 
-    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
-      case 1 =>
-        logger.warn(s"migrating db $DB_NAME, found version=1 current=$CURRENT_VERSION")
+    getVersion(statement, DB_NAME) match {
+      case None =>
+        statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
+        statement.executeUpdate("CREATE TABLE htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+        statement.executeUpdate("CREATE INDEX htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
+      case Some(v@1) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)
         migration23(statement)
-        setVersion(statement, DB_NAME, CURRENT_VERSION)
-      case 2 =>
-        logger.warn(s"migrating db $DB_NAME, found version=2 current=$CURRENT_VERSION")
+      case Some(v@2) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration23(statement)
-        setVersion(statement, DB_NAME, CURRENT_VERSION)
-      case CURRENT_VERSION =>
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
-        statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
-        statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
-      case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+      case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+      case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
-
+    setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {

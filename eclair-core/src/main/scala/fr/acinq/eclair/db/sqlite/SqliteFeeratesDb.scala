@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
-
+import java.sql.{Connection, Statement}
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
 import fr.acinq.eclair.db.FeeratesDb
@@ -31,28 +30,33 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
   val CURRENT_VERSION = 2
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
-    getVersion(statement, DB_NAME, CURRENT_VERSION) match {
-      case 1 =>
-        logger.warn("migrating feerates db version 1->2")
-        statement.executeUpdate("ALTER TABLE feerates_per_kb RENAME TO _feerates_per_kb_old")
+
+    def migration12(statement: Statement): Unit = {
+      statement.executeUpdate("ALTER TABLE feerates_per_kb RENAME TO _feerates_per_kb_old")
+      statement.executeUpdate(
+        """
+          |CREATE TABLE feerates_per_kb (
+          |rate_block_1 INTEGER NOT NULL, rate_blocks_2 INTEGER NOT NULL, rate_blocks_6 INTEGER NOT NULL, rate_blocks_12 INTEGER NOT NULL, rate_blocks_36 INTEGER NOT NULL, rate_blocks_72 INTEGER NOT NULL, rate_blocks_144 INTEGER NOT NULL, rate_blocks_1008 INTEGER NOT NULL,
+          |timestamp INTEGER NOT NULL)""".stripMargin)
+      statement.executeUpdate("INSERT INTO feerates_per_kb (rate_block_1, rate_blocks_2, rate_blocks_6, rate_blocks_12, rate_blocks_36, rate_blocks_72, rate_blocks_144, rate_blocks_1008, timestamp) SELECT rate_block_1, rate_blocks_2, rate_blocks_6, rate_blocks_12, rate_blocks_36, rate_blocks_72, rate_blocks_144, rate_blocks_144, timestamp FROM _feerates_per_kb_old")
+      statement.executeUpdate("DROP table _feerates_per_kb_old")
+    }
+
+    getVersion(statement, DB_NAME) match {
+      case None =>
+        // Create feerates table. Rates are in kb.
         statement.executeUpdate(
           """
             |CREATE TABLE feerates_per_kb (
             |rate_block_1 INTEGER NOT NULL, rate_blocks_2 INTEGER NOT NULL, rate_blocks_6 INTEGER NOT NULL, rate_blocks_12 INTEGER NOT NULL, rate_blocks_36 INTEGER NOT NULL, rate_blocks_72 INTEGER NOT NULL, rate_blocks_144 INTEGER NOT NULL, rate_blocks_1008 INTEGER NOT NULL,
             |timestamp INTEGER NOT NULL)""".stripMargin)
-        statement.executeUpdate("INSERT INTO feerates_per_kb (rate_block_1, rate_blocks_2, rate_blocks_6, rate_blocks_12, rate_blocks_36, rate_blocks_72, rate_blocks_144, rate_blocks_1008, timestamp) SELECT rate_block_1, rate_blocks_2, rate_blocks_6, rate_blocks_12, rate_blocks_36, rate_blocks_72, rate_blocks_144, rate_blocks_144, timestamp FROM _feerates_per_kb_old")
-        statement.executeUpdate("DROP table _feerates_per_kb_old")
-        setVersion(statement, DB_NAME, CURRENT_VERSION)
-        logger.warn("migration complete")
-      case CURRENT_VERSION =>
-        // Create feerates table. Rates are in kb.
-        statement.executeUpdate(
-          """
-            |CREATE TABLE IF NOT EXISTS feerates_per_kb (
-            |rate_block_1 INTEGER NOT NULL, rate_blocks_2 INTEGER NOT NULL, rate_blocks_6 INTEGER NOT NULL, rate_blocks_12 INTEGER NOT NULL, rate_blocks_36 INTEGER NOT NULL, rate_blocks_72 INTEGER NOT NULL, rate_blocks_144 INTEGER NOT NULL, rate_blocks_1008 INTEGER NOT NULL,
-            |timestamp INTEGER NOT NULL)""".stripMargin)
-      case unknownVersion => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+      case Some(v@1) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+        migration12(statement)
+      case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+      case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
+    setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
   override def addOrUpdateFeerates(feeratesPerKB: FeeratesPerKB): Unit = {

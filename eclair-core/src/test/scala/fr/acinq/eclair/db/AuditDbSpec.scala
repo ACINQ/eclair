@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.AuditDb.Stats
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgAuditDb
-import fr.acinq.eclair.db.pg.PgUtils.inTransaction
+import fr.acinq.eclair.db.pg.PgUtils.{inTransaction, setVersion}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
@@ -191,7 +191,6 @@ class AuditDbSpec extends AnyFunSuite {
 
         // simulate existing previous version db
         using(connection.createStatement()) { statement =>
-          getVersion(statement, "audit", 1)
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -205,10 +204,12 @@ class AuditDbSpec extends AnyFunSuite {
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
+
+          setVersion(statement, "audit", 1)
         }
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 4) == 1) // we expect version 1
+          assert(getVersion(statement, "audit").contains(1))
         }
 
         val ps = PaymentSent(UUID.randomUUID(), randomBytes32, randomBytes32, 42000 msat, PrivateKey(ByteVector32.One).publicKey, PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32, None) :: Nil)
@@ -232,7 +233,7 @@ class AuditDbSpec extends AnyFunSuite {
         val migratedDb = new SqliteAuditDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 5) // version changed from 1 -> 5
+          assert(getVersion(statement, "audit").contains(5))
         }
 
         // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
@@ -241,7 +242,7 @@ class AuditDbSpec extends AnyFunSuite {
         val postMigrationDb = new SqliteAuditDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 5) // version 5
+          assert(getVersion(statement, "audit").contains(5))
         }
 
         postMigrationDb.add(ps1)
@@ -263,7 +264,6 @@ class AuditDbSpec extends AnyFunSuite {
 
         // simulate existing previous version db
         using(connection.createStatement()) { statement =>
-          getVersion(statement, "audit", 2)
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL, id BLOB NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -277,10 +277,12 @@ class AuditDbSpec extends AnyFunSuite {
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS relayed_timestamp_idx ON relayed(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
+
+          setVersion(statement, "audit", 2)
         }
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 2) // version 2 is deployed now
+          assert(getVersion(statement, "audit").contains(2))
         }
 
         val e1 = ChannelErrorOccurred(null, randomBytes32, randomKey.publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
@@ -289,7 +291,7 @@ class AuditDbSpec extends AnyFunSuite {
         val migratedDb = new SqliteAuditDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 5) // version changed from 2 -> 5
+          assert(getVersion(statement, "audit").contains(5))
         }
 
         migratedDb.add(e1)
@@ -297,7 +299,7 @@ class AuditDbSpec extends AnyFunSuite {
         val postMigrationDb = new SqliteAuditDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 5) // version 5
+          assert(getVersion(statement, "audit").contains(5))
         }
 
         postMigrationDb.add(e2)
@@ -313,7 +315,6 @@ class AuditDbSpec extends AnyFunSuite {
 
         // simulate existing previous version db
         using(connection.createStatement()) { statement =>
-          getVersion(statement, "audit", 3)
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS balance_updated (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, amount_msat INTEGER NOT NULL, capacity_sat INTEGER NOT NULL, reserve_sat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL, id BLOB NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -329,10 +330,12 @@ class AuditDbSpec extends AnyFunSuite {
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
+
+          setVersion(statement, "audit", 3)
         }
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 3) // version 3 is deployed now
+          assert(getVersion(statement, "audit").contains(3))
         }
 
         val pp1 = PaymentSent.PartialPayment(UUID.randomUUID(), 500 msat, 10 msat, randomBytes32, None, 100)
@@ -369,7 +372,7 @@ class AuditDbSpec extends AnyFunSuite {
 
         val migratedDb = new SqliteAuditDb(connection)
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 5) // version changed from 3 -> 5
+          assert(getVersion(statement, "audit").contains(5))
         }
 
         assert(migratedDb.listSent(50, 150).toSet === Set(
@@ -381,7 +384,7 @@ class AuditDbSpec extends AnyFunSuite {
         val postMigrationDb = new SqliteAuditDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 5) // version 5
+          assert(getVersion(statement, "audit").contains(5))
         }
 
         val ps2 = PaymentSent(UUID.randomUUID(), randomBytes32, randomBytes32, 1100 msat, randomKey.publicKey, Seq(
@@ -406,7 +409,6 @@ class AuditDbSpec extends AnyFunSuite {
         // simulate existing previous version db
         inTransaction { pg =>
           using(pg.createStatement()) { statement =>
-            getVersion(statement, "audit", 4)
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp BIGINT NOT NULL)")
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp BIGINT NOT NULL)")
@@ -421,12 +423,14 @@ class AuditDbSpec extends AnyFunSuite {
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
             statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
+
+            setVersion(statement, "audit", 4)
           }
         }
 
         inTransaction { pg =>
           using(pg.createStatement()) { statement =>
-            assert(getVersion(statement, "audit", 5) == 4) // version 4 is deployed now
+            assert(getVersion(statement, "audit").contains(4))
           }
         }
 
@@ -479,7 +483,7 @@ class AuditDbSpec extends AnyFunSuite {
         val migratedDb = new PgAuditDb()(datasource)
         inTransaction { pg =>
           using(pg.createStatement()) { statement =>
-            assert(getVersion(statement, "audit", 5) == 5) // version changed from 4 -> 5
+            assert(getVersion(statement, "audit").contains(5))
           }
         }
 
@@ -489,7 +493,7 @@ class AuditDbSpec extends AnyFunSuite {
 
         inTransaction { pg =>
           using(pg.createStatement()) { statement =>
-            assert(getVersion(statement, "audit", 5) == 5) // version 5
+            assert(getVersion(statement, "audit").contains(5))
           }
         }
 
@@ -503,7 +507,6 @@ class AuditDbSpec extends AnyFunSuite {
 
         // simulate existing previous version db
         using(connection.createStatement()) { statement =>
-          getVersion(statement, "audit", 4)
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
           statement.executeUpdate("CREATE TABLE IF NOT EXISTS relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
@@ -518,10 +521,12 @@ class AuditDbSpec extends AnyFunSuite {
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS network_fees_timestamp_idx ON network_fees(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_events_timestamp_idx ON channel_events(timestamp)")
           statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_errors_timestamp_idx ON channel_errors(timestamp)")
+
+          setVersion(statement, "audit", 4)
         }
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 4) // version 4 is deployed now
+          assert(getVersion(statement, "audit").contains(4))
         }
 
         val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32, randomBytes32, randomBytes32, 105)
@@ -570,7 +575,7 @@ class AuditDbSpec extends AnyFunSuite {
 
         val migratedDb = new SqliteAuditDb(connection)
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 5) // version changed from 3 -> 5
+          assert(getVersion(statement, "audit").contains(5))
         }
 
         assert(migratedDb.listRelayed(100, 120) === Seq(relayed1, relayed2))
@@ -578,7 +583,7 @@ class AuditDbSpec extends AnyFunSuite {
         val postMigrationDb = new SqliteAuditDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit", 5) == 5) // version 5
+          assert(getVersion(statement, "audit").contains(5))
         }
 
         val relayed3 = TrampolinePaymentRelayed(randomBytes32, Seq(PaymentRelayed.Part(450 msat, randomBytes32), PaymentRelayed.Part(500 msat, randomBytes32)), Seq(PaymentRelayed.Part(800 msat, randomBytes32)), randomKey.publicKey, 700 msat, 150)

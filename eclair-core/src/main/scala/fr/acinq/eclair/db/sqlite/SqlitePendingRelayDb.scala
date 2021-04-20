@@ -16,14 +16,14 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.Connection
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.{Command, HtlcSettlementCommand}
+import fr.acinq.eclair.channel.HtlcSettlementCommand
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.wire.internal.CommandCodecs.cmdCodec
 
+import java.sql.Connection
 import scala.collection.immutable.Queue
 
 class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
@@ -35,9 +35,14 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
   val CURRENT_VERSION = 1
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
-    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION, s"incompatible version of $DB_NAME DB found") // there is only one version currently deployed
-    // note: should we use a foreign key to local_channels table here?
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+    getVersion(statement, DB_NAME) match {
+      case None =>
+        // note: should we use a foreign key to local_channels table here?
+        statement.executeUpdate("CREATE TABLE pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+      case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
+      case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
+    }
+    setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
   override def addPendingRelay(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add", DbBackends.Sqlite) {
