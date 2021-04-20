@@ -37,12 +37,13 @@ import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 import scodec.bits.ByteVector
 
-import java.net.{ServerSocket, Socket}
-import java.util.concurrent.Executors
+import java.net.InetSocketAddress
+import java.nio.channels.ServerSocketChannel
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
 
 class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
+
+  import PeerSpec._
 
   val fakeIPAddress: NodeAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
 
@@ -106,15 +107,15 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
-  ignore("successfully connect to peer at user request") { f =>
+  test("successfully connect to peer at user request") { f =>
     import f._
 
     // this actor listens to connection requests and creates connections
     system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
 
     // we create a dummy tcp server and update bob's announcement to point to it
-    val mockServer = new ServerSocket(0, 1) // port will be assigned automatically
-    val mockAddress = HostAndPort.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort)
+    val (mockServer, serverAddress) = createMockServer()
+    val mockAddress = HostAndPort.fromParts(serverAddress.getHostName, serverAddress.getPort)
 
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
@@ -122,25 +123,19 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     probe.send(peer, Peer.Connect(remoteNodeId, Some(mockAddress)))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    val res = TestProbe()
-    Future {
-      val socket = mockServer.accept()
-      res.ref ! socket
-    }(ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(1)))
-    res.expectMsgType[Socket](10 seconds)
-
+    awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
     mockServer.close()
   }
 
-  ignore("successfully reconnect to peer at startup when there are existing channels", Tag("auto_reconnect")) { f =>
+  test("successfully reconnect to peer at startup when there are existing channels", Tag("auto_reconnect")) { f =>
     import f._
 
     // this actor listens to connection requests and creates connections
     system.actorOf(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, TestProbe().ref, TestProbe().ref))
 
     // we create a dummy tcp server and update bob's announcement to point to it
-    val mockServer = new ServerSocket(0, 1) // port will be assigned automatically
-    val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
+    val (mockServer, serverAddress) = createMockServer()
+    val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
 
     // we put the server address in the node db
     val ann = NodeAnnouncement(randomBytes64, Features.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
@@ -150,13 +145,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     probe.send(peer, Peer.Init(Set(ChannelCodecsSpec.normal)))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    val res = TestProbe()
-    Future {
-      val socket = mockServer.accept()
-      res.ref ! socket
-    }(ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(1)))
-    res.expectMsgType[Socket](10 seconds)
-
+    awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
     mockServer.close()
   }
 
@@ -378,4 +367,16 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(init.fundingAmount === 15000.sat)
     assert(init.pushAmount === 100.msat)
   }
+}
+
+object PeerSpec {
+
+  def createMockServer(): (ServerSocketChannel, InetSocketAddress) = {
+    val mockServer = ServerSocketChannel.open()
+    // NB: we force 127.0.0.1 (IPv4) because there are issues on ubuntu build machines with IPv6 loopback
+    mockServer.bind(new InetSocketAddress("127.0.0.1", 0))
+    mockServer.configureBlocking(false)
+    (mockServer, mockServer.getLocalAddress.asInstanceOf[InetSocketAddress])
+  }
+
 }
