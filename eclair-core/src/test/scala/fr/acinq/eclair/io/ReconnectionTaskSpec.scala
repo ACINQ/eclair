@@ -25,7 +25,6 @@ import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, NodeAnnouncement}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 
-import java.net.ServerSocket
 import scala.concurrent.duration._
 
 class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ParallelTestExecution {
@@ -218,12 +217,12 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   }
 
-  ignore("reconnect using the address from node_announcement") { f =>
+  test("reconnect using the address from node_announcement") { f =>
     import f._
 
     // we create a dummy tcp server and update bob's announcement to point to it
-    val mockServer = new ServerSocket(0, 1) // port will be assigned automatically
-    val mockAddress = NodeAddress.fromParts(mockServer.getInetAddress.getHostAddress, mockServer.getLocalPort).get
+    val (mockServer, serverAddress) = PeerSpec.createMockServer()
+    val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
     val bobAnnouncement = NodeAnnouncement(randomBytes64, Features.empty, 1, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(bobAnnouncement)
 
@@ -232,11 +231,8 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     peer.send(reconnectionTask, Peer.Connect(remoteNodeId, None))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    within(30 seconds) {
-      mockServer.accept()
-    }
+    awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
     mockServer.close()
   }
-
 
 }
