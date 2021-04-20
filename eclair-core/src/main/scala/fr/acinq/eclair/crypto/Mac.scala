@@ -17,9 +17,9 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
-import org.spongycastle.crypto.digests.SHA256Digest
-import org.spongycastle.crypto.macs.HMac
-import org.spongycastle.crypto.params.KeyParameter
+import org.bouncycastle.crypto.digests.SHA256Digest
+import org.bouncycastle.crypto.macs.HMac
+import org.bouncycastle.crypto.params.KeyParameter
 import scodec.bits.ByteVector
 
 /**
