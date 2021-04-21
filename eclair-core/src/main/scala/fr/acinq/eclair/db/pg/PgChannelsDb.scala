@@ -53,13 +53,13 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
       }
 
       def migration34(statement: Statement): Unit = {
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN created_timestamp               SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + created_timestamp               * interval '1 millisecond'")
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_payment_sent_timestamp     SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_payment_sent_timestamp     * interval '1 millisecond'")
+        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN created_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + created_timestamp * interval '1 millisecond'")
+        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_payment_sent_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_payment_sent_timestamp * interval '1 millisecond'")
         statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_payment_received_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_payment_received_timestamp * interval '1 millisecond'")
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_connected_timestamp        SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_connected_timestamp        * interval '1 millisecond'")
-        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN closed_timestamp                SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + closed_timestamp                * interval '1 millisecond'")
+        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN last_connected_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + last_connected_timestamp * interval '1 millisecond'")
+        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN closed_timestamp SET DATA TYPE TIMESTAMP WITH TIME ZONE USING timestamp with time zone 'epoch' + closed_timestamp * interval '1 millisecond'")
 
-        statement.executeUpdate("ALTER TABLE htlc_infos ALTER COLUMN commitment_number                   SET DATA TYPE BIGINT USING commitment_number::BIGINT")
+        statement.executeUpdate("ALTER TABLE htlc_infos ALTER COLUMN commitment_number  SET DATA TYPE BIGINT USING commitment_number::BIGINT")
       }
 
       getVersion(statement, DB_NAME) match {
