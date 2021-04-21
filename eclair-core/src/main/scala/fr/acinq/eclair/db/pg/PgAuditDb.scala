@@ -212,7 +212,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] =
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM sent WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM sent WHERE timestamp BETWEEN ? AND ?")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
         statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
         val rs = statement.executeQuery()
@@ -244,7 +244,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM received WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM received WHERE timestamp BETWEEN ? AND ?")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
         statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
         val rs = statement.executeQuery()
@@ -268,7 +268,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
     inTransaction { pg =>
       var trampolineByHash = Map.empty[ByteVector32, (MilliSatoshi, PublicKey)]
-      using(pg.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp BETWEEN ? and ? ORDER BY timestamp")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp BETWEEN ? and ?")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
         statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
         val rs = statement.executeQuery()
@@ -279,7 +279,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           trampolineByHash += (paymentHash -> (amount, nodeId))
         }
       }
-      using(pg.prepareStatement("SELECT * FROM relayed WHERE timestamp BETWEEN ? and ? ORDER BY timestamp")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM relayed WHERE timestamp BETWEEN ? and ?")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
         statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
         val rs = statement.executeQuery()
