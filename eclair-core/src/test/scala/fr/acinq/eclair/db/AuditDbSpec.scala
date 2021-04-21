@@ -183,7 +183,7 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate sqlite audit database v1 -> v5/v6") {
+  test("migrate sqlite audit database v1 -> v5") {
 
     val dbs = TestSqliteDatabases()
 

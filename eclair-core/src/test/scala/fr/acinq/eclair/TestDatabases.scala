@@ -4,8 +4,8 @@ import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.zaxxer.hikari.HikariConfig
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.pg.PgUtils.{PgLock, getVersion, using}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
+import fr.acinq.eclair.db.pg.PgUtils.{PgLock, getVersion, using}
 import org.postgresql.jdbc.PgConnection
 import org.sqlite.SQLiteConnection
 
@@ -78,12 +78,11 @@ object TestDatabases {
     // @formatter:on
   }
 
-  def migrationCheck(
-                      dbs: TestDatabases,
-                      initializeTables: Connection => Unit,
-                      dbName: String,
-                      targetVersion: Int,
-                      postCheck: Connection => Unit
+  def migrationCheck(dbs: TestDatabases,
+                     initializeTables: Connection => Unit,
+                     dbName: String,
+                     targetVersion: Int,
+                     postCheck: Connection => Unit
                     ): Unit = {
     val connection = dbs.connection
     // initialize the database to a previous version and populate data

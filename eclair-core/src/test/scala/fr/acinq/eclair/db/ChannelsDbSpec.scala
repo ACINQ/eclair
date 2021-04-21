@@ -327,16 +327,15 @@ class ChannelsDbSpec extends AnyFunSuite {
 
 object ChannelsDbSpec {
 
-  case class TestCase(
-                       channelId: ByteVector32,
-                       data: ByteVector,
-                       isClosed: Boolean,
-                       createdTimestamp: Option[Long],
-                       lastPaymentSentTimestamp: Option[Long],
-                       lastPaymentReceivedTimestamp: Option[Long],
-                       lastConnectedTimestamp: Option[Long],
-                       closedTimestamp: Option[Long],
-                       commitmentNumbers: Seq[Int]
+  case class TestCase(channelId: ByteVector32,
+                      data: ByteVector,
+                      isClosed: Boolean,
+                      createdTimestamp: Option[Long],
+                      lastPaymentSentTimestamp: Option[Long],
+                      lastPaymentReceivedTimestamp: Option[Long],
+                      lastConnectedTimestamp: Option[Long],
+                      closedTimestamp: Option[Long],
+                      commitmentNumbers: Seq[Int]
                      )
 
   private val data = stateDataCodec.encode(ChannelCodecsSpec.normal).require.bytes
