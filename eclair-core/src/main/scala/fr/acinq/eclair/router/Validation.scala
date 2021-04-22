@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.router
 
+import akka.actor.typed
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.actor.typed.{ActorRef => TypedActorRef}
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -44,7 +44,7 @@ object Validation {
     Metrics.gossipResult(decision).increment()
   }
 
-  def handleChannelAnnouncement(d: Data, db: NetworkDb, watcher: TypedActorRef[ZmqWatcher.Command], origin: RemoteGossip, c: ChannelAnnouncement)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelAnnouncement(d: Data, db: NetworkDb, watcher: typed.ActorRef[ZmqWatcher.Command], origin: RemoteGossip, c: ChannelAnnouncement)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
     if (d.channels.contains(c.shortChannelId)) {
@@ -77,7 +77,7 @@ object Validation {
     }
   }
 
-  def handleChannelValidationResponse(d0: Data, nodeParams: NodeParams, watcher: TypedActorRef[ZmqWatcher.Command], r: ValidateResult)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
+  def handleChannelValidationResponse(d0: Data, nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], r: ValidateResult)(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     import nodeParams.db.{network => db}
     import r.c
@@ -402,7 +402,7 @@ object Validation {
     }
   }
 
-  def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: TypedActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     d.channels.get(lcu.shortChannelId) match {
       case Some(_) =>

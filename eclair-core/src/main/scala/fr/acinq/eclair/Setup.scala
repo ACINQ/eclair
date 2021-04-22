@@ -17,9 +17,9 @@
 package fr.acinq.eclair
 
 import akka.Done
+import akka.actor.typed
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
-import akka.actor.typed.{ActorRef => TypedActorRef, SupervisorStrategy => TypedSupervisorStrategy}
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.pattern.after
 import akka.util.Timeout
@@ -237,7 +237,7 @@ class Setup(datadir: File,
       watcher = {
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
-        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams.chainHash, blockCount, extendedBitcoinClient)).onFailure(TypedSupervisorStrategy.resume), "watcher")
+        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams.chainHash, blockCount, extendedBitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "watcher")
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
@@ -350,7 +350,7 @@ object Setup {
 
 case class Kit(nodeParams: NodeParams,
                system: ActorSystem,
-               watcher: TypedActorRef[ZmqWatcher.Command],
+               watcher: typed.ActorRef[ZmqWatcher.Command],
                paymentHandler: ActorRef,
                register: ActorRef,
                relayer: ActorRef,

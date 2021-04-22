@@ -95,7 +95,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond({
       val watches = nodes.values.foldLeft(Set.empty[Watch[BitcoinEvent]]) {
         case (watches, setup) =>
-          setup.watcher !  ZmqWatcher.Watches[BitcoinEvent](sender.ref)
+          setup.watcher !  ZmqWatcher.ListWatches[BitcoinEvent](sender.ref)
           watches ++ sender.expectMsgType[Set[Watch[BitcoinEvent]]]
       }
       watches.count(_.isInstanceOf[WatchConfirmed[BitcoinEvent]]) == channelEndpointsCount

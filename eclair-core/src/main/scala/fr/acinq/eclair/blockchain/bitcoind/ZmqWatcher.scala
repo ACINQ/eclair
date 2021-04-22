@@ -55,11 +55,11 @@ object ZmqWatcher {
   }
   private case class TriggerEvent[E <: BitcoinEvent](watch: Watch[E], event: WatchEvent[E]) extends Command
   private[bitcoind] case class StopWatching[E <: BitcoinEvent](sender: ActorRef[WatchEvent[E]]) extends Command
-  case class Watches[E <: BitcoinEvent](replyTo: ActorRef[Set[Watch[E]]]) extends Command
+  case class ListWatches[E <: BitcoinEvent](replyTo: ActorRef[Set[Watch[E]]]) extends Command
 
   private case object TickNewBlock extends Command
-  private case class WrappedNewBlock(block: Block) extends Command
-  private case class WrappedNewTransaction(tx: Transaction) extends Command
+  private case class ProcessNewBlock(block: Block) extends Command
+  private case class ProcessNewTransaction(tx: Transaction) extends Command
 
   final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
   final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
@@ -72,6 +72,10 @@ object ZmqWatcher {
     case object Unspent extends UtxoStatus
     case class Spent(spendingTxConfirmed: Boolean) extends UtxoStatus
   }
+
+  private sealed trait AddWatchResult
+  private case object Keep extends AddWatchResult
+  private case object Ignore extends AddWatchResult
   // @formatter:on
 
   /**
@@ -147,8 +151,8 @@ object ZmqWatcher {
 
   def apply[E <: BitcoinEvent](chainHash: ByteVector32, blockCount: AtomicLong, client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => WrappedNewBlock(b.block)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => WrappedNewTransaction(t.tx)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.block)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
       Behaviors.withTimers { timers =>
         // we initialize block count
         timers.startSingleTimer(TickNewBlock, TickNewBlock, 1 second)
@@ -198,15 +202,9 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
 
   private val watchdog = context.spawn(Behaviors.supervise(BlockchainWatchdog(chainHash, 150 seconds)).onFailure(SupervisorStrategy.resume), "blockchain-watchdog")
 
-  // @formatter:off
-  private sealed trait AddWatchResult
-  private case object Keep extends AddWatchResult
-  private case object Ignore extends AddWatchResult
-  // @formatter:on
-
   private def watching[E <: BitcoinEvent](watches: Set[Watch[E]], watchedUtxos: Map[OutPoint, Set[Watch[E]]]): Behavior[Command] = {
     Behaviors.receiveMessage {
-      case WrappedNewTransaction(tx) =>
+      case ProcessNewTransaction(tx) =>
         log.debug("analyzing txid={} tx={}", tx.txid, tx)
         tx.txIn
           .map(_.outPoint)
@@ -220,7 +218,7 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
           }
         Behaviors.same
 
-      case WrappedNewBlock(block) =>
+      case ProcessNewBlock(block) =>
         log.debug("received blockid={}", block.blockId)
         log.debug("scheduling a new task to check on tx confirmations")
         // we do this to avoid herd effects in testing when generating a lots of blocks in a row
@@ -285,7 +283,7 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
                         case Some(spendingTx) =>
                           // there can be only one spending tx for an utxo
                           log.info(s"$txid:$outputIndex has already been spent by a tx provided in hints: txid=${spendingTx.txid}")
-                          context.self ! WrappedNewTransaction(spendingTx)
+                          context.self ! ProcessNewTransaction(spendingTx)
                         case None =>
                           // no luck, we have to do it the hard way...
                           log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
@@ -295,11 +293,11 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
                                 log.warn(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
                                 client.lookForSpendingTx(None, txid, outputIndex).map { tx =>
                                   log.warn(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
-                                  context.self ! WrappedNewTransaction(tx)
+                                  context.self ! ProcessNewTransaction(tx)
                                 }
                               case txs =>
                                 log.info(s"found ${txs.size} txs spending $txid:$outputIndex in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                                txs.foreach(tx => context.self ! WrappedNewTransaction(tx))
+                                txs.foreach(tx => context.self ! ProcessNewTransaction(tx))
                             }
                           }
                       })
@@ -336,7 +334,7 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
         client.getTransactionMeta(txid).map(replyTo ! _)
         Behaviors.same
 
-      case r: Watches[E] =>
+      case r: ListWatches[E] =>
         r.replyTo ! watches
         Behaviors.same
 

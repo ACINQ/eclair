@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed.{ActorRef => TypedActorRef}
+import akka.actor.typed
 import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
@@ -359,7 +359,7 @@ object Peer {
     def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef
   }
 
-  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: TypedActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: EclairWallet, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
+  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: EclairWallet, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef =
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory, origin_opt))
   }
