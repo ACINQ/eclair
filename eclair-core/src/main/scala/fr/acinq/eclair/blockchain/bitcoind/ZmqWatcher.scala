@@ -30,6 +30,7 @@ import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import org.json4s.JsonAST._
 
 import java.util.concurrent.atomic.AtomicLong
+import scala.annotation.nowarn
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -202,6 +203,7 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
 
   private val watchdog = context.spawn(Behaviors.supervise(BlockchainWatchdog(chainHash, 150 seconds)).onFailure(SupervisorStrategy.resume), "blockchain-watchdog")
 
+  @nowarn("msg=unchecked since it is eliminated by erasure")
   private def watching[E <: BitcoinEvent](watches: Set[Watch[E]], watchedUtxos: Map[OutPoint, Set[Watch[E]]]): Behavior[Command] = {
     Behaviors.receiveMessage {
       case ProcessNewTransaction(tx) =>
