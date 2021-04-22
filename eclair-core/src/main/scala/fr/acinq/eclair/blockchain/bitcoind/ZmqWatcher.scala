@@ -42,6 +42,154 @@ import scala.concurrent.{ExecutionContext, Future}
  *  - receives bitcoin events (new blocks and new txs) directly from the bitcoin network
  *  - also uses bitcoin-core rpc api, most notably for tx confirmation count and block count (because reorgs)
  */
+object ZmqWatcher {
+
+  // @formatter:off
+  sealed trait Command
+  sealed trait WatchEvent[E <: BitcoinEvent] {
+    def event: E
+  }
+  sealed trait Watch[E <: BitcoinEvent] extends Command {
+    def replyTo: ActorRef[WatchEvent[E]]
+    def event: E
+  }
+  private case class TriggerEvent[E <: BitcoinEvent](watch: Watch[E], event: WatchEvent[E]) extends Command
+  private[bitcoind] case class StopWatching[E <: BitcoinEvent](sender: ActorRef[WatchEvent[E]]) extends Command
+  case class Watches[E <: BitcoinEvent](replyTo: ActorRef[Set[Watch[E]]]) extends Command
+
+  private case object TickNewBlock extends Command
+  private case class WrappedNewBlock(block: Block) extends Command
+  private case class WrappedNewTransaction(tx: Transaction) extends Command
+
+  final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
+  final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
+
+  final case class GetTxWithMeta(replyTo: ActorRef[GetTxWithMetaResponse], txid: ByteVector32) extends Command
+  final case class GetTxWithMetaResponse(txid: ByteVector32, tx_opt: Option[Transaction], lastBlockTimestamp: Long)
+
+  sealed trait UtxoStatus
+  object UtxoStatus {
+    case object Unspent extends UtxoStatus
+    case class Spent(spendingTxConfirmed: Boolean) extends UtxoStatus
+  }
+  // @formatter:on
+
+  /**
+   * Watch for confirmation of a given transaction.
+   *
+   * @param replyTo  actor to notify once the transaction is confirmed.
+   * @param txId     txid of the transaction to watch.
+   * @param minDepth number of confirmations.
+   * @param event    channel event related to the transaction.
+   */
+  final case class WatchConfirmed[E <: BitcoinEvent](replyTo: ActorRef[WatchEvent[E]], txId: ByteVector32, minDepth: Long, event: E) extends Watch[E]
+
+  /**
+   * This event is sent when a [[WatchConfirmed]] condition is met.
+   *
+   * @param event       channel event related to the transaction that has been confirmed.
+   * @param blockHeight block in which the transaction was confirmed.
+   * @param txIndex     index of the transaction in the block.
+   * @param tx          transaction that has been confirmed.
+   */
+  final case class WatchEventConfirmed[E <: BitcoinEvent](event: E, blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchEvent[E]
+
+  /**
+   * Watch for transactions spending the given outpoint.
+   *
+   * NB: an event will be triggered *every time* a transaction spends the given outpoint. This can be useful when:
+   *  - we see a spending transaction in the mempool, but it is then replaced (RBF)
+   *  - we see a spending transaction in the mempool, but a conflicting transaction "wins" and gets confirmed in a block
+   *
+   * @param replyTo     actor to notify when the outpoint is spent.
+   * @param txId        txid of the outpoint to watch.
+   * @param outputIndex index of the outpoint to watch.
+   * @param event       channel event related to the outpoint.
+   * @param hints       txids of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
+   *                    This argument can safely be ignored by watcher implementations.
+   */
+  final case class WatchSpent[E <: BitcoinEvent](replyTo: ActorRef[WatchEvent[E]], txId: ByteVector32, outputIndex: Int, event: E, hints: Set[ByteVector32]) extends Watch[E]
+
+  /**
+   * This event is sent when a [[WatchSpent]] condition is met.
+   *
+   * @param event channel event related to the outpoint that was spent.
+   * @param tx    transaction spending the watched outpoint.
+   */
+  final case class WatchEventSpent[E <: BitcoinEvent](event: E, tx: Transaction) extends WatchEvent[E]
+
+  /**
+   * Watch for the first transaction spending the given outpoint. We assume that txid is already confirmed or in the
+   * mempool (i.e. the outpoint exists).
+   *
+   * NB: an event will be triggered only once when we see a transaction that spends the given outpoint. If you want to
+   * react to the transaction spending the outpoint, you should use [[WatchSpent[_]]] instead.
+   *
+   * @param replyTo     actor to notify when the outpoint is spent.
+   * @param txId        txid of the outpoint to watch.
+   * @param outputIndex index of the outpoint to watch.
+   * @param event       channel event related to the outpoint.
+   */
+  final case class WatchSpentBasic[E <: BitcoinEvent](replyTo: ActorRef[WatchEvent[E]], txId: ByteVector32, outputIndex: Int, event: E) extends Watch[E]
+
+  /**
+   * This event is sent when a [[WatchSpentBasic]] condition is met.
+   *
+   * @param event channel event related to the outpoint that was spent.
+   */
+  final case class WatchEventSpentBasic[E <: BitcoinEvent](event: E) extends WatchEvent[E]
+
+  // TODO: not implemented yet: notify me if confirmation number gets below minDepth?
+  final case class WatchLost[E <: BitcoinEvent](replyTo: ActorRef[WatchEvent[E]], txId: ByteVector32, minDepth: Long, event: E) extends Watch[E]
+
+  // TODO: not implemented yet.
+  final case class WatchEventLost[E <: BitcoinEvent](event: E) extends WatchEvent[E]
+
+  def apply[E <: BitcoinEvent](chainHash: ByteVector32, blockCount: AtomicLong, client: ExtendedBitcoinClient): Behavior[Command] =
+    Behaviors.setup { context =>
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => WrappedNewBlock(b.block)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => WrappedNewTransaction(t.tx)))
+      Behaviors.withTimers { timers =>
+        // we initialize block count
+        timers.startSingleTimer(TickNewBlock, TickNewBlock, 1 second)
+        new ZmqWatcher(chainHash, blockCount, client, context, timers).watching(Set.empty[Watch[E]], Map.empty[OutPoint, Set[Watch[E]]])
+      }
+    }
+
+  private def utxo[E <: BitcoinEvent](w: Watch[E]): Option[OutPoint] = {
+    w match {
+      case w: WatchSpent[E] => Some(OutPoint(w.txId.reverse, w.outputIndex))
+      case w: WatchSpentBasic[E] => Some(OutPoint(w.txId.reverse, w.outputIndex))
+      case _ => None
+    }
+  }
+
+  /**
+   * The resulting map allows checking spent txs in constant time wrt number of watchers.
+   */
+  def addWatchedUtxos[E <: BitcoinEvent](m: Map[OutPoint, Set[Watch[E]]], w: Watch[E]): Map[OutPoint, Set[Watch[E]]] = {
+    utxo(w) match {
+      case Some(utxo) => m.get(utxo) match {
+        case Some(watches) => m + (utxo -> (watches + w))
+        case None => m + (utxo -> Set(w))
+      }
+      case None => m
+    }
+  }
+
+  def removeWatchedUtxos[E <: BitcoinEvent](m: Map[OutPoint, Set[Watch[E]]], w: Watch[E]): Map[OutPoint, Set[Watch[E]]] = {
+    utxo(w) match {
+      case Some(utxo) => m.get(utxo) match {
+        case Some(watches) if watches - w == Set.empty => m - utxo
+        case Some(watches) => m + (utxo -> (watches - w))
+        case None => m
+      }
+      case None => m
+    }
+  }
+
+}
+
 private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: ExtendedBitcoinClient, context: ActorContext[ZmqWatcher.Command], timers: TimerScheduler[ZmqWatcher.Command])(implicit ec: ExecutionContext = ExecutionContext.global) {
 
   import ZmqWatcher._
@@ -251,154 +399,6 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
       ancestorCount <- getUnconfirmedAncestorCountMap(utxos)
     } yield recordUtxos(utxos, ancestorCount)).recover {
       case ex => log.warn(s"could not check utxos: $ex")
-    }
-  }
-
-}
-
-object ZmqWatcher {
-
-  // @formatter:off
-  sealed trait Command
-  sealed trait WatchEvent[E <: BitcoinEvent] {
-    def event: E
-  }
-  sealed trait Watch[E <: BitcoinEvent] extends Command {
-    def replyTo: ActorRef[WatchEvent[E]]
-    def event: E
-  }
-  private case class TriggerEvent[E <: BitcoinEvent](watch: Watch[E], event: WatchEvent[E]) extends Command
-  private[bitcoind] case class StopWatching[E <: BitcoinEvent](sender: ActorRef[WatchEvent[E]]) extends Command
-  case class Watches[E <: BitcoinEvent](replyTo: ActorRef[Set[Watch[E]]]) extends Command
-
-  private case object TickNewBlock extends Command
-  private case class WrappedNewBlock(block: Block) extends Command
-  private case class WrappedNewTransaction(tx: Transaction) extends Command
-
-  final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
-  final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
-
-  final case class GetTxWithMeta(replyTo: ActorRef[GetTxWithMetaResponse], txid: ByteVector32) extends Command
-  final case class GetTxWithMetaResponse(txid: ByteVector32, tx_opt: Option[Transaction], lastBlockTimestamp: Long)
-
-  sealed trait UtxoStatus
-  object UtxoStatus {
-    case object Unspent extends UtxoStatus
-    case class Spent(spendingTxConfirmed: Boolean) extends UtxoStatus
-  }
-  // @formatter:on
-
-  /**
-   * Watch for confirmation of a given transaction.
-   *
-   * @param replyTo  actor to notify once the transaction is confirmed.
-   * @param txId     txid of the transaction to watch.
-   * @param minDepth number of confirmations.
-   * @param event    channel event related to the transaction.
-   */
-  final case class WatchConfirmed[E <: BitcoinEvent](replyTo: ActorRef[WatchEvent[E]], txId: ByteVector32, minDepth: Long, event: E) extends Watch[E]
-
-  /**
-   * This event is sent when a [[WatchConfirmed]] condition is met.
-   *
-   * @param event       channel event related to the transaction that has been confirmed.
-   * @param blockHeight block in which the transaction was confirmed.
-   * @param txIndex     index of the transaction in the block.
-   * @param tx          transaction that has been confirmed.
-   */
-  final case class WatchEventConfirmed[E <: BitcoinEvent](event: E, blockHeight: Int, txIndex: Int, tx: Transaction) extends WatchEvent[E]
-
-  /**
-   * Watch for transactions spending the given outpoint.
-   *
-   * NB: an event will be triggered *every time* a transaction spends the given outpoint. This can be useful when:
-   *  - we see a spending transaction in the mempool, but it is then replaced (RBF)
-   *  - we see a spending transaction in the mempool, but a conflicting transaction "wins" and gets confirmed in a block
-   *
-   * @param replyTo     actor to notify when the outpoint is spent.
-   * @param txId        txid of the outpoint to watch.
-   * @param outputIndex index of the outpoint to watch.
-   * @param event       channel event related to the outpoint.
-   * @param hints       txids of potential spending transactions; most of the time we know the txs, and it allows for optimizations.
-   *                    This argument can safely be ignored by watcher implementations.
-   */
-  final case class WatchSpent[E <: BitcoinEvent](replyTo: ActorRef[WatchEvent[E]], txId: ByteVector32, outputIndex: Int, event: E, hints: Set[ByteVector32]) extends Watch[E]
-
-  /**
-   * This event is sent when a [[WatchSpent]] condition is met.
-   *
-   * @param event channel event related to the outpoint that was spent.
-   * @param tx    transaction spending the watched outpoint.
-   */
-  final case class WatchEventSpent[E <: BitcoinEvent](event: E, tx: Transaction) extends WatchEvent[E]
-
-  /**
-   * Watch for the first transaction spending the given outpoint. We assume that txid is already confirmed or in the
-   * mempool (i.e. the outpoint exists).
-   *
-   * NB: an event will be triggered only once when we see a transaction that spends the given outpoint. If you want to
-   * react to the transaction spending the outpoint, you should use [[WatchSpent[_]]] instead.
-   *
-   * @param replyTo     actor to notify when the outpoint is spent.
-   * @param txId        txid of the outpoint to watch.
-   * @param outputIndex index of the outpoint to watch.
-   * @param event       channel event related to the outpoint.
-   */
-  final case class WatchSpentBasic[E <: BitcoinEvent](replyTo: ActorRef[WatchEvent[E]], txId: ByteVector32, outputIndex: Int, event: E) extends Watch[E]
-
-  /**
-   * This event is sent when a [[WatchSpentBasic]] condition is met.
-   *
-   * @param event channel event related to the outpoint that was spent.
-   */
-  final case class WatchEventSpentBasic[E <: BitcoinEvent](event: E) extends WatchEvent[E]
-
-  // TODO: not implemented yet: notify me if confirmation number gets below minDepth?
-  final case class WatchLost[E <: BitcoinEvent](replyTo: ActorRef[WatchEvent[E]], txId: ByteVector32, minDepth: Long, event: E) extends Watch[E]
-
-  // TODO: not implemented yet.
-  final case class WatchEventLost[E <: BitcoinEvent](event: E) extends WatchEvent[E]
-
-  def apply[E <: BitcoinEvent](chainHash: ByteVector32, blockCount: AtomicLong, client: ExtendedBitcoinClient): Behavior[Command] =
-    Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => WrappedNewBlock(b.block)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => WrappedNewTransaction(t.tx)))
-      Behaviors.withTimers { timers =>
-        // we initialize block count
-        timers.startSingleTimer(TickNewBlock, TickNewBlock, 1 second)
-        new ZmqWatcher(chainHash, blockCount, client, context, timers).watching(Set.empty[Watch[E]], Map.empty[OutPoint, Set[Watch[E]]])
-      }
-    }
-
-  private def utxo[E <: BitcoinEvent](w: Watch[E]): Option[OutPoint] = {
-    w match {
-      case w: WatchSpent[E] => Some(OutPoint(w.txId.reverse, w.outputIndex))
-      case w: WatchSpentBasic[E] => Some(OutPoint(w.txId.reverse, w.outputIndex))
-      case _ => None
-    }
-  }
-
-  /**
-   * The resulting map allows checking spent txs in constant time wrt number of watchers.
-   */
-  def addWatchedUtxos[E <: BitcoinEvent](m: Map[OutPoint, Set[Watch[E]]], w: Watch[E]): Map[OutPoint, Set[Watch[E]]] = {
-    utxo(w) match {
-      case Some(utxo) => m.get(utxo) match {
-        case Some(watches) => m + (utxo -> (watches + w))
-        case None => m + (utxo -> Set(w))
-      }
-      case None => m
-    }
-  }
-
-  def removeWatchedUtxos[E <: BitcoinEvent](m: Map[OutPoint, Set[Watch[E]]], w: Watch[E]): Map[OutPoint, Set[Watch[E]]] = {
-    utxo(w) match {
-      case Some(utxo) => m.get(utxo) match {
-        case Some(watches) if watches - w == Set.empty => m - utxo
-        case Some(watches) => m + (utxo -> (watches - w))
-        case None => m
-      }
-      case None => m
     }
   }
 
