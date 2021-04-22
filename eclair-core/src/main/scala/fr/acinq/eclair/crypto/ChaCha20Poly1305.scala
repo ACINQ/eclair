@@ -16,30 +16,28 @@
 
 package fr.acinq.eclair.crypto
 
-import java.nio.ByteOrder
-
 import fr.acinq.bitcoin.{ByteVector32, Protocol}
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.{DecryptionError, EncryptionError, InvalidCounter}
-import grizzled.slf4j.Logger
 import grizzled.slf4j.Logging
-import org.spongycastle.crypto.engines.ChaCha7539Engine
-import org.spongycastle.crypto.params.{KeyParameter, ParametersWithIV}
+import org.bouncycastle.crypto.engines.ChaCha7539Engine
+import org.bouncycastle.crypto.params.{KeyParameter, ParametersWithIV}
 import scodec.bits.ByteVector
 
+import java.nio.ByteOrder
+
 /**
-  * Poly1305 authenticator
-  * see https://tools.ietf.org/html/rfc7539#section-2.5
-  */
+ * Poly1305 authenticator
+ * see https://tools.ietf.org/html/rfc7539#section-2.5
+ */
 object Poly1305 {
   /**
-    *
-    * @param key   input key
-    * @param datas input data
-    * @return a 16 byte authentication tag
-    */
+   * @param key   input key
+   * @param datas input data
+   * @return a 16 byte authentication tag
+   */
   def mac(key: ByteVector, datas: ByteVector*): ByteVector = {
     val out = new Array[Byte](16)
-    val poly = new org.spongycastle.crypto.macs.Poly1305()
+    val poly = new org.bouncycastle.crypto.macs.Poly1305()
     poly.init(new KeyParameter(key.toArray))
     datas.foreach(data => poly.update(data.toArray, 0, data.length.toInt))
     poly.doFinal(out, 0)
@@ -48,13 +46,10 @@ object Poly1305 {
 }
 
 /**
-  * ChaCha20 block cipher
-  * see https://tools.ietf.org/html/rfc7539#section-2.5
-  */
+ * ChaCha20 block cipher
+ * see https://tools.ietf.org/html/rfc7539#section-2.5
+ */
 object ChaCha20 {
-  // Whenever key rotation happens, we start with a nonce value of 0 and increment it for each message.
-  val ZeroNonce = ByteVector.fill(12)(0.byteValue)
-
   def encrypt(plaintext: ByteVector, key: ByteVector, nonce: ByteVector, counter: Int = 0): ByteVector = {
     val engine = new ChaCha7539Engine()
     engine.init(true, new ParametersWithIV(new KeyParameter(key.toArray), nonce.toArray))
@@ -91,65 +86,50 @@ object ChaCha20 {
 }
 
 /**
-  * ChaCha20Poly1305 AEAD (Authenticated Encryption with Additional Data) algorithm
-  * see https://tools.ietf.org/html/rfc7539#section-2.5
-  *
-  * This what we should be using (see BOLT #8)
-  */
+ * ChaCha20Poly1305 AEAD (Authenticated Encryption with Additional Data) algorithm
+ * see https://tools.ietf.org/html/rfc7539#section-2.5
+ *
+ * This what we should be using (see BOLT #8)
+ */
 object ChaCha20Poly1305 extends Logging {
 
+  // @formatter:off
   abstract class ChaCha20Poly1305Error(msg: String) extends RuntimeException(msg)
   case class InvalidMac() extends ChaCha20Poly1305Error("invalid mac")
   case class DecryptionError() extends ChaCha20Poly1305Error("decryption error")
   case class EncryptionError() extends ChaCha20Poly1305Error("encryption error")
   case class InvalidCounter() extends ChaCha20Poly1305Error("chacha20 counter must be 0 or 1")
-
-  // This logger is used to dump encryption keys to enable traffic analysis by the lightning-dissector.
-  // See https://github.com/nayutaco/lightning-dissector for more details.
-  // It is disabled by default (in the logback.xml configuration file).
-  val keyLogger = Logger("keylog")
+  // @formatter:on
 
   /**
-    *
-    * @param key       32 bytes encryption key
-    * @param nonce     12 bytes nonce
-    * @param plaintext plain text
-    * @param aad       additional authentication data. can be empty
-    * @return a (ciphertext, mac) tuple
-    */
+   * @param key       32 bytes encryption key
+   * @param nonce     12 bytes nonce
+   * @param plaintext plain text
+   * @param aad       additional authentication data. can be empty
+   * @return a (ciphertext, mac) tuple
+   */
   def encrypt(key: ByteVector, nonce: ByteVector, plaintext: ByteVector, aad: ByteVector): (ByteVector, ByteVector) = {
     val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
     val ciphertext = ChaCha20.encrypt(plaintext, key, nonce, 1)
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
-
     logger.debug(s"encrypt($key, $nonce, $aad, $plaintext) = ($ciphertext, $tag)")
-    if (nonce === ChaCha20.ZeroNonce) {
-      keyLogger.debug(s"${tag.toHex} ${key.toHex}")
-    }
-
     (ciphertext, tag)
   }
 
   /**
-    *
-    * @param key        32 bytes decryption key
-    * @param nonce      12 bytes nonce
-    * @param ciphertext ciphertext
-    * @param aad        additional authentication data. can be empty
-    * @param mac        authentication mac
-    * @return the decrypted plaintext if the mac is valid.
-    */
+   * @param key        32 bytes decryption key
+   * @param nonce      12 bytes nonce
+   * @param ciphertext ciphertext
+   * @param aad        additional authentication data. can be empty
+   * @param mac        authentication mac
+   * @return the decrypted plaintext if the mac is valid.
+   */
   def decrypt(key: ByteVector, nonce: ByteVector, ciphertext: ByteVector, aad: ByteVector, mac: ByteVector): ByteVector = {
     val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
     val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
     if (tag != mac) throw InvalidMac()
     val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
-
     logger.debug(s"decrypt($key, $nonce, $aad, $ciphertext, $mac) = $plaintext")
-    if (nonce === ChaCha20.ZeroNonce) {
-      keyLogger.debug(s"${mac.toHex} ${key.toHex}")
-    }
-
     plaintext
   }
 
