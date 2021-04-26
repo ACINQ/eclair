@@ -313,15 +313,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (mutual close before converging)") { f =>
+  test("recv WatchFundingSpentTriggered (mutual close before converging)") { f =>
     testMutualCloseBeforeConverge(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (mutual close before converging, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchFundingSpentTriggered (mutual close before converging, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testMutualCloseBeforeConverge(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (mutual close)") { f =>
+  test("recv WatchTxConfirmedTriggered (mutual close)") { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val mutualCloseTx = alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.last
@@ -331,7 +331,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (local commit)") { f =>
+  test("recv WatchFundingSpentTriggered (local commit)") { f =>
     import f._
     // an error occurs and alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -345,7 +345,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateData == initialState) // this was a no-op
   }
 
-  test("recv BITCOIN_OUTPUT_SPENT") { f =>
+  test("recv WatchOutputSpentTriggered") { f =>
     import f._
     // alice sends an htlc to bob
     val (ra1, htlca1) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
@@ -421,15 +421,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (local commit)") { f =>
+  test("recv WatchTxConfirmedTriggered (local commit)") { f =>
     testLocalCommitTxConfirmed(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (local commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchTxConfirmedTriggered (local commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testLocalCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (local commit with multiple htlcs for the same payment)") { f =>
+  test("recv WatchTxConfirmedTriggered (local commit with multiple htlcs for the same payment)") { f =>
     import f._
 
     // alice sends a first htlc to bob
@@ -483,7 +483,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (local commit with htlcs only signed by local)") { f =>
+  test("recv WatchTxConfirmedTriggered (local commit with htlcs only signed by local)") { f =>
     import f._
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
@@ -510,7 +510,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     relayerA.expectNoMsg(100 millis)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (local commit with fulfill only signed by local)") { f =>
+  test("recv WatchTxConfirmedTriggered (local commit with fulfill only signed by local)") { f =>
     import f._
     // bob sends an htlc
     val (r, htlc) = addHtlc(110000000 msat, bob, alice, bob2alice, alice2bob)
@@ -532,7 +532,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(getHtlcSuccessTxs(closingState).length === 1)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (local commit with fail not acked by remote)") { f =>
+  test("recv WatchTxConfirmedTriggered (local commit with fail not acked by remote)") { f =>
     import f._
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
@@ -613,7 +613,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimHtlcTimeoutTx.tx.txid)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit with htlcs only signed by local in next remote commit)") { f =>
+  test("recv WatchTxConfirmedTriggered (remote commit with htlcs only signed by local in next remote commit)") { f =>
     import f._
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[PaymentSettlingOnChain])
@@ -638,7 +638,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     listener.expectNoMsg(2 seconds)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>
+  test("recv WatchFundingSpentTriggered (remote commit)") { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -651,7 +651,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].copy(remoteCommitPublished = None) == initialState)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit)") { f =>
+  test("recv WatchTxConfirmedTriggered (remote commit)") { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -670,7 +670,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchTxConfirmedTriggered (remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelVersion === ChannelVersion.STATIC_REMOTEKEY)
@@ -687,7 +687,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchTxConfirmedTriggered (remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -748,15 +748,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit with multiple htlcs for the same payment)") { f =>
+  test("recv WatchTxConfirmedTriggered (remote commit with multiple htlcs for the same payment)") { f =>
     testRemoteCommitTxWithHtlcsConfirmed(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit with multiple htlcs for the same payment, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchTxConfirmedTriggered (remote commit with multiple htlcs for the same payment, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testRemoteCommitTxWithHtlcsConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (remote commit) followed by CMD_FULFILL_HTLC") { f =>
+  test("recv WatchTxConfirmedTriggered (remote commit) followed by CMD_FULFILL_HTLC") { f =>
     import f._
     // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
     val (r1, htlc1) = addHtlc(110000000 msat, bob, alice, bob2alice, alice2bob)
@@ -860,7 +860,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     (bobCommitTx, closingState, Set(htlca1, htlca2, htlca3))
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (next remote commit)") { f =>
+  test("recv WatchTxConfirmedTriggered (next remote commit)") { f =>
     import f._
     val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.STANDARD)
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
@@ -880,7 +880,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (next remote commit, static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchTxConfirmedTriggered (next remote commit, static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
     val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.STATIC_REMOTEKEY)
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
@@ -900,7 +900,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (next remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchTxConfirmedTriggered (next remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
@@ -920,7 +920,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (next remote commit) followed by CMD_FULFILL_HTLC") { f =>
+  test("recv WatchTxConfirmedTriggered (next remote commit) followed by CMD_FULFILL_HTLC") { f =>
     import f._
     // An HTLC Bob -> Alice is cross-signed that will be fulfilled later.
     val (r1, htlc1) = addHtlc(110000000 msat, bob, alice, bob2alice, alice2bob)
@@ -1039,7 +1039,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bobCommitTx
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (future remote commit)") { f =>
+  test("recv WatchTxConfirmedTriggered (future remote commit)") { f =>
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.STANDARD)
     // alice is able to claim its main output
@@ -1056,7 +1056,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (future remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchTxConfirmedTriggered (future remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.STATIC_REMOTEKEY)
     // using option_static_remotekey alice doesn't need to sweep her output
@@ -1066,7 +1066,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED, 10 seconds)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (future remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchTxConfirmedTriggered (future remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
     // alice is able to claim its main output
@@ -1241,19 +1241,19 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName === CLOSED)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { f =>
+  test("recv WatchFundingSpentTriggered (one revoked tx)") { f =>
     testFundingSpentRevokedTx(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (one revoked tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchFundingSpentTriggered (one revoked tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     testFundingSpentRevokedTx(f, ChannelVersion.STATIC_REMOTEKEY)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (one revoked tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchFundingSpentTriggered (one revoked tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testFundingSpentRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (multiple revoked tx)") { f =>
+  test("recv WatchFundingSpentTriggered (multiple revoked tx)") { f =>
     import f._
     val revokedCloseFixture = prepareRevokedClose(f, ChannelVersion.STANDARD)
     assert(revokedCloseFixture.bobRevokedTxs.map(_.commitTx.tx.txid).toSet.size === revokedCloseFixture.bobRevokedTxs.size) // all commit txs are distinct
@@ -1438,19 +1438,19 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName === CLOSED)
   }
 
-  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx)") { f =>
+  test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx)") { f =>
     testOutputSpentRevokedTx(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
+  test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     testOutputSpentRevokedTx(f, ChannelVersion.STATIC_REMOTEKEY)
   }
 
-  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testOutputSpentRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 
-  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published aggregated htlc tx)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published aggregated htlc tx)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
 
     // bob publishes one of his revoked txs
@@ -1572,11 +1572,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     relayerA.expectNoMsg(1 second)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (one revoked tx, pending htlcs)") { f =>
+  test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs)") { f =>
     testRevokedTxConfirmed(f, ChannelVersion.STANDARD)
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (one revoked tx, pending htlcs, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+  test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     testRevokedTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
   }
 

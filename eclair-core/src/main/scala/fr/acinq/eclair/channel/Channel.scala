@@ -1351,7 +1351,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
-      log.info(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
+      log.info(s"processing bitcoin output spent by txid=${tx.txid} tx=$tx")
       val extracted = Closing.extractPreimages(d.commitments.localCommit, tx)
       extracted foreach { case (htlc, preimage) =>
         d.commitments.originChannels.get(htlc.id) match {

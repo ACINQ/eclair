@@ -672,7 +672,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     awaitCond(bob.stateName == CLOSING)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (their commit)") { f =>
+  test("recv WatchFundingSpentTriggered (their commit)") { f =>
     import f._
     // bob publishes his current commit tx, which contains two pending htlcs alice->bob
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
@@ -705,7 +705,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(getClaimHtlcTimeoutTxs(rcp).length === 2)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (their next commit)") { f =>
+  test("recv WatchFundingSpentTriggered (their next commit)") { f =>
     import f._
     // bob fulfills the first htlc
     fulfillHtlc(0, r1, bob, alice, bob2alice, alice2bob)
@@ -751,7 +751,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(getClaimHtlcTimeoutTxs(rcp).length === 1)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (revoked tx)") { f =>
+  test("recv WatchFundingSpentTriggered (revoked tx)") { f =>
     import f._
     val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     // two main outputs + 2 htlc
@@ -793,7 +793,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (revoked tx with updated commitment)") { f =>
+  test("recv WatchFundingSpentTriggered (revoked tx with updated commitment)") { f =>
     import f._
     val initialCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
     assert(initialCommitTx.txOut.size === 4) // two main outputs + 2 htlc

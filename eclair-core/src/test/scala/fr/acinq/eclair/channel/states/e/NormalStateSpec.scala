@@ -2251,7 +2251,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(bob.stateName == CLOSING)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (their commit w/ htlc)") { f =>
+  test("recv WatchFundingSpentTriggered (their commit w/ htlc)") { f =>
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -2314,7 +2314,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(claimFee == expectedFee)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (their *next* commit w/ htlc)") { f =>
+  test("recv WatchFundingSpentTriggered (their *next* commit w/ htlc)") { f =>
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -2375,7 +2375,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(getClaimHtlcTimeoutTxs(rcp).length === 2)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (revoked commit)") { f =>
+  test("recv WatchFundingSpentTriggered (revoked commit)") { f =>
     import f._
     // initially we have :
     // alice = 800 000
@@ -2432,7 +2432,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (revoked commit with identical htlcs)") { f =>
+  test("recv WatchFundingSpentTriggered (revoked commit with identical htlcs)") { f =>
     import f._
     val sender = TestProbe()
 
@@ -2573,7 +2573,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(localCommitPublished.commitTx == bobCommitTx)
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED", Tag(StateTestsTags.ChannelsPublic)) { f =>
+  test("recv WatchFundingDeeplyBuriedTriggered", Tag(StateTestsTags.ChannelsPublic)) { f =>
     import f._
     alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
@@ -2584,7 +2584,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     channelUpdateListener.expectNoMsg(1 second)
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED (short channel id changed)", Tag(StateTestsTags.ChannelsPublic)) { f =>
+  test("recv WatchFundingDeeplyBuriedTriggered (short channel id changed)", Tag(StateTestsTags.ChannelsPublic)) { f =>
     import f._
     alice ! WatchFundingDeeplyBuriedTriggered(400001, 22, null)
     val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
@@ -2595,7 +2595,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     channelUpdateListener.expectNoMsg(1 second)
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel)") { f =>
+  test("recv WatchFundingDeeplyBuriedTriggered (private channel)") { f =>
     import f._
     alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
     // private channel: we send the channel_update directly to the peer
@@ -2605,7 +2605,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     channelUpdateListener.expectNoMsg(1 second)
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED (private channel, short channel id changed)") { f =>
+  test("recv WatchFundingDeeplyBuriedTriggered (private channel, short channel id changed)") { f =>
     import f._
     alice ! WatchFundingDeeplyBuriedTriggered(400001, 22, null)
     // private channel: we send the channel_update directly to the peer

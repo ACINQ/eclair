@@ -88,7 +88,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.expectNoMsg(200 millis)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>
+  test("recv WatchFundingSpentTriggered (remote commit)") { f =>
     import f._
     // bob publishes his commitment tx
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
@@ -98,7 +98,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     awaitCond(alice.stateName == CLOSING)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (other commit)") { f =>
+  test("recv WatchFundingSpentTriggered (other commit)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))

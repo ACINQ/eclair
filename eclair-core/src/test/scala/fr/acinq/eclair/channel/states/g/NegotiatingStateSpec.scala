@@ -180,7 +180,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2blockchain.expectMsgType[WatchTxConfirmed]
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)") { f =>
+  test("recv WatchFundingSpentTriggered (counterparty's mutual close)") { f =>
     import f._
     var aliceCloseFee, bobCloseFee = 0.sat
     do {
@@ -206,7 +206,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(alice.stateName == CLOSING)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (an older mutual close)") { f =>
+  test("recv WatchFundingSpentTriggered (an older mutual close)") { f =>
     import f._
     val aliceClose1 = alice2bob.expectMsgType[ClosingSigned]
     alice2bob.forward(bob)

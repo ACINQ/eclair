@@ -77,7 +77,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
   }
 
-  test("recv BITCOIN_FUNDING_DEPTHOK") { f =>
+  test("recv WatchFundingConfirmedTriggered") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     alice ! WatchFundingConfirmedTriggered(42000, 42, fundingTx)
@@ -86,7 +86,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     alice2bob.expectMsgType[FundingLocked]
   }
 
-  test("recv BITCOIN_FUNDING_DEPTHOK (bad funding pubkey script)") { f =>
+  test("recv WatchFundingConfirmedTriggered (bad funding pubkey script)") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     val badOutputScript = fundingTx.txOut.head.copy(publicKeyScript = Script.write(multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
@@ -95,7 +95,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == CLOSED)
   }
 
-  test("recv BITCOIN_FUNDING_DEPTHOK (bad funding amount)") { f =>
+  test("recv WatchFundingConfirmedTriggered (bad funding amount)") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     val badOutputAmount = fundingTx.txOut.head.copy(amount = 1234567.sat)
@@ -159,7 +159,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].waitingSinceBlock === currentBlockHeight)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { f =>
+  test("recv WatchFundingSpentTriggered (remote commit)") { f =>
     import f._
     // bob publishes his commitment tx
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
@@ -169,7 +169,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == CLOSING)
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (other commit)") { f =>
+  test("recv WatchFundingSpentTriggered (other commit)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
     alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
