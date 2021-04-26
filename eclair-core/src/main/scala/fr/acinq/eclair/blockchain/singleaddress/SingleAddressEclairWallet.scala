@@ -16,23 +16,27 @@
 
 package fr.acinq.eclair.blockchain.singleaddress
 
-import fr.acinq.bitcoin.{Crypto, Satoshi, Transaction}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Transaction, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse, OnChainBalance}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future
 
 /**
- * This is a minimal eclair wallet that doesn't manage funds, it can't be used to fund channels
- * @param finalAddress
+ * This is a minimal eclair wallet that doesn't manage funds, it can't be used to fund channels. It manages a single public key and will
+ * return the BIP84 (p2wpkh) address for this key.
+ * @param chainHash chain hash we're on
+ * @param receiveKey public key that will be used in all scripts and addresses for this wallet
  */
-class SingleAddressEclairWallet(finalAddress: String) extends EclairWallet {
+class SingleAddressEclairWallet(chainHash: ByteVector32, receiveKey: PublicKey) extends EclairWallet {
+  val finalAddress = computeP2WpkhAddress(receiveKey, chainHash)
 
   override def getBalance: Future[OnChainBalance] = Future.successful(OnChainBalance(Satoshi(0), Satoshi(0)))
 
   override def getReceiveAddress: Future[String] = Future.successful(finalAddress)
 
-  override def getReceivePubkey(receiveAddress: Option[String]): Future[Crypto.PublicKey] = ???
+  override def getReceivePubkey(receiveAddress: Option[String]): Future[Crypto.PublicKey] = Future.successful(receiveKey)
 
   override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = Future.failed(???)
 
