@@ -85,17 +85,17 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      alice2blockchain.expectMsgType[WatchSpent[BITCOIN_FUNDING_SPENT.type]]
-      alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_FUNDING_DEPTHOK.type]]
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob2blockchain.expectMsgType[WatchSpent[BITCOIN_FUNDING_SPENT.type]]
-      bob2blockchain.expectMsgType[WatchConfirmed[BITCOIN_FUNDING_DEPTHOK.type]]
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-      alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-      alice2blockchain.expectMsgType[WatchLost[BITCOIN_FUNDING_LOST.type]]
-      bob2blockchain.expectMsgType[WatchLost[BITCOIN_FUNDING_LOST.type]]
+      alice ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+      alice2blockchain.expectMsgType[WatchFundingLost]
+      bob2blockchain.expectMsgType[WatchFundingLost]
       awaitCond(alice.stateName == NORMAL, 1 minute)
       awaitCond(bob.stateName == NORMAL, 1 minute)
     }

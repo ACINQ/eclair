@@ -22,7 +22,7 @@ import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi, SatoshiLong}
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchEventConfirmed
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
@@ -375,13 +375,13 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       }
 
       val closingState = localClose(alice, alice2blockchain)
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(closingState.commitTx), 42, 0, closingState.commitTx)
+      alice ! WatchTxConfirmedTriggered(42, 0, closingState.commitTx)
       // All committed htlcs timed out except the last two; one will be fulfilled later and the other will timeout later.
       assert(closingState.htlcTxs.size === 4)
       assert(getHtlcTimeoutTxs(closingState).length === 4)
       val htlcTxs = getHtlcTimeoutTxs(closingState).sortBy(_.tx.txOut.map(_.amount).sum)
       htlcTxs.reverse.drop(2).zipWithIndex.foreach {
-        case (htlcTx, i) => alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTx.tx), 201, i, htlcTx.tx)
+        case (htlcTx, i) => alice ! WatchTxConfirmedTriggered(201, i, htlcTx.tx)
       }
       (alice.stateData.asInstanceOf[DATA_CLOSING], htlc_2_2)
     }

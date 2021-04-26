@@ -16,15 +16,14 @@
 
 package fr.acinq.eclair.router
 
-import akka.actor.typed
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.actor.{ActorContext, ActorRef}
+import akka.actor.{ActorContext, ActorRef, typed}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, LocalChannelDown, LocalChannelUpdate}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
+import fr.acinq.eclair.channel.{AvailableBalanceChanged, LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Monitoring.Metrics
@@ -106,7 +105,7 @@ object Validation {
             remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.InvalidAnnouncement(c))))
             None
           } else {
-            watcher ! WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT](ctx.self, tx.txid, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+            watcher ! WatchExternalChannelSpent(ctx.self, tx.txid, outputIndex, c.shortChannelId)
             log.debug("added channel channelId={}", c.shortChannelId)
             remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.Accepted(c))))
             val capacity = tx.txOut(outputIndex).amount
@@ -169,9 +168,8 @@ object Validation {
     }
   }
 
-  def handleChannelSpent(d: Data, db: NetworkDb, event: BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelSpent(d: Data, db: NetworkDb, shortChannelId: ShortChannelId)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    import event.shortChannelId
     val lostChannel = d.channels(shortChannelId).ann
     log.info("funding tx of channelId={} has been spent", shortChannelId)
     // we need to remove nodes that aren't tied to any channels anymore

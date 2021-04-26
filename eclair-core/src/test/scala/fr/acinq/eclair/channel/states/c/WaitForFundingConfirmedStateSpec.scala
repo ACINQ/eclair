@@ -59,8 +59,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
       bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      assert(alice2blockchain.expectMsgType[WatchSpent[BITCOIN_FUNDING_SPENT.type]].event === BITCOIN_FUNDING_SPENT)
-      assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_FUNDING_DEPTHOK.type]].event === BITCOIN_FUNDING_DEPTHOK)
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain)))
     }
@@ -70,7 +70,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
     // make bob send a FundingLocked msg
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, fundingTx)
+    bob ! WatchFundingConfirmedTriggered(42000, 42, fundingTx)
     val msg = bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].deferred.contains(msg))
@@ -80,9 +80,9 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv BITCOIN_FUNDING_DEPTHOK") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, fundingTx)
+    alice ! WatchFundingConfirmedTriggered(42000, 42, fundingTx)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
-    alice2blockchain.expectMsgType[WatchLost[BITCOIN_FUNDING_LOST.type]]
+    alice2blockchain.expectMsgType[WatchFundingLost]
     alice2bob.expectMsgType[FundingLocked]
   }
 
@@ -91,7 +91,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     val badOutputScript = fundingTx.txOut.head.copy(publicKeyScript = Script.write(multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputScript))
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, badFundingTx)
+    alice ! WatchFundingConfirmedTriggered(42000, 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -100,7 +100,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     val badOutputAmount = fundingTx.txOut.head.copy(amount = 1234567.sat)
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputAmount))
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42, badFundingTx)
+    alice ! WatchFundingConfirmedTriggered(42000, 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -163,16 +163,16 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
     // bob publishes his commitment tx
     val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, tx)
+    alice ! WatchFundingSpentTriggered(tx)
     alice2blockchain.expectMsgType[PublishTx]
-    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === tx)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === tx.txid)
     awaitCond(alice.stateName == CLOSING)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (other commit)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, Transaction(0, Nil, Nil, 0))
+    alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
     alice2bob.expectMsgType[Error]
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === tx)
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
@@ -185,7 +185,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === tx)
     alice2blockchain.expectMsgType[PublishTx] // claim-main-delayed
-    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === tx)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === tx.txid)
   }
 
   test("recv CMD_CLOSE") { f =>
@@ -204,7 +204,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === tx)
     alice2blockchain.expectMsgType[PublishTx] // claim-main-delayed
-    assert(alice2blockchain.expectMsgType[WatchConfirmed[BITCOIN_TX_CONFIRMED]].event.tx === tx)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === tx.txid)
   }
 
 }

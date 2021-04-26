@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchEventSpent
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
@@ -88,7 +88,7 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
     awaitCond(alice.stateName == CLOSING)
 
     // Bob detects it.
-    bob ! WatchEventSpent(BITCOIN_FUNDING_SPENT, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.commitTx)
+    bob ! WatchFundingSpentTriggered(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.commitTx)
     awaitCond(bob.stateName == CLOSING)
 
     Fixture(alice, HtlcWithPreimage(rb2, htlcb2), bob, HtlcWithPreimage(ra2, htlca2), TestProbe())
@@ -371,7 +371,7 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
     val lcp = aliceClosing.localCommitPublished.get
 
     // Bob detects it.
-    bob ! WatchEventSpent(BITCOIN_FUNDING_SPENT, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.commitTx)
+    bob ! WatchFundingSpentTriggered(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.commitTx)
     awaitCond(bob.stateName == CLOSING)
 
     val bobClosing = bob.stateData.asInstanceOf[DATA_CLOSING]
@@ -483,7 +483,7 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
     fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
 
-    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedCommitTx)
+    alice ! WatchFundingSpentTriggered(revokedCommitTx)
     awaitCond(alice.stateName == CLOSING)
     val aliceClosing = alice.stateData.asInstanceOf[DATA_CLOSING]
     assert(aliceClosing.revokedCommitPublished.length === 1)

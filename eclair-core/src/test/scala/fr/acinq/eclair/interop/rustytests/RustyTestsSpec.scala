@@ -78,17 +78,17 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     pipe ! (alice, bob)
     within(30 seconds) {
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      alice2blockchain.expectMsgType[WatchSpent[BitcoinEvent]]
-      alice2blockchain.expectMsgType[WatchConfirmed[BitcoinEvent]]
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob2blockchain.expectMsgType[WatchSpent[BitcoinEvent]]
-      bob2blockchain.expectMsgType[WatchConfirmed[BitcoinEvent]]
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-      alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-      alice2blockchain.expectMsgType[WatchLost[BitcoinEvent]]
-      bob2blockchain.expectMsgType[WatchLost[BitcoinEvent]]
+      alice ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+      alice2blockchain.expectMsgType[WatchFundingLost]
+      bob2blockchain.expectMsgType[WatchFundingLost]
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
       pipe ! new File(getClass.getResource(s"/scenarii/${test.name}.script").getFile)

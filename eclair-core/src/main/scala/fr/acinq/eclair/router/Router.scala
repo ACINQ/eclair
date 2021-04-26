@@ -17,9 +17,8 @@
 package fr.acinq.eclair.router
 
 import akka.Done
-import akka.actor.typed
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated, typed}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -27,7 +26,7 @@ import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchEventSpentBasic, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
@@ -91,7 +90,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
       // avoid herd effect at startup because watch-spent are intensive in terms of rpc calls to bitcoind
       context.system.scheduler.scheduleOnce(Random.nextLong(nodeParams.watchSpentWindow.toSeconds).seconds) {
-        watcher ! WatchSpentBasic[BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT](self, txid, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
+        watcher ! WatchExternalChannelSpent(self, txid, outputIndex, pc.ann.shortChannelId)
       }
     }
 
@@ -235,8 +234,8 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(r: ValidateResult, d) =>
       stay using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
-    case Event(WatchEventSpentBasic(e: BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT), d) if d.channels.contains(e.shortChannelId) =>
-      stay using Validation.handleChannelSpent(d, nodeParams.db.network, e)
+    case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) =>
+      stay using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
 
     case Event(n: NodeAnnouncement, d: Data) =>
       stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)

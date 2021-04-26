@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchConfirmed, WatchEvent, WatchEventConfirmed}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -182,7 +182,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.C
 
   private val log = context.log
 
-  val watchConfirmedResponseMapper: ActorRef[WatchEventConfirmed[BITCOIN_PARENT_TX_CONFIRMED]] = context.messageAdapter(w => ParentTxConfirmed(w.event.childTx, w.tx.txid))
+  val watchConfirmedResponseMapper: ActorRef[WatchParentTxConfirmedTriggered] = context.messageAdapter(w => ParentTxConfirmed(w.childTx, w.tx.txid))
 
   /**
    * @param cltvDelayedTxs when transactions are cltv-delayed, we wait until the target blockchain height is reached.
@@ -198,7 +198,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.C
           csvTimeouts.foreach {
             case (parentTxId, csvTimeout) =>
               log.info(s"${p.desc} txid=${p.tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", p.tx)
-              watcher ! WatchConfirmed(watchConfirmedResponseMapper.unsafeUpcast[WatchEvent[BITCOIN_PARENT_TX_CONFIRMED]], parentTxId, minDepth = csvTimeout, BITCOIN_PARENT_TX_CONFIRMED(p))
+              watcher ! WatchParentTxConfirmed(watchConfirmedResponseMapper, parentTxId, minDepth = csvTimeout, p)
           }
           run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> TxWithRelativeDelay(p, csvTimeouts.keySet)))
         } else if (cltvTimeout > blockCount) {

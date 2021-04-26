@@ -4,7 +4,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchEventSpent
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
@@ -84,7 +84,7 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Sta
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
 
     // actual tests starts here: let's see what we can do with Bob's commit tx
-    sender.send(alice, WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx))
+    sender.send(alice, WatchFundingSpentTriggered(bobCommitTx))
 
     // from Bob's commit tx we can extract both funding public keys
     val OP_2 :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil = Script.parse(bobCommitTx.txIn(0).witness.stack.last)
