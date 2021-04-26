@@ -70,7 +70,7 @@ object Channel {
   val MAX_TO_SELF_DELAY = CltvExpiryDelta(2016)
 
   // as a fundee, we will wait that much time for the funding tx to confirm (funder will rely on the funding tx being double-spent)
-  val FUNDING_TIMEOUT_FUNDEE = 5 days
+  val FUNDING_TIMEOUT_FUNDEE = 14 days
 
   // pruning occurs if no new update has been received in two weeks (BOLT 7)
   val REFRESH_CHANNEL_UPDATE_INTERVAL = 10 days
