@@ -223,9 +223,13 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       bitcoinClient.publishTransaction(tx2).pipeTo(probe.ref)
       probe.expectMsg(tx2.txid)
       listener.expectNoMessage(1 second)
+
+      bitcoinClient.getBlockCount.pipeTo(listener.ref)
+      val currentBlockCount = listener.expectMsgType[Long]
       system.eventStream.subscribe(probe.ref, classOf[CurrentBlockCount])
       generateBlocks(1)
-      probe.expectMsgType[CurrentBlockCount]
+      awaitCond(probe.expectMsgType[CurrentBlockCount].blockCount > currentBlockCount)
+
       watcher ! WatchExternalChannelSpent(listener.ref, tx1.txid, 0, ShortChannelId(1))
       listener.expectMsg(WatchExternalChannelSpentTriggered(ShortChannelId(1)))
       watcher ! WatchFundingSpent(listener.ref, tx1.txid, 0, Set.empty)
