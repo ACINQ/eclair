@@ -9,11 +9,13 @@ import fr.acinq.eclair.wire.protocol.LightningMessage
 
 object ChannelWriterSender {
 
+  // @formatter:off
   sealed trait Command
   case class ResetPeerConnection(connection: ActorRef) extends Command
   case class Store(d: HasCommitments) extends Command
-  case class StoreThenSend(d: HasCommitments, m: LightningMessage) extends Command
+  case class StoreThenSend(d: HasCommitments, msgs: Seq[LightningMessage]) extends Command
   case class Send(m: LightningMessage) extends Command
+  // @formatter:on
 
   def apply(db: ChannelsDb, peer: ActorRef, connection: ActorRef): Behavior[Command] =
     Behaviors.setup { context =>
@@ -23,9 +25,11 @@ object ChannelWriterSender {
         case Store(d) =>
           db.addOrUpdateChannel(d)
           Behaviors.same
-        case StoreThenSend(d, m) =>
+        case StoreThenSend(d, msgs) =>
           db.addOrUpdateChannel(d)
-          peer ! OutgoingMessage(m, connection)
+          msgs.foreach { m =>
+            peer ! OutgoingMessage(m, connection)
+          }
           Behaviors.same
         case Send(m) =>
           peer ! OutgoingMessage(m, connection)
