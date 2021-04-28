@@ -121,6 +121,8 @@ object Channel {
    * [[Channel]] is notified asynchronously of disconnections and reconnections. To preserve sequentiality of messages,
    * we need to also provide the connection that the message is valid for. If the actual connection was reset in the
    * meantime, the [[Peer]] will simply drop the message.
+   *
+   * TODO: @pm move this to [[Peer]] object
    */
   case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 
@@ -143,7 +145,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   // be sent to dead letters, before the channel gets notified of the disconnection; knowing that this will happen, we
   // choose to not make this an Option (that would be None before the first connection), and instead embrace the fact
   // that the active connection may point to dead letters at all time
-  private var activeConnection = context.system.deadLetters
+  private val writerSender = context.spawn(ChannelWriterSender.apply(nodeParams.db.channels, peer, context.system.deadLetters), name = "writer-sender")
 
   private val txPublisher = txPublisherFactory.spawnTxPublisher(context, remoteNodeId)
 
@@ -192,7 +194,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
     case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, _, localParams, remote, _, channelFlags, channelVersion), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = true, temporaryChannelId, initialFeeratePerKw, Some(fundingTxFeeratePerKw)))
-      activeConnection = remote
+      writerSender ! ChannelWriterSender.ResetPeerConnection(remote)
       txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
       val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
@@ -220,7 +222,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _), Nothing) if !localParams.isFunder =>
-      activeConnection = remote
+      writerSender ! ChannelWriterSender.ResetPeerConnection(remote)
       txPublisher ! SetChannelId(remoteNodeId, inputFundee.temporaryChannelId)
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
 
@@ -1484,8 +1486,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(OFFLINE)(handleExceptions {
-    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
-      activeConnection = r
+    case Event(INPUT_RECONNECTED(remote, localInit, remoteInit), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
+      writerSender ! ChannelWriterSender.ResetPeerConnection(remote)
       // they already proved that we have an outdated commitment
       // there isn't much to do except asking them again to publish their current commitment by sending an error
       val exc = PleasePublishYourCommitment(d.channelId)
@@ -1493,8 +1495,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val d1 = Helpers.updateFeatures(d, localInit, remoteInit)
       goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d1 sending error
 
-    case Event(INPUT_RECONNECTED(r, localInit, remoteInit), d: HasCommitments) =>
-      activeConnection = r
+    case Event(INPUT_RECONNECTED(remote, localInit, remoteInit), d: HasCommitments) =>
+      writerSender ! ChannelWriterSender.ResetPeerConnection(remote)
 
       val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(ByteVector32.Zeroes)
       val channelKeyPath = keyManager.keyPath(d.commitments.localParams, d.commitments.channelVersion)
@@ -2531,7 +2533,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   private def send(msg: LightningMessage): Unit = {
-    peer ! OutgoingMessage(msg, activeConnection)
+    writerSender ! ChannelWriterSender.Send(msg)
   }
 
   override def mdc(currentMessage: Any): MDC = {
