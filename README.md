@@ -148,6 +148,22 @@ If you want to use a different wallet from the default one, you must set `eclair
 Eclair will return BTC from closed channels to the wallet configured.
 Any BTC found in the wallet can be used to fund the channels you choose to open.
 
+We also recommend tweaking the following parameters in `bitcoin.conf`:
+
+```conf
+# This parameter ensures that your wallet will not create chains of unconfirmed
+# transactions that would be rejected by other nodes.
+walletrejectlongchains=1
+# The following parameters set the maximum length of chains of unconfirmed
+# transactions to 20 instead of the default value of 25.
+limitancestorcount=20
+limitdescendantcount=20
+```
+
+Setting these parameters lets you unblock long chains of unconfirmed channel funding transactions by using child-pays-for-parent (CPFP) to make them confirm.
+
+With the default `bitcoind` parameters, if your node created a chain of 25 unconfirmed funding transactions with a low-feerate, you wouldn't be able to use CPFP to raise their fees because your CPFP transaction would likely be rejected by the rest of the network.
+
 ### Java Environment Variables
 
 Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section.
@@ -278,8 +294,13 @@ so you can easily run your Bitcoin node on both mainnet and testnet. For example
 ```conf
 server=1
 txindex=1
+
 addresstype=bech32
 changetype=bech32
+
+walletrejectlongchains=1
+limitancestorcount=20
+limitdescendantcount=20
 
 [main]
 rpcuser=<your-mainnet-rpc-user-here>
