@@ -21,7 +21,6 @@ import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
-import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
@@ -88,15 +87,15 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward payment with user custom tlv records") { f =>
     import f._
-    val keySendTlvRecords = Seq(GenericTlv(5482373484L, paymentPreimage))
-    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), userCustomTlvs = keySendTlvRecords)
+    val keySendTlvRecords = Seq(OnionTlv.KeySend(paymentPreimage))
+    val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, CltvExpiryDelta(42), additionalTlvs = keySendTlvRecords)
     sender.send(initiator, req)
     sender.expectMsgType[UUID]
     payFsm.expectMsgType[SendPaymentConfig]
-    val FinalTlvPayload(tlvs) = payFsm.expectMsgType[SendPayment].finalPayload
+    val fp@FinalTlvPayload(tlvs) = payFsm.expectMsgType[SendPayment].finalPayload
     assert(tlvs.get[AmountToForward].get.amount == finalAmount)
     assert(tlvs.get[OutgoingCltv].get.cltv == req.fallbackFinalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1))
-    assert(tlvs.unknown == keySendTlvRecords)
+    assert(fp.paymentPreimage.contains(paymentPreimage))
   }
 
   test("reject payment with unknown mandatory feature") { f =>

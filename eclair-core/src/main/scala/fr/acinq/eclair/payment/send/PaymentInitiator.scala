@@ -61,13 +61,13 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           invoice.paymentSecret match {
             case Some(paymentSecret) =>
               val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
-              fsm ! SendMultiPartPayment(sender, paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams, userCustomTlvs = r.userCustomTlvs)
+              fsm ! SendMultiPartPayment(sender, paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams, additionalTlvs = r.additionalTlvs, userCustomTlvs = r.userCustomTlvs)
             case None =>
               sender ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(Nil, PaymentSecretMissing) :: Nil)
           }
         case _ =>
           val paymentSecret = r.paymentRequest.flatMap(_.paymentSecret)
-          val finalPayload = Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.userCustomTlvs)
+          val finalPayload = Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.additionalTlvs, r.userCustomTlvs)
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
           fsm ! SendPayment(sender, r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
       }
@@ -251,6 +251,7 @@ object PaymentInitiator {
                                 externalId: Option[String] = None,
                                 assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                 routeParams: Option[RouteParams] = None,
+                                additionalTlvs: Seq[OnionTlv] = Nil,
                                 userCustomTlvs: Seq[GenericTlv] = Nil,
                                 blockUntilComplete: Boolean = false) {
     // We add one block in order to not have our htlcs fail when a new block has just been found.
