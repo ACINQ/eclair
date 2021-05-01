@@ -99,7 +99,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
             case Some(paymentPreimage) if nodeParams.features.hasFeature(Features.KeySend) =>
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
-              val desc = "Donation"
+              val desc = "Swap-in"
               val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
                 PaymentRequestFeatures(Features.BasicMultiPartPayment.optional, Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
               } else {
@@ -109,7 +109,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               // Insert a fake invoice and then restart the incoming payment handler
               val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, features = Some(features))
               log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
-              db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
+              db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.SwapIn)
               ctx.self ! p
             case _ =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
