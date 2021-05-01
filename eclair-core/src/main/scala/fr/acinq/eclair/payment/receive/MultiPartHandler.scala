@@ -96,7 +96,8 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               }
           }
           case None => p.payload.paymentPreimage match {
-            case Some(paymentPreimage) if nodeParams.features.hasFeature(Features.KeySend) =>
+            case Some(paymentPreimage) =>
+              log.info(s"found payment preimage in payload, keysend=${nodeParams.features.hasFeature(Features.KeySend)}")
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = "Swap-in"

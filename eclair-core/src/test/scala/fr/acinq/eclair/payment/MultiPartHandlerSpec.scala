@@ -773,7 +773,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
   }
 
-  test("PaymentHandler should reject KeySend payment when feature is disabled") { f =>
+  ignore("PaymentHandler should reject KeySend payment when feature is disabled") { f =>
     import f._
 
     val amountMsat = 42000 msat
