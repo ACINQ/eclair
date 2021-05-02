@@ -79,6 +79,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
 
     case p: IncomingPacket.FinalPacket if doHandle(p.add.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(p.add.paymentHash))) {
+        log.info(s"received incoming payment with finalPayload=${p.payload}")
         db.getIncomingPayment(p.add.paymentHash) match {
           case Some(record) => validatePayment(p, record, nodeParams.currentBlockHeight) match {
             case Some(cmdFail) =>
