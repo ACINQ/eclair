@@ -127,10 +127,10 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
       })
 
     case ForwardAdd(add, previousFailures) =>
-      log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
+      log.info(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
       IncomingPacket.decrypt(add, nodeParams.privateKey, nodeParams.features) match {
         case Right(p: IncomingPacket.FinalPacket) =>
-          log.debug(s"forwarding htlc #${add.id} to payment-handler")
+          log.info(s"forwarding htlc #${add.id} to payment-handler finalPayload=${p.payload}")
           paymentHandler forward p
         case Right(r: IncomingPacket.ChannelRelayPacket) =>
           channelRelayer forward ChannelRelayer.RelayHtlc(r, previousFailures, channelUpdates, node2channels)
