@@ -277,7 +277,7 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
             client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
               case false =>
                 log.info(s"output=${w.txId}:${w.outputIndex} has already been spent")
-                w match {
+                (w: WatchSpentBasic[_ <: WatchSpentBasicTriggered]) match {
                   case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
                 }
             }
