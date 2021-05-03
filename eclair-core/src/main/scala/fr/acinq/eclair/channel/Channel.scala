@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SetChannelId, SignAndPublishTx}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
+import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.logger
 import fr.acinq.eclair.io.Peer
@@ -229,7 +230,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case closing: DATA_CLOSING =>
           // we don't put back the WatchSpent if the commitment tx has already been published and the spending tx already reached mindepth
           val closingType_opt = Closing.isClosingTypeAlreadyKnown(closing)
-          log.info(s"channel is closing (closingType=${closingType_opt.map(_.getClass.getSimpleName).getOrElse("UnknownYet")})")
+          log.info(s"channel is closing (closingType=${closingType_opt.map(c => EventType.Closed(c).label).getOrElse("UnknownYet")})")
           // if the closing type is known:
           // - there is no need to watch the funding tx because it has already been spent and the spending tx has already reached mindepth
           // - there is no need to attempt to publish transactions for other type of closes
