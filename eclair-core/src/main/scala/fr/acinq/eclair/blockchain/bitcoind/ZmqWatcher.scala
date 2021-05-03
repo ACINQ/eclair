@@ -222,10 +222,12 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
           .map(_.outPoint)
           .flatMap(watchedUtxos.get)
           .flatten
-          .collect {
+          .foreach {
             case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
             case w: WatchFundingSpent => context.self ! TriggerEvent(w.replyTo, w, WatchFundingSpentTriggered(tx))
             case w: WatchOutputSpent => context.self ! TriggerEvent(w.replyTo, w, WatchOutputSpentTriggered(tx))
+            case _: WatchConfirmed[_] => // nothing to do
+            case _: WatchFundingLost => // nothing to do
           }
         Behaviors.same
 
@@ -250,17 +252,17 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
         }
         Behaviors.same
 
-      case trigger: TriggerEvent[WatchTriggered] =>
-        if (watches.contains(trigger.watch)) {
-          log.info("triggering {}", trigger.watch)
-          trigger.replyTo ! trigger.event
-          trigger.watch match {
+      case TriggerEvent(replyTo, watch, event) =>
+        if (watches.contains(watch)) {
+          log.info("triggering {}", watch)
+          replyTo ! event
+          watch match {
             case _: WatchSpent[_] =>
               // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx or the commit tx
               // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
               Behaviors.same
             case _ =>
-              watching(watches - trigger.watch, removeWatchedUtxos(watchedUtxos, trigger.watch))
+              watching(watches - watch, removeWatchedUtxos(watchedUtxos, watch))
           }
         } else {
           Behaviors.same
@@ -333,9 +335,9 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
             Behaviors.same
         }
 
-      case stop: StopWatching[WatchTriggered] =>
+      case StopWatching(origin) =>
         // we remove watches associated to dead actors
-        val deprecatedWatches = watches.filter(_.replyTo == stop.sender)
+        val deprecatedWatches = watches.filter(_.replyTo == origin)
         val watchedUtxos1 = deprecatedWatches.foldLeft(watchedUtxos) { case (m, w) => removeWatchedUtxos(m, w) }
         watching(watches -- deprecatedWatches, watchedUtxos1)
 
