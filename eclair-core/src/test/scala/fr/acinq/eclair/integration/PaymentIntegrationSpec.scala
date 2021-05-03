@@ -93,10 +93,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     // we make sure all channels have set up their WatchConfirmed for the funding tx
     awaitCond({
-      val watches = nodes.values.foldLeft(Set.empty[Watch]) {
+      val watches = nodes.values.foldLeft(Set.empty[Watch[_]]) {
         case (watches, setup) =>
           setup.watcher !  ZmqWatcher.ListWatches(sender.ref)
-          watches ++ sender.expectMsgType[Set[Watch]]
+          watches ++ sender.expectMsgType[Set[Watch[_]]]
       }
       watches.count(_.isInstanceOf[WatchFundingConfirmed]) == channelEndpointsCount
     }, max = 20 seconds, interval = 1 second)
