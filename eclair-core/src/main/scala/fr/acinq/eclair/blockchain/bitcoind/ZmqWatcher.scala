@@ -269,58 +269,19 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
         }
 
       case w: Watch[_] =>
+        // We call check* methods and store the watch unconditionally.
+        // Maybe the tx is already confirmed or spent, in that case the watch will be triggered and removed immediately.
         val result = w match {
           case _ if watches.contains(w) =>
             Ignore // we ignore duplicates
           case w: WatchSpentBasic[_] =>
-            // NB: we assume parent tx was published, we just need to make sure this particular output has not been spent
-            client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
-              case false =>
-                log.info(s"output=${w.txId}:${w.outputIndex} has already been spent")
-                (w: WatchSpentBasic[_ <: WatchSpentBasicTriggered]) match {
-                  case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
-                }
-            }
+            checkSpentBasic(w)
             Keep
           case w: WatchSpent[_] =>
-            // first let's see if the parent tx was published or not
-            client.getTxConfirmations(w.txId).collect {
-              case Some(_) =>
-                // parent tx was published, we need to make sure this particular output has not been spent
-                client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
-                  case false =>
-                    // the output has been spent, let's find the spending tx
-                    // if we know some potential spending txs, we try to fetch them directly
-                    Future.sequence(w.hints.map(txid => client.getTransaction(txid).map(Some(_)).recover { case _ => None }))
-                      .map(_
-                        .flatten // filter out errors
-                        .find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
-                        case Some(spendingTx) =>
-                          // there can be only one spending tx for an utxo
-                          log.info(s"${w.txId}:${w.outputIndex} has already been spent by a tx provided in hints: txid=${spendingTx.txid}")
-                          context.self ! ProcessNewTransaction(spendingTx)
-                        case None =>
-                          // no luck, we have to do it the hard way...
-                          log.info(s"${w.txId}:${w.outputIndex} has already been spent, looking for the spending tx in the mempool")
-                          client.getMempool().map { mempoolTxs =>
-                            mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
-                              case Nil =>
-                                log.warn(s"${w.txId}:${w.outputIndex} has already been spent, spending tx not in the mempool, looking in the blockchain...")
-                                client.lookForSpendingTx(None, w.txId, w.outputIndex).map { tx =>
-                                  log.warn(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${tx.txid}")
-                                  context.self ! ProcessNewTransaction(tx)
-                                }
-                              case txs =>
-                                log.info(s"found ${txs.size} txs spending ${w.txId}:${w.outputIndex} in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                                txs.foreach(tx => context.self ! ProcessNewTransaction(tx))
-                            }
-                          }
-                      })
-                }
-            }
+            checkSpent(w)
             Keep
           case w: WatchConfirmed[_] =>
-            checkConfirmed(w) // maybe the tx is already confirmed, in that case the watch will be triggered and removed immediately
+            checkConfirmed(w)
             Keep
           case _: WatchFundingLost =>
             // TODO: not implemented, we ignore it silently
@@ -353,6 +314,55 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
         r.replyTo ! watches
         Behaviors.same
 
+    }
+  }
+
+  def checkSpentBasic(w: WatchSpentBasic[_ <: WatchSpentBasicTriggered]): Future[Unit] = {
+    // NB: we assume parent tx was published, we just need to make sure this particular output has not been spent
+    client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
+      case false =>
+        log.info(s"output=${w.txId}:${w.outputIndex} has already been spent")
+        w match {
+          case w: WatchExternalChannelSpent => context.self ! TriggerEvent(w.replyTo, w, WatchExternalChannelSpentTriggered(w.shortChannelId))
+        }
+    }
+  }
+
+  def checkSpent(w: WatchSpent[_ <: WatchSpentTriggered]): Future[Unit] = {
+    // first let's see if the parent tx was published or not
+    client.getTxConfirmations(w.txId).collect {
+      case Some(_) =>
+        // parent tx was published, we need to make sure this particular output has not been spent
+        client.isTransactionOutputSpendable(w.txId, w.outputIndex, includeMempool = true).collect {
+          case false =>
+            // the output has been spent, let's find the spending tx
+            // if we know some potential spending txs, we try to fetch them directly
+            Future.sequence(w.hints.map(txid => client.getTransaction(txid).map(Some(_)).recover { case _ => None }))
+              .map(_
+                .flatten // filter out errors
+                .find(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
+                case Some(spendingTx) =>
+                  // there can be only one spending tx for an utxo
+                  log.info(s"${w.txId}:${w.outputIndex} has already been spent by a tx provided in hints: txid=${spendingTx.txid}")
+                  context.self ! ProcessNewTransaction(spendingTx)
+                case None =>
+                  // no luck, we have to do it the hard way...
+                  log.info(s"${w.txId}:${w.outputIndex} has already been spent, looking for the spending tx in the mempool")
+                  client.getMempool().map { mempoolTxs =>
+                    mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == w.txId && i.outPoint.index == w.outputIndex)) match {
+                      case Nil =>
+                        log.warn(s"${w.txId}:${w.outputIndex} has already been spent, spending tx not in the mempool, looking in the blockchain...")
+                        client.lookForSpendingTx(None, w.txId, w.outputIndex).map { tx =>
+                          log.warn(s"found the spending tx of ${w.txId}:${w.outputIndex} in the blockchain: txid=${tx.txid}")
+                          context.self ! ProcessNewTransaction(tx)
+                        }
+                      case txs =>
+                        log.info(s"found ${txs.size} txs spending ${w.txId}:${w.outputIndex} in the mempool: txids=${txs.map(_.txid).mkString(",")}")
+                        txs.foreach(tx => context.self ! ProcessNewTransaction(tx))
+                    }
+                  }
+              })
+        }
     }
   }
 
