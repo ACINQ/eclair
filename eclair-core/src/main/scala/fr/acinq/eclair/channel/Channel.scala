@@ -101,9 +101,9 @@ object Channel {
   case object Reconnected extends BroadcastReason
   case object AboveReserve extends BroadcastReason
 
-  sealed trait BitcoinEvent extends PossiblyHarmful
-  case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
-  case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
+  private[channel] sealed trait BitcoinEvent extends PossiblyHarmful
+  private[channel] case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
+  private[channel] case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
   // @formatter:on
 
   case object TickChannelOpenTimeout
