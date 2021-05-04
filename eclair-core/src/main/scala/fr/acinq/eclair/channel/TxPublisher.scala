@@ -67,19 +67,124 @@ object TxPublisher {
   }
   case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   case class ParentTxConfirmed(childTx: PublishTx, parentTxId: ByteVector32) extends Command
-  private case class PublishNextBlock(p: PublishTx) extends Command
+  case class PublishNextBlock(p: PublishTx) extends Command
   case class SetChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
+  // @formatter:on
+
+  case class ChannelInfo(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32])
+
+  def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef[ZmqWatcher.Command], client: ExtendedBitcoinClient): Behavior[Command] =
+    Behaviors.setup { context =>
+      Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
+        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
+        new TxPublisher(nodeParams, watcher, client, context).run(SortedMap.empty, Map.empty, ChannelInfo(remoteNodeId, None))
+      }
+    }
+
+}
+
+private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], client: ExtendedBitcoinClient, context: ActorContext[TxPublisher.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+
+  import TxPublisher._
+
+  private case class TxWithRelativeDelay(childTx: PublishTx, parentTxIds: Set[ByteVector32])
+
+  private val log = context.log
+  private val watchConfirmedResponseMapper: ActorRef[WatchParentTxConfirmedTriggered] = context.messageAdapter(w => ParentTxConfirmed(w.childTx, w.tx.txid))
+
+  /**
+   * @param cltvDelayedTxs when transactions are cltv-delayed, we wait until the target blockchain height is reached.
+   * @param csvDelayedTxs  when transactions are csv-delayed, we wait for all parent txs to have enough confirmations.
+   */
+  private def run(cltvDelayedTxs: SortedMap[Long, Seq[PublishTx]], csvDelayedTxs: Map[ByteVector32, TxWithRelativeDelay], channelInfo: ChannelInfo): Behavior[Command] =
+    Behaviors.receiveMessage {
+      case p: PublishTx =>
+        val blockCount = nodeParams.currentBlockHeight
+        val cltvTimeout = Scripts.cltvTimeout(p.tx)
+        val csvTimeouts = Scripts.csvTimeouts(p.tx)
+        if (csvTimeouts.nonEmpty) {
+          csvTimeouts.foreach {
+            case (parentTxId, csvTimeout) =>
+              log.info(s"${p.desc} txid=${p.tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", p.tx)
+              watcher ! WatchParentTxConfirmed(watchConfirmedResponseMapper, parentTxId, minDepth = csvTimeout, p)
+          }
+          run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> TxWithRelativeDelay(p, csvTimeouts.keySet)), channelInfo)
+        } else if (cltvTimeout > blockCount) {
+          log.info(s"delaying publication of ${p.desc} txid=${p.tx.txid} until block=$cltvTimeout (current block=$blockCount)")
+          val cltvDelayedTxs1 = cltvDelayedTxs + (cltvTimeout -> (cltvDelayedTxs.getOrElse(cltvTimeout, Seq.empty) :+ p))
+          run(cltvDelayedTxs1, csvDelayedTxs, channelInfo)
+        } else {
+          publish(p, channelInfo)
+          Behaviors.same
+        }
+
+      case ParentTxConfirmed(p, parentTxId) =>
+        log.info(s"parent tx of ${p.desc} txid=${p.tx.txid} has been confirmed (parent txid=$parentTxId)")
+        val blockCount = nodeParams.currentBlockHeight
+        csvDelayedTxs.get(p.tx.txid) match {
+          case Some(TxWithRelativeDelay(_, parentTxIds)) =>
+            val txWithRelativeDelay1 = TxWithRelativeDelay(p, parentTxIds - parentTxId)
+            if (txWithRelativeDelay1.parentTxIds.isEmpty) {
+              log.info(s"all parent txs of ${p.desc} txid=${p.tx.txid} have been confirmed")
+              val csvDelayedTx1 = csvDelayedTxs - p.tx.txid
+              val cltvTimeout = Scripts.cltvTimeout(p.tx)
+              if (cltvTimeout > blockCount) {
+                log.info(s"delaying publication of ${p.desc} txid=${p.tx.txid} until block=$cltvTimeout (current block=$blockCount)")
+                val cltvDelayedTxs1 = cltvDelayedTxs + (cltvTimeout -> (cltvDelayedTxs.getOrElse(cltvTimeout, Seq.empty) :+ p))
+                run(cltvDelayedTxs1, csvDelayedTx1, channelInfo)
+              } else {
+                publish(p, channelInfo)
+                run(cltvDelayedTxs, csvDelayedTx1, channelInfo)
+              }
+            } else {
+              log.info(s"some parent txs of ${p.desc} txid=${p.tx.txid} are still unconfirmed (parent txids=${txWithRelativeDelay1.parentTxIds.mkString(",")})")
+              run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> txWithRelativeDelay1), channelInfo)
+            }
+          case None =>
+            log.warn(s"${p.desc} txid=${p.tx.txid} not found for parent txid=$parentTxId")
+            Behaviors.same
+        }
+
+      case WrappedCurrentBlockCount(blockCount) =>
+        val toPublish = cltvDelayedTxs.view.filterKeys(_ <= blockCount)
+        toPublish.values.flatten.foreach(tx => publish(tx, channelInfo))
+        run(cltvDelayedTxs -- toPublish.keys, csvDelayedTxs, channelInfo)
+
+      case PublishNextBlock(p) =>
+        val nextBlockCount = nodeParams.currentBlockHeight + 1
+        val cltvDelayedTxs1 = cltvDelayedTxs + (nextBlockCount -> (cltvDelayedTxs.getOrElse(nextBlockCount, Seq.empty) :+ p))
+        run(cltvDelayedTxs1, csvDelayedTxs, channelInfo)
+
+      case SetChannelId(remoteNodeId, channelId) =>
+        Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(channelId))) {
+          run(cltvDelayedTxs, csvDelayedTxs, channelInfo.copy(remoteNodeId = remoteNodeId, channelId_opt = Some(channelId)))
+        }
+    }
+
+  private def publish(tx: PublishTx, channelInfo: ChannelInfo): Unit = {
+    context.spawnAnonymous(TxPublish(nodeParams, client, channelInfo)) ! TxPublish.DoPublish(context.self, tx)
+  }
+
+}
+
+/**
+ * This actor publishes a given transaction, adding inputs if necessary.
+ */
+object TxPublish {
+
+  // @formatter:off
+  sealed trait Command
+  case class DoPublish(replyTo: ActorRef[TxPublisher.PublishNextBlock], tx: TxPublisher.PublishTx) extends Command
   // @formatter:on
 
   // NOTE: we use a single thread to publish transactions so that it preserves order.
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS!
   val singleThreadExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
-  def apply(nodeParams: NodeParams, remoteNodeId: PublicKey, watcher: ActorRef[ZmqWatcher.Command], client: ExtendedBitcoinClient): Behavior[Command] =
+  def apply(nodeParams: NodeParams, client: ExtendedBitcoinClient, channelInfo: TxPublisher.ChannelInfo): Behavior[Command] =
     Behaviors.setup { context =>
-      Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
-        context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
-        new TxPublisher(nodeParams, watcher, client, context).run(SortedMap.empty, Map.empty)
+      Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(channelInfo.remoteNodeId), channelId_opt = channelInfo.channelId_opt)) {
+        new TxPublish(nodeParams, client, context).run()
       }
     }
 
@@ -172,90 +277,24 @@ object TxPublisher {
 
 }
 
-private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], client: ExtendedBitcoinClient, context: ActorContext[TxPublisher.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, context: ActorContext[TxPublish.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
-  import TxPublisher._
+  import TxPublish._
   import nodeParams.onChainFeeConf.{feeEstimator, feeTargets}
   import nodeParams.{channelKeyManager => keyManager}
 
-  private case class TxWithRelativeDelay(childTx: PublishTx, parentTxIds: Set[ByteVector32])
-
   private val log = context.log
 
-  val watchConfirmedResponseMapper: ActorRef[WatchParentTxConfirmedTriggered] = context.messageAdapter(w => ParentTxConfirmed(w.childTx, w.tx.txid))
-
-  /**
-   * @param cltvDelayedTxs when transactions are cltv-delayed, we wait until the target blockchain height is reached.
-   * @param csvDelayedTxs  when transactions are csv-delayed, we wait for all parent txs to have enough confirmations.
-   */
-  private def run(cltvDelayedTxs: SortedMap[Long, Seq[PublishTx]], csvDelayedTxs: Map[ByteVector32, TxWithRelativeDelay]): Behavior[Command] =
+  private def run(): Behavior[Command] =
     Behaviors.receiveMessage {
-      case p: PublishTx =>
-        val blockCount = nodeParams.currentBlockHeight
-        val cltvTimeout = Scripts.cltvTimeout(p.tx)
-        val csvTimeouts = Scripts.csvTimeouts(p.tx)
-        if (csvTimeouts.nonEmpty) {
-          csvTimeouts.foreach {
-            case (parentTxId, csvTimeout) =>
-              log.info(s"${p.desc} txid=${p.tx.txid} has a relative timeout of $csvTimeout blocks, watching parentTxId=$parentTxId tx={}", p.tx)
-              watcher ! WatchParentTxConfirmed(watchConfirmedResponseMapper, parentTxId, minDepth = csvTimeout, p)
-          }
-          run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> TxWithRelativeDelay(p, csvTimeouts.keySet)))
-        } else if (cltvTimeout > blockCount) {
-          log.info(s"delaying publication of ${p.desc} txid=${p.tx.txid} until block=$cltvTimeout (current block=$blockCount)")
-          val cltvDelayedTxs1 = cltvDelayedTxs + (cltvTimeout -> (cltvDelayedTxs.getOrElse(cltvTimeout, Seq.empty) :+ p))
-          run(cltvDelayedTxs1, csvDelayedTxs)
-        } else {
-          publish(p)
-          Behaviors.same
-        }
-
-      case ParentTxConfirmed(p, parentTxId) =>
-        log.info(s"parent tx of ${p.desc} txid=${p.tx.txid} has been confirmed (parent txid=$parentTxId)")
-        val blockCount = nodeParams.currentBlockHeight
-        csvDelayedTxs.get(p.tx.txid) match {
-          case Some(TxWithRelativeDelay(_, parentTxIds)) =>
-            val txWithRelativeDelay1 = TxWithRelativeDelay(p, parentTxIds - parentTxId)
-            if (txWithRelativeDelay1.parentTxIds.isEmpty) {
-              log.info(s"all parent txs of ${p.desc} txid=${p.tx.txid} have been confirmed")
-              val csvDelayedTx1 = csvDelayedTxs - p.tx.txid
-              val cltvTimeout = Scripts.cltvTimeout(p.tx)
-              if (cltvTimeout > blockCount) {
-                log.info(s"delaying publication of ${p.desc} txid=${p.tx.txid} until block=$cltvTimeout (current block=$blockCount)")
-                val cltvDelayedTxs1 = cltvDelayedTxs + (cltvTimeout -> (cltvDelayedTxs.getOrElse(cltvTimeout, Seq.empty) :+ p))
-                run(cltvDelayedTxs1, csvDelayedTx1)
-              } else {
-                publish(p)
-                run(cltvDelayedTxs, csvDelayedTx1)
-              }
-            } else {
-              log.info(s"some parent txs of ${p.desc} txid=${p.tx.txid} are still unconfirmed (parent txids=${txWithRelativeDelay1.parentTxIds.mkString(",")})")
-              run(cltvDelayedTxs, csvDelayedTxs + (p.tx.txid -> txWithRelativeDelay1))
-            }
-          case None =>
-            log.warn(s"${p.desc} txid=${p.tx.txid} not found for parent txid=$parentTxId")
-            Behaviors.same
-        }
-
-      case WrappedCurrentBlockCount(blockCount) =>
-        val toPublish = cltvDelayedTxs.view.filterKeys(_ <= blockCount)
-        toPublish.values.flatten.foreach(tx => publish(tx))
-        run(cltvDelayedTxs -- toPublish.keys, csvDelayedTxs)
-
-      case PublishNextBlock(p) =>
-        val nextBlockCount = nodeParams.currentBlockHeight + 1
-        val cltvDelayedTxs1 = cltvDelayedTxs + (nextBlockCount -> (cltvDelayedTxs.getOrElse(nextBlockCount, Seq.empty) :+ p))
-        run(cltvDelayedTxs1, csvDelayedTxs)
-
-      case SetChannelId(remoteNodeId, channelId) =>
-        Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(channelId))) {
-          run(cltvDelayedTxs, csvDelayedTxs)
-        }
+      case DoPublish(replyTo, tx) =>
+        publish(replyTo, tx)
+        Behaviors.same
     }
 
-  private def publish(p: PublishTx): Future[ByteVector32] = {
+  private def publish(replyTo: ActorRef[TxPublisher.PublishNextBlock], p: TxPublisher.PublishTx): Future[ByteVector32] = {
     p match {
-      case SignAndPublishTx(txInfo, commitments) =>
+      case TxPublisher.SignAndPublishTx(txInfo, commitments) =>
         log.info("publishing {}: input={}:{} txid={} tx={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid, p.tx)
         val publishF = txInfo match {
           case tx: ClaimLocalAnchorOutputTx => publishLocalAnchorTx(tx, commitments)
@@ -267,13 +306,13 @@ private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.C
         publishF.recoverWith {
           case t: Throwable if t.getMessage.contains("(code: -4)") || t.getMessage.contains("(code: -6)") =>
             log.warn("not enough funds to publish {}, will retry next block: reason={} input={}:{} txid={}", txInfo.desc, t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
-            context.self ! PublishNextBlock(p)
+            replyTo ! TxPublisher.PublishNextBlock(p)
             Future.failed(t)
           case t: Throwable =>
             log.error("cannot publish {}: reason={} input={}:{} txid={}", txInfo.desc, t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
             Future.failed(t)
         }
-      case PublishRawTx(tx, desc) =>
+      case TxPublisher.PublishRawTx(tx, desc) =>
         log.info("publishing {}: txid={} tx={}", desc, tx.txid, tx)
         publish(tx, desc)
     }
