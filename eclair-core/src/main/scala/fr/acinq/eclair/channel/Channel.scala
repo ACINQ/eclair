@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, TypedActorRefOps, actorRefAdapter}
-import akka.actor.{ActorContext, ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy, typed}
+import akka.actor.{ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -100,6 +100,10 @@ object Channel {
   case object PeriodicRefresh extends BroadcastReason
   case object Reconnected extends BroadcastReason
   case object AboveReserve extends BroadcastReason
+
+  sealed trait BitcoinEvent extends PossiblyHarmful
+  case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
+  case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
   // @formatter:on
 
   case object TickChannelOpenTimeout

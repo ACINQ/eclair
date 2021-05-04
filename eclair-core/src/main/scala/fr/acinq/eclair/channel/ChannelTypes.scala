@@ -95,10 +95,6 @@ case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
 case class INPUT_RESTORED(data: HasCommitments)
 
-sealed trait BitcoinEvent extends PossiblyHarmful
-case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
-case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
-
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
       d88P  Y88b d88P" "Y88b 8888b   d8888 8888b   d8888       d88888 8888b   888 888  "Y88b d88P  Y88b
