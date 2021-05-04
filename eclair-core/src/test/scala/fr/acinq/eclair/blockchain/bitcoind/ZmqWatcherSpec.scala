@@ -211,8 +211,11 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       )
       // Let's confirm tx and tx1: seeing tx1 in a block should trigger WatchEventSpent again, but not WatchEventSpentBasic
       // (which only triggers once).
-      generateBlocks(2)
+      bitcoinClient.getBlockCount.pipeTo(listener.ref)
+      val initialBlockCount = listener.expectMsgType[Long]
+      generateBlocks(1)
       listener.expectMsg(WatchFundingSpentTriggered(tx1))
+      listener.expectNoMessage(1 second)
 
       watcher ! ListWatches(listener.ref)
       val watches1 = listener.expectMsgType[Set[Watch[_]]]
@@ -224,11 +227,9 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.expectMsg(tx2.txid)
       listener.expectNoMessage(1 second)
 
-      bitcoinClient.getBlockCount.pipeTo(listener.ref)
-      val currentBlockCount = listener.expectMsgType[Long]
       system.eventStream.subscribe(probe.ref, classOf[CurrentBlockCount])
       generateBlocks(1)
-      awaitCond(probe.expectMsgType[CurrentBlockCount].blockCount > currentBlockCount)
+      awaitCond(probe.expectMsgType[CurrentBlockCount].blockCount >= initialBlockCount + 2)
 
       watcher ! WatchExternalChannelSpent(listener.ref, tx1.txid, 0, ShortChannelId(1))
       listener.expectMsg(WatchExternalChannelSpentTriggered(ShortChannelId(1)))
