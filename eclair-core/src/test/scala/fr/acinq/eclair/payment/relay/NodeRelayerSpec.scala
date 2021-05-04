@@ -30,6 +30,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
@@ -37,8 +38,8 @@ import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, nodeFee, randomBytes, randomBytes32, randomKey}
+import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax
 
 import java.util.UUID
@@ -53,77 +54,138 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
   import NodeRelayerSpec._
 
-  case class FixtureParam(nodeParams: NodeParams, nodeRelayer: ActorRef[NodeRelay.Command], parent: TestProbe[NodeRelayer.Command], router: TestProbe[Any], register: TestProbe[Any], mockPayFSM: TestProbe[Any], eventListener: TestProbe[PaymentEvent])
+  case class FixtureParam(nodeParams: NodeParams, router: TestProbe[Any], register: TestProbe[Any], mockPayFSM: TestProbe[Any], eventListener: TestProbe[PaymentEvent]) {
+    def createNodeRelay(packetIn: IncomingPacket.NodeRelayPacket, paymentSecret: ByteVector32 = incomingSecret, useRealPaymentFactory: Boolean = false): (ActorRef[NodeRelay.Command], TestProbe[NodeRelayer.Command]) = {
+      val parent = TestProbe[NodeRelayer.Command]("parent-relayer")
+      val outgoingPaymentFactory = if (useRealPaymentFactory) RealOutgoingPaymentFactory(this) else FakeOutgoingPaymentFactory(this)
+      val nodeRelay = testKit.spawn(NodeRelay(nodeParams, parent.ref, register.ref.toClassic, relayId, packetIn, paymentSecret, outgoingPaymentFactory))
+      (nodeRelay, parent)
+    }
+  }
+
+  case class FakeOutgoingPaymentFactory(f: FixtureParam) extends NodeRelay.OutgoingPaymentFactory {
+    override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
+      f.mockPayFSM.ref ! cfg
+      f.mockPayFSM.ref.toClassic
+    }
+  }
+
+  case class RealOutgoingPaymentFactory(f: FixtureParam) extends NodeRelay.OutgoingPaymentFactory {
+    override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
+      val outgoingPayFSM = NodeRelay.SimpleOutgoingPaymentFactory(f.nodeParams, f.router.ref.toClassic, f.register.ref.toClassic).spawnOutgoingPayFSM(context, cfg, multiPart)
+      f.mockPayFSM.ref ! outgoingPayFSM
+      outgoingPayFSM
+    }
+  }
 
   override def withFixture(test: OneArgTest): Outcome = {
     val nodeParams = TestConstants.Bob.nodeParams.copy(multiPartPaymentExpiry = 5 seconds)
-    val parent = TestProbe[NodeRelayer.Command]("parent-relayer")
     val router = TestProbe[Any]("router")
     val register = TestProbe[Any]("register")
     val eventListener = TestProbe[PaymentEvent]("event-listener")
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val mockPayFSM = TestProbe[Any]("pay-fsm")
-    val outgoingPaymentFactory = if (test.tags.contains("mock-fsm")) {
-      new NodeRelay.OutgoingPaymentFactory {
-        override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
-          mockPayFSM.ref ! cfg
-          mockPayFSM.ref.toClassic
-        }
-      }
-    } else {
-      new NodeRelay.OutgoingPaymentFactory {
-        override def spawnOutgoingPayFSM(context: ActorContext[NodeRelay.Command], cfg: SendPaymentConfig, multiPart: Boolean): akka.actor.ActorRef = {
-          val outgoingPayFSM = NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router.ref.toClassic, register.ref.toClassic).spawnOutgoingPayFSM(context, cfg, multiPart)
-          mockPayFSM.ref ! outgoingPayFSM
-          outgoingPayFSM
-        }
-      }
-    }
-    val nodeRelay = testKit.spawn(NodeRelay(nodeParams, parent.ref, register.ref.toClassic, relayId, paymentHash, outgoingPaymentFactory))
-    withFixture(test.toNoArgTest(FixtureParam(nodeParams, nodeRelay, parent, router, register, mockPayFSM, eventListener)))
+    withFixture(test.toNoArgTest(FixtureParam(nodeParams, router, register, mockPayFSM, eventListener)))
   }
 
-  test("stop child handler when relay is complete") { f =>
+  test("create child handlers for new payments") { f =>
     import f._
     val probe = TestProbe[Any]
+    val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, FakeOutgoingPaymentFactory(f)))
+    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+    probe.expectMessage(Map.empty)
+
+    val paymentNoSecret = createPartialIncomingPacket(randomBytes32, randomBytes32).copy(outerPayload = Onion.createSinglePartPayload(incomingAmount, CltvExpiry(500000)))
+    parentRelayer ! NodeRelayer.Relay(paymentNoSecret)
+    val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fwd.channelId === paymentNoSecret.add.channelId)
+    assert(fwd.message === CMD_FAIL_HTLC(paymentNoSecret.add.id, Right(IncorrectOrUnknownPaymentDetails(paymentNoSecret.add.amountMsat, nodeParams.currentBlockHeight)), commit = true))
+
+    val (paymentHash1, paymentSecret1) = (randomBytes32, randomBytes32)
+    val payment1 = createPartialIncomingPacket(paymentHash1, paymentSecret1)
+    parentRelayer ! NodeRelayer.Relay(payment1)
+    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+    val pending1 = probe.expectMessageType[Map[PaymentKey, ActorRef[NodeRelay.Command]]]
+    assert(pending1.keySet === Set(PaymentKey(paymentHash1, paymentSecret1)))
+
+    val (paymentHash2, paymentSecret2) = (randomBytes32, randomBytes32)
+    val payment2 = createPartialIncomingPacket(paymentHash2, paymentSecret2)
+    parentRelayer ! NodeRelayer.Relay(payment2)
+    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+    val pending2 = probe.expectMessageType[Map[PaymentKey, ActorRef[NodeRelay.Command]]]
+    assert(pending2.keySet === Set(PaymentKey(paymentHash1, paymentSecret1), PaymentKey(paymentHash2, paymentSecret2)))
+
+    val payment3a = createPartialIncomingPacket(paymentHash1, paymentSecret2)
+    parentRelayer ! NodeRelayer.Relay(payment3a)
+    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+    val pending3 = probe.expectMessageType[Map[PaymentKey, ActorRef[NodeRelay.Command]]]
+    assert(pending3.keySet === Set(PaymentKey(paymentHash1, paymentSecret1), PaymentKey(paymentHash2, paymentSecret2), PaymentKey(paymentHash1, paymentSecret2)))
+
+    val payment3b = createPartialIncomingPacket(paymentHash1, paymentSecret2)
+    parentRelayer ! NodeRelayer.Relay(payment3b)
+    parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+    val pending4 = probe.expectMessageType[Map[PaymentKey, ActorRef[NodeRelay.Command]]]
+    assert(pending4.keySet === Set(PaymentKey(paymentHash1, paymentSecret1), PaymentKey(paymentHash2, paymentSecret2), PaymentKey(paymentHash1, paymentSecret2)))
+
+    register.expectNoMessage(100 millis)
+  }
+
+  test("stop child handlers when relay is complete") { f =>
+    import f._
+    val probe = TestProbe[Any]
+    val outgoingPaymentFactory = FakeOutgoingPaymentFactory(f)
 
     {
-      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, router.ref.toClassic, register.ref.toClassic))
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory))
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
       probe.expectMessage(Map.empty)
     }
     {
-      val (paymentHash1, child1) = (randomBytes32, TestProbe[NodeRelay.Command])
-      val (paymentHash2, child2) = (randomBytes32, TestProbe[NodeRelay.Command])
-      val children = Map(paymentHash1 -> child1.ref, paymentHash2 -> child2.ref)
-      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, router.ref.toClassic, register.ref.toClassic, children))
+      val (paymentHash1, paymentSecret1, child1) = (randomBytes32, randomBytes32, TestProbe[NodeRelay.Command])
+      val (paymentHash2, paymentSecret2, child2) = (randomBytes32, randomBytes32, TestProbe[NodeRelay.Command])
+      val children = Map(PaymentKey(paymentHash1, paymentSecret1) -> child1.ref, PaymentKey(paymentHash2, paymentSecret2) -> child2.ref)
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, children))
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
       probe.expectMessage(children)
 
-      parentRelayer ! NodeRelayer.RelayComplete(child1.ref, paymentHash1)
+      parentRelayer ! NodeRelayer.RelayComplete(child1.ref, paymentHash1, paymentSecret1)
       child1.expectMessage(NodeRelay.Stop)
-      parentRelayer ! NodeRelayer.RelayComplete(child1.ref, paymentHash1)
+      parentRelayer ! NodeRelayer.RelayComplete(child1.ref, paymentHash1, paymentSecret1)
       child1.expectMessage(NodeRelay.Stop)
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
-      probe.expectMessage(children - paymentHash1)
+      probe.expectMessage(Map(PaymentKey(paymentHash2, paymentSecret2) -> child2.ref))
     }
     {
-      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, router.ref.toClassic, register.ref.toClassic))
+      val paymentHash = randomBytes32
+      val (paymentSecret1, child1) = (randomBytes32, TestProbe[NodeRelay.Command])
+      val (paymentSecret2, child2) = (randomBytes32, TestProbe[NodeRelay.Command])
+      val children = Map(PaymentKey(paymentHash, paymentSecret1) -> child1.ref, PaymentKey(paymentHash, paymentSecret2) -> child2.ref)
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, children))
+      parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+      probe.expectMessage(children)
+
+      parentRelayer ! NodeRelayer.RelayComplete(child1.ref, paymentHash, paymentSecret1)
+      child1.expectMessage(NodeRelay.Stop)
+      parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
+      probe.expectMessage(Map(PaymentKey(paymentHash, paymentSecret2) -> child2.ref))
+    }
+    {
+      val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory))
       parentRelayer ! NodeRelayer.Relay(incomingMultiPart.head)
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
-      val pending1 = probe.expectMessageType[Map[ByteVector32, ActorRef[NodeRelay.Command]]]
+      val pending1 = probe.expectMessageType[Map[PaymentKey, ActorRef[NodeRelay.Command]]]
       assert(pending1.size === 1)
-      assert(pending1.head._1 === paymentHash)
+      assert(pending1.head._1 === PaymentKey(paymentHash, incomingSecret))
 
-      parentRelayer ! NodeRelayer.RelayComplete(pending1.head._2, paymentHash)
+      parentRelayer ! NodeRelayer.RelayComplete(pending1.head._2, paymentHash, incomingSecret)
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
       probe.expectMessage(Map.empty)
 
       parentRelayer ! NodeRelayer.Relay(incomingMultiPart.head)
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
-      val pending2 = probe.expectMessageType[Map[ByteVector32, ActorRef[NodeRelay.Command]]]
+      val pending2 = probe.expectMessageType[Map[PaymentKey, ActorRef[NodeRelay.Command]]]
       assert(pending2.size === 1)
-      assert(pending2.head._1 === paymentHash)
+      assert(pending2.head._1 === pending1.head._1)
       assert(pending2.head._2 !== pending1.head._2)
     }
   }
@@ -131,6 +193,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   test("fail to relay when incoming multi-part payment times out") { f =>
     import f._
 
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
     // Receive a partial upstream multi-part payment.
     incomingMultiPart.dropRight(1).foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
     // after a while the payment times out
@@ -148,6 +211,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   test("fail all extraneous multi-part incoming HTLCs") { f =>
     import f._
 
+    val (nodeRelayer, _) = f.createNodeRelay(incomingMultiPart.head)
     // We send all the parts of a mpp
     incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
     // and then one extra
@@ -167,9 +231,10 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("fail all additional incoming HTLCs once already relayed out", Tag("mock-fsm")) { f =>
+  test("fail all additional incoming HTLCs once already relayed out") { f =>
     import f._
 
+    val (nodeRelayer, _) = f.createNodeRelay(incomingMultiPart.head)
     // Receive a complete upstream multi-part payment, which we relay out.
     incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
 
@@ -194,7 +259,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     // Receive new HTLC with different details, but for the same payment hash.
     val i2 = IncomingPacket.NodeRelayPacket(
       UpdateAddHtlc(randomBytes32, Random.nextInt(100), 1500 msat, paymentHash, CltvExpiry(499990), TestConstants.emptyOnionPacket),
-      Onion.createSinglePartPayload(1500 msat, CltvExpiry(499990), Some(randomBytes32)),
+      Onion.createSinglePartPayload(1500 msat, CltvExpiry(499990), Some(incomingSecret)),
       Onion.createNodeRelayPayload(1250 msat, outgoingExpiry, outgoingNodeId),
       nextTrampolinePacket)
     nodeRelayer ! NodeRelay.Relay(i2)
@@ -213,6 +278,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, CltvExpiry(500000), outgoingAmount, outgoingExpiry).copy(
       outerPayload = Onion.createSinglePartPayload(2000000 msat, CltvExpiry(500000)) // missing outer payment secret
     )
+    val (nodeRelayer, _) = f.createNodeRelay(p)
     nodeRelayer ! NodeRelay.Relay(p)
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -230,6 +296,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val p2 = createValidIncomingPacket(1000000 msat, 3000000 msat, CltvExpiry(500000), 2500000 msat, outgoingExpiry).copy(
       outerPayload = Onion.createMultiPartPayload(1000000 msat, 3000000 msat, CltvExpiry(500000), randomBytes32)
     )
+    val (nodeRelayer, _) = f.createNodeRelay(p1)
     nodeRelayer ! NodeRelay.Relay(p1)
     nodeRelayer ! NodeRelay.Relay(p2)
 
@@ -247,6 +314,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val expiryIn = CltvExpiry(500000) // not ok (delta = 100)
     val expiryOut = CltvExpiry(499900)
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, expiryIn, 1000000 msat, expiryOut)
+    val (nodeRelayer, _) = f.createNodeRelay(p)
     nodeRelayer ! NodeRelay.Relay(p)
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -262,6 +330,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val expiryIn = CltvExpiry(500000)
     val expiryOut = CltvExpiry(300000) // not ok (chain heigh = 400000)
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, expiryIn, 1000000 msat, expiryOut)
+    val (nodeRelayer, _) = f.createNodeRelay(p)
     nodeRelayer ! NodeRelay.Relay(p)
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -281,6 +350,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       createValidIncomingPacket(2000000 msat, 3000000 msat, expiryIn1, 2100000 msat, expiryOut),
       createValidIncomingPacket(1000000 msat, 3000000 msat, expiryIn2, 2100000 msat, expiryOut)
     )
+    val (nodeRelayer, _) = f.createNodeRelay(p.head)
     p.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     p.foreach { p =>
@@ -296,6 +366,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     val p = createValidIncomingPacket(2000000 msat, 2000000 msat, CltvExpiry(500000), 1999000 msat, CltvExpiry(490000))
+    val (nodeRelayer, _) = f.createNodeRelay(p)
     nodeRelayer ! NodeRelay.Relay(p)
 
     val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
@@ -312,6 +383,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       createValidIncomingPacket(2000000 msat, 3000000 msat, CltvExpiry(500000), 2999000 msat, CltvExpiry(400000)),
       createValidIncomingPacket(1000000 msat, 3000000 msat, CltvExpiry(500000), 2999000 msat, CltvExpiry(400000))
     )
+    val (nodeRelayer, _) = f.createNodeRelay(p.head)
     p.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     p.foreach { p =>
@@ -323,10 +395,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("fail to relay because outgoing balance isn't sufficient (low fees)", Tag("mock-fsm")) { f =>
+  test("fail to relay because outgoing balance isn't sufficient (low fees)") { f =>
     import f._
 
     // Receive an upstream multi-part payment.
+    val (nodeRelayer, _) = f.createNodeRelay(incomingMultiPart.head)
     incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     mockPayFSM.expectMessageType[SendPaymentConfig]
@@ -353,6 +426,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       createValidIncomingPacket(outgoingAmount, outgoingAmount * 2, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
       createValidIncomingPacket(outgoingAmount, outgoingAmount * 2, CltvExpiry(500000), outgoingAmount, outgoingExpiry),
     )
+    val (nodeRelayer, _) = f.createNodeRelay(incoming.head, useRealPaymentFactory = true)
     incoming.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
@@ -372,6 +446,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
+    val (nodeRelayer, _) = f.createNodeRelay(incomingMultiPart.head, useRealPaymentFactory = true)
     incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
@@ -394,6 +469,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     import f._
 
     // Receive an upstream multi-part payment.
+    val (nodeRelayer, _) = f.createNodeRelay(incomingMultiPart.head, useRealPaymentFactory = true)
     incomingMultiPart.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
 
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
@@ -414,11 +490,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
   test("compute route params") { f =>
     import f._
 
-    // Receive an upstream multi-part payment.
+    // Receive an upstream payment.
+    val (nodeRelayer, _) = f.createNodeRelay(incomingSinglePart, useRealPaymentFactory = true)
     nodeRelayer ! NodeRelay.Relay(incomingSinglePart)
 
     val routeRequest = router.expectMessageType[RouteRequest]
-
     val routeParams = routeRequest.routeParams.get
     val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, outgoingAmount)
     assert(routeParams.maxFeePct === 0) // should be disabled
@@ -426,10 +502,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(routeParams.routeMaxCltv === incomingSinglePart.add.cltvExpiry - outgoingExpiry - nodeParams.expiryDelta) // we apply our cltv delta
   }
 
-  test("relay incoming multi-part payment", Tag("mock-fsm")) { f =>
+  test("relay incoming multi-part payment") { f =>
     import f._
 
     // Receive an upstream multi-part payment.
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingMultiPart.head)
     incomingMultiPart.dropRight(1).foreach(p => nodeRelayer ! NodeRelay.Relay(p))
     mockPayFSM.expectNoMessage(100 millis) // we should NOT trigger a downstream payment before we received a complete upstream payment
 
@@ -464,10 +541,11 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("relay incoming single-part payment", Tag("mock-fsm")) { f =>
+  test("relay incoming single-part payment") { f =>
     import f._
 
     // Receive an upstream single-part payment.
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingSinglePart)
     nodeRelayer ! NodeRelay.Relay(incomingSinglePart)
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
@@ -492,16 +570,18 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("relay to non-trampoline recipient supporting multi-part", Tag("mock-fsm")) { f =>
+  test("relay to non-trampoline recipient supporting multi-part") { f =>
     import f._
 
     // Receive an upstream multi-part payment.
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.mandatory, BasicMultiPartPayment.optional)
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), extraHops = hints, features = Some(features))
-    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
+    val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, outgoingAmount * 3, outgoingExpiry, outgoingNodeId, pr
-    ))))
+    )))
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
+    incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
@@ -532,15 +612,17 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("relay to non-trampoline recipient without multi-part", Tag("mock-fsm")) { f =>
+  test("relay to non-trampoline recipient without multi-part") { f =>
     import f._
 
     // Receive an upstream multi-part payment.
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(outgoingAmount), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), extraHops = hints, features = Some(PaymentRequestFeatures()))
-    incomingMultiPart.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
+    val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, incoming.innerPayload.amountToForward, outgoingExpiry, outgoingNodeId, pr
-    ))))
+    )))
+    val (nodeRelayer, parent) = f.createNodeRelay(incomingPayments.head)
+    incomingPayments.foreach(incoming => nodeRelayer ! NodeRelay.Relay(incoming))
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
@@ -635,6 +717,16 @@ object NodeRelayerSpec {
       UpdateAddHtlc(randomBytes32, Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket),
       outerPayload,
       Onion.createNodeRelayPayload(amountOut, expiryOut, outgoingNodeId),
+      nextTrampolinePacket)
+  }
+
+  def createPartialIncomingPacket(paymentHash: ByteVector32, paymentSecret: ByteVector32): IncomingPacket.NodeRelayPacket = {
+    val (expiryIn, expiryOut) = (CltvExpiry(500000), CltvExpiry(490000))
+    val amountIn = incomingAmount / 2
+    IncomingPacket.NodeRelayPacket(
+      UpdateAddHtlc(randomBytes32, Random.nextInt(100), amountIn, paymentHash, expiryIn, TestConstants.emptyOnionPacket),
+      Onion.createMultiPartPayload(amountIn, incomingAmount, expiryIn, paymentSecret),
+      Onion.createNodeRelayPayload(outgoingAmount, expiryOut, outgoingNodeId),
       nextTrampolinePacket)
   }
 

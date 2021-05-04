@@ -19,7 +19,10 @@ package fr.acinq.eclair.payment.relay
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.channel.CMD_FAIL_HTLC
+import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{Logs, NodeParams}
 
 import java.util.UUID
@@ -29,16 +32,16 @@ import java.util.UUID
  */
 
 /**
- * The [[NodeRelayer]] relays an upstream payment to a downstream remote node (which is not necessarily a direct peer). It
- * doesn't do the job itself, instead it dispatches each individual payment (which can be multi-in, multi-out) to a child
- * actor of type [[NodeRelay]].
+ * The [[NodeRelayer]] relays an upstream payment to a downstream remote node (which is not necessarily a direct peer).
+ * It doesn't do the job itself, instead it dispatches each individual payment (which can be multi-in, multi-out) to a
+ * child actor of type [[NodeRelay]].
  */
 object NodeRelayer {
 
   // @formatter:off
   sealed trait Command
   case class Relay(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
-  case class RelayComplete(childHandler: ActorRef[NodeRelay.Command], paymentHash: ByteVector32) extends Command
+  case class RelayComplete(childHandler: ActorRef[NodeRelay.Command], paymentHash: ByteVector32, paymentSecret: ByteVector32) extends Command
   private[relay] case class GetPendingPayments(replyTo: akka.actor.ActorRef) extends Command
   // @formatter:on
 
@@ -48,34 +51,47 @@ object NodeRelayer {
     case _: GetPendingPayments => Logs.mdc()
   }
 
+  case class PaymentKey(paymentHash: ByteVector32, paymentSecret: ByteVector32)
+
   /**
-   * @param children a map of current in-process payments, indexed by payment hash and purposefully *not* by payment id,
-   *                 because that is how we aggregate payment parts (when the incoming payment uses MPP).
+   * @param children a map of pending payments. We must index by both payment hash and payment secret because we may
+   *                 need to independently relay multiple parts of the same payment using distinct payment secrets.
+   *                 NB: the payment secret used here is different from the invoice's payment secret and ensures we can
+   *                 group together HTLCs that the previous trampoline node sent in the same MPP.
    */
-  def apply(nodeParams: NodeParams, router: akka.actor.ActorRef, register: akka.actor.ActorRef, children: Map[ByteVector32, ActorRef[NodeRelay.Command]] = Map.empty): Behavior[Command] =
+  def apply(nodeParams: NodeParams, register: akka.actor.ActorRef, outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory, children: Map[PaymentKey, ActorRef[NodeRelay.Command]] = Map.empty): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
         Behaviors.receiveMessage {
           case Relay(nodeRelayPacket) =>
-            import nodeRelayPacket.add.paymentHash
-            children.get(paymentHash) match {
-              case Some(handler) =>
-                context.log.debug("forwarding incoming htlc to existing handler")
-                handler ! NodeRelay.Relay(nodeRelayPacket)
-                Behaviors.same
+            val htlcIn = nodeRelayPacket.add
+            nodeRelayPacket.outerPayload.paymentSecret match {
+              case Some(paymentSecret) =>
+                val childKey = PaymentKey(htlcIn.paymentHash, paymentSecret)
+                children.get(childKey) match {
+                  case Some(handler) =>
+                    context.log.debug("forwarding incoming htlc #{} from channel {} to existing handler", htlcIn.id, htlcIn.channelId)
+                    handler ! NodeRelay.Relay(nodeRelayPacket)
+                    Behaviors.same
+                  case None =>
+                    val relayId = UUID.randomUUID()
+                    context.log.debug(s"spawning a new handler with relayId=$relayId")
+                    val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, nodeRelayPacket, childKey.paymentSecret, outgoingPaymentFactory), relayId.toString)
+                    context.log.debug("forwarding incoming htlc #{} from channel {} to new handler", htlcIn.id, htlcIn.channelId)
+                    handler ! NodeRelay.Relay(nodeRelayPacket)
+                    apply(nodeParams, register, outgoingPaymentFactory, children + (childKey -> handler))
+                }
               case None =>
-                val relayId = UUID.randomUUID()
-                context.log.debug(s"spawning a new handler with relayId=$relayId")
-                val outgoingPaymentFactory = NodeRelay.SimpleOutgoingPaymentFactory(nodeParams, router, register)
-                val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, paymentHash, outgoingPaymentFactory), relayId.toString)
-                context.log.debug("forwarding incoming htlc to new handler")
-                handler ! NodeRelay.Relay(nodeRelayPacket)
-                apply(nodeParams, router, register, children + (paymentHash -> handler))
+                context.log.warn("rejecting htlc #{} from channel {}: missing payment secret", htlcIn.id, htlcIn.channelId)
+                val failureMessage = IncorrectOrUnknownPaymentDetails(htlcIn.amountMsat, nodeParams.currentBlockHeight)
+                val cmd = CMD_FAIL_HTLC(htlcIn.id, Right(failureMessage), commit = true)
+                PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, htlcIn.channelId, cmd)
+                Behaviors.same
             }
-          case RelayComplete(childHandler, paymentHash) =>
+          case RelayComplete(childHandler, paymentHash, paymentSecret) =>
             // we do a back-and-forth between parent and child before stopping the child to prevent a race condition
             childHandler ! NodeRelay.Stop
-            apply(nodeParams, router, register, children - paymentHash)
+            apply(nodeParams, register, outgoingPaymentFactory, children - PaymentKey(paymentHash, paymentSecret))
           case GetPendingPayments(replyTo) =>
             replyTo ! children
             Behaviors.same

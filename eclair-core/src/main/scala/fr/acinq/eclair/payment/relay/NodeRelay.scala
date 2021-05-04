@@ -24,6 +24,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.payment.IncomingPacket.NodeRelayPacket
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment._
@@ -75,13 +76,29 @@ object NodeRelay {
     }
   }
 
-  def apply(nodeParams: NodeParams, parent: akka.actor.typed.ActorRef[NodeRelayer.Command], register: ActorRef, relayId: UUID, paymentHash: ByteVector32, outgoingPaymentFactory: OutgoingPaymentFactory): Behavior[Command] =
+  def apply(nodeParams: NodeParams,
+            parent: akka.actor.typed.ActorRef[NodeRelayer.Command],
+            register: ActorRef,
+            relayId: UUID,
+            nodeRelayPacket: NodeRelayPacket,
+            paymentSecret: ByteVector32,
+            outgoingPaymentFactory: OutgoingPaymentFactory): Behavior[Command] =
     Behaviors.setup { context =>
+      val paymentHash = nodeRelayPacket.add.paymentHash
+      val totalAmountIn = nodeRelayPacket.outerPayload.totalAmount
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
         parentPaymentId_opt = Some(relayId), // for a node relay, we use the same identifier for the whole relay itself, and the outgoing payment
         paymentHash_opt = Some(paymentHash))) {
-        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, context, outgoingPaymentFactory)()
+        context.log.info("relaying payment relayId={}", relayId)
+        val mppFsmAdapters = {
+          context.messageAdapter[MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]](WrappedMultiPartExtraPaymentReceived)
+          context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentFailed](WrappedMultiPartPaymentFailed)
+          context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentSucceeded](WrappedMultiPartPaymentSucceeded)
+        }.toClassic
+        val incomingPaymentHandler = context.actorOf(MultiPartPaymentFSM.props(nodeParams, paymentHash, totalAmountIn, mppFsmAdapters))
+        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, paymentSecret, context, outgoingPaymentFactory)
+          .receiving(Queue.empty, nodeRelayPacket.innerPayload, nodeRelayPacket.nextPacket, incomingPaymentHandler)
       }
     }
 
@@ -144,66 +161,37 @@ class NodeRelay private(nodeParams: NodeParams,
                         register: ActorRef,
                         relayId: UUID,
                         paymentHash: ByteVector32,
+                        paymentSecret: ByteVector32,
                         context: ActorContext[NodeRelay.Command],
                         outgoingPaymentFactory: NodeRelay.OutgoingPaymentFactory) {
 
   import NodeRelay._
-
-  private val mppFsmAdapters = {
-    context.messageAdapter[MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]](WrappedMultiPartExtraPaymentReceived)
-    context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentFailed](WrappedMultiPartPaymentFailed)
-    context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentSucceeded](WrappedMultiPartPaymentSucceeded)
-  }.toClassic
-  private val payFsmAdapters = {
-    context.messageAdapter[PreimageReceived](WrappedPreimageReceived)
-    context.messageAdapter[PaymentSent](WrappedPaymentSent)
-    context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
-  }.toClassic
-
-  def apply(): Behavior[Command] =
-    Behaviors.receiveMessagePartial {
-      // We make sure we receive all payment parts before forwarding to the next trampoline node.
-      case Relay(IncomingPacket.NodeRelayPacket(add, outer, inner, next)) => outer.paymentSecret match {
-        case None =>
-          // TODO: @pm: maybe those checks should be done later in the flow (by the mpp FSM?)
-          context.log.warn("rejecting htlcId={}: missing payment secret", add.id)
-          rejectHtlc(add.id, add.channelId, add.amountMsat)
-          stopping()
-        case Some(secret) =>
-          import akka.actor.typed.scaladsl.adapter._
-          context.log.info("relaying payment relayId={}", relayId)
-          val mppFsm = context.actorOf(MultiPartPaymentFSM.props(nodeParams, add.paymentHash, outer.totalAmount, mppFsmAdapters))
-          context.log.debug("forwarding incoming htlc to the payment FSM")
-          mppFsm ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
-          receiving(Queue(add), secret, inner, next, mppFsm)
-      }
-    }
 
   /**
    * We start by aggregating an incoming HTLC set. Once we received the whole set, we will compute a route to the next
    * trampoline node and forward the payment.
    *
    * @param htlcs       received incoming HTLCs for this set.
-   * @param secret      all incoming HTLCs in this set must have the same secret to protect against probing / fee theft.
    * @param nextPayload relay instructions (should be identical across HTLCs in this set).
    * @param nextPacket  trampoline onion to relay to the next trampoline node.
    * @param handler     actor handling the aggregation of the incoming HTLC set.
    */
-  private def receiving(htlcs: Queue[UpdateAddHtlc], secret: ByteVector32, nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
+  private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case Relay(IncomingPacket.NodeRelayPacket(add, outer, _, _)) => outer.paymentSecret match {
+        // TODO: @pm: maybe those checks should be done by the mpp FSM?
         case None =>
-          context.log.warn("rejecting htlcId={}: missing payment secret", add.id)
+          context.log.warn("rejecting htlc #{} from channel {}: missing payment secret", add.id, add.channelId)
           rejectHtlc(add.id, add.channelId, add.amountMsat)
           Behaviors.same
-        case Some(incomingSecret) if incomingSecret != secret =>
-          context.log.warn("rejecting htlcId={}: payment secret doesn't match other HTLCs in the set", add.id)
+        case Some(incomingSecret) if incomingSecret != paymentSecret =>
+          context.log.warn("rejecting htlc #{} from channel {}: payment secret doesn't match other HTLCs in the set", add.id, add.channelId)
           rejectHtlc(add.id, add.channelId, add.amountMsat)
           Behaviors.same
-        case Some(incomingSecret) if incomingSecret == secret =>
-          context.log.debug("forwarding incoming htlc to the payment FSM")
+        case Some(incomingSecret) if incomingSecret == paymentSecret =>
+          context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", add.id, add.channelId)
           handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
-          receiving(htlcs :+ add, secret, nextPayload, nextPacket, handler)
+          receiving(htlcs :+ add, nextPayload, nextPacket, handler)
       }
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
@@ -267,13 +255,19 @@ class NodeRelay private(nodeParams: NodeParams,
    * Once the downstream payment is settled (fulfilled or failed), we reject new upstream payments while we wait for our parent to stop us.
    */
   private def stopping(): Behavior[Command] = {
-    parent ! NodeRelayer.RelayComplete(context.self, paymentHash)
+    parent ! NodeRelayer.RelayComplete(context.self, paymentHash, paymentSecret)
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         case Stop => Behaviors.stopped
       }
     }
   }
+
+  private val payFsmAdapters = {
+    context.messageAdapter[PreimageReceived](WrappedPreimageReceived)
+    context.messageAdapter[PaymentSent](WrappedPaymentSent)
+    context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
+  }.toClassic
 
   private def relay(upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): ActorRef = {
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
@@ -322,7 +316,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }
 
   private def rejectExtraHtlc(add: UpdateAddHtlc): Unit = {
-    context.log.warn("rejecting extra htlcId={}", add.id)
+    context.log.warn("rejecting extra htlc #{} from channel {}", add.id, add.channelId)
     rejectHtlc(add.id, add.channelId, add.amountMsat)
   }
 
