@@ -95,18 +95,6 @@ case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
 case class INPUT_RESTORED(data: HasCommitments)
 
-sealed trait BitcoinEvent extends PossiblyHarmful
-case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
-case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent
-case object BITCOIN_FUNDING_DEEPLYBURIED extends BitcoinEvent
-case object BITCOIN_FUNDING_LOST extends BitcoinEvent
-case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
-case object BITCOIN_FUNDING_SPENT extends BitcoinEvent
-case object BITCOIN_OUTPUT_SPENT extends BitcoinEvent
-case class BITCOIN_TX_CONFIRMED(tx: Transaction) extends BitcoinEvent
-case class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId: ShortChannelId) extends BitcoinEvent
-case class BITCOIN_PARENT_TX_CONFIRMED(childTx: PublishTx) extends BitcoinEvent
-
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
       d88P  Y88b d88P" "Y88b 8888b   d8888 8888b   d8888       d88888 8888b   888 888  "Y88b d88P  Y88b

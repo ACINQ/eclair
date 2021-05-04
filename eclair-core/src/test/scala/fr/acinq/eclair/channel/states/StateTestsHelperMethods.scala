@@ -22,8 +22,9 @@ import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
+import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SignAndPublishTx}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods.FakeTxPublisherFactory
@@ -147,23 +148,23 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
-    alice2blockchain.expectMsgType[WatchSpent]
-    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchFundingSpent]
+    alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId != ByteVector32.Zeroes)
-    bob2blockchain.expectMsgType[WatchSpent]
-    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob2blockchain.expectMsgType[WatchFundingSpent]
+    bob2blockchain.expectMsgType[WatchFundingConfirmed]
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-    alice2blockchain.expectMsgType[WatchLost]
-    bob2blockchain.expectMsgType[WatchLost]
+    alice ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+    bob ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+    alice2blockchain.expectMsgType[WatchFundingLost]
+    bob2blockchain.expectMsgType[WatchFundingLost]
     alice2bob.expectMsgType[FundingLocked]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[WatchConfirmed] // deeply buried
-    bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
+    alice2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.channelReserve).max(0 msat))
@@ -259,9 +260,9 @@ trait StateTestsHelperMethods extends TestKitBase {
       r2s.forward(s)
     } while (sCloseFee != rCloseFee)
     s2blockchain.expectMsgType[PublishTx]
-    s2blockchain.expectMsgType[WatchConfirmed]
+    s2blockchain.expectMsgType[WatchTxConfirmed]
     r2blockchain.expectMsgType[PublishTx]
-    r2blockchain.expectMsgType[WatchConfirmed]
+    r2blockchain.expectMsgType[WatchTxConfirmed]
     awaitCond(s.stateName == CLOSING)
     awaitCond(r.stateName == CLOSING)
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
@@ -297,13 +298,12 @@ trait StateTestsHelperMethods extends TestKitBase {
     }
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
-    assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(commitTx))
-    localCommitPublished.claimMainDelayedOutputTx.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(claimMain.tx)))
+    assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === commitTx.txid)
+    localCommitPublished.claimMainDelayedOutputTx.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
 
     // we watch outputs of the commitment tx that both parties may spend
     val htlcOutputIndexes = localCommitPublished.htlcTxs.keySet.map(_.index)
-    val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchSpent])
-    spentWatches.foreach(ws => assert(ws.event == BITCOIN_OUTPUT_SPENT))
+    val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
     spentWatches.foreach(ws => assert(ws.txId == commitTx.txid))
     assert(spentWatches.map(_.outputIndex) == htlcOutputIndexes)
     s2blockchain.expectNoMsg(1 second)
@@ -314,7 +314,7 @@ trait StateTestsHelperMethods extends TestKitBase {
 
   def remoteClose(rCommitTx: Transaction, s: TestFSMRef[State, Data, Channel], s2blockchain: TestProbe): RemoteCommitPublished = {
     // we make s believe r unilaterally closed the channel
-    s ! WatchEventSpent(BITCOIN_FUNDING_SPENT, rCommitTx)
+    s ! WatchFundingSpentTriggered(rCommitTx)
     awaitCond(s.stateName == CLOSING)
     val closingData = s.stateData.asInstanceOf[DATA_CLOSING]
     val remoteCommitPublished_opt = closingData.remoteCommitPublished.orElse(closingData.nextRemoteCommitPublished).orElse(closingData.futureRemoteCommitPublished)
@@ -333,13 +333,12 @@ trait StateTestsHelperMethods extends TestKitBase {
     s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => PublishRawTx(claimHtlc)): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
-    assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(rCommitTx))
-    remoteCommitPublished.claimMainOutputTx.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(claimMain.tx)))
+    assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === rCommitTx.txid)
+    remoteCommitPublished.claimMainOutputTx.foreach(claimMain => assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
 
     // we watch outputs of the commitment tx that both parties may spend
     val htlcOutputIndexes = remoteCommitPublished.claimHtlcTxs.keySet.map(_.index)
-    val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchSpent])
-    spentWatches.foreach(ws => assert(ws.event == BITCOIN_OUTPUT_SPENT))
+    val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
     spentWatches.foreach(ws => assert(ws.txId == rCommitTx.txid))
     assert(spentWatches.map(_.outputIndex) == htlcOutputIndexes)
     s2blockchain.expectNoMsg(1 second)

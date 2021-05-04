@@ -19,7 +19,8 @@ package fr.acinq.eclair.channel.states.b
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
@@ -79,8 +80,8 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    alice2blockchain.expectMsgType[WatchSpent]
-    val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchFundingSpent]
+    val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }
 
@@ -89,8 +90,8 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    alice2blockchain.expectMsgType[WatchSpent]
-    val watchConfirmed = alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.expectMsgType[WatchFundingSpent]
+    val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     // when we are funder, we keep our regular min depth even for wumbo channels
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }

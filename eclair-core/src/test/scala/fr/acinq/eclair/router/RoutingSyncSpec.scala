@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.router
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{Actor, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnouncement}
@@ -53,7 +54,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
   class YesWatcher extends Actor {
     override def receive: Receive = {
-      case ValidateRequest(c) =>
+      case ValidateRequest(replyTo, c) =>
         val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
         val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
         val fakeFundingTx = Transaction(
@@ -61,7 +62,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
           txIn = Seq.empty[TxIn],
           txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
           lockTime = 0)
-        sender ! ValidateResult(c, Right(fakeFundingTx, UtxoStatus.Unspent))
+        replyTo ! ValidateResult(c, Right(fakeFundingTx, UtxoStatus.Unspent))
     }
   }
 

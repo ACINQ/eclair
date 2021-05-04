@@ -20,7 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Btc, OutPoint, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
-import fr.acinq.eclair.blockchain.WatchEventSpent
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
@@ -91,7 +91,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with StateTestsH
     awaitCond(alice.stateName == CLOSING)
 
     // Bob detects it.
-    bob ! WatchEventSpent(BITCOIN_FUNDING_SPENT, alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.commitTx)
+    bob ! WatchFundingSpentTriggered(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get.commitTx)
     awaitCond(bob.stateName == CLOSING)
 
     val lcp = alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get

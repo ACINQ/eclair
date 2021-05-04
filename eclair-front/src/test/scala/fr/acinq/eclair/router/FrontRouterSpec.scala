@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.router
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -23,7 +24,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelAnnouncement, makeChannelUpdate, makeNodeAnnouncement}
@@ -91,7 +92,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     pipe1.expectMsg(PeerRoutingMessage(front1, origin1a.nodeId, chan_ab))
     pipe1.send(router, PeerRoutingMessage(pipe1.ref, origin1a.nodeId, chan_ab))
 
-    watcher.expectMsg(ValidateRequest(chan_ab))
+    assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
 
     peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, chan_ab))
     pipe1.expectNoMessage()
@@ -168,7 +169,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val origin3a = RemoteGossip(peerConnection3a.ref, randomKey.publicKey)
 
     peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, chan_ab))
-    watcher.expectMsg(ValidateRequest(chan_ab))
+    assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
     peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, chan_ab))
     peerConnection2a.send(front2, PeerRoutingMessage(peerConnection2a.ref, origin2a.nodeId, chan_ab))
 

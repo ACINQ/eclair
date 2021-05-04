@@ -16,14 +16,16 @@
 
 package fr.acinq.eclair.integration
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
@@ -91,12 +93,12 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
     // we make sure all channels have set up their WatchConfirmed for the funding tx
     awaitCond({
-      val watches = nodes.values.foldLeft(Set.empty[Watch]) {
+      val watches = nodes.values.foldLeft(Set.empty[Watch[_]]) {
         case (watches, setup) =>
-          sender.send(setup.watcher, Symbol("watches"))
-          watches ++ sender.expectMsgType[Set[Watch]]
+          setup.watcher !  ZmqWatcher.ListWatches(sender.ref)
+          watches ++ sender.expectMsgType[Set[Watch[_]]]
       }
-      watches.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount
+      watches.count(_.isInstanceOf[WatchFundingConfirmed]) == channelEndpointsCount
     }, max = 20 seconds, interval = 1 second)
 
     // confirming the funding tx

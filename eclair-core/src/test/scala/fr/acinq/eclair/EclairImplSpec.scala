@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import akka.util.Timeout

@@ -16,11 +16,13 @@
 
 package fr.acinq.eclair.interop.rustytests
 
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods.FakeTxPublisherFactory
@@ -77,17 +79,17 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     pipe ! (alice, bob)
     within(30 seconds) {
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.expectMsgType[WatchFundingSpent]
+      alice2blockchain.expectMsgType[WatchFundingConfirmed]
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob2blockchain.expectMsgType[WatchSpent]
-      bob2blockchain.expectMsgType[WatchConfirmed]
+      bob2blockchain.expectMsgType[WatchFundingSpent]
+      bob2blockchain.expectMsgType[WatchFundingConfirmed]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-      alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42, fundingTx)
-      alice2blockchain.expectMsgType[WatchLost]
-      bob2blockchain.expectMsgType[WatchLost]
+      alice ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+      bob ! WatchFundingConfirmedTriggered(400000, 42, fundingTx)
+      alice2blockchain.expectMsgType[WatchFundingLost]
+      bob2blockchain.expectMsgType[WatchFundingLost]
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
       pipe ! new File(getClass.getResource(s"/scenarii/${test.name}.script").getFile)

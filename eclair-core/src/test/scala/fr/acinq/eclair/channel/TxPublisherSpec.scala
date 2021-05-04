@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps}
+import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SIGHASH_ALL, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
@@ -25,8 +25,8 @@ import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransactionResponse, MempoolTx, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchParentTxConfirmed, WatchTxConfirmed}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
-import fr.acinq.eclair.blockchain.{WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel.TxPublisher._
 import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, HtlcTimeoutTx, addSigs}
@@ -155,22 +155,22 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       // tx2 has a relative delay but no absolute delay
       val tx2 = createSpendP2WPKH(tx1, priv, priv.publicKey, 10000 sat, sequence = 2, lockTime = 0)
       txPublisher ! PublishRawTx(tx2, "child-tx")
-      val watchParentTx2 = alice2blockchain.expectMsgType[WatchConfirmed]
+      val watchParentTx2 = alice2blockchain.expectMsgType[WatchParentTxConfirmed]
       assert(watchParentTx2.txId === tx1.txid)
       assert(watchParentTx2.minDepth === 2)
       createBlocks(2)
-      txPublisher ! ParentTxConfirmed(watchParentTx2.event.asInstanceOf[BITCOIN_PARENT_TX_CONFIRMED].childTx, tx1.txid)
+      txPublisher ! ParentTxConfirmed(watchParentTx2.childTx, tx1.txid)
       awaitCond(getMempool.exists(_.txid === tx2.txid), max = 20 seconds, interval = 1 second)
 
       // tx3 has both relative and absolute delays
       val tx3 = createSpendP2WPKH(tx2, priv, priv.publicKey, 10000 sat, sequence = 1, lockTime = blockCount.get + 5)
       txPublisher ! PublishRawTx(tx3, "grand-child-tx")
-      val watchParentTx3 = alice2blockchain.expectMsgType[WatchConfirmed]
+      val watchParentTx3 = alice2blockchain.expectMsgType[WatchParentTxConfirmed]
       assert(watchParentTx3.txId === tx2.txid)
       assert(watchParentTx3.minDepth === 1)
       // after 1 block, the relative delay is elapsed, but not the absolute delay
       createBlocks(1)
-      txPublisher ! ParentTxConfirmed(watchParentTx3.event.asInstanceOf[BITCOIN_PARENT_TX_CONFIRMED].childTx, tx2.txid)
+      txPublisher ! ParentTxConfirmed(watchParentTx3.childTx, tx2.txid)
       assert(!getMempool.exists(_.txid === tx3.txid))
       // after 4 more blocks, the absolute delay is elapsed
       createBlocks(4)
@@ -215,21 +215,20 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       Transaction.correctlySpends(tx, parentTx1 :: parentTx2 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       txPublisher ! PublishRawTx(tx, "child-tx")
       val watches = Seq(
-        alice2blockchain.expectMsgType[WatchConfirmed],
-        alice2blockchain.expectMsgType[WatchConfirmed],
+        alice2blockchain.expectMsgType[WatchParentTxConfirmed],
+        alice2blockchain.expectMsgType[WatchParentTxConfirmed],
       )
-      watches.foreach(w => assert(w.event.isInstanceOf[BITCOIN_PARENT_TX_CONFIRMED]))
       val w1 = watches.find(_.txId == parentTx1.txid).get
       assert(w1.minDepth === 2)
       val w2 = watches.find(_.txId == parentTx2.txid).get
       assert(w2.minDepth === 4)
-      alice2blockchain.expectNoMsg(1 second)
+      alice2blockchain.expectNoMessage(1 second)
 
       createBlocks(2)
-      txPublisher ! ParentTxConfirmed(w1.event.asInstanceOf[BITCOIN_PARENT_TX_CONFIRMED].childTx, w1.txId)
+      txPublisher ! ParentTxConfirmed(w1.childTx, w1.txId)
       assert(!getMempool.exists(_.txid === tx.txid))
       createBlocks(2)
-      txPublisher ! ParentTxConfirmed(w2.event.asInstanceOf[BITCOIN_PARENT_TX_CONFIRMED].childTx, w2.txId)
+      txPublisher ! ParentTxConfirmed(w2.childTx, w2.txId)
       awaitCond(getMempool.exists(_.txid === tx.txid))
     })
   }
@@ -407,10 +406,10 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     val htlcTimeout = alice2blockchain.expectMsgType[SignAndPublishTx]
     assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
 
-    alice2blockchain.expectMsgType[WatchConfirmed] // commit tx
-    alice2blockchain.expectMsgType[WatchConfirmed] // claim main output
-    alice2blockchain.expectMsgType[WatchSpent] // htlc-success tx
-    alice2blockchain.expectMsgType[WatchSpent] // htlc-timeout tx
+    alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
+    alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
+    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc-success tx
+    alice2blockchain.expectMsgType[WatchOutputSpent] // htlc-timeout tx
     alice2blockchain.expectNoMessage(100 millis)
 
     (commitTx.tx, htlcSuccess, htlcTimeout)
@@ -555,9 +554,9 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       alice2blockchain.expectMsg(PublishRawTx(commitTx))
       val anchorTx = alice2blockchain.expectMsgType[SignAndPublishTx]
       alice2blockchain.expectMsgType[PublishRawTx] // claim main output
-      alice2blockchain.expectMsgType[WatchConfirmed] // commit tx
-      alice2blockchain.expectMsgType[WatchConfirmed] // claim main output
-      alice2blockchain.expectMsgType[WatchSpent] // alice doesn't have the preimage yet to redeem the htlc but she watches the output
+      alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
+      alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
+      alice2blockchain.expectMsgType[WatchOutputSpent] // alice doesn't have the preimage yet to redeem the htlc but she watches the output
       alice2blockchain.expectNoMessage(100 millis)
 
       // Publish and confirm the commit tx.
@@ -573,13 +572,13 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       assert(anchorTx2.txInfo === anchorTx.txInfo)
       alice2blockchain.expectMsgType[PublishRawTx] // claim main output
       val htlcSuccess = alice2blockchain.expectMsgType[SignAndPublishTx]
-      alice2blockchain.expectMsgType[WatchConfirmed] // commit tx
-      alice2blockchain.expectMsgType[WatchConfirmed] // claim main output
-      alice2blockchain.expectMsgType[WatchSpent] // htlc output
+      alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
+      alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
+      alice2blockchain.expectMsgType[WatchOutputSpent] // htlc output
       alice2blockchain.expectNoMessage(100 millis)
 
       txPublisher ! htlcSuccess
-      val w = alice2blockchain.expectMsgType[WatchConfirmed]
+      val w = alice2blockchain.expectMsgType[WatchParentTxConfirmed]
       assert(w.txId === commitTx.tx.txid)
       assert(w.minDepth === 1)
       txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.tx.txid)

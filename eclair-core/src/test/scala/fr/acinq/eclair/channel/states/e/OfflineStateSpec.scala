@@ -21,7 +21,8 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel._
@@ -271,7 +272,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // bob is nice and publishes its commitment
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+    alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim its main output
     val claimMainOutput = alice2blockchain.expectMsgType[PublishTx].tx
@@ -316,7 +317,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // bob is nice and publishes its commitment
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-    alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+    alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim its main output
     val claimMainOutput = alice2blockchain.expectMsgType[PublishTx].tx
@@ -485,16 +486,16 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === initialCommitTx)
     bob2blockchain.expectMsgType[PublishTx] // main delayed
-    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
-    bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
-    bob2blockchain.expectMsgType[WatchSpent] // htlc
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === initialCommitTx.txid)
+    bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
+    bob2blockchain.expectMsgType[WatchOutputSpent] // htlc
 
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === initialCommitTx)
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[PublishTx].tx.txOut === htlcSuccessTx.txOut)
-    assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(initialCommitTx))
-    bob2blockchain.expectMsgType[WatchConfirmed] // main delayed
-    bob2blockchain.expectMsgType[WatchSpent] // htlc
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === initialCommitTx.txid)
+    bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
+    bob2blockchain.expectMsgType[WatchOutputSpent] // htlc
     bob2blockchain.expectNoMsg(500 millis)
   }
 
@@ -695,8 +696,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectNoMsg()
 
     // funding tx gets 6 confirmations, channel is private so there is no announcement sigs
-    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
-    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42, null)
+    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
     alice2bob.expectMsgType[ChannelUpdate]
     bob2alice.expectMsgType[ChannelUpdate]
 

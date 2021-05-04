@@ -17,14 +17,16 @@
 package fr.acinq.eclair.router
 
 import akka.Done
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated, typed}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{ValidateResult, WatchExternalChannelSpent, WatchExternalChannelSpentTriggered}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
@@ -46,7 +48,7 @@ import scala.util.{Random, Try}
 /**
  * Created by PM on 24/05/2016.
  */
-class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
+class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) extends FSMDiagnosticActorLogging[Router.State, Router.Data] {
 
   import Router._
 
@@ -88,7 +90,7 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
       val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(pc.ann.shortChannelId)
       // avoid herd effect at startup because watch-spent are intensive in terms of rpc calls to bitcoind
       context.system.scheduler.scheduleOnce(Random.nextLong(nodeParams.watchSpentWindow.toSeconds).seconds) {
-        watcher ! WatchSpentBasic(self, txid, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(pc.ann.shortChannelId))
+        watcher ! WatchExternalChannelSpent(self, txid, outputIndex, pc.ann.shortChannelId)
       }
     }
 
@@ -232,8 +234,8 @@ class Router(val nodeParams: NodeParams, watcher: ActorRef, initialized: Option[
     case Event(r: ValidateResult, d) =>
       stay using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
-    case Event(WatchEventSpentBasic(e: BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT), d) if d.channels.contains(e.shortChannelId) =>
-      stay using Validation.handleChannelSpent(d, nodeParams.db.network, e)
+    case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) =>
+      stay using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
 
     case Event(n: NodeAnnouncement, d: Data) =>
       stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
@@ -293,7 +295,7 @@ object Router {
   val shortChannelIdKey = Context.key[ShortChannelId]("shortChannelId", ShortChannelId(0))
   val remoteNodeIdKey = Context.key[String]("remoteNodeId", "unknown")
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
+  def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
   case class RouterConf(randomizeRouteSelection: Boolean,
                         channelExcludeDuration: FiniteDuration,
