@@ -40,13 +40,13 @@ trait NetworkDb extends Closeable {
 
   def addChannel(c: ChannelAnnouncement, txid: ByteVector32, capacity: Satoshi): Unit
 
-  def updateChannel(u: ChannelUpdate): Unit
+  def updateChannel(chainHash: ByteVector32, u: ChannelUpdate): Unit
 
   def removeChannel(shortChannelId: ShortChannelId) = removeChannels(Set(shortChannelId)): Unit
 
   def removeChannels(shortChannelIds: Iterable[ShortChannelId]): Unit
 
-  def listChannels(): SortedMap[ShortChannelId, PublicChannel]
+  def listChannels(chainHash: ByteVector32): SortedMap[ShortChannelId, PublicChannel]
 
   def addToPruned(shortChannelIds: Iterable[ShortChannelId]): Unit
 

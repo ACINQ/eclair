@@ -35,6 +35,7 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
   import TestConstants.forAllDbs
 
   val shortChannelIds = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+  val chainHash = Block.RegtestGenesisBlock.hash
 
   test("init sqlite 2 times in a row") {
     forAllDbs { dbs =>
@@ -112,17 +113,17 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.network()
       val sig = ByteVector64.Zeroes
-      val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+      val c = Announcements.makeChannelAnnouncement(chainHash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
       val c_shrunk = shrink(c)
       val txid = ByteVector32.fromValidHex("0001" * 16)
       db.addChannel(c, txid, Satoshi(42))
-      assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c_shrunk, txid, Satoshi(42), None, None, None)))
+      assert(db.listChannels(chainHash) === SortedMap(c.shortChannelId -> PublicChannel(c_shrunk, txid, Satoshi(42), None, None, None)))
     }
   }
 
   def shrink(c: ChannelAnnouncement) = c.copy(bitcoinKey1 = null, bitcoinKey2 = null, bitcoinSignature1 = null, bitcoinSignature2 = null, nodeSignature1 = null, nodeSignature2 = null, chainHash = null, features = null)
 
-  def shrink(c: ChannelUpdate) = c.copy(signature = null, chainHash = null)
+  def shrink(c: ChannelUpdate) = c.copy(signature = null)
 
   def simpleTest(dbs: TestDatabases) = {
     val db = dbs.network()
@@ -140,9 +141,9 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
     val b = generatePubkeyHigherThan(a)
     val c = generatePubkeyHigherThan(b)
 
-    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), a.publicKey, b.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
-    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(43), a.publicKey, c.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
-    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(44), b.publicKey, c.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val channel_1 = Announcements.makeChannelAnnouncement(chainHash, ShortChannelId(42), a.publicKey, b.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val channel_2 = Announcements.makeChannelAnnouncement(chainHash, ShortChannelId(43), a.publicKey, c.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val channel_3 = Announcements.makeChannelAnnouncement(chainHash, ShortChannelId(44), b.publicKey, c.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
 
     val channel_1_shrunk = shrink(channel_1)
     val channel_2_shrunk = shrink(channel_2)
@@ -153,39 +154,39 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
     val txid_3 = randomBytes32
     val capacity = 10000 sat
 
-    assert(db.listChannels().toSet === Set.empty)
+    assert(db.listChannels(chainHash).toSet === Set.empty)
     db.addChannel(channel_1, txid_1, capacity)
     db.addChannel(channel_1, txid_1, capacity) // duplicate is ignored
-    assert(db.listChannels().size === 1)
+    assert(db.listChannels(chainHash).size === 1)
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels(chainHash) === SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, None, None, None),
       channel_2.shortChannelId -> PublicChannel(channel_2_shrunk, txid_2, capacity, None, None, None),
       channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, None, None, None)))
     db.removeChannel(channel_2.shortChannelId)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels(chainHash) === SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, None, None, None),
       channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, None, None, None)))
 
-    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
-    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
-    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, c.publicKey, ShortChannelId(44), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
+    val channel_update_1 = Announcements.makeChannelUpdate(chainHash, a, b.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
+    val channel_update_2 = Announcements.makeChannelUpdate(chainHash, b, a.publicKey, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
+    val channel_update_3 = Announcements.makeChannelUpdate(chainHash, b, c.publicKey, ShortChannelId(44), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
 
     val channel_update_1_shrunk = shrink(channel_update_1)
     val channel_update_2_shrunk = shrink(channel_update_2)
     val channel_update_3_shrunk = shrink(channel_update_3)
 
 
-    db.updateChannel(channel_update_1)
-    db.updateChannel(channel_update_1) // duplicate is ignored
-    db.updateChannel(channel_update_2)
-    db.updateChannel(channel_update_3)
-    assert(db.listChannels() === SortedMap(
+    db.updateChannel(chainHash, channel_update_1)
+    db.updateChannel(chainHash, channel_update_1) // duplicate is ignored
+    db.updateChannel(chainHash, channel_update_2)
+    db.updateChannel(chainHash, channel_update_3)
+    assert(db.listChannels(chainHash) === SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, Some(channel_update_1_shrunk), Some(channel_update_2_shrunk), None),
       channel_3.shortChannelId -> PublicChannel(channel_3_shrunk, txid_3, capacity, Some(channel_update_3_shrunk), None, None)))
     db.removeChannel(channel_3.shortChannelId)
-    assert(db.listChannels() === SortedMap(
+    assert(db.listChannels(chainHash) === SortedMap(
       channel_1.shortChannelId -> PublicChannel(channel_1_shrunk, txid_1, capacity, Some(channel_update_1_shrunk), Some(channel_update_2_shrunk), None)))
   }
 
@@ -247,17 +248,17 @@ class SqliteNetworkDbSpec extends AnyFunSuite {
       val pub = priv.publicKey
       val capacity = 10000 sat
 
-      val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
-      val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
+      val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(chainHash, id, pub, pub, pub, pub, sig, sig, sig, sig))
+      val template = Announcements.makeChannelUpdate(chainHash, priv, pub, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
       val updates = shortChannelIds.map(id => template.copy(shortChannelId = id))
       val txid = randomBytes32
       channels.foreach(ca => db.addChannel(ca, txid, capacity))
-      updates.foreach(u => db.updateChannel(u))
-      assert(db.listChannels().keySet === channels.map(_.shortChannelId).toSet)
+      updates.foreach(u => db.updateChannel(chainHash, u))
+      assert(db.listChannels(chainHash).keySet === channels.map(_.shortChannelId).toSet)
 
       val toDelete = channels.map(_.shortChannelId).drop(500).take(2500)
       db.removeChannels(toDelete)
-      assert(db.listChannels().keySet === (channels.map(_.shortChannelId).toSet -- toDelete))
+      assert(db.listChannels(chainHash).keySet === (channels.map(_.shortChannelId).toSet -- toDelete))
     }
   }
 

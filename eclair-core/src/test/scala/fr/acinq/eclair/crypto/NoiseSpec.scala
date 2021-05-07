@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.eclair.crypto.Noise._
 import org.scalatest.funsuite.AnyFunSuite
-import org.spongycastle.crypto.ec.CustomNamedCurves
+import org.bouncycastle.crypto.ec.CustomNamedCurves
 import scodec.bits._
 
 

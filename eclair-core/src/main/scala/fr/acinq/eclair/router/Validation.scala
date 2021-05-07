@@ -317,7 +317,7 @@ object Validation {
         Metrics.channelUpdateRefreshed(u, pc.getChannelUpdateSameSideAs(u).get, publicChannel)
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        db.updateChannel(u)
+        db.updateChannel(u.chainHash, u)
         // update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
@@ -330,7 +330,7 @@ object Validation {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        db.updateChannel(u)
+        db.updateChannel(u.chainHash, u)
         // we also need to update the graph
         val pc1 = pc.applyChannelUpdate(update)
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
