@@ -22,8 +22,8 @@ import fr.acinq.bitcoin.{ByteVector32, Protocol}
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.{DecryptionError, EncryptionError, InvalidCounter}
 import grizzled.slf4j.Logger
 import grizzled.slf4j.Logging
-import org.spongycastle.crypto.engines.ChaCha7539Engine
-import org.spongycastle.crypto.params.{KeyParameter, ParametersWithIV}
+import org.bouncycastle.crypto.engines.ChaCha7539Engine
+import org.bouncycastle.crypto.params.{KeyParameter, ParametersWithIV}
 import scodec.bits.ByteVector
 
 /**
@@ -39,7 +39,7 @@ object Poly1305 {
     */
   def mac(key: ByteVector, datas: ByteVector*): ByteVector = {
     val out = new Array[Byte](16)
-    val poly = new org.spongycastle.crypto.macs.Poly1305()
+    val poly = new org.bouncycastle.crypto.macs.Poly1305()
     poly.init(new KeyParameter(key.toArray))
     datas.foreach(data => poly.update(data.toArray, 0, data.length.toInt))
     poly.doFinal(out, 0)
