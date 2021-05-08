@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.db.pg
 
+import com.zaxxer.hikari.util.IsolationLevel
 import fr.acinq.eclair.db.Monitoring.Metrics._
 import fr.acinq.eclair.db.Monitoring.Tags
 import fr.acinq.eclair.db.jdbc.JdbcUtils
@@ -23,7 +24,7 @@ import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler.LockException
 import grizzled.slf4j.Logging
 import org.postgresql.util.{PGInterval, PSQLException}
 
-import java.sql.{Connection, Statement, Timestamp}
+import java.sql.{Connection, Timestamp}
 import java.util.UUID
 import javax.sql.DataSource
 import scala.concurrent.duration._
@@ -242,11 +243,14 @@ object PgUtils extends JdbcUtils {
 
   }
 
-  def inTransaction[T](connection: Connection)(f: Connection => T): T = {
-    val autoCommit = connection.getAutoCommit
+  /**
+   * @param isolationLevel Be careful when changing the default value
+   */
+  private def inTransactionInternal[T](isolationLevel: IsolationLevel)(connection: Connection)(f: Connection => T): T = {
+    val previousAutoCommit = connection.getAutoCommit
     connection.setAutoCommit(false)
-    val isolationLevel = connection.getTransactionIsolation
-    connection.setTransactionIsolation(Connection.TRANSACTION_SERIALIZABLE)
+    val previousIsolationLevel = connection.getTransactionIsolation
+    connection.setTransactionIsolation(isolationLevel.getLevelId)
     try {
       val res = f(connection)
       connection.commit()
@@ -256,14 +260,20 @@ object PgUtils extends JdbcUtils {
         connection.rollback()
         throw ex
     } finally {
-      connection.setAutoCommit(autoCommit)
-      connection.setTransactionIsolation(isolationLevel)
+      connection.setAutoCommit(previousAutoCommit)
+      connection.setTransactionIsolation(previousIsolationLevel)
     }
   }
 
   def inTransaction[T](f: Connection => T)(implicit dataSource: DataSource): T = {
     withConnection { connection =>
-      inTransaction(connection)(f)
+      inTransactionInternal(IsolationLevel.TRANSACTION_SERIALIZABLE)(connection)(f)
+    }
+  }
+
+  def inTransaction[T](isolationLevel: IsolationLevel)(f: Connection => T)(implicit dataSource: DataSource): T = {
+    withConnection { connection =>
+      inTransactionInternal(isolationLevel)(connection)(f)
     }
   }
 

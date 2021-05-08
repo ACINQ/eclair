@@ -98,8 +98,11 @@ class ChannelsDbSpec extends AnyFunSuite {
       val db = dbs.channels
       implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(8))
       val channel = ChannelCodecsSpec.normal
-      val futures = for (_ <- 0 until 10000) yield {
-        Future(db.addOrUpdateChannel(channel.modify(_.commitments.channelId).setTo(randomBytes32)))
+      val channelIds = (for(_ <- 0 until 10) yield randomBytes32).toList
+      val futures = for (i <- 0 until 10000) yield {
+        val channelId = channelIds(i % channelIds.size)
+        Future(db.addOrUpdateChannel(channel.modify(_.commitments.channelId).setTo(channelId)))
+        Future(db.updateChannelMeta(channelId, ChannelEvent.EventType.PaymentSent))
       }
       val res = Future.sequence(futures)
       Await.result(res, 60 seconds)
