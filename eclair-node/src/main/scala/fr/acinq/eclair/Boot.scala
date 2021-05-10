@@ -17,7 +17,6 @@
 package fr.acinq.eclair
 
 import java.io.File
-
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.stream.{ActorMaterializer, BindFailedException}
@@ -25,6 +24,7 @@ import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
 import kamon.Kamon
 
+import java.util.concurrent.Executors
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
@@ -39,7 +39,7 @@ object Boot extends App with Logging {
     val plugins = Plugin.loadPlugins(args.map(new File(_)))
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node", config)
-    implicit val ec: ExecutionContext = system.dispatcher
+    implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newCachedThreadPool())
 
     val setup = new Setup(datadir, plugins.map(_.params))
 
