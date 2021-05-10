@@ -154,9 +154,7 @@ trait Eclair {
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 }
 
-class EclairImpl(appKit: Kit) extends Eclair {
-
-  implicit val ec: ExecutionContext = appKit.system.dispatcher
+class EclairImpl(appKit: Kit)(implicit ec: ExecutionContext) extends Eclair {
 
   // We constrain external identifiers. This allows uuid, long and pubkey to be used.
   private val externalIdMaxLength = 66
