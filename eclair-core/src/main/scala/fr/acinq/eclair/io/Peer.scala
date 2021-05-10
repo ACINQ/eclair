@@ -79,7 +79,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
       val h = d.channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${h.mkString("/")}")
       val channels1 = d.channels -- h
-      if (channels1.isEmpty) {
+      if (!nodeParams.forceReconnect(remoteNodeId) && channels1.isEmpty) {
         // we have no existing channels, we can forget about this peer
         stopPeer()
       } else {
@@ -185,7 +185,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
           log.info("connection lost")
         }
-        if (d.channels.isEmpty) {
+        if (!nodeParams.forceReconnect(remoteNodeId) && d.channels.isEmpty) {
           // we have no existing channels, we can forget about this peer
           stopPeer()
         } else {
