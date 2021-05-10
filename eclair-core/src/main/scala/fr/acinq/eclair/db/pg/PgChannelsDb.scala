@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.db.pg
 
+import com.zaxxer.hikari.util.IsolationLevel
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
@@ -102,7 +103,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
    * Helper method to factor updating timestamp columns
    */
   private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
-    inTransaction { pg =>
+    inTransaction(IsolationLevel.TRANSACTION_READ_UNCOMMITTED) { pg =>
       using(pg.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.now()))
         statement.setString(2, channelId.toHex)
