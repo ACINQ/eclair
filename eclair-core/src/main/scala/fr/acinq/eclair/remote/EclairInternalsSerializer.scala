@@ -62,6 +62,7 @@ object EclairInternalsSerializer {
       ("searchMaxRouteLength" | int32) ::
       ("searchMaxCltv" | int32.as[CltvExpiryDelta]) ::
       ("searchHeuristicsEnabled" | bool(8)) ::
+      ("searchRatioBias" | double) ::
       ("searchRatioCltv" | double) ::
       ("searchRatioChannelAge" | double) ::
       ("searchRatioChannelCapacity" | double) ::

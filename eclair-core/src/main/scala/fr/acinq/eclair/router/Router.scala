@@ -310,6 +310,7 @@ object Router {
                         searchMaxRouteLength: Int,
                         searchMaxCltv: CltvExpiryDelta,
                         searchHeuristicsEnabled: Boolean,
+                        searchRatioBias: Double,
                         searchRatioCltv: Double,
                         searchRatioChannelAge: Double,
                         searchRatioChannelCapacity: Double,

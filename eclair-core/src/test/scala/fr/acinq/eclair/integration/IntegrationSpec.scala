@@ -56,6 +56,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     routeMaxCltv = CltvExpiryDelta(Int.MaxValue),
     routeMaxLength = ROUTE_MAX_LENGTH,
     ratios = Some(WeightRatios(
+      biasFactor = 0,
       cltvDeltaFactor = 0.1,
       ageFactor = 0,
       capacityFactor = 0

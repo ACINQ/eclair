@@ -393,6 +393,7 @@ object NodeParams extends Logging {
         searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
         searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
         searchHeuristicsEnabled = config.getBoolean("router.path-finding.heuristics-enable"),
+        searchRatioBias = config.getDouble("router.path-finding.ratio-bias"),
         searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),
         searchRatioChannelAge = config.getDouble("router.path-finding.ratio-channel-age"),
         searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity"),
