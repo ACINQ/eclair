@@ -31,7 +31,7 @@ import scala.util.Try
 /**
  * Created by PM on 04/04/2017.
  */
-class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends Actor with ActorLogging {
+class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] = None) extends Actor with ActorLogging {
 
   import ZMQActor._
 
@@ -40,8 +40,7 @@ class ZMQActor(address: String, connected: Option[Promise[Done]] = None) extends
   val subscriber = ctx.createSocket(SocketType.SUB)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.connect(address)
-  subscriber.subscribe("rawblock".getBytes(ZMQ.CHARSET))
-  subscriber.subscribe("rawtx".getBytes(ZMQ.CHARSET))
+  subscriber.subscribe(topic.getBytes(ZMQ.CHARSET))
 
   val monitor = ctx.createSocket(SocketType.PAIR)
   monitor.connect("inproc://events")
@@ -113,5 +112,10 @@ object ZMQActor {
   case object ZMQConnected extends ZMQEvent
   case object ZMQDisconnected extends ZMQEvent
   // @formatter:on
+
+  object Topics {
+    val RawBlock: String = "rawblock"
+    val RawTx: String = "rawtx"
+  }
 
 }
