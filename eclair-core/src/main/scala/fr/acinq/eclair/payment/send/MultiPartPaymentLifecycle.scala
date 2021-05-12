@@ -32,9 +32,10 @@ import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams}
-
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+
+import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream}
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -112,7 +113,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       }
 
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
-      if (isFinalRecipientFailure(pf, d)) {
+      if (doNotRetry(pf, d)) {
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
@@ -130,7 +131,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   when(PAYMENT_IN_PROGRESS) {
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
-      if (isFinalRecipientFailure(pf, d)) {
+      if (doNotRetry(pf, d)) {
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else if (d.remainingAttempts == 0) {
         val failure = LocalFailure(Nil, PaymentError.RetryExhausted)
@@ -377,8 +378,9 @@ object MultiPartPaymentLifecycle {
     SendPaymentToRoute(replyTo, Right(route), finalPayload)
   }
 
-  /** When we receive an error from the final recipient, we should fail the whole payment, it's useless to retry. */
-  private def isFinalRecipientFailure(pf: PaymentFailed, d: PaymentProgress): Boolean = pf.failures.collectFirst {
+  /** When we receive an error from the final recipient or payment gets confirmed on chain, we should fail the whole payment, it's useless to retry. */
+  private def doNotRetry(pf: PaymentFailed, d: PaymentProgress): Boolean = pf.failures.collectFirst {
+    case LocalFailure(_, _: HtlcsTimedoutDownstream | _: HtlcOverriddenByLocalCommit) => true
     case f: RemoteFailure if f.e.originNode == d.request.targetNodeId => true
   }.getOrElse(false)
 
