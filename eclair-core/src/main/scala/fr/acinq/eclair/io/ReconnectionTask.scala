@@ -83,7 +83,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
   when(IDLE) {
     case Event(Peer.Transition(previousPeerData, nextPeerData: Peer.DisconnectedData), d: IdleData) =>
-      if (nodeParams.autoReconnect && (nodeParams.forceReconnect(remoteNodeId) || nextPeerData.channels.nonEmpty)) { // we only reconnect if nodeParams explicitly instructs us to or there are existing channels
+      if (nodeParams.autoReconnect && nextPeerData.channels.nonEmpty) { // we only reconnect if nodeParams explicitly instructs us to or there are existing channels
         val (initialDelay, firstNextReconnectionDelay) = (previousPeerData, d.previousData) match {
           case (Peer.Nothing, _) =>
             // When restarting, we add some randomization before the first reconnection attempt to avoid herd effect
