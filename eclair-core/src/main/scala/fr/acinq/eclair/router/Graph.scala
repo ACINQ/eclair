@@ -274,9 +274,9 @@ object Graph {
       case Some(wr) =>
         import RoutingHeuristics._
 
-        // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
+        // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
         val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
-        val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
+        val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_ONE_YEAR, max = currentBlockHeight)
 
         // Every edge is weighted by channel capacity, larger channels add less weight
         val edgeMaxCapacity = edge.capacity.toMilliSatoshi
@@ -336,8 +336,8 @@ object Graph {
 
   object RoutingHeuristics {
 
-    // Number of blocks in two months
-    val BLOCK_TIME_TWO_MONTHS = 8640
+    // Number of blocks in one year
+    val BLOCK_TIME_ONE_YEAR = 365 * 24 * 6
 
     // Low/High bound for channel capacity
     val CAPACITY_CHANNEL_LOW = MilliBtc(1).toMilliSatoshi
