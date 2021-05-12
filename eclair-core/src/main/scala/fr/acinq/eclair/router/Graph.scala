@@ -337,7 +337,7 @@ object Graph {
   object RoutingHeuristics {
 
     // Number of blocks in one year
-    val BLOCK_TIME_ONE_YEAR = 52560
+    val BLOCK_TIME_ONE_YEAR = 365 * 24 * 6
 
     // Low/High bound for channel capacity
     val CAPACITY_CHANNEL_LOW = MilliBtc(1).toMilliSatoshi
