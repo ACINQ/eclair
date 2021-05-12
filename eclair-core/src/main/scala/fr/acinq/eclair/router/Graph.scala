@@ -264,32 +264,32 @@ object Graph {
    * @param currentBlockHeight the height of the chain tip (latest block).
    * @param weightRatios       ratios used to 'weight' edges when searching for the shortest path
    */
-  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: Option[WeightRatios]): RichWeight = weightRatios match {
-    case None =>
-      val totalCost = if (edge.desc.a == sender) prev.cost else addEdgeFees(edge, prev.cost)
-      val totalCltv = if (edge.desc.a == sender) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
-      RichWeight(totalCost, prev.length + 1, totalCltv, totalCost.toLong)
-    case Some(wr) =>
-      import RoutingHeuristics._
+  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: Option[WeightRatios]): RichWeight = {
+    val totalCost = if (edge.desc.a == sender) prev.cost else addEdgeFees(edge, prev.cost)
+    val fee = totalCost - prev.cost
+    val totalCltv = if (edge.desc.a == sender) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
+    val factor = weightRatios match {
+      case None =>
+        1.0
+      case Some(wr) =>
+        import RoutingHeuristics._
 
-      // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
-      val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
-      val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
+        // Every edge is weighted by funding block height where older blocks add less weight, the window considered is 2 months.
+        val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
+        val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_TWO_MONTHS, max = currentBlockHeight)
 
-      // Every edge is weighted by channel capacity, larger channels add less weight
-      val edgeMaxCapacity = edge.capacity.toMilliSatoshi
-      val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
+        // Every edge is weighted by channel capacity, larger channels add less weight
+        val edgeMaxCapacity = edge.capacity.toMilliSatoshi
+        val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
 
-      // Every edge is weighted by its cltv-delta value, normalized
-      val cltvFactor = normalize(edge.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
+        // Every edge is weighted by its cltv-delta value, normalized
+        val cltvFactor = normalize(edge.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
 
-      val totalCost = if (edge.desc.a == sender) prev.cost else addEdgeFees(edge, prev.cost)
-      val totalCltv = if (edge.desc.a == sender) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
-      // NB we're guaranteed to have weightRatios and factors > 0
-      val factor = (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor)
-      val totalWeight = if (edge.desc.a == sender) prev.weight else prev.weight + totalCost.toLong * factor
-
-      RichWeight(totalCost, prev.length + 1, totalCltv, totalWeight)
+        // NB we're guaranteed to have weightRatios and factors > 0
+        (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor)
+    }
+    val totalWeight = prev.weight + fee.toLong * factor
+    RichWeight(totalCost, prev.length + 1, totalCltv, totalWeight)
   }
 
   /**

@@ -807,13 +807,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     // A -> E -> F -> D is 'timeout optimized', lower CLTV route (totFees = 3, totCltv = 18)
     // A -> E -> C -> D is 'capacity optimized', more recent channel/larger capacity route
     val g = DirectedGraph(List(
-      makeEdge(1L, a, b, feeBase = 0 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(13)),
-      makeEdge(4L, a, e, feeBase = 0 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(12)),
-      makeEdge(2L, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(500)),
-      makeEdge(3L, c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(500)),
-      makeEdge(5L, e, f, feeBase = 2 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(9)),
-      makeEdge(6L, f, d, feeBase = 2 msat, 0, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(9)),
-      makeEdge(7L, e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, capacity = largeCapacity, cltvDelta = CltvExpiryDelta(12))
+      makeEdge(1L, a, b, feeBase = 0 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(13)),
+      makeEdge(4L, a, e, feeBase = 0 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(12)),
+      makeEdge(2L, b, c, feeBase = 1 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(500)),
+      makeEdge(3L, c, d, feeBase = 1 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(500)),
+      makeEdge(5L, e, f, feeBase = 2 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(9)),
+      makeEdge(6L, f, d, feeBase = 2 msat, 1000, minHtlc = 0 msat, capacity = defaultCapacity, cltvDelta = CltvExpiryDelta(9)),
+      makeEdge(7L, e, c, feeBase = 2 msat, 1000, minHtlc = 0 msat, capacity = largeCapacity, cltvDelta = CltvExpiryDelta(12))
     ))
 
     val Success(routeFeeOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
