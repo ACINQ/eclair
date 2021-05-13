@@ -31,11 +31,6 @@ trait AbstractService extends EclairDirectives with Logging {
   def password: String
 
   /**
-   * The API of Eclair core.
-   */
-  val eclairApi: Eclair
-
-  /**
    * ActorSystem on which to run the http service.
    */
   implicit val actorSystem: ActorSystem
@@ -47,6 +42,11 @@ trait AbstractService extends EclairDirectives with Logging {
 }
 
 trait Service extends AbstractService with WebSocket with Node with Channel with Fees with PathFinding with Invoice with Payment with Message with OnChain {
+  /**
+   * The API of Eclair core.
+   */
+  val eclairApi: Eclair
+
   /**
    * Collect routes from all sub-routers here.
    * This is the main entrypoint for the global http request router of the API service.
