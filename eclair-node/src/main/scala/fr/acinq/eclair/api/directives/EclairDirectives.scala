@@ -18,12 +18,12 @@ package fr.acinq.eclair.api.directives
 
 import akka.http.scaladsl.server.{Directive0, Directive1, Directives}
 import akka.util.Timeout
-import fr.acinq.eclair.api.Service
+import fr.acinq.eclair.api.{AbstractService, Service}
 
 import scala.concurrent.duration.DurationInt
 
 class EclairDirectives extends Directives with TimeoutDirective with ErrorDirective with AuthDirective with DefaultHeaders with ExtraDirectives {
-  this: Service =>
+  this: AbstractService =>
 
   /**
    * Prepares inner routes to be exposed as public API with default headers, basic authentication and error handling.

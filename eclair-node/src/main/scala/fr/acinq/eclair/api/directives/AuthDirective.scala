@@ -18,13 +18,13 @@ package fr.acinq.eclair.api.directives
 
 import akka.http.scaladsl.server.Directive0
 import akka.http.scaladsl.server.directives.Credentials
-import fr.acinq.eclair.api.Service
+import fr.acinq.eclair.api.AbstractService
 
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
 
 trait AuthDirective {
-  this: Service with EclairDirectives =>
+  this: AbstractService with EclairDirectives =>
 
   /**
    * A directive0 that passes whenever valid basic credentials are provided. We

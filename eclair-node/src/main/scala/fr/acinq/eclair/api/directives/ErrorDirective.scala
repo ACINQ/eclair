@@ -18,10 +18,10 @@ package fr.acinq.eclair.api.directives
 
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import akka.http.scaladsl.server.{Directive0, ExceptionHandler, RejectionHandler}
-import fr.acinq.eclair.api.Service
+import fr.acinq.eclair.api.AbstractService
 
 trait ErrorDirective {
-  this: Service with EclairDirectives =>
+  this: AbstractService with EclairDirectives =>
 
   /**
    * Handles API exceptions and rejections. Produces json formatted error responses.
