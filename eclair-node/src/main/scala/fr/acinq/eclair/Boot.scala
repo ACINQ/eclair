@@ -69,14 +69,12 @@ object Boot extends App with Logging {
     val config = system.settings.config.getConfig("eclair")
     if (config.getBoolean("api.enabled")) {
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
-      implicit val materializer = ActorMaterializer()
       val apiPassword = config.getString("api.password") match {
         case "" => throw EmptyAPIPasswordException
         case valid => valid
       }
       val apiRoute = new Service {
         override val actorSystem = system
-        override val mat = materializer
         override val password = apiPassword
         override val eclairApi: Eclair = new EclairImpl(kit)
       }.route

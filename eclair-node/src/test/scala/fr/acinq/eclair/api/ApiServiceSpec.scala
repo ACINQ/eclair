@@ -74,7 +74,6 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     override def password: String = "mock"
 
     override implicit val actorSystem: ActorSystem = system
-    override implicit val mat: Materializer = materializer
   }
 
   def mockApi(eclair: Eclair = mock[Eclair]): MockService = {

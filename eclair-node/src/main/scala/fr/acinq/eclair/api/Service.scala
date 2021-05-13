@@ -34,11 +34,6 @@ trait AbstractService extends EclairDirectives with Logging {
    * ActorSystem on which to run the http service.
    */
   implicit val actorSystem: ActorSystem
-
-  /**
-   * Materializer for sending and receiving tcp streams.
-   */
-  implicit val mat: Materializer
 }
 
 trait Service extends AbstractService with WebSocket with Node with Channel with Fees with PathFinding with Invoice with Payment with Message with OnChain {
