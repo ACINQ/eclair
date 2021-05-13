@@ -17,10 +17,9 @@
 package fr.acinq.eclair.api.directives
 
 import akka.http.scaladsl.server.{Directive0, Directive1, Directives}
-import akka.util.Timeout
-import fr.acinq.eclair.api.{AbstractService, Service}
-
 import scala.concurrent.duration.DurationInt
+import fr.acinq.eclair.api.AbstractService
+import akka.util.Timeout
 
 class EclairDirectives extends Directives with TimeoutDirective with ErrorDirective with AuthDirective with DefaultHeaders with ExtraDirectives {
   this: AbstractService =>
