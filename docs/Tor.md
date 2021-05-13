@@ -16,7 +16,7 @@ brew install tor
 
 #### Windows:
   
-[Download the "Expert Bundle"](https://www.torproject.org/download/tor/) from Tor's website and extract it to `C:\tor`.  A link to the "Expert Bundle" is on the "Download Tor Source Code" page.
+[Download the "Expert Bundle"](https://www.torproject.org/download/tor/) from Tor's website and extract it to `C:\tor`.
 
 ### Configuring Tor
 
