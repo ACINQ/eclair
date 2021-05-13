@@ -18,7 +18,6 @@ package fr.acinq.eclair.api
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.server._
-import akka.stream.Materializer
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.handlers._
