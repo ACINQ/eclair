@@ -2092,31 +2092,36 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   private def handleNewBlock(c: CurrentBlockCount, d: HasCommitments) = {
-    val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockCount)
-    val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockCount, nodeParams.fulfillSafetyBeforeTimeout)
-    if (timedOutOutgoing.nonEmpty) {
-      // Downstream timed out.
-      handleLocalError(HtlcsTimedoutDownstream(d.channelId, timedOutOutgoing), d, Some(c))
-    } else if (almostTimedOutIncoming.nonEmpty) {
-      // Upstream is close to timing out, we need to test if we have funds at risk: htlcs for which we know the preimage
-      // that are still in our commitment (upstream will try to timeout on-chain).
-      val relayedFulfills = d.commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.id }.toSet
-      val offendingRelayedHtlcs = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id))
-      if (offendingRelayedHtlcs.nonEmpty) {
-        handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingRelayedHtlcs), d, Some(c))
-      } else {
-        // There might be pending fulfill commands that we haven't relayed yet.
-        // Since this involves a DB call, we only want to check it if all the previous checks failed (this is the slow path).
-        val pendingRelayFulfills = nodeParams.db.pendingRelay.listPendingRelay(d.channelId).collect { case c: CMD_FULFILL_HTLC => c.id }
-        val offendingPendingRelayFulfills = almostTimedOutIncoming.filter(htlc => pendingRelayFulfills.contains(htlc.id))
-        if (offendingPendingRelayFulfills.nonEmpty) {
-          handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingPendingRelayFulfills), d, Some(c))
-        } else {
-          stay
-        }
-      }
-    } else {
+    if (d.commitments.hasNoPendingHtlcs) {
+      // when there are no pending htlcs in either commitment, there is nothing to do
       stay
+    } else {
+      val timedOutOutgoing = d.commitments.timedOutOutgoingHtlcs(c.blockCount)
+      val almostTimedOutIncoming = d.commitments.almostTimedOutIncomingHtlcs(c.blockCount, nodeParams.fulfillSafetyBeforeTimeout)
+      if (timedOutOutgoing.nonEmpty) {
+        // Downstream timed out.
+        handleLocalError(HtlcsTimedoutDownstream(d.channelId, timedOutOutgoing), d, Some(c))
+      } else if (almostTimedOutIncoming.nonEmpty) {
+        // Upstream is close to timing out, we need to test if we have funds at risk: htlcs for which we know the preimage
+        // that are still in our commitment (upstream will try to timeout on-chain).
+        val relayedFulfills = d.commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.id }.toSet
+        val offendingRelayedHtlcs = almostTimedOutIncoming.filter(htlc => relayedFulfills.contains(htlc.id))
+        if (offendingRelayedHtlcs.nonEmpty) {
+          handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingRelayedHtlcs), d, Some(c))
+        } else {
+          // There might be pending fulfill commands that we haven't relayed yet.
+          // Since this involves a DB call, we only want to check it if all the previous checks failed (this is the slow path).
+          val pendingRelayFulfills = nodeParams.db.pendingRelay.listPendingRelay(d.channelId).collect { case c: CMD_FULFILL_HTLC => c.id }
+          val offendingPendingRelayFulfills = almostTimedOutIncoming.filter(htlc => pendingRelayFulfills.contains(htlc.id))
+          if (offendingPendingRelayFulfills.nonEmpty) {
+            handleLocalError(HtlcsWillTimeoutUpstream(d.channelId, offendingPendingRelayFulfills), d, Some(c))
+          } else {
+            stay
+          }
+        }
+      } else {
+        stay
+      }
     }
   }
 
