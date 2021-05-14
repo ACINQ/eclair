@@ -188,6 +188,11 @@ object Features {
     val mandatory = 20
   }
 
+  case object ShutdownAnySegwit extends Feature {
+    val rfcName = "option_shutdown_anysegwit"
+    val mandatory = 26
+  }
+
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
@@ -213,6 +218,7 @@ object Features {
     TrampolinePayment,
     StaticRemoteKey,
     AnchorOutputs,
+    ShutdownAnySegwit,
     KeySend
   )
 
