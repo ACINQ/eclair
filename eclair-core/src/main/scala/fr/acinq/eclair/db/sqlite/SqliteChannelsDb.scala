@@ -80,8 +80,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
-    val data = stateDataCodec.encode(state).require.toByteArray
-    logger.debug(s"this is just to force the compiler to evaluate the variable size=${data.size}")
+//    val data = stateDataCodec.encode(state).require.toByteArray
 //    using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
 //      update.setBytes(1, data)
 //      update.setBytes(2, state.channelId.toArray)
@@ -99,11 +98,11 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
    * Helper method to factor updating timestamp columns
    */
   private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
-    using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
-      statement.setLong(1, System.currentTimeMillis)
-      statement.setBytes(2, channelId.toArray)
-      statement.executeUpdate()
-    }
+//    using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
+//      statement.setLong(1, System.currentTimeMillis)
+//      statement.setBytes(2, channelId.toArray)
+//      statement.executeUpdate()
+//    }
   }
 
   override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
