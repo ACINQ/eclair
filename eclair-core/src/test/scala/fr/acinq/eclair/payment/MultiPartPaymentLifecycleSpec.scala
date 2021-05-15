@@ -384,7 +384,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.failures.length === 1)
   }
 
-  test("abort if payment gets confirmed on chain") { f =>
+  test("abort if payment gets settled on chain") { f =>
     import f._
 
     val payment = SendMultiPartPayment(sender.ref, randomBytes32, e, finalAmount, expiry, 5, routeParams = Some(routeParams))
