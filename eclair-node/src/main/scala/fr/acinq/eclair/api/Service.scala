@@ -36,11 +36,6 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
   val eclairApi: Eclair
 
   /**
-   * Additional routes injected by API-enabled plugins.
-   */
-  val pluginRoutes: Seq[Route]
-
-  /**
    * ActorSystem on which to run the http service.
    */
   implicit val actorSystem: ActorSystem
@@ -50,8 +45,7 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
    * This is the main entrypoint for the global http request router of the API service.
    * This is where we handle errors to ensure all routes are correctly tried before rejecting.
    */
-  val route: Route = securedHandler {
-    val baseRoutes = nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
-    pluginRoutes.foldLeft(baseRoutes)(_ ~ _)
+  def finalRoutes(extraRoutes: Seq[Route]): Route = securedHandler {
+    extraRoutes.foldLeft(nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket)(_ ~ _)
   }
 }

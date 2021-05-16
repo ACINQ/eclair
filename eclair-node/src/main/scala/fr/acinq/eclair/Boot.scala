@@ -51,7 +51,7 @@ object Boot extends App with Logging {
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
       case Success(kit) =>
-        startApiServiceIfEnabled(plugins.collect { case plugin: ApiExtendingPlugin => plugin.pluginRoute }, kit)
+        startApiServiceIfEnabled(plugins.collect { case plugin: RouteProvider => plugin }, kit)
         plugins.foreach(_.onKit(kit))
       case Failure(t) => onError(t)
     }
@@ -66,7 +66,7 @@ object Boot extends App with Logging {
    * @param system
    * @param ec
    */
-  def startApiServiceIfEnabled(extraRoutes: Seq[Route], kit: Kit)(implicit system: ActorSystem, ec: ExecutionContext) = {
+  def startApiServiceIfEnabled(providers: Seq[RouteProvider], kit: Kit)(implicit system: ActorSystem, ec: ExecutionContext) = {
     val config = system.settings.config.getConfig("eclair")
     if (config.getBoolean("api.enabled")) {
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
@@ -74,13 +74,13 @@ object Boot extends App with Logging {
         case "" => throw EmptyAPIPasswordException
         case valid => valid
       }
-      val apiRoute = new Service {
+      val service: Service = new Service {
         override val actorSystem: ActorSystem = system
         override val password: String = apiPassword
-        override val pluginRoutes: Seq[Route] = extraRoutes
         override val eclairApi: Eclair = new EclairImpl(kit)
-      }.route
-      Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+      }
+      val pluginRoutes = providers.map(_.route(service))
+      Http().bindAndHandle(service.finalRoutes(pluginRoutes), config.getString("api.binding-ip"), config.getInt("api.port")).recover {
         case _: BindFailedException => onError(TCPBindException(config.getInt("api.port")))
       }
     } else {

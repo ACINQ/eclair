@@ -20,6 +20,7 @@ import java.io.File
 import java.net.{JarURLConnection, URL, URLClassLoader}
 
 import akka.http.scaladsl.server.Route
+import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -33,8 +34,8 @@ trait Plugin {
   def onKit(kit: Kit): Unit
 }
 
-trait ApiExtendingPlugin extends Plugin {
-  def pluginRoute: Route
+trait RouteProvider {
+  def route(service: Service): Route
 }
 
 object Plugin extends Logging {
