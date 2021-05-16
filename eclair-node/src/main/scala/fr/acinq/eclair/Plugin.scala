@@ -18,7 +18,10 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.{JarURLConnection, URL, URLClassLoader}
+
+import akka.http.scaladsl.server.Route
 import grizzled.slf4j.Logging
+
 import scala.util.{Failure, Success, Try}
 
 trait Plugin {
@@ -28,7 +31,10 @@ trait Plugin {
   def onSetup(setup: Setup): Unit
 
   def onKit(kit: Kit): Unit
+}
 
+trait ApiExtendingPlugin extends Plugin {
+  def pluginRoute: Route
 }
 
 object Plugin extends Logging {
