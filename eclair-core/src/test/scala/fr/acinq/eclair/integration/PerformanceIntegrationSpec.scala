@@ -52,11 +52,20 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
 
     connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
+    connect(nodes("A"), nodes("B"), 100_000_000 sat, 0 msat)
 
     // confirming the funding tx
     generateBlocks(6)
 
     within(60 seconds) {
+      eventListener.expectMsgType[ChannelStateChanged](60 seconds).currentState == NORMAL
+      eventListener.expectMsgType[ChannelStateChanged](60 seconds).currentState == NORMAL
       eventListener.expectMsgType[ChannelStateChanged](60 seconds).currentState == NORMAL
     }
   }
@@ -67,7 +76,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     awaitCond({
       sender.send(nodes("A").router, Router.GetRoutingState)
       val routingState = sender.expectMsgType[Router.RoutingState]
-      routingState.channels.nonEmpty
+      routingState.channels.size == 8
     }, 60 seconds)
   }
 

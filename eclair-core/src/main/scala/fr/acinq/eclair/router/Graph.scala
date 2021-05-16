@@ -26,6 +26,7 @@ import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap
 import scala.collection.mutable
+import scala.util.Random
 
 object Graph {
 
@@ -229,7 +230,8 @@ object Graph {
           if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)) {
             val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), Double.MaxValue))
             // if this path between neighbor and the target has a shorter distance than previously known, we select it
-            if (neighborWeight.weight < previousNeighborWeight.weight) {
+            if (neighborWeight.weight < previousNeighborWeight.weight ||
+              (neighborWeight.weight == previousNeighborWeight.weight && Random.nextInt(1) == 0)) {
               // update the best edge for this vertex
               bestEdges.put(neighbor, edge)
               // add this updated node to the list for further exploration
