@@ -392,8 +392,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val preimage = hex"0505050505050505050505050505050505050505050505050505050505050505"
     val someHtlcs = Seq(
       IncomingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 1000000.msat, Crypto.sha256(paymentPreimages(0)), CltvExpiry(500), TestConstants.emptyOnionPacket)),
-      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(505), TestConstants.emptyOnionPacket)),
-      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(506), TestConstants.emptyOnionPacket))
+      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, 5000000.msat, Crypto.sha256(preimage), CltvExpiry(506), TestConstants.emptyOnionPacket)),
+      OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 1, 5000001.msat, Crypto.sha256(preimage), CltvExpiry(505), TestConstants.emptyOnionPacket))
     )
 
     val (commitTx, htlcTxs) = run(name, someHtlcs.toSet[DirectedHtlc])
