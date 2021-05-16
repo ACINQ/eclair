@@ -23,13 +23,14 @@ import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
 
-object UpdateAddHtlcTlv {
-  case class Data(data: ByteVector) extends Tlv
+sealed trait HtlcTlv extends Tlv
 
-  val codec: Codec[TlvStream[Data]] = tlvStream(
-    discriminated[Data].by(varint)
-      .typecase(UInt64(1L), variableSizeBytesLong(varintoverflow, bytes).as[Data])
+object HtlcTlv {
+  case class Data(data: ByteVector) extends HtlcTlv
+
+  val codec: Codec[TlvStream[HtlcTlv]] = tlvStream(
+    discriminated[HtlcTlv].by(varint)
+      .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[Data])
   )
 }
-
 
