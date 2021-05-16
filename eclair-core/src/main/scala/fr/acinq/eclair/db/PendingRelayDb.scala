@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair.db
 
-import java.io.Closeable
-
-import akka.actor.{ActorContext, ActorRef}
+import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
+
+import java.io.Closeable
 
 /**
  * This database stores CMD_FULFILL_HTLC and CMD_FAIL_HTLC that we have received from downstream
@@ -58,7 +58,7 @@ object PendingRelayDb {
     // htlc settlement commands don't have replyTo
     register ! Register.Forward(ActorRef.noSender, channelId, cmd)
     // we store the command in a db (note that this happens *after* forwarding the command to the channel, so we don't add latency)
-    db.addPendingRelay(channelId, cmd)
+    //db.addPendingRelay(channelId, cmd)
   }
 
   def ackCommand(db: PendingRelayDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
@@ -77,7 +77,7 @@ object PendingRelayDb {
       db.removePendingRelay(u.channelId, u.id)
   }
 
-  def getPendingFailsAndFulfills(db: PendingRelayDb, channelId: ByteVector32)(implicit  log: LoggingAdapter): Seq[HtlcSettlementCommand] = {
+  def getPendingFailsAndFulfills(db: PendingRelayDb, channelId: ByteVector32)(implicit log: LoggingAdapter): Seq[HtlcSettlementCommand] = {
     db.listPendingRelay(channelId)
   }
 }
