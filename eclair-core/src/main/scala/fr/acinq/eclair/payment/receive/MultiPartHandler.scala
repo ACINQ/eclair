@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
+import scala.concurrent.duration.DurationLong
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -38,6 +39,8 @@ import scala.util.{Failure, Success, Try}
 class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingPaymentsDb) extends ReceiveHandler {
 
   import MultiPartHandler._
+
+  private var incomingPayments: Map[ByteVector32, IncomingPayment] = Map.empty
 
   // NB: this is safe because this handler will be called from within an actor
   private var pendingPayments: Map[ByteVector32, (ByteVector32, ActorRef)] = Map.empty
@@ -68,7 +71,8 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
-        db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
+        incomingPayments = incomingPayments + (paymentHash -> IncomingPayment(paymentRequest, paymentPreimage, paymentType, paymentRequest.timestamp.seconds.toMillis, IncomingPaymentStatus.Pending))
+        //db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
         paymentRequest
       } match {
         case Success(paymentRequest) => ctx.sender ! paymentRequest
@@ -77,7 +81,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
 
     case p: IncomingPacket.FinalPacket if doHandle(p.add.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(p.add.paymentHash))) {
-        db.getIncomingPayment(p.add.paymentHash) match {
+        incomingPayments.get(p.add.paymentHash) match {
           case Some(record) => validatePayment(nodeParams, p, record) match {
             case Some(cmdFail) =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
@@ -164,7 +168,8 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         val received = PaymentReceived(paymentHash, parts.map {
           case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
         })
-        db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
+        incomingPayments = incomingPayments - paymentHash
+        //db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
         parts.collect {
           case p: MultiPartPaymentFSM.HtlcPart => PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
         }
