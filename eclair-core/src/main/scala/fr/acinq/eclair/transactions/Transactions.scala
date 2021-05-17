@@ -307,7 +307,7 @@ object Transactions {
      * See https://github.com/lightningnetwork/lightning-rfc/issues/448#issuecomment-432074187.
      */
     def sort(a: CommitmentOutputLink[CommitmentOutput], b: CommitmentOutputLink[CommitmentOutput]): Boolean = (a.commitmentOutput, b.commitmentOutput) match {
-      case (OutHtlc(OutgoingHtlc(htlcA)), OutHtlc(OutgoingHtlc(htlcB))) if htlcA.paymentHash == htlcB.paymentHash && htlcA.amountMsat == htlcB.amountMsat =>
+      case (OutHtlc(OutgoingHtlc(htlcA)), OutHtlc(OutgoingHtlc(htlcB))) if htlcA.paymentHash == htlcB.paymentHash && htlcA.amountMsat.truncateToSatoshi == htlcB.amountMsat.truncateToSatoshi =>
         htlcA.cltvExpiry <= htlcB.cltvExpiry
       case _ => LexicographicalOrdering.isLessThan(a.output, b.output)
     }
