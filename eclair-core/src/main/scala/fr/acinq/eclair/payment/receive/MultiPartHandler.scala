@@ -57,10 +57,8 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
-        // We currently only optionally support payment secrets (to allow legacy clients to pay invoices).
-        // Once we're confident most of the network has upgraded, we should switch to mandatory payment secrets.
         val features = {
-          val f1 = Seq(Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
+          val f1 = Seq(Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
           val allowMultiPart = nodeParams.features.hasFeature(Features.BasicMultiPartPayment)
           val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
           val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
@@ -99,9 +97,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               val paymentHash = Crypto.sha256(paymentPreimage)
               val desc = "Donation"
               val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
-                PaymentRequestFeatures(Features.BasicMultiPartPayment.optional, Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
+                PaymentRequestFeatures(Features.BasicMultiPartPayment.optional, Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
               } else {
-                PaymentRequestFeatures(Features.PaymentSecret.optional, Features.VariableLengthOnion.optional)
+                PaymentRequestFeatures(Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
               }
 
               // Insert a fake invoice and then restart the incoming payment handler

@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.Block
-import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.channel.Channel
@@ -53,13 +53,13 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   case class FixtureParam(nodeParams: NodeParams, initiator: TestActorRef[PaymentInitiator], payFsm: TestProbe, multiPartPayFsm: TestProbe, sender: TestProbe, eventListener: TestProbe)
 
   val featuresWithoutMpp = Features(
-    VariableLengthOnion -> Optional,
-    PaymentSecret -> Optional
+    VariableLengthOnion -> Mandatory,
+    PaymentSecret -> Mandatory
   )
 
   val featuresWithMpp = Features(
-    VariableLengthOnion -> Optional,
-    PaymentSecret -> Optional,
+    VariableLengthOnion -> Mandatory,
+    PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional,
   )
 
@@ -143,7 +143,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("forward single-part payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
     import f._
     val finalExpiryDelta = CltvExpiryDelta(24)
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some MPP invoice", finalExpiryDelta, features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some MPP invoice", finalExpiryDelta, features = Some(PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)))
     val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, /* ignored since the invoice provides it */ CltvExpiryDelta(12), Some(pr))
     assert(req.finalExpiry(nodeParams.currentBlockHeight) === (finalExpiryDelta + 1).toCltvExpiry(nodeParams.currentBlockHeight))
     sender.send(initiator, req)
@@ -154,7 +154,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward multi-part payment") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)))
     val req = SendPaymentRequest(finalAmount + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -245,7 +245,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(trampolinePayload.outgoingCltv.toLong === currentBlockCount + 9 + 1)
     assert(trampolinePayload.outgoingNodeId === c)
     assert(trampolinePayload.paymentSecret === pr.paymentSecret)
-    assert(trampolinePayload.invoiceFeatures === Some(hex"8200")) // var_onion_optin, payment_secret
+    assert(trampolinePayload.invoiceFeatures === Some(hex"4100")) // var_onion_optin, payment_secret
   }
 
   test("reject trampoline to legacy payment for 0-value invoice") { f =>

@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
-import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf, _}
 import fr.acinq.eclair.channel.LocalParams
@@ -88,8 +88,8 @@ object TestConstants {
           OptionDataLossProtect -> Optional,
           ChannelRangeQueries -> Optional,
           ChannelRangeQueriesExtended -> Optional,
-          VariableLengthOnion -> Optional,
-          PaymentSecret -> Optional,
+          VariableLengthOnion -> Mandatory,
+          PaymentSecret -> Mandatory,
           BasicMultiPartPayment -> Optional
         ),
         Set(UnknownFeature(TestFeature.optional))
@@ -194,8 +194,8 @@ object TestConstants {
         OptionDataLossProtect -> Optional,
         ChannelRangeQueries -> Optional,
         ChannelRangeQueriesExtended -> Optional,
-        VariableLengthOnion -> Optional,
-        PaymentSecret -> Optional,
+        VariableLengthOnion -> Mandatory,
+        PaymentSecret -> Mandatory,
         BasicMultiPartPayment -> Optional
       ),
       pluginParams = Nil,

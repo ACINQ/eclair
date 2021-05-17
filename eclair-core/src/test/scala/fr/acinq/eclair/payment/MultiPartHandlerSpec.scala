@@ -20,7 +20,7 @@ import akka.actor.ActorRef
 import akka.actor.Status.Failure
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
-import fr.acinq.eclair.FeatureSupport.Optional
+import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register}
@@ -45,18 +45,19 @@ import scala.concurrent.duration._
 class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
   val featuresWithoutMpp = Features(
-    VariableLengthOnion -> Optional,
-    PaymentSecret -> Optional,
+    VariableLengthOnion -> Mandatory,
+    PaymentSecret -> Mandatory,
   )
 
   val featuresWithMpp = Features(
-    VariableLengthOnion -> Optional,
-    PaymentSecret -> Optional,
+    VariableLengthOnion -> Mandatory,
+    PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional
   )
 
   val featuresWithKeySend = Features(
-    VariableLengthOnion -> Optional,
+    VariableLengthOnion -> Mandatory,
+    PaymentSecret -> Mandatory,
     KeySend -> Optional
   )
 
