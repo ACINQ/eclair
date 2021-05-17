@@ -70,9 +70,16 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   object PluginApi extends RouteProvider {
     override def route(directives: EclairDirectives): Route = {
-      directives.postRequest("plugin-test") { implicit t =>
-        directives.complete("fine")
+      import directives._
+      val route1 = postRequest("plugin-test") { implicit t =>
+        complete("fine")
       }
+
+      val route2 = postRequest("payinvoice") { implicit t =>
+        complete("gets overridden by base API endpoint")
+      }
+
+      route1 ~ route2
     }
   }
 
