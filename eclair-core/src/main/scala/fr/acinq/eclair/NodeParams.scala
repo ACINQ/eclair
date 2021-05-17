@@ -241,7 +241,8 @@ object NodeParams extends Logging {
     def validateFeatures(features: Features): Unit = {
       val featuresErr = Features.validateFeatureGraph(features)
       require(featuresErr.isEmpty, featuresErr.map(_.message))
-      require(features.hasFeature(Features.VariableLengthOnion), s"${Features.VariableLengthOnion.rfcName} must be enabled")
+      require(features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)), s"${Features.VariableLengthOnion.rfcName} must be enabled and mandatory")
+      require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), s"${Features.PaymentSecret.rfcName} must be enabled and mandatory")
       require(!features.hasFeature(Features.InitialRoutingSync), s"${Features.InitialRoutingSync.rfcName} is not supported anymore, use ${Features.ChannelRangeQueries.rfcName} instead")
     }
 

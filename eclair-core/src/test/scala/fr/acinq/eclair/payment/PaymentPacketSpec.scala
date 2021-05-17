@@ -216,7 +216,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     // a -> b -> c      d -> e
 
     val routingHints = List(List(PaymentRequest.ExtraHop(randomKey.publicKey, ShortChannelId(42), 10 msat, 100, CltvExpiryDelta(144))))
-    val invoiceFeatures = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional)
+    val invoiceFeatures = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)
     val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, "#reckless", CltvExpiryDelta(18), None, None, routingHints, features = Some(invoiceFeatures))
     val (amount_ac, expiry_ac, trampolineOnion) = buildTrampolineToLegacyPacket(invoice, trampolineHops, FinalLegacyPayload(finalAmount, finalExpiry))
     assert(amount_ac === amount_bc)
@@ -257,7 +257,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_d.outgoingNodeId === e)
     assert(inner_d.totalAmount === finalAmount)
     assert(inner_d.paymentSecret === invoice.paymentSecret)
-    assert(inner_d.invoiceFeatures === Some(hex"028200")) // var_onion_optin, payment_secret, basic_mpp
+    assert(inner_d.invoiceFeatures === Some(hex"024100")) // var_onion_optin, payment_secret, basic_mpp
     assert(inner_d.invoiceRoutingInfo === Some(routingHints))
   }
 

@@ -86,8 +86,8 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     s"eclair.features.${OptionDataLossProtect.rfcName}" -> "optional",
     s"eclair.features.${ChannelRangeQueries.rfcName}" -> "optional",
     s"eclair.features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
-    s"eclair.features.${VariableLengthOnion.rfcName}" -> "optional",
-    s"eclair.features.${PaymentSecret.rfcName}" -> "optional",
+    s"eclair.features.${VariableLengthOnion.rfcName}" -> "mandatory",
+    s"eclair.features.${PaymentSecret.rfcName}" -> "mandatory",
     s"eclair.features.${BasicMultiPartPayment.rfcName}" -> "optional"
   ).asJava)
 

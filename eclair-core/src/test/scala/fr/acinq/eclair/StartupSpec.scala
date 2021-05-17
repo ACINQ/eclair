@@ -94,8 +94,8 @@ class StartupSpec extends AnyFunSuite {
       s"features.${OptionDataLossProtect.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
-      s"features.${VariableLengthOnion.rfcName}" -> "optional",
-      s"features.${PaymentSecret.rfcName}" -> "optional",
+      s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
+      s"features.${PaymentSecret.rfcName}" -> "mandatory",
       s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
     ).asJava)
 
@@ -106,22 +106,39 @@ class StartupSpec extends AnyFunSuite {
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional"
     ).asJava)
 
+    // var_onion_optin cannot be optional
+    val optionalVarOnionOptinConf = ConfigFactory.parseMap(Map(
+      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${VariableLengthOnion.rfcName}" -> "optional"
+    ).asJava)
+
+    // payment_secret cannot be optional
+    val optionalPaymentSecretConf = ConfigFactory.parseMap(Map(
+      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
+      s"features.${PaymentSecret.rfcName}" -> "optional",
+    ).asJava)
+
     // initial_routing_sync cannot be enabled
     val initialRoutingSyncConf = ConfigFactory.parseMap(Map(
       s"features.${OptionDataLossProtect.rfcName}" -> "optional",
       s"features.${InitialRoutingSync.rfcName}" -> "optional",
       s"features.${ChannelRangeQueries.rfcName}" -> "optional",
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional",
-      s"features.${VariableLengthOnion.rfcName}" -> "optional"
+      s"features.${VariableLengthOnion.rfcName}" -> "mandatory",
+      s"features.${PaymentSecret.rfcName}" -> "mandatory",
     ).asJava)
 
-    // basic_mpp without payment_secret
+    // extended channel queries without channel queries
     val illegalFeaturesConf = ConfigFactory.parseMap(Map(
-      s"features.${BasicMultiPartPayment.rfcName}" -> "optional"
+      s"features.${OptionDataLossProtect.rfcName}" -> "optional",
+      s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional"
     ).asJava)
 
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(legalFeaturesConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(noVariableLengthOnionConf))).isFailure)
+    assert(Try(makeNodeParamsWithDefaults(finalizeConf(optionalVarOnionOptinConf))).isFailure)
+    assert(Try(makeNodeParamsWithDefaults(finalizeConf(optionalPaymentSecretConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(initialRoutingSyncConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalFeaturesConf))).isFailure)
   }
@@ -133,7 +150,7 @@ class StartupSpec extends AnyFunSuite {
         |      {
         |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         |          features {
-        |            var_onion_optin = optional
+        |            var_onion_optin = mandatory
         |            payment_secret = mandatory
         |            basic_mpp = mandatory
         |          }
@@ -144,7 +161,7 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
     val perNodeFeatures = nodeParams.featuresFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
-    assert(perNodeFeatures === Features(VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory))
+    assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory))
   }
 
   test("override feerate mismatch tolerance") {

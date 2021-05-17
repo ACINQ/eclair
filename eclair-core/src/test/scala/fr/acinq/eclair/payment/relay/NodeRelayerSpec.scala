@@ -575,7 +575,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     // Receive an upstream multi-part payment.
     val hints = List(List(ExtraHop(outgoingNodeId, ShortChannelId(42), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val features = PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.mandatory, BasicMultiPartPayment.optional)
+    val features = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(outgoingAmount * 3), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), extraHops = hints, features = Some(features))
     val incomingPayments = incomingMultiPart.map(incoming => incoming.copy(innerPayload = Onion.createNodeRelayToNonTrampolinePayload(
       incoming.innerPayload.amountToForward, outgoingAmount * 3, outgoingExpiry, outgoingNodeId, pr

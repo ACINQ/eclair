@@ -135,7 +135,7 @@ object PaymentRequest {
             expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil,
             timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.optional, Features.PaymentSecret.optional))): PaymentRequest = {
+            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.mandatory, Features.PaymentSecret.mandatory))): PaymentRequest = {
 
     val prefix = prefixes(chainHash)
     val tags = {
