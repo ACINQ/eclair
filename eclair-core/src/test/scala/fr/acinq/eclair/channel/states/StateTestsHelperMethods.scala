@@ -62,6 +62,8 @@ object StateTestsTags {
   val StaticRemoteKey = "static_remotekey"
   /** If set, channels will use option_anchor_outputs. */
   val AnchorOutputs = "anchor_outputs"
+  /** If set, channels will use option_shutdown_anysegwit. */
+  val ShutdownAnySegwit = "shutdown_anysegwit"
   /** If set, channels will be public (otherwise we don't announce them by default). */
   val ChannelsPublic = "channels_public"
   /** If set, no amount will be pushed when opening a channel (by default we push a small amount). */
@@ -111,6 +113,7 @@ trait StateTestsHelperMethods extends TestKitBase {
       .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
       .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
       .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
   }
 
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {

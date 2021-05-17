@@ -209,7 +209,7 @@ class FeaturesSpec extends AnyFunSuite {
       hex"" -> Features.empty,
       hex"0100" -> Features(VariableLengthOnion -> Mandatory),
       hex"028a8a" -> Features(OptionDataLossProtect -> Optional, InitialRoutingSync -> Optional, ChannelRangeQueries -> Optional, VariableLengthOnion -> Optional, ChannelRangeQueriesExtended -> Optional, PaymentSecret -> Optional, BasicMultiPartPayment -> Optional),
-      hex"09004200" -> Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Mandatory), Set(UnknownFeature(24), UnknownFeature(27))),
+      hex"09004200" -> Features(Map[Feature, FeatureSupport](VariableLengthOnion -> Optional, PaymentSecret -> Mandatory, ShutdownAnySegwit -> Optional), Set(UnknownFeature(24))),
       hex"52000000" -> Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25), UnknownFeature(28), UnknownFeature(30)))
     )
 

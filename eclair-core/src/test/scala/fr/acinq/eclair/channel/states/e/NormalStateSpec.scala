@@ -1737,23 +1737,24 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     relayerA.expectNoMsg(1 seconds)
   }
 
-  def testCmdClose(f: FixtureParam): Unit = {
+  def testCmdClose(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
     import f._
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, script_opt)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
-    alice2bob.expectMsgType[Shutdown]
+    val shutdown = alice2bob.expectMsgType[Shutdown]
+    script_opt.foreach(script => assert(script === shutdown.scriptPubKey))
     awaitCond(alice.stateName == NORMAL)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
   }
 
-  test("recv CMD_CLOSE (no pending htlcs)") {
-    testCmdClose _
+  test("recv CMD_CLOSE (no pending htlcs)") { f =>
+    testCmdClose(f, None)
   }
 
-  test("recv CMD_CLOSE (no pending htlcs) (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) {
-    testCmdClose _
+  test("recv CMD_CLOSE (no pending htlcs) (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    testCmdClose(f, None)
   }
 
   test("recv CMD_CLOSE (with noSender)") { f =>
@@ -1792,6 +1793,17 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     alice ! CMD_CLOSE(sender.ref, Some(hex"00112233445566778899"))
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, InvalidFinalScript]]
+  }
+
+  test("recv CMD_CLOSE (with unsupported native segwit script)") { f =>
+    import f._
+    val sender = TestProbe()
+    alice ! CMD_CLOSE(sender.ref, Some(hex"51050102030405"))
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, InvalidFinalScript]]
+  }
+
+  test("recv CMD_CLOSE (with native segwit script)", Tag(StateTestsTags.ShutdownAnySegwit)) { f =>
+    testCmdClose(f, Some(hex"51050102030405"))
   }
 
   test("recv CMD_CLOSE (with signed sent htlcs)") { f =>
@@ -1849,9 +1861,9 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NORMAL)
   }
 
-  def testShutdown(f: FixtureParam): Unit = {
+  def testShutdown(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
     import f._
-    alice ! Shutdown(ByteVector32.Zeroes, Bob.channelParams.defaultFinalScriptPubKey)
+    alice ! Shutdown(ByteVector32.Zeroes, script_opt.getOrElse(Bob.channelParams.defaultFinalScriptPubKey))
     alice2bob.expectMsgType[Shutdown]
     alice2bob.expectMsgType[ClosingSigned]
     awaitCond(alice.stateName == NEGOTIATING)
@@ -1859,12 +1871,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(channelUpdateListener.expectMsgType[LocalChannelDown].channelId === alice.stateData.asInstanceOf[DATA_NEGOTIATING].channelId)
   }
 
-  test("recv Shutdown (no pending htlcs)") {
-    testShutdown _
+  test("recv Shutdown (no pending htlcs)") { f =>
+    testShutdown(f, None)
   }
 
-  test("recv Shutdown (no pending htlcs) (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) {
-    testShutdown _
+  test("recv Shutdown (no pending htlcs) (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
+    testShutdown(f, None)
   }
 
   test("recv Shutdown (with unacked sent htlcs)") { f =>
@@ -1936,6 +1948,18 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectMsgType[PublishTx]
     bob2blockchain.expectMsgType[WatchTxConfirmed]
     awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv Shutdown (with unsupported native segwit script)") { f =>
+    import f._
+    bob ! Shutdown(ByteVector32.Zeroes, hex"51050102030405")
+    bob2alice.expectMsgType[Error]
+    bob2blockchain.expectMsgType[PublishTx]
+    awaitCond(bob.stateName == CLOSING)
+  }
+
+  test("recv Shutdown (with native segwit script)", Tag(StateTestsTags.ShutdownAnySegwit)) { f =>
+    testShutdown(f, Some(hex"51050102030405"))
   }
 
   test("recv Shutdown (with invalid final script and signed htlcs, in response to a Shutdown)") { f =>
