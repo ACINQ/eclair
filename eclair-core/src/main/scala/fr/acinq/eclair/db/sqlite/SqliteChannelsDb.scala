@@ -80,18 +80,19 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
-    val data = commitmentsCodec.encode(state.commitments).require.toByteArray
-    using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
-      update.setBytes(1, data)
-      update.setBytes(2, state.channelId.toArray)
-      if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
-          statement.setBytes(1, state.channelId.toArray)
-          statement.setBytes(2, data)
-          statement.executeUpdate()
-        }
-      }
-    }
+    val data = stateDataCodec.encode(state).require.toByteArray
+    logger.debug(s"this is just to force the compiler to evaluate the variable size=${data.size}")
+//    using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
+//      update.setBytes(1, data)
+//      update.setBytes(2, state.channelId.toArray)
+//      if (update.executeUpdate() == 0) {
+//        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
+//          statement.setBytes(1, state.channelId.toArray)
+//          statement.setBytes(2, data)
+//          statement.executeUpdate()
+//        }
+//      }
+//    }
   }
 
   /**
