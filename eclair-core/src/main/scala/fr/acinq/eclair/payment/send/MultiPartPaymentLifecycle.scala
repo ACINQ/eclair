@@ -16,10 +16,14 @@
 
 package fr.acinq.eclair.payment.send
 
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+
 import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
@@ -32,9 +36,6 @@ import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams}
-
-import java.util.UUID
-import java.util.concurrent.TimeUnit
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -112,7 +113,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       }
 
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
-      if (isFinalRecipientFailure(pf, d)) {
+      if (abortPayment(pf, d)) {
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
@@ -130,7 +131,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   when(PAYMENT_IN_PROGRESS) {
     case Event(pf: PaymentFailed, d: PaymentProgress) =>
-      if (isFinalRecipientFailure(pf, d)) {
+      if (abortPayment(pf, d)) {
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures ++ pf.failures, d.pending.keySet - pf.id))
       } else if (d.remainingAttempts == 0) {
         val failure = LocalFailure(Nil, PaymentError.RetryExhausted)
@@ -377,10 +378,14 @@ object MultiPartPaymentLifecycle {
     SendPaymentToRoute(replyTo, Right(route), finalPayload)
   }
 
-  /** When we receive an error from the final recipient, we should fail the whole payment, it's useless to retry. */
-  private def isFinalRecipientFailure(pf: PaymentFailed, d: PaymentProgress): Boolean = pf.failures.collectFirst {
-    case f: RemoteFailure if f.e.originNode == d.request.targetNodeId => true
-  }.getOrElse(false)
+  /** When we receive an error from the final recipient or payment gets settled on chain, we should fail the whole payment, it's useless to retry. */
+  private def abortPayment(pf: PaymentFailed, d: PaymentProgress): Boolean = pf.failures.exists {
+    case f: RemoteFailure => f.e.originNode == d.request.targetNodeId
+    case LocalFailure(_, _: HtlcOverriddenByLocalCommit) => true
+    case LocalFailure(_, _: HtlcsWillTimeoutUpstream) => true
+    case LocalFailure(_, _: HtlcsTimedoutDownstream) => true
+    case _ => false
+  }
 
   private def remainingToSend(nodeParams: NodeParams, request: SendMultiPartPayment, pending: Iterable[Route]): (MilliSatoshi, MilliSatoshi) = {
     val sentAmount = pending.map(_.amount).sum

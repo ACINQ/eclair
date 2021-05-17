@@ -141,12 +141,12 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     }
     // we only retry if the error isn't fatal, and we haven't exhausted the max number of retried
     val doRetry = !isFatal && (d.failures.size + 1 < d.c.maxAttempts)
+    val localFailure = LocalFailure(cfg.fullRoute(d.route), t)
     if (doRetry) {
       log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
-      val failure = LocalFailure(cfg.fullRoute(d.route), t)
-      retry(failure, d)
+      retry(localFailure, d)
     } else {
-      onFailure(d.c.replyTo, PaymentFailed(id, paymentHash, d.failures :+ LocalFailure(cfg.fullRoute(d.route), t)))
+      onFailure(d.c.replyTo, PaymentFailed(id, paymentHash, d.failures :+ localFailure))
       stop(FSM.Normal)
     }
   }

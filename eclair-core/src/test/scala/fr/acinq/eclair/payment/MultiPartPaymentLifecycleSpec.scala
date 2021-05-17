@@ -18,9 +18,9 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{ActorContext, ActorRef, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, Crypto}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable, HtlcsTimedoutDownstream}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{FailureSummary, FailureType, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
@@ -36,8 +36,8 @@ import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
-
 import java.util.UUID
+
 import scala.concurrent.duration._
 
 /**
@@ -381,6 +381,20 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val (failedId, failedRoute) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
     val result = abortAfterFailure(f, PaymentFailed(failedId, paymentHash, Seq(RemoteFailure(failedRoute.hops, Sphinx.DecryptedFailurePacket(e, IncorrectOrUnknownPaymentDetails(600000 msat, 0))))))
+    assert(result.failures.length === 1)
+  }
+
+  test("abort if payment gets settled on chain") { f =>
+    import f._
+
+    val payment = SendMultiPartPayment(sender.ref, randomBytes32, e, finalAmount, expiry, 5, routeParams = Some(routeParams))
+    sender.send(payFsm, payment)
+    router.expectMsgType[RouteRequest]
+    router.send(payFsm, RouteResponse(Seq(Route(finalAmount, hop_ab_1 :: hop_be :: Nil))))
+    childPayFsm.expectMsgType[SendPaymentToRoute]
+
+    val (failedId, failedRoute) = payFsm.stateData.asInstanceOf[PaymentProgress].pending.head
+    val result = abortAfterFailure(f, PaymentFailed(failedId, paymentHash, Seq(LocalFailure(failedRoute.hops, HtlcsTimedoutDownstream(channelId = ByteVector32.One, htlcs = Set.empty)))))
     assert(result.failures.length === 1)
   }
 
