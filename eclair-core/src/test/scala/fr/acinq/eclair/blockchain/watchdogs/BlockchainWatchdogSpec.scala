@@ -61,4 +61,29 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     testKit.stop(watchdog)
   }
 
+  test("fetch block headers when we don't receive blocks", TestTags.ExternalApi) {
+    val eventListener = TestProbe[DangerousBlocksSkew]()
+    system.eventStream ! EventStream.Subscribe(eventListener.ref)
+    val blockTimeout = 5 seconds
+    val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 1 second, blockTimeout))
+
+    watchdog ! WrappedCurrentBlockCount(500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    eventListener.expectNoMessage(100 millis)
+
+    // If we don't receive blocks, we check blockchain sources.
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    eventListener.expectNoMessage(100 millis)
+
+    // And we keep checking blockchain sources until we receive a block.
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+    eventListener.expectNoMessage(100 millis)
+  }
+
 }
