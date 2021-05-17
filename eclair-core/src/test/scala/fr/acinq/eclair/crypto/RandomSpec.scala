@@ -16,7 +16,10 @@
 
 package fr.acinq.eclair.crypto
 
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.crypto.RandomSpec.entropyScore
+import org.bouncycastle.crypto.engines.ChaCha7539Engine
+import org.bouncycastle.crypto.params.{KeyParameter, ParametersWithIV}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.BitVector
 
@@ -69,6 +72,28 @@ class RandomSpec extends AnyFunSuiteLike {
       val entropy = entropyScore(randomBytes)
       assert(entropy >= 0.99)
     }
+  }
+
+  // This test shows that we can do in-place encryption with ChaCha20 (no need to allocate another array for the
+  // ciphertext, we can directly write in the plaintext array).
+  test("chacha20 in-place stream encryption") {
+    val noExtraBuffer = new Array[Byte](512)
+    val withExtraBuffer = new Array[Byte](512)
+
+    {
+      val stream = new ChaCha7539Engine()
+      stream.init(true, new ParametersWithIV(new KeyParameter(ByteVector32.One.toArray), new Array[Byte](12)))
+      stream.processBytes(noExtraBuffer, 0, noExtraBuffer.length, noExtraBuffer, 0)
+    }
+    {
+      val stream = new ChaCha7539Engine()
+      stream.init(true, new ParametersWithIV(new KeyParameter(ByteVector32.One.toArray), new Array[Byte](12)))
+      val ciphertext = new Array[Byte](withExtraBuffer.length)
+      stream.processBytes(withExtraBuffer, 0, withExtraBuffer.length, ciphertext, 0)
+      ciphertext.copyToArray(withExtraBuffer)
+    }
+
+    assert(noExtraBuffer.sameElements(withExtraBuffer))
   }
 
 }
