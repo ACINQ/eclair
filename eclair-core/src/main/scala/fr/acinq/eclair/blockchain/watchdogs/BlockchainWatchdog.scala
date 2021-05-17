@@ -34,9 +34,10 @@ import scala.util.Random
 /** Monitor secondary blockchain sources to detect when we're being eclipsed. */
 object BlockchainWatchdog {
 
-  case class BlockHeaderAt(blockCount: Long, blockHeader: BlockHeader)
-
   // @formatter:off
+  case class BlockHeaderAt(blockCount: Long, blockHeader: BlockHeader)
+  case object NoBlockReceivedTimer
+
   sealed trait BlockchainWatchdogEvent
   /**
    * We are missing too many blocks compared to one of our blockchain watchdogs.
@@ -50,6 +51,7 @@ object BlockchainWatchdog {
   case class LatestHeaders(currentBlockCount: Long, blockHeaders: Set[BlockHeaderAt], source: String) extends Command
   private[watchdogs] case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   private case class CheckLatestHeaders(currentBlockCount: Long) extends Command
+  private case class NoBlockReceivedSince(lastBlockCount: Long) extends Command
   // @formatter:on
 
   /**
@@ -57,14 +59,21 @@ object BlockchainWatchdog {
    * @param maxRandomDelay to avoid the herd effect whenever a block is created, we add a random delay before we query
    *                       secondary blockchain sources. This parameter specifies the maximum delay we'll allow.
    */
-  def apply(chainHash: ByteVector32, maxRandomDelay: FiniteDuration): Behavior[Command] = {
+  def apply(chainHash: ByteVector32, maxRandomDelay: FiniteDuration, blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
       Behaviors.withTimers { timers =>
+        // We start a timer to check blockchain watchdogs regularly even when we don't receive any block.
+        timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(0), blockTimeout)
         Behaviors.receiveMessage {
+          case NoBlockReceivedSince(lastBlockCount) =>
+            context.self ! CheckLatestHeaders(lastBlockCount)
+            timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(lastBlockCount), blockTimeout)
+            Behaviors.same
           case WrappedCurrentBlockCount(blockCount) =>
             val delay = Random.nextInt(maxRandomDelay.toSeconds.toInt).seconds
             timers.startSingleTimer(CheckLatestHeaders(blockCount), delay)
+            timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(blockCount), blockTimeout)
             Behaviors.same
           case CheckLatestHeaders(blockCount) =>
             val id = UUID.randomUUID()
