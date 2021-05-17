@@ -29,9 +29,9 @@ import fr.acinq.eclair.wire.protocol.UpdateMessage
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
-private[channel] object ChannelCodecs2 {
+object ChannelCodecs2 {
 
-  private[version2] object Codecs {
+  object Codecs {
 
     val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 

@@ -24,6 +24,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2.Codecs.commitmentsCodec
 import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
@@ -79,29 +80,29 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
-    val data = stateDataCodec.encode(state).require.toByteArray
-    using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
-      update.setBytes(1, data)
-      update.setBytes(2, state.channelId.toArray)
-      if (update.executeUpdate() == 0) {
-        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
-          statement.setBytes(1, state.channelId.toArray)
-          statement.setBytes(2, data)
-          statement.executeUpdate()
-        }
-      }
-    }
+//    val data = stateDataCodec.encode(state).require.toByteArray
+//    using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
+//      update.setBytes(1, data)
+//      update.setBytes(2, state.channelId.toArray)
+//      if (update.executeUpdate() == 0) {
+//        using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
+//          statement.setBytes(1, state.channelId.toArray)
+//          statement.setBytes(2, data)
+//          statement.executeUpdate()
+//        }
+//      }
+//    }
   }
 
   /**
    * Helper method to factor updating timestamp columns
    */
   private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
-    using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
-      statement.setLong(1, System.currentTimeMillis)
-      statement.setBytes(2, channelId.toArray)
-      statement.executeUpdate()
-    }
+//    using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
+//      statement.setLong(1, System.currentTimeMillis)
+//      statement.setBytes(2, channelId.toArray)
+//      statement.executeUpdate()
+//    }
   }
 
   override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
@@ -141,13 +142,13 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, channelId.toArray)
-      statement.setLong(2, commitmentNumber)
-      statement.setBytes(3, paymentHash.toArray)
-      statement.setLong(4, cltvExpiry.toLong)
-      statement.executeUpdate()
-    }
+//    using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
+//      statement.setBytes(1, channelId.toArray)
+//      statement.setLong(2, commitmentNumber)
+//      statement.setBytes(3, paymentHash.toArray)
+//      statement.setLong(4, cltvExpiry.toLong)
+//      statement.executeUpdate()
+//    }
   }
 
   override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = withMetrics("channels/list-htlc-infos", DbBackends.Sqlite) {

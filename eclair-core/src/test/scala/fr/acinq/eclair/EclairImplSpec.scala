@@ -51,6 +51,8 @@ import scala.util.Success
 class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with IdiomaticMockito with ParallelTestExecution {
   implicit val timeout: Timeout = Timeout(30 seconds)
 
+  import scala.concurrent.ExecutionContext.Implicits.global
+
   case class FixtureParam(register: TestProbe, router: TestProbe, paymentInitiator: TestProbe, switchboard: TestProbe, paymentHandler: TestProbe, kit: Kit)
 
   override def withFixture(test: OneArgTest): Outcome = {
