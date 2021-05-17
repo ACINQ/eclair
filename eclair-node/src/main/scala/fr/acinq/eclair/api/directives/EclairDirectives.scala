@@ -22,7 +22,7 @@ import fr.acinq.eclair.api.Service
 
 import scala.concurrent.duration.DurationInt
 
-class EclairDirectives extends Directives with TimeoutDirective with ErrorDirective with AuthDirective with DefaultHeaders with ExtraDirectives {
+trait EclairDirectives extends Directives with TimeoutDirective with ErrorDirective with AuthDirective with DefaultHeaders with ExtraDirectives {
   this: Service =>
 
   /**

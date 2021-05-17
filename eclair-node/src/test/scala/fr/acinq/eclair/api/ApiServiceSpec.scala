@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.api
 
+import java.util.UUID
+
 import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
-import akka.http.scaladsl.server.{Directives, Route}
+import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
-import akka.stream.Materializer
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -31,7 +32,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair._
-import fr.acinq.eclair.api.directives.{AuthDirective, DefaultHeaders, ErrorDirective, ErrorResponse, ExtraDirectives, TimeoutDirective}
+import fr.acinq.eclair.api.directives.{EclairDirectives, ErrorResponse}
 import fr.acinq.eclair.api.serde.JsonSupport
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelOpenResponse.ChannelOpened
@@ -51,7 +52,6 @@ import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._
-import java.util.UUID
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -69,9 +69,9 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   val bobNodeId = PublicKey(hex"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 
   object PluginApi extends RouteProvider {
-    override def route(service: Service): Route = {
-      service.postRequest("plugin-test") { implicit t =>
-        service.complete("fine")
+    override def route(directives: EclairDirectives): Route = {
+      directives.postRequest("plugin-test") { implicit t =>
+        directives.complete("fine")
       }
     }
   }
