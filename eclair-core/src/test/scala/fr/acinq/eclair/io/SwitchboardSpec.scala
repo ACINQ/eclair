@@ -69,7 +69,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(remoteNodeId, peer)))
 
     // We have a channel with our peer, so we trigger a sync when connecting.
-    switchboard ! ChannelIdAssigned(TestProbe().ref, remoteNodeId, randomBytes32, randomBytes32)
+    switchboard ! ChannelIdAssigned(TestProbe().ref, remoteNodeId, randomBytes32(), randomBytes32())
     switchboard ! PeerConnection.Authenticated(peerConnection.ref, remoteNodeId)
     peerConnection.expectMsg(PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
 
@@ -81,17 +81,17 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("don't sync if no whitelist is defined and peer does not have channels") {
     val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set.empty)
-    sendFeatures(nodeParams, randomKey.publicKey, nodeParams.features, expectedSync = false)
+    sendFeatures(nodeParams, randomKey().publicKey, nodeParams.features, expectedSync = false)
   }
 
   test("sync if whitelist contains peer") {
-    val remoteNodeId = randomKey.publicKey
-    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(remoteNodeId, randomKey.publicKey, randomKey.publicKey))
+    val remoteNodeId = randomKey().publicKey
+    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(remoteNodeId, randomKey().publicKey, randomKey().publicKey))
     sendFeatures(nodeParams, remoteNodeId, nodeParams.features, expectedSync = true)
   }
 
   test("don't sync if whitelist doesn't contain peer") {
-    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(randomKey.publicKey, randomKey.publicKey, randomKey.publicKey))
+    val nodeParams = Alice.nodeParams.copy(syncWhitelist = Set(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
     sendFeatures(nodeParams, remoteNodeId, nodeParams.features, expectedSync = false)

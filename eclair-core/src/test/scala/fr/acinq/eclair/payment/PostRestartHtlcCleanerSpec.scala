@@ -81,25 +81,25 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     //    +-<-<- 1, 3 -<-<-<-<-<-+
     //          (channel AB2)
 
-    val relayedPaymentHash = randomBytes32
+    val relayedPaymentHash = randomBytes32()
     val relayed = Origin.ChannelRelayedCold(channelId_ab_1, 5, 10 msat, 10 msat)
-    val trampolineRelayedPaymentHash = randomBytes32
+    val trampolineRelayedPaymentHash = randomBytes32()
     val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_1, 0L) :: (channelId_ab_2, 2L) :: Nil)
 
     val htlc_ab_1 = Seq(
       buildHtlcIn(0, channelId_ab_1, trampolineRelayedPaymentHash),
-      buildHtlcIn(1, channelId_ab_1, randomBytes32), // not relayed
-      buildHtlcOut(2, channelId_ab_1, randomBytes32),
-      buildHtlcOut(3, channelId_ab_1, randomBytes32),
-      buildHtlcIn(4, channelId_ab_1, randomBytes32), // not relayed
+      buildHtlcIn(1, channelId_ab_1, randomBytes32()), // not relayed
+      buildHtlcOut(2, channelId_ab_1, randomBytes32()),
+      buildHtlcOut(3, channelId_ab_1, randomBytes32()),
+      buildHtlcIn(4, channelId_ab_1, randomBytes32()), // not relayed
       buildHtlcIn(5, channelId_ab_1, relayedPaymentHash)
     )
     val htlc_ab_2 = Seq(
-      buildHtlcIn(0, channelId_ab_2, randomBytes32), // not relayed
-      buildHtlcOut(1, channelId_ab_2, randomBytes32),
+      buildHtlcIn(0, channelId_ab_2, randomBytes32()), // not relayed
+      buildHtlcOut(1, channelId_ab_2, randomBytes32()),
       buildHtlcIn(2, channelId_ab_2, trampolineRelayedPaymentHash),
-      buildHtlcOut(3, channelId_ab_2, randomBytes32),
-      buildHtlcIn(4, channelId_ab_2, randomBytes32) // not relayed
+      buildHtlcOut(3, channelId_ab_2, randomBytes32()),
+      buildHtlcIn(4, channelId_ab_2, randomBytes32()) // not relayed
     )
 
     val channels = Seq(
@@ -145,23 +145,23 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
   test("clean up upstream HTLCs for which we're the final recipient") { f =>
     import f._
 
-    val preimage = randomBytes32
+    val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
     val invoice = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(500 msat), paymentHash, TestConstants.Bob.nodeKeyManager.nodeKey.privateKey, "Some invoice", CltvExpiryDelta(18))
     nodeParams.db.payments.addIncomingPayment(invoice, preimage)
     nodeParams.db.payments.receiveIncomingPayment(paymentHash, 5000 msat)
 
     val htlc_ab_1 = Seq(
-      buildFinalHtlc(0, channelId_ab_1, randomBytes32),
+      buildFinalHtlc(0, channelId_ab_1, randomBytes32()),
       buildFinalHtlc(3, channelId_ab_1, paymentHash),
       buildFinalHtlc(5, channelId_ab_1, paymentHash),
-      buildFinalHtlc(7, channelId_ab_1, randomBytes32)
+      buildFinalHtlc(7, channelId_ab_1, randomBytes32())
     )
     val htlc_ab_2 = Seq(
-      buildFinalHtlc(1, channelId_ab_2, randomBytes32),
-      buildFinalHtlc(3, channelId_ab_2, randomBytes32),
+      buildFinalHtlc(1, channelId_ab_2, randomBytes32()),
+      buildFinalHtlc(3, channelId_ab_2, randomBytes32()),
       buildFinalHtlc(4, channelId_ab_2, paymentHash),
-      buildFinalHtlc(9, channelId_ab_2, randomBytes32)
+      buildFinalHtlc(9, channelId_ab_2, randomBytes32())
     )
 
     val channels = Seq(
@@ -324,7 +324,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // Upstream HTLCs.
     val htlc_upstream_1 = Seq(buildHtlcIn(0, channelId_ab_1, paymentHash1), buildHtlcIn(5, channelId_ab_1, paymentHash2))
     val htlc_upstream_2 = Seq(buildHtlcIn(7, channelId_ab_2, paymentHash1), buildHtlcIn(9, channelId_ab_2, paymentHash2))
-    val htlc_upstream_3 = Seq(buildHtlcIn(11, randomBytes32, paymentHash3))
+    val htlc_upstream_3 = Seq(buildHtlcIn(11, randomBytes32(), paymentHash3))
     val upstream_1 = Upstream.Trampoline(htlc_upstream_1.head.add :: htlc_upstream_2.head.add :: Nil)
     val upstream_2 = Upstream.Trampoline(htlc_upstream_1(1).add :: htlc_upstream_2(1).add :: Nil)
     val upstream_3 = Upstream.Trampoline(htlc_upstream_3.head.add :: Nil)
@@ -549,8 +549,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
   test("Relayed nonstandard->standard HTLC is retained") { f =>
     import f._
 
-    val relayedPaymentHash = randomBytes32
-    val trampolineRelayedPaymentHash = randomBytes32
+    val relayedPaymentHash = randomBytes32()
+    val trampolineRelayedPaymentHash = randomBytes32()
     val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_1, 0L) :: Nil)
     val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
     val relayedHtlc1Out = buildHtlcOut(50L, channelId_ab_2, trampolineRelayedPaymentHash)
@@ -600,8 +600,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
   test("Relayed standard->nonstandard HTLC is retained") { f =>
     import f._
 
-    val relayedPaymentHash = randomBytes32
-    val trampolineRelayedPaymentHash = randomBytes32
+    val relayedPaymentHash = randomBytes32()
+    val trampolineRelayedPaymentHash = randomBytes32()
     val trampolineRelayed = Origin.TrampolineRelayedCold((channelId_ab_2, 0L) :: Nil)
     val relayedHtlcIn = buildHtlcIn(0L, channelId_ab_2, trampolineRelayedPaymentHash)
     val nonRelayedHtlcIn = buildHtlcIn(1L, channelId_ab_2, relayedPaymentHash)
@@ -631,7 +631,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
   test("Non-standard HTLC CMD_FAIL in relayDb is retained") { f =>
     import f._
 
-    val trampolineRelayedPaymentHash = randomBytes32
+    val trampolineRelayedPaymentHash = randomBytes32()
     val relayedHtlc1In = buildHtlcIn(0L, channelId_ab_1, trampolineRelayedPaymentHash)
 
     // @formatter:off
@@ -656,15 +656,15 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
 
 object PostRestartHtlcCleanerSpec {
 
-  val channelId_ab_1 = randomBytes32
-  val channelId_ab_2 = randomBytes32
-  val channelId_bc_1 = randomBytes32
-  val channelId_bc_2 = randomBytes32
-  val channelId_bc_3 = randomBytes32
-  val channelId_bc_4 = randomBytes32
-  val channelId_bc_5 = randomBytes32
+  val channelId_ab_1 = randomBytes32()
+  val channelId_ab_2 = randomBytes32()
+  val channelId_bc_1 = randomBytes32()
+  val channelId_bc_2 = randomBytes32()
+  val channelId_bc_3 = randomBytes32()
+  val channelId_bc_4 = randomBytes32()
+  val channelId_bc_5 = randomBytes32()
 
-  val (preimage1, preimage2, preimage3) = (randomBytes32, randomBytes32, randomBytes32)
+  val (preimage1, preimage2, preimage3) = (randomBytes32(), randomBytes32(), randomBytes32())
   val (paymentHash1, paymentHash2, paymentHash3) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3))
 
   def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): UpdateAddHtlc = {
@@ -772,14 +772,14 @@ object PostRestartHtlcCleanerSpec {
     // Upstream HTLCs.
     val htlc_ab_1 = Seq(
       buildHtlcIn(0, channelId_ab_1, paymentHash1),
-      buildHtlcOut(2, channelId_ab_1, randomBytes32), // ignored
-      buildHtlcOut(3, channelId_ab_1, randomBytes32), // ignored
+      buildHtlcOut(2, channelId_ab_1, randomBytes32()), // ignored
+      buildHtlcOut(3, channelId_ab_1, randomBytes32()), // ignored
       buildHtlcIn(5, channelId_ab_1, paymentHash2)
     )
     val htlc_ab_2 = Seq(
-      buildHtlcOut(1, channelId_ab_2, randomBytes32), // ignored
+      buildHtlcOut(1, channelId_ab_2, randomBytes32()), // ignored
       buildHtlcIn(7, channelId_ab_2, paymentHash1),
-      buildHtlcOut(9, channelId_ab_2, randomBytes32) // ignored
+      buildHtlcOut(9, channelId_ab_2, randomBytes32()) // ignored
     )
 
     val origin_1 = Origin.TrampolineRelayedCold((channelId_ab_1, 0L) :: (channelId_ab_2, 7L) :: Nil)
@@ -791,18 +791,18 @@ object PostRestartHtlcCleanerSpec {
 
     // Downstream HTLCs.
     val htlc_bc_1 = Seq(
-      buildHtlcIn(1, channelId_bc_1, randomBytes32), // not relayed
+      buildHtlcIn(1, channelId_bc_1, randomBytes32()), // not relayed
       buildHtlcOut(6, channelId_bc_1, paymentHash1),
       buildHtlcOut(8, channelId_bc_1, paymentHash2)
     )
     val htlc_bc_2 = Seq(
-      buildHtlcIn(0, channelId_bc_2, randomBytes32), // not relayed
+      buildHtlcIn(0, channelId_bc_2, randomBytes32()), // not relayed
       buildHtlcOut(1, channelId_bc_2, paymentHash2)
     )
     val htlc_bc_3 = Seq(
-      buildHtlcIn(3, channelId_bc_3, randomBytes32), // not relayed
+      buildHtlcIn(3, channelId_bc_3, randomBytes32()), // not relayed
       buildHtlcOut(4, channelId_bc_3, paymentHash2),
-      buildHtlcIn(5, channelId_bc_3, randomBytes32) // not relayed
+      buildHtlcIn(5, channelId_bc_3, randomBytes32()) // not relayed
     )
     val htlc_bc_4 = Seq(
       buildHtlcOut(5, channelId_bc_4, paymentHash3),
@@ -810,7 +810,7 @@ object PostRestartHtlcCleanerSpec {
     )
     val htlc_bc_5 = Seq(
       buildHtlcOut(2, channelId_bc_5, paymentHash3),
-      buildHtlcOut(4, channelId_bc_5, randomBytes32) // channel relayed timing out downstream
+      buildHtlcOut(4, channelId_bc_5, randomBytes32()) // channel relayed timing out downstream
     )
 
     val notRelayed = Set((1L, channelId_bc_1), (0L, channelId_bc_2), (3L, channelId_bc_3), (5L, channelId_bc_3), (7L, channelId_bc_4))

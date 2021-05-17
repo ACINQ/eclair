@@ -232,7 +232,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
   test("send an HTLC A->D with an unknown payment hash") {
     val sender = TestProbe()
-    val pr = SendPaymentRequest(100000000 msat, randomBytes32, nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 5)
+    val pr = SendPaymentRequest(100000000 msat, randomBytes32(), nodes("D").nodeParams.nodeId, routeParams = integrationTestRouteParams, maxAttempts = 5)
     sender.send(nodes("A").paymentInitiator, pr)
 
     // A will receive an error from D and won't retry

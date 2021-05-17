@@ -110,7 +110,7 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Sta
     // spend our output
     val tx = Transaction(version = 2,
       txIn = TxIn(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), sequence = TxIn.SEQUENCE_FINAL, signatureScript = Nil) :: Nil,
-      txOut = TxOut(Satoshi(1000), Script.pay2pkh(fr.acinq.eclair.randomKey.publicKey)) :: Nil,
+      txOut = TxOut(Satoshi(1000), Script.pay2pkh(fr.acinq.eclair.randomKey().publicKey)) :: Nil,
       lockTime = 0)
 
     val sig = keyManager.sign(

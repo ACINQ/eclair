@@ -43,7 +43,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
   import RouteCalculationSpec._
 
-  val (a, b, c, d, e, f) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+  val (a, b, c, d, e, f) = (randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey)
 
   test("calculate simple route") {
     val g = DirectedGraph(List(
@@ -441,11 +441,11 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("convert extra hops to assisted channels") {
-    val a = randomKey.publicKey
-    val b = randomKey.publicKey
-    val c = randomKey.publicKey
-    val d = randomKey.publicKey
-    val e = randomKey.publicKey
+    val a = randomKey().publicKey
+    val b = randomKey().publicKey
+    val c = randomKey().publicKey
+    val d = randomKey().publicKey
+    val e = randomKey().publicKey
 
     val extraHop1 = ExtraHop(a, ShortChannelId(1), 12.sat.toMilliSatoshi, 10000, CltvExpiryDelta(12))
     val extraHop2 = ExtraHop(b, ShortChannelId(2), 200.sat.toMilliSatoshi, 0, CltvExpiryDelta(22))
@@ -533,11 +533,11 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("compute ignored channels") {
-    val f = randomKey.publicKey
-    val g = randomKey.publicKey
-    val h = randomKey.publicKey
-    val i = randomKey.publicKey
-    val j = randomKey.publicKey
+    val f = randomKey().publicKey
+    val g = randomKey().publicKey
+    val h = randomKey().publicKey
+    val i = randomKey().publicKey
+    val j = randomKey().publicKey
 
     val channels = Map(
       ShortChannelId(1L) -> makeChannel(1L, a, b),
@@ -569,7 +569,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       (shortChannelId, pc)
     }
 
-    val ignored = getIgnoredChannelDesc(publicChannels, ignoreNodes = Set(c, j, randomKey.publicKey))
+    val ignored = getIgnoredChannelDesc(publicChannels, ignoreNodes = Set(c, j, randomKey().publicKey))
     assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(2L), b, c)))
     assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(2L), c, b)))
     assert(ignored.toSet.contains(ChannelDesc(ShortChannelId(3L), c, d)))
@@ -577,7 +577,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("limit routes to 20 hops") {
-    val nodes = (for (_ <- 0 until 22) yield randomKey.publicKey).toList
+    val nodes = (for (_ <- 0 until 22) yield randomKey().publicKey).toList
     val edges = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
       .zipWithIndex // ((0, 1), 0) :: ((1, 2), 1) :: ...
@@ -592,7 +592,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("ignore cheaper route when it has more than 20 hops") {
-    val nodes = (for (_ <- 0 until 50) yield randomKey.publicKey).toList
+    val nodes = (for (_ <- 0 until 50) yield randomKey().publicKey).toList
 
     val edges = nodes
       .zip(nodes.drop(1)) // (0, 1) :: (1, 2) :: ...
@@ -608,7 +608,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("ignore cheaper route when it has more than the requested CLTV") {
-    val f = randomKey.publicKey
+    val f = randomKey().publicKey
     val g = DirectedGraph(List(
       makeEdge(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(50)),
       makeEdge(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(50)),
@@ -623,7 +623,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("ignore cheaper route when it grows longer than the requested size") {
-    val f = randomKey.publicKey
+    val f = randomKey().publicKey
     val g = DirectedGraph(List(
       makeEdge(1, a, b, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
       makeEdge(2, b, c, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9)),
@@ -744,7 +744,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("terminate looking for k-shortest path if there are no more alternative paths than k, must not consider routes going back on their steps") {
-    val f = randomKey.publicKey
+    val f = randomKey().publicKey
 
     // simple graph with only 2 possible paths from A to F
     val graph = DirectedGraph(Seq(
@@ -1606,7 +1606,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     def makeEdges(n: Int): Seq[GraphEdge] = {
       val nodes = new Array[(PublicKey, PublicKey)](n)
       for (i <- nodes.indices) {
-        nodes(i) = (randomKey.publicKey, randomKey.publicKey)
+        nodes(i) = (randomKey().publicKey, randomKey().publicKey)
       }
       val q = new mutable.Queue[GraphEdge]
       // One path is shorter to maximise the overlap between the n-shortest paths, they will all be like the shortest path with a single hop changed.
@@ -1639,7 +1639,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     def makeEdges(n: Int): Seq[GraphEdge] = {
       val nodes = new Array[(PublicKey, PublicKey)](n)
       for (i <- nodes.indices) {
-        nodes(i) = (randomKey.publicKey, randomKey.publicKey)
+        nodes(i) = (randomKey().publicKey, randomKey().publicKey)
       }
       val q = new mutable.Queue[GraphEdge]
       q.enqueue(makeEdge(1L, a, nodes(0)._1, 100 msat, 100))
@@ -1678,7 +1678,7 @@ object RouteCalculationSpec {
 
   def makeChannel(shortChannelId: Long, nodeIdA: PublicKey, nodeIdB: PublicKey): ChannelAnnouncement = {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeIdA, nodeIdB)) (nodeIdA, nodeIdB) else (nodeIdB, nodeIdA)
-    ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, Features.empty, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
+    ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, Features.empty, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey().publicKey, randomKey().publicKey)
   }
 
   def makeEdge(shortChannelId: Long,

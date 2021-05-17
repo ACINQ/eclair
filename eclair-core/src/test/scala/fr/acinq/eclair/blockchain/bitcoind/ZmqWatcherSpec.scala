@@ -102,14 +102,14 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
 
   test("add/remove watches from/to utxo map") {
     val m0 = Map.empty[OutPoint, Set[Watch[_ <: WatchTriggered]]]
-    val txid = randomBytes32
+    val txid = randomBytes32()
     val outputIndex = 42
     val utxo = OutPoint(txid.reverse, outputIndex)
 
     val w1 = WatchFundingSpent(TestProbe().ref, txid, outputIndex, hints = Set.empty)
     val w2 = WatchFundingSpent(TestProbe().ref, txid, outputIndex, hints = Set.empty)
     val w3 = WatchExternalChannelSpent(TestProbe().ref, txid, outputIndex, ShortChannelId(1))
-    val w4 = WatchExternalChannelSpent(TestProbe().ref, randomBytes32, 5, ShortChannelId(1))
+    val w4 = WatchExternalChannelSpent(TestProbe().ref, randomBytes32(), 5, ShortChannelId(1))
     val w5 = WatchFundingConfirmed(TestProbe().ref, txid, 3)
 
     // we test as if the collection was immutable
@@ -265,7 +265,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       watcher ! StopWatching(listener.ref)
 
       // We should still find tx2 if the provided hint is wrong
-      watcher ! WatchOutputSpent(listener.ref, tx1.txid, 0, Set(randomBytes32))
+      watcher ! WatchOutputSpent(listener.ref, tx1.txid, 0, Set(randomBytes32()))
       listener.expectMsg(WatchOutputSpentTriggered(tx2))
       watcher ! StopWatching(listener.ref)
 

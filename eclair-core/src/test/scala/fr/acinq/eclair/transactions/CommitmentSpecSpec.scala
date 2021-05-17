@@ -25,7 +25,7 @@ import org.scalatest.funsuite.AnyFunSuite
 class CommitmentSpecSpec extends AnyFunSuite {
   test("add, fulfill and fail htlcs from the sender side") {
     val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = FeeratePerKw(1000 sat), toLocal = 5000000 msat, toRemote = 0 msat)
-    val R = randomBytes32
+    val R = randomBytes32()
     val H = Crypto.sha256(R)
 
     val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
@@ -47,7 +47,7 @@ class CommitmentSpecSpec extends AnyFunSuite {
 
   test("add, fulfill and fail htlcs from the receiver side") {
     val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = FeeratePerKw(1000 sat), toLocal = 0 msat, toRemote = (5000 * 1000) msat)
-    val R = randomBytes32
+    val R = randomBytes32()
     val H = Crypto.sha256(R)
 
     val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)

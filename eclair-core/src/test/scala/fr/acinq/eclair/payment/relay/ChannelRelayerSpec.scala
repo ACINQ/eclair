@@ -270,13 +270,13 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
     /** This is just a simplified helper function with random values for fields we are not using here */
     def dummyLocalUpdate(shortChannelId: ShortChannelId, remoteNodeId: PublicKey, availableBalanceForSend: MilliSatoshi, capacity: Satoshi) = {
-      val channelId = randomBytes32
-      val update = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, remoteNodeId, shortChannelId, CltvExpiryDelta(10), 100 msat, 1000 msat, 100, capacity.toMilliSatoshi)
+      val channelId = randomBytes32()
+      val update = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey(), remoteNodeId, shortChannelId, CltvExpiryDelta(10), 100 msat, 1000 msat, 100, capacity.toMilliSatoshi)
       val commitments = PaymentPacketSpec.makeCommitments(ByteVector32.Zeroes, availableBalanceForSend, testCapacity = capacity)
       LocalChannelUpdate(null, channelId, shortChannelId, remoteNodeId, None, update, commitments)
     }
 
-    val (a, b) = (randomKey.publicKey, randomKey.publicKey)
+    val (a, b) = (randomKey().publicKey, randomKey().publicKey)
 
     val channelUpdates = Map(
       ShortChannelId(11111) -> dummyLocalUpdate(ShortChannelId(11111), a, 100000000 msat, 200000 sat),
@@ -295,16 +295,16 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
       channelRelayer ! Relay(r)
       // select the channel to the same node, with the lowest capacity and balance but still high enough to handle the payment
       val cmd1 = expectFwdAdd(register, ShortChannelId(22223), payload.amountToForward, payload.outgoingCltv).message
-      cmd1.replyTo ! RES_ADD_FAILED(cmd1, ChannelUnavailable(randomBytes32), None)
+      cmd1.replyTo ! RES_ADD_FAILED(cmd1, ChannelUnavailable(randomBytes32()), None)
       // select 2nd-to-best channel: higher capacity and balance
       val cmd2 = expectFwdAdd(register, ShortChannelId(22222), payload.amountToForward, payload.outgoingCltv).message
-      cmd2.replyTo ! RES_ADD_FAILED(cmd2, TooManyAcceptedHtlcs(randomBytes32, 42), Some(channelUpdates(ShortChannelId(22222)).channelUpdate))
+      cmd2.replyTo ! RES_ADD_FAILED(cmd2, TooManyAcceptedHtlcs(randomBytes32(), 42), Some(channelUpdates(ShortChannelId(22222)).channelUpdate))
       // select 3rd-to-best channel: same balance but higher capacity
       val cmd3 = expectFwdAdd(register, ShortChannelId(12345), payload.amountToForward, payload.outgoingCltv).message
-      cmd3.replyTo ! RES_ADD_FAILED(cmd3, TooManyAcceptedHtlcs(randomBytes32, 42), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))
+      cmd3.replyTo ! RES_ADD_FAILED(cmd3, TooManyAcceptedHtlcs(randomBytes32(), 42), Some(channelUpdates(ShortChannelId(12345)).channelUpdate))
       // select 4th-to-best channel: same capacity but higher balance
       val cmd4 = expectFwdAdd(register, ShortChannelId(11111), payload.amountToForward, payload.outgoingCltv).message
-      cmd4.replyTo ! RES_ADD_FAILED(cmd4, HtlcValueTooHighInFlight(randomBytes32, UInt64(100000000), 100000000 msat), Some(channelUpdates(ShortChannelId(11111)).channelUpdate))
+      cmd4.replyTo ! RES_ADD_FAILED(cmd4, HtlcValueTooHighInFlight(randomBytes32(), UInt64(100000000), 100000000 msat), Some(channelUpdates(ShortChannelId(11111)).channelUpdate))
       // all the suitable channels have been tried
       expectFwdFail(register, r.add.channelId, CMD_FAIL_HTLC(r.add.id, Right(TemporaryChannelFailure(channelUpdates(ShortChannelId(12345)).channelUpdate)), commit = true))
     }
@@ -413,8 +413,8 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
   test("get outgoing channels") { f =>
     import PaymentPacketSpec._
     import f._
-    val channelId_ab = randomBytes32
-    val channelId_bc = randomBytes32
+    val channelId_ab = randomBytes32()
+    val channelId_bc = randomBytes32()
     val a = PaymentPacketSpec.a
 
     val sender = TestProbe[Relayer.OutgoingChannels]()
@@ -469,23 +469,23 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 }
 
 object ChannelRelayerSpec {
-  val paymentPreimage = randomBytes32
+  val paymentPreimage = randomBytes32()
   val paymentHash = Crypto.sha256(paymentPreimage)
 
   val outgoingAmount = 1000000 msat
   val outgoingExpiry = CltvExpiry(400000)
-  val outgoingNodeId = randomKey.publicKey
+  val outgoingNodeId = randomKey().publicKey
 
   val shortId1 = ShortChannelId(111111)
   val shortId2 = ShortChannelId(222222)
 
   val channelIds = Map(
-    shortId1 -> randomBytes32,
-    shortId2 -> randomBytes32
+    shortId1 -> randomBytes32(),
+    shortId2 -> randomBytes32()
   )
 
   def createValidIncomingPacket(amountIn: MilliSatoshi, expiryIn: CltvExpiry, payload: ChannelRelayPayload): IncomingPacket.ChannelRelayPacket = {
-    val add_ab = UpdateAddHtlc(channelId = randomBytes32, id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket)
+    val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket)
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
   }
 

@@ -197,7 +197,7 @@ class CommonCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode with private key codec") {
-    val value = PrivateKey(randomBytes32)
+    val value = PrivateKey(randomBytes32())
     val wire = privateKey.encode(value).require
     assert(wire.length == 256)
     val value1 = privateKey.decode(wire).require.value
@@ -205,7 +205,7 @@ class CommonCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode with public key codec") {
-    val value = PrivateKey(randomBytes32).publicKey
+    val value = PrivateKey(randomBytes32()).publicKey
     val wire = CommonCodecs.publicKey.encode(value).require
     assert(wire.length == 33 * 8)
     val value1 = CommonCodecs.publicKey.decode(wire).require.value

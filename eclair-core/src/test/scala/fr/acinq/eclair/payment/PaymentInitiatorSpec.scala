@@ -102,7 +102,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("reject payment with unknown mandatory feature") { f =>
     import f._
     val unknownFeature = 42
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(unknownFeature)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey(), "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(unknownFeature)))
     val req = SendPaymentRequest(finalAmount + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -143,7 +143,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("forward single-part payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
     import f._
     val finalExpiryDelta = CltvExpiryDelta(24)
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some MPP invoice", finalExpiryDelta, features = Some(PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey(), "Some MPP invoice", finalExpiryDelta, features = Some(PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)))
     val req = SendPaymentRequest(finalAmount, paymentHash, c, 1, /* ignored since the invoice provides it */ CltvExpiryDelta(12), Some(pr))
     assert(req.finalExpiry(nodeParams.currentBlockHeight) === (finalExpiryDelta + 1).toCltvExpiry(nodeParams.currentBlockHeight))
     sender.send(initiator, req)
@@ -154,7 +154,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("forward multi-part payment") { f =>
     import f._
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey, "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, randomKey(), "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)))
     val req = SendPaymentRequest(finalAmount + 100.msat, paymentHash, c, 1, CltvExpiryDelta(42), Some(pr))
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
@@ -288,7 +288,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg2.totalAmount === finalAmount + 25000.msat)
 
     // Simulate success which should publish the event and respond to the original sender.
-    val success = PaymentSent(cfg.parentId, pr.paymentHash, randomBytes32, finalAmount, c, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), 1000 msat, 500 msat, randomBytes32, None)))
+    val success = PaymentSent(cfg.parentId, pr.paymentHash, randomBytes32(), finalAmount, c, Seq(PaymentSent.PartialPayment(UUID.randomUUID(), 1000 msat, 500 msat, randomBytes32(), None)))
     multiPartPayFsm.send(initiator, success)
     sender.expectMsg(success)
     eventListener.expectMsg(success)

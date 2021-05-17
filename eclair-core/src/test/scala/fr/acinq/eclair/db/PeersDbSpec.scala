@@ -50,10 +50,10 @@ class PeersDbSpec extends AnyFunSuite {
 
       case class TestCase(nodeId: PublicKey, nodeAddress: NodeAddress)
 
-      val peer_1 = TestCase(randomKey.publicKey, NodeAddress.fromParts("127.0.0.1", 42000).get)
+      val peer_1 = TestCase(randomKey().publicKey, NodeAddress.fromParts("127.0.0.1", 42000).get)
       val peer_1_bis = TestCase(peer_1.nodeId, NodeAddress.fromParts("127.0.0.1", 1112).get)
-      val peer_2 = TestCase(randomKey.publicKey, Tor2("z4zif3fy7fe7bpg3", 4231))
-      val peer_3 = TestCase(randomKey.publicKey, Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 4231))
+      val peer_2 = TestCase(randomKey().publicKey, Tor2("z4zif3fy7fe7bpg3", 4231))
+      val peer_3 = TestCase(randomKey().publicKey, Tor3("mrl2d3ilhctt2vw4qzvmz3etzjvpnc6dczliq5chrxetthgbuczuggyd", 4231))
 
       assert(db.listPeers().toSet === Set.empty)
       db.addOrUpdatePeer(peer_1.nodeId, peer_1.nodeAddress)
@@ -78,7 +78,7 @@ class PeersDbSpec extends AnyFunSuite {
       implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(8))
       val Success(peerAddress) = NodeAddress.fromParts("127.0.0.1", 42000)
       val futures = for (_ <- 0 until 10000) yield {
-        Future(db.addOrUpdatePeer(randomKey.publicKey, peerAddress))
+        Future(db.addOrUpdatePeer(randomKey().publicKey, peerAddress))
       }
       val res = Future.sequence(futures)
       Await.result(res, 60 seconds)

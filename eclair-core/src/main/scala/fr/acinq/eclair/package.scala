@@ -34,13 +34,13 @@ package object eclair {
     ByteVector.view(buffer)
   }
 
-  def randomBytes32: ByteVector32 = ByteVector32(randomBytes(32))
+  def randomBytes32(): ByteVector32 = ByteVector32(randomBytes(32))
 
-  def randomBytes64: ByteVector64 = ByteVector64(randomBytes(64))
+  def randomBytes64(): ByteVector64 = ByteVector64(randomBytes(64))
 
-  def randomKey: PrivateKey = PrivateKey(randomBytes32)
+  def randomKey(): PrivateKey = PrivateKey(randomBytes32())
 
-  def randomLong: Long = randomGen.nextLong()
+  def randomLong(): Long = randomGen.nextLong()
 
   def toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 = {
     require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")

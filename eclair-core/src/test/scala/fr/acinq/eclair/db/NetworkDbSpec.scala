@@ -94,10 +94,10 @@ class NetworkDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.network
 
-      val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
-      val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
-      val node_3 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
-      val node_4 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), Tor2("aaaqeayeaudaocaj", 42000) :: Nil, Features.empty)
+      val node_1 = Announcements.makeNodeAnnouncement(randomKey(), "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+      val node_2 = Announcements.makeNodeAnnouncement(randomKey(), "node-bob", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
+      val node_3 = Announcements.makeNodeAnnouncement(randomKey(), "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features(VariableLengthOnion -> Optional))
+      val node_4 = Announcements.makeNodeAnnouncement(randomKey(), "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), Tor2("aaaqeayeaudaocaj", 42000) :: Nil, Features.empty)
 
       assert(db.listNodes().toSet === Set.empty)
       db.addNode(node_1)
@@ -120,7 +120,7 @@ class NetworkDbSpec extends AnyFunSuite {
     forAllDbs { dbs =>
       val db = dbs.network
       val sig = ByteVector64.Zeroes
-      val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+      val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
       val txid = ByteVector32.fromValidHex("0001" * 16)
       db.addChannel(c, txid, Satoshi(42))
       assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
@@ -130,26 +130,26 @@ class NetworkDbSpec extends AnyFunSuite {
   def simpleTest(dbs: TestDatabases) = {
     val db = dbs.network
 
-    def sig = Crypto.sign(randomBytes32, randomKey)
+    def sig = Crypto.sign(randomBytes32(), randomKey())
 
     def generatePubkeyHigherThan(priv: PrivateKey) = {
       var res = priv
-      while (!Announcements.isNode1(priv.publicKey, res.publicKey)) res = randomKey
+      while (!Announcements.isNode1(priv.publicKey, res.publicKey)) res = randomKey()
       res
     }
 
     // in order to differentiate channel_updates 1/2 we order public keys
-    val a = randomKey
+    val a = randomKey()
     val b = generatePubkeyHigherThan(a)
     val c = generatePubkeyHigherThan(b)
 
-    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), a.publicKey, b.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
-    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(43), a.publicKey, c.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
-    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(44), b.publicKey, c.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), a.publicKey, b.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(43), a.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
+    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(44), b.publicKey, c.publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
 
-    val txid_1 = randomBytes32
-    val txid_2 = randomBytes32
-    val txid_3 = randomBytes32
+    val txid_1 = randomBytes32()
+    val txid_2 = randomBytes32()
+    val txid_3 = randomBytes32()
     val capacity = 10000 sat
 
     assert(db.listChannels().toSet === Set.empty)
@@ -202,7 +202,7 @@ class NetworkDbSpec extends AnyFunSuite {
 
 
       // insert and read back random values
-      val txids = for (_ <- 0 until 1000) yield randomBytes32
+      val txids = for (_ <- 0 until 1000) yield randomBytes32()
       txids.foreach { txid =>
         using(dbs.connection.prepareStatement("INSERT INTO test VALUES (?)")) { statement =>
           statement.setString(1, txid.toHex)
@@ -236,15 +236,15 @@ class NetworkDbSpec extends AnyFunSuite {
   test("remove many channels") {
     forAllDbs { dbs =>
       val db = dbs.network
-      val sig = Crypto.sign(randomBytes32, randomKey)
-      val priv = randomKey
+      val sig = Crypto.sign(randomBytes32(), randomKey())
+      val priv = randomKey()
       val pub = priv.publicKey
       val capacity = 10000 sat
 
       val channels = shortChannelIds.map(id => Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, id, pub, pub, pub, pub, sig, sig, sig, sig))
       val template = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv, pub, ShortChannelId(42), CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, true)
       val updates = shortChannelIds.map(id => template.copy(shortChannelId = id))
-      val txid = randomBytes32
+      val txid = randomBytes32()
       channels.foreach(ca => db.addChannel(ca, txid, capacity))
       updates.foreach(u => db.updateChannel(u))
       assert(db.listChannels().keySet === channels.map(_.shortChannelId).toSet)

@@ -75,7 +75,7 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
   override def newFundingKeyPath(isFunder: Boolean): KeyPath = {
     val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
 
-    def next(): Long = randomLong & 0xFFFFFFFFL
+    def next(): Long = randomLong() & 0xFFFFFFFFL
 
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next(), last))
   }

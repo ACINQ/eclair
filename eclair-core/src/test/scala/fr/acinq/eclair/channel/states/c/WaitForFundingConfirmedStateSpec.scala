@@ -91,7 +91,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv WatchFundingConfirmedTriggered (bad funding pubkey script)") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    val badOutputScript = fundingTx.txOut.head.copy(publicKeyScript = Script.write(multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
+    val badOutputScript = fundingTx.txOut.head.copy(publicKeyScript = Script.write(multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
     val badFundingTx = fundingTx.copy(txOut = Seq(badOutputScript))
     alice ! WatchFundingConfirmedTriggered(42000, 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)

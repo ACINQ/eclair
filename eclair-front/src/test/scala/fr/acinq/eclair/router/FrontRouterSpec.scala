@@ -84,9 +84,9 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     system2.eventStream.subscribe(peerConnection2a.ref, classOf[Rebroadcast])
     system3.eventStream.subscribe(peerConnection3a.ref, classOf[Rebroadcast])
 
-    val origin1a = RemoteGossip(peerConnection1a.ref, randomKey.publicKey)
-    val origin1b = RemoteGossip(peerConnection1b.ref, randomKey.publicKey)
-    val origin2a = RemoteGossip(peerConnection2a.ref, randomKey.publicKey)
+    val origin1a = RemoteGossip(peerConnection1a.ref, randomKey().publicKey)
+    val origin1b = RemoteGossip(peerConnection1b.ref, randomKey().publicKey)
+    val origin2a = RemoteGossip(peerConnection2a.ref, randomKey().publicKey)
 
     peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, chan_ab))
     pipe1.expectMsg(PeerRoutingMessage(front1, origin1a.nodeId, chan_ab))
@@ -163,10 +163,10 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     system2.eventStream.subscribe(peerConnection2a.ref, classOf[Rebroadcast])
     system3.eventStream.subscribe(peerConnection3a.ref, classOf[Rebroadcast])
 
-    val origin1a = RemoteGossip(peerConnection1a.ref, randomKey.publicKey)
-    val origin1b = RemoteGossip(peerConnection1b.ref, randomKey.publicKey)
-    val origin2a = RemoteGossip(peerConnection2a.ref, randomKey.publicKey)
-    val origin3a = RemoteGossip(peerConnection3a.ref, randomKey.publicKey)
+    val origin1a = RemoteGossip(peerConnection1a.ref, randomKey().publicKey)
+    val origin1b = RemoteGossip(peerConnection1b.ref, randomKey().publicKey)
+    val origin2a = RemoteGossip(peerConnection2a.ref, randomKey().publicKey)
+    val origin3a = RemoteGossip(peerConnection3a.ref, randomKey().publicKey)
 
     peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, chan_ab))
     assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
@@ -226,7 +226,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val peerConnection1 = TestProbe()
     system1.eventStream.subscribe(peerConnection1.ref, classOf[Rebroadcast])
 
-    val origin1 = RemoteGossip(peerConnection1.ref, randomKey.publicKey)
+    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey)
 
     peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
     router.expectMsg(PeerRoutingMessage(front1, origin1.nodeId, chan_ab))
@@ -260,7 +260,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val peerConnection1 = TestProbe()
     system1.eventStream.subscribe(peerConnection1.ref, classOf[Rebroadcast])
 
-    val origin1 = RemoteGossip(peerConnection1.ref, randomKey.publicKey)
+    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey)
 
     // first message arrives and is forwarded to router
     peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
@@ -290,7 +290,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val peerConnection1 = TestProbe()
     system1.eventStream.subscribe(peerConnection1.ref, classOf[Rebroadcast])
 
-    val origin1 = RemoteGossip(peerConnection1.ref, randomKey.publicKey)
+    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey)
 
     // channel_update arrives and is forwarded to router (there is no associated channel, because it is private)
     peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, channelUpdate_ab))
@@ -315,10 +315,10 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
 }
 
 object FrontRouterSpec {
-  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
   val (a, b, c, d, e, f) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)
 
-  val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
 
   val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, Features(hex"0200"))

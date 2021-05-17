@@ -35,10 +35,10 @@ class CommandCodecsSpec extends AnyFunSuite {
 
   test("encode/decode all channel messages") {
     val msgs: List[HtlcSettlementCommand] =
-      CMD_FULFILL_HTLC(1573L, randomBytes32) ::
+      CMD_FULFILL_HTLC(1573L, randomBytes32()) ::
         CMD_FAIL_HTLC(42456L, Left(randomBytes(145))) ::
         CMD_FAIL_HTLC(253, Right(TemporaryNodeFailure)) ::
-        CMD_FAIL_MALFORMED_HTLC(7984, randomBytes32, FailureMessageCodecs.BADONION) :: Nil
+        CMD_FAIL_MALFORMED_HTLC(7984, randomBytes32(), FailureMessageCodecs.BADONION) :: Nil
 
     msgs.foreach {
       msg =>
@@ -50,7 +50,7 @@ class CommandCodecsSpec extends AnyFunSuite {
 
   test("backward compatibility") {
 
-    val data32 = randomBytes32
+    val data32 = randomBytes32()
     val data123 = randomBytes(123)
 
     val legacyCmdFulfillCodec =

@@ -86,19 +86,19 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
   test("compute flag tests") {
     val now = System.currentTimeMillis / 1000
 
-    val a = randomKey.publicKey
-    val b = randomKey.publicKey
+    val a = randomKey().publicKey
+    val b = randomKey().publicKey
     val ab = RouteCalculationSpec.makeChannel(123466L, a, b)
     val uab1 = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId1, ab.nodeId2, 0 msat, 0, timestamp = now)
     val uab2 = RouteCalculationSpec.makeUpdateShort(ab.shortChannelId, ab.nodeId2, ab.nodeId1, 0 msat, 0, timestamp = now)
 
-    val c = randomKey.publicKey
-    val d = randomKey.publicKey
+    val c = randomKey().publicKey
+    val d = randomKey().publicKey
     val cd = RouteCalculationSpec.makeChannel(451312L, c, d)
     val ucd1 = RouteCalculationSpec.makeUpdateShort(cd.shortChannelId, cd.nodeId1, cd.nodeId2, 0 msat, 0, timestamp = now)
 
-    val e = randomKey.publicKey
-    val f = randomKey.publicKey
+    val e = randomKey().publicKey
+    val f = randomKey().publicKey
     val ef = RouteCalculationSpec.makeChannel(167514L, e, f)
 
     val channels = SortedMap(

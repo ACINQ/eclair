@@ -81,8 +81,8 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // valid channel announcement, stashing while validating channel announcement
-      val priv_u = randomKey
-      val priv_funding_u = randomKey
+      val priv_u = randomKey()
+      val priv_funding_u = randomKey()
       val chan_uc = channelAnnouncement(ShortChannelId(420000, 100, 0), priv_u, priv_c, priv_funding_u, priv_funding_c)
       val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, Features.empty)
@@ -128,7 +128,7 @@ class RouterSpec extends BaseRouterSpec {
     {
       // invalid signatures
       val invalid_node_b = node_b.copy(timestamp = node_b.timestamp + 10)
-      val invalid_chan_ac = channelAnnouncement(ShortChannelId(420000, 101, 1), priv_a, priv_c, priv_funding_a, priv_funding_c).copy(nodeId1 = randomKey.publicKey)
+      val invalid_chan_ac = channelAnnouncement(ShortChannelId(420000, 101, 1), priv_a, priv_c, priv_funding_a, priv_funding_c).copy(nodeId1 = randomKey().publicKey)
       val invalid_update_ab = update_ab.copy(cltvExpiryDelta = CltvExpiryDelta(21), timestamp = update_ab.timestamp + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, invalid_node_b))
       peerConnection.expectMsg(TransportHandler.ReadAck(invalid_node_b))
@@ -146,8 +146,8 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // pruned channel
-      val priv_v = randomKey
-      val priv_funding_v = randomKey
+      val priv_v = randomKey()
+      val priv_funding_v = randomKey()
       val chan_vc = channelAnnouncement(ShortChannelId(420000, 102, 0), priv_v, priv_c, priv_funding_v, priv_funding_c)
       nodeParams.db.network.addToPruned(chan_vc.shortChannelId :: Nil)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_vc))
@@ -171,7 +171,7 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // unknown channel
-      val priv_y = randomKey
+      val priv_y = randomKey()
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, ShortChannelId(4646464), CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ay))
@@ -187,8 +187,8 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // invalid announcement + reject stashed
-      val priv_y = randomKey
-      val priv_funding_y = randomKey // a-y will have an invalid script
+      val priv_y = randomKey()
+      val priv_funding_y = randomKey() // a-y will have an invalid script
       val chan_ay = channelAnnouncement(ShortChannelId(42002), priv_a, priv_y, priv_funding_a, priv_funding_y)
       val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_y = makeNodeAnnouncement(priv_y, "node-Y", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features)
@@ -198,7 +198,7 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_y))
       peerConnection.expectMsg(TransportHandler.ReadAck(node_y))
-      watcher.send(router, ValidateResult(chan_ay, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+      watcher.send(router, ValidateResult(chan_ay, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey().publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ay))
       peerConnection.expectMsg(GossipDecision.InvalidAnnouncement(chan_ay))
       peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_ay))
@@ -210,8 +210,8 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // validation failure
-      val priv_x = randomKey
-      val chan_ax = channelAnnouncement(ShortChannelId(42001), priv_a, priv_x, priv_funding_a, randomKey)
+      val priv_x = randomKey()
+      val chan_ax = channelAnnouncement(ShortChannelId(42001), priv_a, priv_x, priv_funding_a, randomKey())
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ax))
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_ax)
       watcher.send(router, ValidateResult(chan_ax, Left(new RuntimeException("funding tx not found"))))
@@ -224,8 +224,8 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // funding tx spent (funding tx not confirmed)
-      val priv_z = randomKey
-      val priv_funding_z = randomKey
+      val priv_z = randomKey()
+      val priv_funding_z = randomKey()
       val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_az)
@@ -239,8 +239,8 @@ class RouterSpec extends BaseRouterSpec {
 
     {
       // funding tx spent (funding tx confirmed)
-      val priv_z = randomKey
-      val priv_funding_z = randomKey
+      val priv_z = randomKey()
+      val priv_funding_z = randomKey()
       val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_az)
@@ -322,7 +322,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(randomKey.publicKey, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
+    sender.send(router, RouteRequest(randomKey().publicKey, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
@@ -330,7 +330,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, randomKey.publicKey, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
+    sender.send(router, RouteRequest(a, randomKey().publicKey, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE))
     sender.expectMsg(Failure(RouteNotFound))
   }
 

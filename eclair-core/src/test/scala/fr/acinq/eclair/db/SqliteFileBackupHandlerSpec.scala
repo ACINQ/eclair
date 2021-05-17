@@ -44,9 +44,9 @@ class SqliteFileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike 
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[BackupEvent])
 
-    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32, null)
-    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32, null)
-    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32, null)
+    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null)
+    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null)
+    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null)
     probe.expectMsg(BackupCompleted)
 
     val db1 = new SqliteChannelsDb(DriverManager.getConnection(s"jdbc:sqlite:$dest"))
