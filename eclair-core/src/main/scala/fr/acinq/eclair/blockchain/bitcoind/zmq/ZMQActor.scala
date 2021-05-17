@@ -41,6 +41,7 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.connect(address)
   subscriber.subscribe(topic.getBytes(ZMQ.CHARSET))
+  subscriber.setTCPKeepAlive(1)
 
   val monitor = ctx.createSocket(SocketType.PAIR)
   monitor.connect("inproc://events")
@@ -49,18 +50,18 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
 
   // we check messages in a non-blocking manner with an interval, making sure to retrieve all messages before waiting again
   @tailrec
-  final def checkEvent: Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
+  final def checkEvent(): Unit = Option(Event.recv(monitor, ZMQ.DONTWAIT)) match {
     case Some(event) =>
       self ! event
-      checkEvent
+      checkEvent()
     case None => ()
   }
 
   @tailrec
-  final def checkMsg: Unit = Option(ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)) match {
+  final def checkMsg(): Unit = Option(ZMsg.recvMsg(subscriber, ZMQ.DONTWAIT)) match {
     case Some(msg) =>
       self ! msg
-      checkMsg
+      checkMsg()
     case None => ()
   }
 
@@ -69,11 +70,11 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
 
   override def receive: Receive = {
     case Symbol("checkEvent") =>
-      checkEvent
+      checkEvent()
       context.system.scheduler.scheduleOnce(1 second, self, Symbol("checkEvent"))
 
     case Symbol("checkMsg") =>
-      checkMsg
+      checkMsg()
       context.system.scheduler.scheduleOnce(1 second, self, Symbol("checkMsg"))
 
     case event: Event => event.getEvent match {
