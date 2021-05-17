@@ -24,6 +24,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
+import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2.Codecs.commitmentsCodec
 import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
@@ -79,7 +80,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Sqlite) {
-    val data = stateDataCodec.encode(state).require.toByteArray
+    val data = commitmentsCodec.encode(state.commitments).require.toByteArray
     using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
       update.setBytes(1, data)
       update.setBytes(2, state.channelId.toArray)
