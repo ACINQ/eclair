@@ -84,6 +84,22 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     }
   }
 
+  test("reconnect ZMQ automatically") {
+    withWatcher(f => {
+      import f._
+
+      // When the watcher starts, it broadcasts the current height.
+      val block1 = listener.expectMsgType[CurrentBlockCount]
+      listener.expectNoMessage(100 millis)
+
+      restartBitcoind(probe)
+      generateBlocks(1)
+      val block2 = listener.expectMsgType[CurrentBlockCount]
+      assert(block2.blockCount === block1.blockCount + 1)
+      listener.expectNoMessage(100 millis)
+    })
+  }
+
   test("add/remove watches from/to utxo map") {
     val m0 = Map.empty[OutPoint, Set[Watch[_ <: WatchTriggered]]]
     val txid = randomBytes32
