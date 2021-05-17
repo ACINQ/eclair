@@ -141,13 +141,13 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, channelId.toArray)
-      statement.setLong(2, commitmentNumber)
-      statement.setBytes(3, paymentHash.toArray)
-      statement.setLong(4, cltvExpiry.toLong)
-      statement.executeUpdate()
-    }
+//    using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
+//      statement.setBytes(1, channelId.toArray)
+//      statement.setLong(2, commitmentNumber)
+//      statement.setBytes(3, paymentHash.toArray)
+//      statement.setLong(4, cltvExpiry.toLong)
+//      statement.executeUpdate()
+//    }
   }
 
   override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = withMetrics("channels/list-htlc-infos", DbBackends.Sqlite) {
