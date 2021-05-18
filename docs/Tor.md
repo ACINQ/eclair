@@ -76,7 +76,7 @@ Open a CMD with administrator access
 
 ```shell
 cd c:\tor\Tor
-tor --service install -options -f c:\tor\Conf\torrc
+tor --service install -options -f "c:\tor\Conf\torrc"
 ```
 
 ### Configure Tor hidden service
