@@ -52,36 +52,15 @@ eclair-cli getinfo
   "alias": "ACINQ",
   "color": "#000102",
   "features": {
-    "activated": [
-      {
-        "name": "basic_mpp",
-        "support": "optional"
-      },
-      {
-        "name": "initial_routing_sync",
-        "support": "optional"
-      },
-      {
-        "name": "option_data_loss_protect",
-        "support": "optional"
-      },
-      {
-        "name": "gossip_queries_ex",
-        "support": "optional"
-      },
-      {
-        "name": "payment_secret",
-        "support": "optional"
-      },
-      {
-        "name": "var_onion_optin",
-        "support": "optional"
-      },
-      {
-        "name": "gossip_queries",
-        "support": "optional"
-      }
-    ],
+    "activated": {
+      "basic_mpp": "optional",
+      "initial_routing_sync": "optional",
+      "option_data_loss_protect": "optional",
+      "gossip_queries_ex": "optional",
+      "payment_secret": "optional",
+      "var_onion_optin": "optional",
+      "gossip_queries": "optional"
+    },
     "unknown": []
   },
   "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
@@ -470,28 +449,13 @@ feeratePerKw   | sats
           "isFunder": true,
           "defaultFinalScriptPubKey": "a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087",
           "features": {
-            "activated": [
-              {
-                "name": "gossip_queries_ex",
-                "support": "optional"
-              },
-              {
-                "name": "initial_routing_sync",
-                "support": "optional"
-              },
-              {
-                "name": "option_data_loss_protect",
-                "support": "optional"
-              },
-              {
-                "name": "var_onion_optin",
-                "support": "optional"
-              },
-              {
-                "name": "gossip_queries",
-                "support": "optional"
-              }
-            ],
+            "activated": {
+              "initial_routing_sync": "optional",
+              "option_data_loss_protect": "optional",
+              "gossip_queries_ex": "optional",
+              "var_onion_optin": "optional",
+              "gossip_queries": "optional"
+            },
             "unknown": []
           }
         },
@@ -509,28 +473,13 @@ feeratePerKw   | sats
           "delayedPaymentBasepoint": "026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5",
           "htlcBasepoint": "037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf",
           "features": {
-            "activated": [
-              {
-                "name": "gossip_queries_ex",
-                "support": "optional"
-              },
-              {
-                "name": "initial_routing_sync",
-                "support": "optional"
-              },
-              {
-                "name": "option_data_loss_protect",
-                "support": "optional"
-              },
-              {
-                "name": "var_onion_optin",
-                "support": "optional"
-              },
-              {
-                "name": "gossip_queries",
-                "support": "optional"
-              }
-            ],
+            "activated": {
+              "initial_routing_sync": "optional",
+              "option_data_loss_protect": "optional",
+              "gossip_queries_ex": "optional",
+              "var_onion_optin": "optional",
+              "gossip_queries": "optional"
+            },
             "unknown": []
           }
         },
@@ -591,7 +540,7 @@ feeratePerKw   | sats
         "bitcoinSignature1": "aac6fa5fbdcff62932e1bedff9a3f1d49791707270f63027e0d74f195f9e835f0017a201b049c70ed0240db0e5b9e53e5107143d38fcdacc355383200d47528c",
         "bitcoinSignature2": "4f368635b689637dba776b570df8306c247666e5cfa444cced0d9a1f50917a367082d57c09ad944acf649be9891c9013eb740a971f398a1528dfe2c66cbf3625",
         "features": {
-          "activated": [],
+          "activated": {},
           "unknown": []
         },
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
@@ -686,28 +635,13 @@ feeratePerKw   | sats
           "isFunder": true,
           "defaultFinalScriptPubKey": "a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087",
           "features": {
-            "activated": [
-              {
-                "name": "gossip_queries_ex",
-                "support": "optional"
-              },
-              {
-                "name": "initial_routing_sync",
-                "support": "optional"
-              },
-              {
-                "name": "option_data_loss_protect",
-                "support": "optional"
-              },
-              {
-                "name": "var_onion_optin",
-                "support": "optional"
-              },
-              {
-                "name": "gossip_queries",
-                "support": "optional"
-              }
-            ],
+            "activated": {
+              "initial_routing_sync": "optional",
+              "option_data_loss_protect": "optional",
+              "gossip_queries_ex": "optional",
+              "var_onion_optin": "optional",
+              "gossip_queries": "optional"
+            },
             "unknown": []
           }
         },
@@ -725,28 +659,13 @@ feeratePerKw   | sats
           "delayedPaymentBasepoint": "026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5",
           "htlcBasepoint": "037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf",
           "features": {
-            "activated": [
-              {
-                "name": "gossip_queries_ex",
-                "support": "optional"
-              },
-              {
-                "name": "initial_routing_sync",
-                "support": "optional"
-              },
-              {
-                "name": "option_data_loss_protect",
-                "support": "optional"
-              },
-              {
-                "name": "var_onion_optin",
-                "support": "optional"
-              },
-              {
-                "name": "gossip_queries",
-                "support": "optional"
-              }
-            ],
+            "activated": {
+              "initial_routing_sync": "optional",
+              "option_data_loss_protect": "optional",
+              "gossip_queries_ex": "optional",
+              "var_onion_optin": "optional",
+              "gossip_queries": "optional"
+            },
             "unknown": []
           }
         },
@@ -868,36 +787,15 @@ eclair-cli nodes
   {
     "signature": "3074823d709a7bf0d22abca9d5b260be49adc5ceacf1dcc67410c5c88d0e03373b8b7c000d23f1ec7abf84ab0ecb57e1026d10c5b0c39bfe6d3bcca98fec36cd",
     "features": {
-      "activated": [
-        {
-          "name": "basic_mpp",
-          "support": "optional"
-        },
-        {
-          "name": "initial_routing_sync",
-          "support": "optional"
-        },
-        {
-          "name": "option_data_loss_protect",
-          "support": "optional"
-        },
-        {
-          "name": "gossip_queries_ex",
-          "support": "optional"
-        },
-        {
-          "name": "payment_secret",
-          "support": "optional"
-        },
-        {
-          "name": "var_onion_optin",
-          "support": "optional"
-        },
-        {
-          "name": "gossip_queries",
-          "support": "optional"
-        }
-      ],
+      "activated": {
+        "basic_mpp": "optional",
+        "initial_routing_sync": "optional",
+        "option_data_loss_protect": "optional",
+        "gossip_queries_ex": "optional",
+        "var_onion_optin": "optional",
+        "payment_secret": "optional",
+        "gossip_queries": "optional"
+      },
       "unknown": []
     },
     "timestamp": 1593698420,
@@ -912,24 +810,12 @@ eclair-cli nodes
   {
     "signature": "3074823d709a7bf0d22abca9d5b260be49adc5ceacf1dcc67410c5c88d0e03373b8b7c000d23f1ec7abf84ab0ecb57e1026d10c5b0c39bfe6d3bcca98fec36cd",
     "features": {
-      "activated": [
-        {
-          "name": "initial_routing_sync",
-          "support": "optional"
-        },
-        {
-          "name": "option_data_loss_protect",
-          "support": "optional"
-        },
-        {
-          "name": "payment_secret",
-          "support": "optional"
-        },
-        {
-          "name": "var_onion_optin",
-          "support": "optional"
-        }
-      ],
+      "activated": {
+        "initial_routing_sync": "optional",
+        "option_data_loss_protect": "optional",
+        "var_onion_optin": "optional",
+        "payment_secret": "optional"
+      },
       "unknown": []
     },
     "timestamp": 1593698420,
@@ -1141,20 +1027,11 @@ amount         | msats
   "expiry": 3600,
   "amount": 50000,
   "features": {
-    "activated": [
-      {
-        "name": "var_onion_optin",
-        "support": "optional"
-      },
-      {
-        "name": "payment_secret",
-        "support": "optional"
-      },
-      {
-        "name": "basic_mpp",
-        "support": "optional"
-      }
-    ],
+    "activated": {
+      "basic_mpp": "optional",
+      "var_onion_optin": "optional",
+      "payment_secret": "optional"
+    },
     "unknown": []
   }
 }
@@ -1205,20 +1082,11 @@ amount         | msats
   "expiry": 3600,
   "amount": 50000,
   "features": {
-    "activated": [
-      {
-        "name": "var_onion_optin",
-        "support": "optional"
-      },
-      {
-        "name": "payment_secret",
-        "support": "optional"
-      },
-      {
-        "name": "basic_mpp",
-        "support": "optional"
-      }
-    ],
+    "activated": {
+      "basic_mpp": "optional",
+      "var_onion_optin": "optional",
+      "payment_secret": "optional"
+    },
     "unknown": []
   }
 }
@@ -1256,6 +1124,9 @@ Default number of attempts is read from the configuration. The API works in a fi
 the unique identifier for this payment attempt is immediately returned to the caller. It's possible to add an
 extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
+When `--blocking=true` is provided, the API will instead block until the payment completes.
+It will return either the payment preimage (if the payment succeeded) or failure details.
+
 ### HTTP Request
 
 `POST http://localhost:8080/payinvoice`
@@ -1270,6 +1141,7 @@ maxAttempts     | Max number of retries                                         
 feeThresholdSat | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
 maxFeePct       | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`) | Yes      | Double
 externalId      | Extra payment identifier specified by the caller                                               | Yes      | String
+blocking        | Block until the payment completes                                                              | Yes      | Boolean
 
 ## SendToNode
 
@@ -1411,20 +1283,11 @@ feesPaid        | msats
       "expiry": 3600,
       "amount": 90000000,
       "features": {
-        "activated": [
-          {
-            "name": "var_onion_optin",
-            "support": "optional"
-          },
-          {
-            "name": "payment_secret",
-            "support": "optional"
-          },
-          {
-            "name": "basic_mpp",
-            "support": "optional"
-          }
-        ],
+        "activated": {
+          "basic_mpp": "optional",
+          "var_onion_optin": "optional",
+          "payment_secret": "optional"
+        },
         "unknown": []
       }
     },
@@ -1466,20 +1329,11 @@ feesPaid        | msats
       "expiry": 3600,
       "amount": 90000000,
       "features": {
-        "activated": [
-          {
-            "name": "var_onion_optin",
-            "support": "optional"
-          },
-          {
-            "name": "payment_secret",
-            "support": "optional"
-          },
-          {
-            "name": "basic_mpp",
-            "support": "optional"
-          }
-        ],
+        "activated": {
+          "basic_mpp": "optional",
+          "var_onion_optin": "optional",
+          "payment_secret": "optional"
+        },
         "unknown": []
       }
     },
@@ -1550,20 +1404,11 @@ amount   | msats
     "expiry": 3600,
     "amount": 90000000,
     "features": {
-      "activated": [
-        {
-          "name": "var_onion_optin",
-          "support": "optional"
-        },
-        {
-          "name": "payment_secret",
-          "support": "optional"
-        },
-        {
-          "name": "basic_mpp",
-          "support": "optional"
-        }
-      ],
+      "activated": {
+        "basic_mpp": "optional",
+        "var_onion_optin": "optional",
+        "payment_secret": "optional"
+      },
       "unknown": []
     }
   },
@@ -1621,20 +1466,11 @@ amount   | msats
   "expiry": 3600,
   "amount": 50000,
   "features": {
-    "activated": [
-      {
-        "name": "var_onion_optin",
-        "support": "optional"
-      },
-      {
-        "name": "payment_secret",
-        "support": "optional"
-      },
-      {
-        "name": "basic_mpp",
-        "support": "optional"
-      }
-    ],
+    "activated": {
+      "basic_mpp": "optional",
+      "var_onion_optin": "optional",
+      "payment_secret": "optional"
+    },
     "unknown": []
   }
 }
@@ -1682,20 +1518,11 @@ amount   | msats
     "expiry": 3600,
     "amount": 50000,
     "features": {
-      "activated": [
-        {
-          "name": "var_onion_optin",
-          "support": "optional"
-        },
-        {
-          "name": "payment_secret",
-          "support": "optional"
-        },
-        {
-          "name": "basic_mpp",
-          "support": "optional"
-        }
-      ],
+      "activated": {
+        "basic_mpp": "optional",
+        "var_onion_optin": "optional",
+        "payment_secret": "optional"
+      },
       "unknown": []
     }
   },
@@ -1709,12 +1536,9 @@ amount   | msats
     "expiry": 3600,
     "amount": 25000,
     "features": {
-      "activated": [
-        {
-          "name": "var_onion_optin",
-          "support": "optional"
-        }
-      ],
+      "activated": {
+        "var_onion_optin": "optional"
+      },
       "unknown": []
     }
   },
@@ -1764,20 +1588,11 @@ amount   | msats
     "expiry": 3600,
     "amount": 50000,
     "features": {
-      "activated": [
-        {
-          "name": "var_onion_optin",
-          "support": "optional"
-        },
-        {
-          "name": "payment_secret",
-          "support": "optional"
-        },
-        {
-          "name": "basic_mpp",
-          "support": "optional"
-        }
-      ],
+      "activated": {
+        "basic_mpp": "optional",
+        "var_onion_optin": "optional",
+        "payment_secret": "optional"
+      },
       "unknown": []
     }
   },
@@ -1791,12 +1606,9 @@ amount   | msats
     "expiry": 3600,
     "amount": 25000,
     "features": {
-      "activated": [
-        {
-          "name": "var_onion_optin",
-          "support": "optional"
-        }
-      ],
+      "activated": {
+        "var_onion_optin": "optional"
+      },
       "unknown": []
     }
   },
