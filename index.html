@@ -454,36 +454,15 @@ eclair-cli getinfo
   </span><span class="s2">"alias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ACINQ"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"color"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#000102"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-    </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"initial_routing_sync"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"option_data_loss_protect"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries_ex"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">}</span><span class="w">
-    </span><span class="p">],</span><span class="w">
+    </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
   </span><span class="p">},</span><span class="w">
   </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"</span><span class="p">,</span><span class="w">
@@ -985,28 +964,13 @@ eclair-cli channels
           </span><span class="s2">"isFunder"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
           </span><span class="s2">"defaultFinalScriptPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries_ex"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"initial_routing_sync"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"option_data_loss_protect"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">}</span><span class="w">
-            </span><span class="p">],</span><span class="w">
+            </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+              </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+            </span><span class="p">},</span><span class="w">
             </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
           </span><span class="p">}</span><span class="w">
         </span><span class="p">},</span><span class="w">
@@ -1024,28 +988,13 @@ eclair-cli channels
           </span><span class="s2">"delayedPaymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"htlcBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries_ex"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"initial_routing_sync"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"option_data_loss_protect"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">}</span><span class="w">
-            </span><span class="p">],</span><span class="w">
+            </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+              </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+            </span><span class="p">},</span><span class="w">
             </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
           </span><span class="p">}</span><span class="w">
         </span><span class="p">},</span><span class="w">
@@ -1106,7 +1055,7 @@ eclair-cli channels
         </span><span class="s2">"bitcoinSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"aac6fa5fbdcff62932e1bedff9a3f1d49791707270f63027e0d74f195f9e835f0017a201b049c70ed0240db0e5b9e53e5107143d38fcdacc355383200d47528c"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"bitcoinSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4f368635b689637dba776b570df8306c247666e5cfa444cced0d9a1f50917a367082d57c09ad944acf649be9891c9013eb740a971f398a1528dfe2c66cbf3625"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+          </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span><span class="w">
           </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"</span><span class="p">,</span><span class="w">
@@ -1223,28 +1172,13 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
           </span><span class="s2">"isFunder"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
           </span><span class="s2">"defaultFinalScriptPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries_ex"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"initial_routing_sync"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"option_data_loss_protect"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">}</span><span class="w">
-            </span><span class="p">],</span><span class="w">
+            </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+              </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+            </span><span class="p">},</span><span class="w">
             </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
           </span><span class="p">}</span><span class="w">
         </span><span class="p">},</span><span class="w">
@@ -1262,28 +1196,13 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
           </span><span class="s2">"delayedPaymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"htlcBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries_ex"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"initial_routing_sync"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"option_data_loss_protect"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">},</span><span class="w">
-              </span><span class="p">{</span><span class="w">
-                </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries"</span><span class="p">,</span><span class="w">
-                </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-              </span><span class="p">}</span><span class="w">
-            </span><span class="p">],</span><span class="w">
+            </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+              </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+            </span><span class="p">},</span><span class="w">
             </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
           </span><span class="p">}</span><span class="w">
         </span><span class="p">},</span><span class="w">
@@ -1405,36 +1324,15 @@ eclair-cli nodes
   </span><span class="p">{</span><span class="w">
     </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3074823d709a7bf0d22abca9d5b260be49adc5ceacf1dcc67410c5c88d0e03373b8b7c000d23f1ec7abf84ab0ecb57e1026d10c5b0c39bfe6d3bcca98fec36cd"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"initial_routing_sync"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"option_data_loss_protect"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries_ex"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"gossip_queries"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">}</span><span class="w">
-      </span><span class="p">],</span><span class="w">
+      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1593698420</span><span class="p">,</span><span class="w">
@@ -1449,24 +1347,12 @@ eclair-cli nodes
   </span><span class="p">{</span><span class="w">
     </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3074823d709a7bf0d22abca9d5b260be49adc5ceacf1dcc67410c5c88d0e03373b8b7c000d23f1ec7abf84ab0ecb57e1026d10c5b0c39bfe6d3bcca98fec36cd"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"initial_routing_sync"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"option_data_loss_protect"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">}</span><span class="w">
-      </span><span class="p">],</span><span class="w">
+      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1593698420</span><span class="p">,</span><span class="w">
@@ -1677,20 +1563,11 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
   </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
   </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
   </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-    </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">}</span><span class="w">
-    </span><span class="p">],</span><span class="w">
+    </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
   </span><span class="p">}</span><span class="w">
 </span><span class="p">}</span><span class="w">
@@ -1774,20 +1651,11 @@ eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&
   </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
   </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
   </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-    </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">}</span><span class="w">
-    </span><span class="p">],</span><span class="w">
+    </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
   </span><span class="p">}</span><span class="w">
 </span><span class="p">}</span><span class="w">
@@ -1825,6 +1693,9 @@ eclair-cli payinvoice --invoice<span class="o">=</span>&lt;some_invoice&gt;
 Default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
 the unique identifier for this payment attempt is immediately returned to the caller. It&#39;s possible to add an
 extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
+
+<p>When <code>--blocking=true</code> is provided, the API will instead block until the payment completes.
+It will return either the payment preimage (if the payment succeeded) or failure details.</p>
 <h3 id='http-request-18'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/payinvoice</code></p>
 <h3 id='parameters-15'>Parameters</h3>
@@ -1871,6 +1742,12 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 <td>Extra payment identifier specified by the caller</td>
 <td>Yes</td>
 <td>String</td>
+</tr>
+<tr>
+<td>blocking</td>
+<td>Block until the payment completes</td>
+<td>Yes</td>
+<td>Boolean</td>
 </tr>
 </tbody></table>
 <h2 id='sendtonode'>SendToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
@@ -2097,20 +1974,11 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
       </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
       </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">90000000</span><span class="p">,</span><span class="w">
       </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-          </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-          </span><span class="p">},</span><span class="w">
-          </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-          </span><span class="p">},</span><span class="w">
-          </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-          </span><span class="p">}</span><span class="w">
-        </span><span class="p">],</span><span class="w">
+        </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+        </span><span class="p">},</span><span class="w">
         </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
       </span><span class="p">}</span><span class="w">
     </span><span class="p">},</span><span class="w">
@@ -2152,20 +2020,11 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
       </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
       </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">90000000</span><span class="p">,</span><span class="w">
       </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-          </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-          </span><span class="p">},</span><span class="w">
-          </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-          </span><span class="p">},</span><span class="w">
-          </span><span class="p">{</span><span class="w">
-            </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-          </span><span class="p">}</span><span class="w">
-        </span><span class="p">],</span><span class="w">
+        </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+        </span><span class="p">},</span><span class="w">
         </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
       </span><span class="p">}</span><span class="w">
     </span><span class="p">},</span><span class="w">
@@ -2254,20 +2113,11 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">90000000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">}</span><span class="w">
-      </span><span class="p">],</span><span class="w">
+      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">}</span><span class="w">
   </span><span class="p">},</span><span class="w">
@@ -2343,20 +2193,11 @@ eclair-cli getinvoice --paymentHash<span class="o">=</span>&lt;some_hash&gt;
   </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
   </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
   </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-    </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">},</span><span class="w">
-      </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-      </span><span class="p">}</span><span class="w">
-    </span><span class="p">],</span><span class="w">
+    </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
   </span><span class="p">}</span><span class="w">
 </span><span class="p">}</span><span class="w">
@@ -2417,20 +2258,11 @@ eclair-cli listinvoices
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">}</span><span class="w">
-      </span><span class="p">],</span><span class="w">
+      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">}</span><span class="w">
   </span><span class="p">},</span><span class="w">
@@ -2444,12 +2276,9 @@ eclair-cli listinvoices
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">25000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">}</span><span class="w">
-      </span><span class="p">],</span><span class="w">
+      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">}</span><span class="w">
   </span><span class="p">},</span><span class="w">
@@ -2517,20 +2346,11 @@ eclair-cli listpendinginvoices
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"payment_secret"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">},</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"basic_mpp"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">}</span><span class="w">
-      </span><span class="p">],</span><span class="w">
+      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">}</span><span class="w">
   </span><span class="p">},</span><span class="w">
@@ -2544,12 +2364,9 @@ eclair-cli listpendinginvoices
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">25000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-        </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"name"</span><span class="p">:</span><span class="w"> </span><span class="s2">"var_onion_optin"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"support"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
-        </span><span class="p">}</span><span class="w">
-      </span><span class="p">],</span><span class="w">
+      </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">}</span><span class="w">
   </span><span class="p">},</span><span class="w">
