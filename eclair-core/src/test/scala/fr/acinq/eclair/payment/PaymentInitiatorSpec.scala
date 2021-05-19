@@ -31,6 +31,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayme
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.PaymentLifecycle.{SendPayment, SendPaymentToRoute}
 import fr.acinq.eclair.payment.send.{PaymentError, PaymentInitiator}
+import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.Onion.{FinalLegacyPayload, FinalTlvPayload}
@@ -128,7 +129,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val finalExpiryDelta = CltvExpiryDelta(42)
     val hints = Seq(Seq(ExtraHop(b, channelUpdate_bc.shortChannelId, feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val routeParams = RouteParams(randomize = true, 15 msat, 1.5, 5, CltvExpiryDelta(561), None, MultiPartParams(10000 msat, 5))
+    val routeParams = RouteParams(randomize = true, 15 msat, 1.5, 5, CltvExpiryDelta(561), WeightRatios(1, 0, 0, 0, 0 msat, 0), MultiPartParams(10000 msat, 5))
     sender.send(initiator, SendPaymentRequest(finalAmount, paymentHash, c, 1, finalExpiryDelta, assistedRoutes = hints, routeParams = Some(routeParams)))
     val id1 = sender.expectMsgType[UUID]
     payFsm.expectMsg(SendPaymentConfig(id1, id1, None, paymentHash, finalAmount, c, Upstream.Local(id1), None, storeInDb = true, publishEvent = true, Nil))
