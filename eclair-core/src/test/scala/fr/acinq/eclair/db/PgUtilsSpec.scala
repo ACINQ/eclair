@@ -2,12 +2,13 @@ package fr.acinq.eclair.db
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.eclair.db.pg.PgUtils.JdbcUrlChanged
+import fr.acinq.eclair.db.pg.PgUtils.{JdbcUrlChanged, migrateTable, using}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LockFailure, LockFailureHandler}
 import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
-import grizzled.slf4j.Logging
+import grizzled.slf4j.{Logger, Logging}
 import org.scalatest.concurrent.Eventually
 import org.scalatest.funsuite.AnyFunSuiteLike
+import fr.acinq.eclair.db.pg.PgUtils.ExtendedResultSet._
 
 import java.io.File
 import java.util.UUID
@@ -84,6 +85,44 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     pg.close()
   }
 
+  test("migration test") {
+    val pg = EmbeddedPostgres.start()
+    using(pg.getPostgresDatabase.getConnection.createStatement()) { statement =>
+      statement.executeUpdate("CREATE TABLE foo (bar INTEGER)")
+    }
+
+    def doMigrate() = {
+      migrateTable(
+        source = pg.getPostgresDatabase.getConnection,
+        destination = pg.getPostgresDatabase.getConnection,
+        sourceTable = "foo",
+        migrateSql = "UPDATE foo SET bar=? WHERE bar=?",
+        (rs, statement) => {
+          statement.setInt(1, rs.getInt("bar") * 10)
+          statement.setInt(2, rs.getInt("bar"))
+        }
+      )(Logger(classOf[PgUtilsSpec]))
+    }
+
+    // empty migration
+    doMigrate()
+
+    using(pg.getPostgresDatabase.getConnection.createStatement()) { statement =>
+      statement.executeUpdate("INSERT INTO foo VALUES (1)")
+      statement.executeUpdate("INSERT INTO foo VALUES (2)")
+      statement.executeUpdate("INSERT INTO foo VALUES (3)")
+    }
+
+    // non-empty migration
+    doMigrate()
+
+    using(pg.getPostgresDatabase.getConnection.createStatement()) { statement =>
+      val rs = statement.executeQuery("SELECT bar FROM foo")
+      assert(rs.map(_.getInt("bar")).toSet === Set(10, 20, 30))
+    }
+
+  }
+
 }
 
 object PgUtilsSpec extends Logging {
@@ -97,6 +136,7 @@ object PgUtilsSpec extends Logging {
        |  username = "postgres"
        |  password = ""
        |  readonly-user = ""
+       |  reset-json-columns = false
        |  pool {
        |    max-size = 10 // recommended value = number_of_cpu_cores * 2
        |    connection-timeout = 30 seconds
