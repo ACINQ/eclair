@@ -160,31 +160,6 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     origin.expectMsg(PeerConnection.ConnectionResult.InitializationFailed("incompatible features"))
   }
 
-  test("masks off MPP and PaymentSecret features") { f =>
-    import f._
-    val probe = TestProbe()
-
-    val testCases = Seq(
-      (bin"                00000010", bin"                00000010"), // option_data_loss_protect
-      (bin"        0000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex
-      (bin"        1000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
-      (bin"        0100101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret
-      (bin"000000101000101010001010", bin"        0000101010001010"), // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp
-      (bin"000010101000101010001010", bin"000010000000101010001010") // option_data_loss_protect, initial_routing_sync, gossip_queries, var_onion_optin, gossip_queries_ex, payment_secret, basic_mpp and large_channel_support (optional)
-    )
-
-    for ((configuredFeatures, sentFeatures) <- testCases) {
-      val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(configuredFeatures))
-      val peerConnection = TestFSMRef(new PeerConnection(nodeParams, switchboard.ref, router.ref))
-      probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
-      transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
-      probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref))
-      transport.expectMsgType[TransportHandler.Listener]
-      val init = transport.expectMsgType[wire.Init]
-      assert(init.features.toByteVector === sentFeatures.bytes)
-    }
-  }
-
   test("disconnect if incompatible networks") { f =>
     import f._
     val probe = TestProbe()
