@@ -52,7 +52,7 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
 
     val txToRemote = {
-      val txNotFunded = Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(randomKey.publicKey)) :: Nil, 0)
+      val txNotFunded = Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
       bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       assert(fundTxResponse.changePosition.nonEmpty)
@@ -79,13 +79,13 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     }
     {
       // bitcoind requires that "all existing inputs must have their previous output transaction be in the wallet".
-      val txNonWalletInputs = Transaction(2, Seq(TxIn(OutPoint(txToRemote, 0), Nil, 0), TxIn(OutPoint(txToRemote, 1), Nil, 0)), Seq(TxOut(100000 sat, Script.pay2wpkh(randomKey.publicKey))), 0)
+      val txNonWalletInputs = Transaction(2, Seq(TxIn(OutPoint(txToRemote, 0), Nil, 0), TxIn(OutPoint(txToRemote, 1), Nil, 0)), Seq(TxOut(100000 sat, Script.pay2wpkh(randomKey().publicKey))), 0)
       bitcoinClient.fundTransaction(txNonWalletInputs, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
       sender.expectMsgType[Failure]
     }
     {
       // we can increase the feerate.
-      bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(250000 sat, Script.pay2wpkh(randomKey.publicKey)) :: Nil, 0), FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+      bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(250000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0), FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
       val fundTxResponse1 = sender.expectMsgType[FundTransactionResponse]
       bitcoinClient.fundTransaction(fundTxResponse1.tx, FundTransactionOptions(TestConstants.feeratePerKw * 2)).pipeTo(sender.ref)
       val fundTxResponse2 = sender.expectMsgType[FundTransactionResponse]
@@ -94,7 +94,7 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     }
     {
       // we can control where the change output is inserted and opt-out of RBF.
-      val txManyOutputs = Transaction(2, Nil, TxOut(410000 sat, Script.pay2wpkh(randomKey.publicKey)) :: TxOut(230000 sat, Script.pay2wpkh(randomKey.publicKey)) :: Nil, 0)
+      val txManyOutputs = Transaction(2, Nil, TxOut(410000 sat, Script.pay2wpkh(randomKey().publicKey)) :: TxOut(230000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
       bitcoinClient.fundTransaction(txManyOutputs, FundTransactionOptions(TestConstants.feeratePerKw, replaceable = false, changePosition = Some(1))).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       assert(fundTxResponse.tx.txOut.size === 3)
@@ -109,7 +109,7 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     val sender = TestProbe()
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
 
-    val nonWalletKey = randomKey
+    val nonWalletKey = randomKey()
     val opts = FundTransactionOptions(TestConstants.feeratePerKw, changePosition = Some(1))
     bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(250000 sat, Script.pay2wpkh(nonWalletKey.publicKey))), 0), opts).pipeTo(sender.ref)
     val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
@@ -120,7 +120,7 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     generateBlocks(1)
 
     {
-      bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(400000 sat, Script.pay2wpkh(randomKey.publicKey))), 0), opts).pipeTo(sender.ref)
+      bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(400000 sat, Script.pay2wpkh(randomKey().publicKey))), 0), opts).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       val txWithNonWalletInput = fundTxResponse.tx.copy(txIn = TxIn(OutPoint(txToRemote, 0), ByteVector.empty, 0) +: fundTxResponse.tx.txIn)
 
@@ -152,11 +152,11 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     }
     {
       // bitcoind lets us double-spend ourselves.
-      bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(75000 sat, Script.pay2wpkh(randomKey.publicKey))), 0), opts).pipeTo(sender.ref)
+      bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(75000 sat, Script.pay2wpkh(randomKey().publicKey))), 0), opts).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       bitcoinClient.signTransaction(fundTxResponse.tx, Nil).pipeTo(sender.ref)
       assert(sender.expectMsgType[SignTransactionResponse].complete)
-      bitcoinClient.signTransaction(fundTxResponse.tx.copy(txOut = Seq(TxOut(85000 sat, Script.pay2wpkh(randomKey.publicKey)))), Nil).pipeTo(sender.ref)
+      bitcoinClient.signTransaction(fundTxResponse.tx.copy(txOut = Seq(TxOut(85000 sat, Script.pay2wpkh(randomKey().publicKey)))), Nil).pipeTo(sender.ref)
       assert(sender.expectMsgType[SignTransactionResponse].complete)
     }
     {
@@ -167,7 +167,7 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
       bitcoinClient.publishTransaction(unconfirmedTx).pipeTo(sender.ref)
       sender.expectMsg(unconfirmedTx.txid)
       // bitcoind lets us use this unconfirmed non-wallet input.
-      bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(350000 sat, Script.pay2wpkh(randomKey.publicKey))), 0), opts).pipeTo(sender.ref)
+      bitcoinClient.fundTransaction(Transaction(2, Nil, Seq(TxOut(350000 sat, Script.pay2wpkh(randomKey().publicKey))), 0), opts).pipeTo(sender.ref)
       val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
       val txWithUnconfirmedInput = fundTxResponse.tx.copy(txIn = TxIn(OutPoint(unconfirmedTx, 0), ByteVector.empty, 0) +: fundTxResponse.tx.txIn)
       val nonWalletSig = Transaction.signInput(txWithUnconfirmedInput, 0, Script.pay2pkh(nonWalletKey.publicKey), SIGHASH_ALL, unconfirmedTx.txOut.head.amount, SIGVERSION_WITNESS_V0, nonWalletKey)
@@ -234,7 +234,7 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     bitcoinClient.publishTransaction(txWithUnknownInputs).pipeTo(sender.ref)
     sender.expectMsgType[Failure]
 
-    bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(100000 sat, Script.pay2wpkh(randomKey.publicKey)) :: Nil, 0), FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+    bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(100000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0), FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
     val txUnsignedInputs = sender.expectMsgType[FundTransactionResponse].tx
     bitcoinClient.publishTransaction(txUnsignedInputs).pipeTo(sender.ref)
     sender.expectMsgType[Failure]

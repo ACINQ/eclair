@@ -373,7 +373,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("funder keeps additional reserve to avoid channel being stuck") { f =>
     val isFunder = true
     val c = CommitmentsSpec.makeCommitments(100000000 msat, 50000000 msat, FeeratePerKw(2500 sat), 546 sat, isFunder)
-    val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey.publicKey, f.currentBlockHeight)
+    val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
     val Right((c1, _)) = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
     assert(c1.availableBalanceForSend === 0.msat)
 
@@ -381,14 +381,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val Right((c2, _)) = sendFee(c1, CMD_UPDATE_FEE(FeeratePerKw(3000 sat)))
 
     // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
-    val (_, cmdAdd1) = makeCmdAdd(100 msat, randomKey.publicKey, f.currentBlockHeight)
+    val (_, cmdAdd1) = makeCmdAdd(100 msat, randomKey().publicKey, f.currentBlockHeight)
     val Left(_: InsufficientFunds) = sendAdd(c2, cmdAdd1, f.currentBlockHeight, feeConfNoMismatch)
   }
 
   test("can send availableForSend") { f =>
     for (isFunder <- Seq(true, false)) {
       val c = CommitmentsSpec.makeCommitments(702000000 msat, 52000000 msat, FeeratePerKw(2679 sat), 546 sat, isFunder)
-      val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey.publicKey, f.currentBlockHeight)
+      val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
       val result = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
       assert(result.isRight, result)
     }
@@ -397,7 +397,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("can receive availableForReceive") { f =>
     for (isFunder <- Seq(true, false)) {
       val c = CommitmentsSpec.makeCommitments(31000000 msat, 702000000 msat, FeeratePerKw(2679 sat), 546 sat, isFunder)
-      val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
       receiveAdd(c, add, feeConfNoMismatch)
     }
   }
@@ -418,13 +418,13 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
-        val (_, cmdAdd) = makeCmdAdd(amount, randomKey.publicKey, f.currentBlockHeight)
+        val (_, cmdAdd) = makeCmdAdd(amount, randomKey().publicKey, f.currentBlockHeight)
         sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch) match {
           case Right((cc, _)) => c = cc
           case Left(e) => fail(s"$t -> could not setup initial htlcs: $e")
         }
       }
-      val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey.publicKey, f.currentBlockHeight)
+      val (_, cmdAdd) = makeCmdAdd(c.availableBalanceForSend, randomKey().publicKey, f.currentBlockHeight)
       val result = sendAdd(c, cmdAdd, f.currentBlockHeight, feeConfNoMismatch)
       assert(result.isRight, s"$t -> $result")
     }
@@ -446,13 +446,13 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       // Add some initial HTLCs to the pending list (bigger commit tx).
       for (_ <- 0 to t.pendingHtlcs) {
         val amount = Random.nextInt(maxPendingHtlcAmount.toLong.toInt).msat.max(1 msat)
-        val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, amount, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+        val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, amount, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
         receiveAdd(c, add, feeConfNoMismatch) match {
           case Right(cc) => c = cc
           case Left(e) => fail(s"$t -> could not setup initial htlcs: $e")
         }
       }
-      val add = UpdateAddHtlc(randomBytes32, c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32, CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
+      val add = UpdateAddHtlc(randomBytes32(), c.remoteNextHtlcId, c.availableBalanceForReceive, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)
       receiveAdd(c, add, feeConfNoMismatch) match {
         case Right(_) => ()
         case Left(e) => fail(s"$t -> $e")
@@ -465,47 +465,47 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 object CommitmentsSpec {
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, feeRatePerKw: FeeratePerKw = FeeratePerKw(0 sat), dustLimit: Satoshi = 0 sat, isFunder: Boolean = true, announceChannel: Boolean = true): Commitments = {
-    val localParams = LocalParams(randomKey.publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, None, Features.empty)
-    val remoteParams = RemoteParams(randomKey.publicKey, dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, Features.empty)
-    val commitmentInput = Funding.makeFundingInputInfo(randomBytes32, 0, (toLocal + toRemote).truncateToSatoshi, randomKey.publicKey, remoteParams.fundingPubKey)
+    val localParams = LocalParams(randomKey().publicKey, DeterministicWallet.KeyPath(Seq(42L)), dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder, ByteVector.empty, None, Features.empty)
+    val remoteParams = RemoteParams(randomKey().publicKey, dustLimit, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty)
+    val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
     Commitments(
       ChannelVersion.STANDARD,
       localParams,
       remoteParams,
       channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
       LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil)),
-      RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomBytes32, randomKey.publicKey),
+      RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey),
       LocalChanges(Nil, Nil, Nil),
       RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 1,
       remoteNextHtlcId = 1,
       originChannels = Map.empty,
-      remoteNextCommitInfo = Right(randomKey.publicKey),
+      remoteNextCommitInfo = Right(randomKey().publicKey),
       commitInput = commitmentInput,
       remotePerCommitmentSecrets = ShaChain.init,
-      channelId = randomBytes32)
+      channelId = randomBytes32())
   }
 
   def makeCommitments(toLocal: MilliSatoshi, toRemote: MilliSatoshi, localNodeId: PublicKey, remoteNodeId: PublicKey, announceChannel: Boolean): Commitments = {
     val localParams = LocalParams(localNodeId, DeterministicWallet.KeyPath(Seq(42L)), 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, isFunder = true, ByteVector.empty, None, Features.empty)
-    val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, Features.empty)
-    val commitmentInput = Funding.makeFundingInputInfo(randomBytes32, 0, (toLocal + toRemote).truncateToSatoshi, randomKey.publicKey, remoteParams.fundingPubKey)
+    val remoteParams = RemoteParams(remoteNodeId, 0 sat, UInt64.MaxValue, 0 sat, 1 msat, CltvExpiryDelta(144), 50, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, Features.empty)
+    val commitmentInput = Funding.makeFundingInputInfo(randomBytes32(), 0, (toLocal + toRemote).truncateToSatoshi, randomKey().publicKey, remoteParams.fundingPubKey)
     Commitments(
       ChannelVersion.STANDARD,
       localParams,
       remoteParams,
       channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
       LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil)),
-      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomBytes32, randomKey.publicKey),
+      RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey),
       LocalChanges(Nil, Nil, Nil),
       RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 1,
       remoteNextHtlcId = 1,
       originChannels = Map.empty,
-      remoteNextCommitInfo = Right(randomKey.publicKey),
+      remoteNextCommitInfo = Right(randomKey().publicKey),
       commitInput = commitmentInput,
       remotePerCommitmentSecrets = ShaChain.init,
-      channelId = randomBytes32)
+      channelId = randomBytes32())
   }
 
 }

@@ -40,18 +40,18 @@ class FeeEstimatorSpec extends AnyFunSuite {
     val feeConf = OnChainFeeConf(FeeTargets(1, 2, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat)), Map.empty)
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(5000 sat)))
-    assert(feeConf.getCommitmentFeerate(randomKey.publicKey, channelVersion, 100000 sat, None) === FeeratePerKw(5000 sat))
+    assert(feeConf.getCommitmentFeerate(randomKey().publicKey, channelVersion, 100000 sat, None) === FeeratePerKw(5000 sat))
 
     val currentFeerates = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(4000 sat)))
-    assert(feeConf.getCommitmentFeerate(randomKey.publicKey, channelVersion, 100000 sat, Some(currentFeerates)) === FeeratePerKw(4000 sat))
+    assert(feeConf.getCommitmentFeerate(randomKey().publicKey, channelVersion, 100000 sat, Some(currentFeerates)) === FeeratePerKw(4000 sat))
   }
 
   test("get commitment feerate (anchor outputs)") {
     val feeEstimator = new TestFeeEstimator()
     val channelVersion = ChannelVersion.ANCHOR_OUTPUTS
-    val defaultNodeId = randomKey.publicKey
+    val defaultNodeId = randomKey().publicKey
     val defaultMaxCommitFeerate = FeeratePerKw(2500 sat)
-    val overrideNodeId = randomKey.publicKey
+    val overrideNodeId = randomKey().publicKey
     val overrideMaxCommitFeerate = defaultMaxCommitFeerate * 2
     val feeConf = OnChainFeeConf(FeeTargets(1, 2, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 2.0, defaultMaxCommitFeerate), Map(overrideNodeId -> FeerateTolerance(0.5, 2.0, overrideMaxCommitFeerate)))
 

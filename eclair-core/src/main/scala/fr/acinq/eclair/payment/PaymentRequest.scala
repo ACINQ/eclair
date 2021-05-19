@@ -146,7 +146,7 @@ object PaymentRequest {
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
         features).flatten
-      val paymentSecretTag = if (features.exists(_.allowPaymentSecret)) PaymentSecret(randomBytes32) :: Nil else Nil
+      val paymentSecretTag = if (features.exists(_.allowPaymentSecret)) PaymentSecret(randomBytes32()) :: Nil else Nil
       val routingInfoTags = extraHops.map(RoutingInfo)
       defaultTags ++ paymentSecretTag ++ routingInfoTags
     }

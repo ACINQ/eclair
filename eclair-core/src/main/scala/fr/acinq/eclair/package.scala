@@ -18,31 +18,29 @@ package fr.acinq
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.crypto.StrongRandom
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
 
-import java.security.SecureRandom
 import scala.util.{Failure, Success, Try}
 
 package object eclair {
 
-  /**
-   * We are using 'new SecureRandom()' instead of 'SecureRandom.getInstanceStrong()' because the latter can hang on Linux
-   * See http://bugs.java.com/view_bug.do?bug_id=6521844 and https://tersesystems.com/2015/12/17/the-right-way-to-use-securerandom/
-   */
-  val secureRandom = new SecureRandom()
+  val randomGen = new StrongRandom()
 
   def randomBytes(length: Int): ByteVector = {
     val buffer = new Array[Byte](length)
-    secureRandom.nextBytes(buffer)
+    randomGen.nextBytes(buffer)
     ByteVector.view(buffer)
   }
 
-  def randomBytes32: ByteVector32 = ByteVector32(randomBytes(32))
+  def randomBytes32(): ByteVector32 = ByteVector32(randomBytes(32))
 
-  def randomBytes64: ByteVector64 = ByteVector64(randomBytes(64))
+  def randomBytes64(): ByteVector64 = ByteVector64(randomBytes(64))
 
-  def randomKey: PrivateKey = PrivateKey(randomBytes32)
+  def randomKey(): PrivateKey = PrivateKey(randomBytes32())
+
+  def randomLong(): Long = randomGen.nextLong()
 
   def toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 = {
     require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")

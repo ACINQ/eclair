@@ -71,7 +71,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
     if (test.tags.contains("with_node_announcement")) {
-      val bobAnnouncement = NodeAnnouncement(randomBytes64, Features.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
@@ -138,7 +138,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
 
     // we put the server address in the node db
-    val ann = NodeAnnouncement(randomBytes64, Features.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    val ann = NodeAnnouncement(randomBytes64(), Features.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(ann)
 
     val probe = TestProbe()
@@ -248,14 +248,14 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection)
     assert(peer.stateData.channels.isEmpty)
 
-    val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32, 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, 0)
+    val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0)
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)
     assert(channel.expectMsgType[INPUT_INIT_FUNDEE].temporaryChannelId === open.temporaryChannelId)
     channel.expectMsg(open)
 
     // open_channel messages with the same temporary channel id should simply be ignored
-    peerConnection.send(peer, open.copy(fundingSatoshis = 100000 sat, fundingPubkey = randomKey.publicKey))
+    peerConnection.send(peer, open.copy(fundingSatoshis = 100000 sat, fundingPubkey = randomKey().publicKey))
     channel.expectNoMsg(100 millis)
     peerConnection.expectNoMsg(100 millis)
     assert(peer.stateData.channels.size === 1)

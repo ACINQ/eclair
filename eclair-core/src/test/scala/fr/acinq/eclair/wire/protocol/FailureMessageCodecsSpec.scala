@@ -29,7 +29,7 @@ import scodec.bits._
 
 class FailureMessageCodecsSpec extends AnyFunSuite {
   val channelUpdate = ChannelUpdate(
-    signature = randomBytes64,
+    signature = randomBytes64(),
     chainHash = Block.RegtestGenesisBlock.hash,
     shortChannelId = ShortChannelId(12345),
     timestamp = 1234567L,
@@ -44,7 +44,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
   test("encode/decode all failure messages") {
     val msgs: List[FailureMessage] =
       InvalidRealm :: TemporaryNodeFailure :: PermanentNodeFailure :: RequiredNodeFeatureMissing ::
-        InvalidOnionVersion(randomBytes32) :: InvalidOnionHmac(randomBytes32) :: InvalidOnionKey(randomBytes32) ::
+        InvalidOnionVersion(randomBytes32()) :: InvalidOnionHmac(randomBytes32()) :: InvalidOnionKey(randomBytes32()) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
         AmountBelowMinimum(123456 msat, channelUpdate) :: FeeInsufficient(546463 msat, channelUpdate) :: IncorrectCltvExpiry(CltvExpiry(1211), channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
         IncorrectOrUnknownPaymentDetails(123456 msat, 1105) :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: InvalidOnionPayload(UInt64(561), 1105) :: PaymentTimeout ::
@@ -82,9 +82,9 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
 
   test("bad onion failure code") {
     val msgs = Map(
-      (BADONION | PERM | 4) -> InvalidOnionVersion(randomBytes32),
-      (BADONION | PERM | 5) -> InvalidOnionHmac(randomBytes32),
-      (BADONION | PERM | 6) -> InvalidOnionKey(randomBytes32)
+      (BADONION | PERM | 4) -> InvalidOnionVersion(randomBytes32()),
+      (BADONION | PERM | 5) -> InvalidOnionHmac(randomBytes32()),
+      (BADONION | PERM | 6) -> InvalidOnionKey(randomBytes32())
     )
 
     for ((code, message) <- msgs) {

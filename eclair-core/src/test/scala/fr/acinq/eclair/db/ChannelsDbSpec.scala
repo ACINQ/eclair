@@ -59,7 +59,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       dbs.pendingRelay // needed by db.removeChannel
 
       val channel1 = ChannelCodecsSpec.normal
-      val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(randomBytes32)
+      val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(randomBytes32())
       val channel2b = channel2a.modify(_.shortChannelId).setTo(ShortChannelId(189371))
 
       val commitNumber = 42
@@ -98,7 +98,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val db = dbs.channels
       implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(8))
       val channel = ChannelCodecsSpec.normal
-      val channelIds = (0 until 10).map(_ => randomBytes32).toList
+      val channelIds = (0 until 10).map(_ => randomBytes32()).toList
       val futures = for (i <- 0 until 10000) yield {
         val channelId = channelIds(i % channelIds.size)
         Future(db.addOrUpdateChannel(channel.modify(_.commitments.channelId).setTo(channelId)))
@@ -114,7 +114,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val db = dbs.channels
 
       val channel1 = ChannelCodecsSpec.normal
-      val channel2 = channel1.modify(_.commitments.channelId).setTo(randomBytes32)
+      val channel2 = channel1.modify(_.commitments.channelId).setTo(randomBytes32())
 
       // first we add channels
       db.addOrUpdateChannel(channel1)
@@ -177,7 +177,7 @@ class ChannelsDbSpec extends AnyFunSuite {
             using(sqlite.prepareStatement("INSERT INTO htlc_infos (channel_id, commitment_number, payment_hash, cltv_expiry) VALUES (?, ?, ?, ?)")) { statement =>
               statement.setBytes(1, testCase.channelId.toArray)
               statement.setLong(2, commitmentNumber)
-              statement.setBytes(3, randomBytes32.toArray)
+              statement.setBytes(3, randomBytes32().toArray)
               statement.setLong(4, 500000 + Random.nextInt(500000))
               statement.executeUpdate()
             }
@@ -233,7 +233,7 @@ class ChannelsDbSpec extends AnyFunSuite {
                   using(connection.prepareStatement("INSERT INTO htlc_infos (channel_id, commitment_number, payment_hash, cltv_expiry) VALUES (?, ?, ?, ?)")) { statement =>
                     statement.setString(1, testCase.channelId.toHex)
                     statement.setLong(2, commitmentNumber)
-                    statement.setString(3, randomBytes32.toHex)
+                    statement.setString(3, randomBytes32().toHex)
                     statement.setLong(4, 500000 + Random.nextInt(500000))
                     statement.executeUpdate()
                   }
@@ -268,7 +268,7 @@ class ChannelsDbSpec extends AnyFunSuite {
                   using(connection.prepareStatement("INSERT INTO htlc_infos (channel_id, commitment_number, payment_hash, cltv_expiry) VALUES (?, ?, ?, ?)")) { statement =>
                     statement.setBytes(1, testCase.channelId.toArray)
                     statement.setLong(2, commitmentNumber)
-                    statement.setBytes(3, randomBytes32.toArray)
+                    statement.setBytes(3, randomBytes32().toArray)
                     statement.setLong(4, 500000 + Random.nextInt(500000))
                     statement.executeUpdate()
                   }
@@ -343,7 +343,7 @@ object ChannelsDbSpec {
 
   private val data = stateDataCodec.encode(ChannelCodecsSpec.normal).require.bytes
   val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield TestCase(
-    channelId = randomBytes32,
+    channelId = randomBytes32(),
     data = data,
     isClosed = Random.nextBoolean(),
     createdTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,

@@ -17,10 +17,9 @@
 package fr.acinq.eclair
 
 import akka.Done
-import akka.actor.typed
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
-import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
+import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy, typed}
 import akka.pattern.after
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
@@ -32,6 +31,7 @@ import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.{Channel, Register}
+import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
@@ -81,8 +81,9 @@ class Setup(datadir: File,
   logger.info(s"version=${Kit.getVersion} commit=${Kit.getCommit}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
   logger.info(s"initializing secure random generator")
-  // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
-  secureRandom.nextInt()
+  // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later
+  randomGen.init()
+  system.spawn(Behaviors.supervise(WeakEntropyPool(randomGen)).onFailure(typed.SupervisorStrategy.restart), "entropy-pool")
 
   datadir.mkdirs()
   val config = system.settings.config.getConfig("eclair")

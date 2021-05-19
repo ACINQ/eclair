@@ -86,10 +86,10 @@ object AnnouncementsBatchValidationSpec {
   }
 
   def simulateChannel()(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): SimulatedChannel = {
-    val node1Key = randomKey
-    val node2Key = randomKey
-    val node1BitcoinKey = randomKey
-    val node2BitcoinKey = randomKey
+    val node1Key = randomKey()
+    val node2Key = randomKey()
+    val node1BitcoinKey = randomKey()
+    val node2BitcoinKey = randomKey()
     val amount = 1000000 sat
     // first we publish the funding tx
     val wallet = new BitcoinCoreWallet(extendedBitcoinClient.rpcClient)

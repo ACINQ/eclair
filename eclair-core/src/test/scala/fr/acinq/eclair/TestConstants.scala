@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
@@ -169,7 +168,7 @@ object TestConstants {
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
       nodeParams.features,
-      Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
+      Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
       isFunder = true,
       fundingSatoshis
@@ -273,7 +272,7 @@ object TestConstants {
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
       nodeParams.features,
-      Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
+      Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
       isFunder = false,
       fundingSatoshis).copy(

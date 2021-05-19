@@ -152,7 +152,7 @@ object NodeParams extends Logging {
         migrateSeedFile(oldSeedPath, seedPath)
         readSeedFromFile(seedPath)
       } else {
-        val randomSeed = randomBytes32
+        val randomSeed = randomBytes32()
         writeSeedToFile(seedPath, randomSeed)
         randomSeed.bytes
       }

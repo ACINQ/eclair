@@ -141,7 +141,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we use this to control when to fulfill htlcs
     val htlcReceiver = TestProbe()
     nodes("F").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
-    val preimage = randomBytes32
+    val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
     val paymentReq = SendPaymentRequest(100000000 msat, paymentHash, nodes("F").nodeParams.nodeId, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams)

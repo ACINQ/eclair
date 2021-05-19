@@ -22,7 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, RemoteFailure}
 import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
-import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, secureRandom}
+import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, randomLong}
 
 import scala.concurrent.duration._
 
@@ -52,7 +52,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
     case TickProbe =>
       pickPaymentDestination(nodeParams.nodeId, routingData) match {
         case Some(targetNodeId) =>
-          val paymentHash = randomBytes32 // we don't even know the preimage (this needs to be a secure random!)
+          val paymentHash = randomBytes32() // we don't even know the preimage (this needs to be a secure random!)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=$paymentHash")
           paymentInitiator ! PaymentInitiator.SendPaymentRequest(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1)
         case None =>
@@ -96,7 +96,7 @@ object Autoprobe {
     if (peers.isEmpty) {
       None
     } else {
-      peers.drop(secureRandom.nextInt(peers.size)).headOption
+      peers.drop(randomLong().toInt % peers.size).headOption
     }
   }
 

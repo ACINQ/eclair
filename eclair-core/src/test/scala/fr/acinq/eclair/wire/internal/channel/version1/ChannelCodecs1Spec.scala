@@ -59,7 +59,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     }
 
     val o = LocalParams(
-      nodeId = randomKey.publicKey,
+      nodeId = randomKey().publicKey,
       fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
@@ -67,11 +67,11 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32).publicKey)),
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey)),
       walletStaticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
       features = Features(randomBytes(256)))
-    val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32).publicKey))
+    val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32()).publicKey))
 
     roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
     roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
@@ -81,18 +81,18 @@ class ChannelCodecs1Spec extends AnyFunSuite {
 
   test("encode/decode remoteparams") {
     val o = RemoteParams(
-      nodeId = randomKey.publicKey,
+      nodeId = randomKey().publicKey,
       dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      fundingPubKey = randomKey.publicKey,
-      revocationBasepoint = randomKey.publicKey,
-      paymentBasepoint = randomKey.publicKey,
-      delayedPaymentBasepoint = randomKey.publicKey,
-      htlcBasepoint = randomKey.publicKey,
+      fundingPubKey = randomKey().publicKey,
+      revocationBasepoint = randomKey().publicKey,
+      paymentBasepoint = randomKey().publicKey,
+      delayedPaymentBasepoint = randomKey().publicKey,
+      htlcBasepoint = randomKey().publicKey,
       features = TestConstants.Alice.nodeParams.features)
     val encoded = remoteParamsCodec.encode(o).require
     val decoded = remoteParamsCodec.decodeValue(encoded).require
@@ -106,11 +106,11 @@ class ChannelCodecs1Spec extends AnyFunSuite {
 
   test("encode/decode htlc") {
     val add = UpdateAddHtlc(
-      channelId = randomBytes32,
+      channelId = randomBytes32(),
       id = Random.nextInt(Int.MaxValue),
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
-      paymentHash = randomBytes32,
+      paymentHash = randomBytes32(),
       onionRoutingPacket = TestConstants.emptyOnionPacket)
     val htlc1 = IncomingHtlc(add)
     val htlc2 = OutgoingHtlc(add)
@@ -120,18 +120,18 @@ class ChannelCodecs1Spec extends AnyFunSuite {
 
   test("encode/decode commitment spec") {
     val add1 = UpdateAddHtlc(
-      channelId = randomBytes32,
+      channelId = randomBytes32(),
       id = Random.nextInt(Int.MaxValue),
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
-      paymentHash = randomBytes32,
+      paymentHash = randomBytes32(),
       onionRoutingPacket = TestConstants.emptyOnionPacket)
     val add2 = UpdateAddHtlc(
-      channelId = randomBytes32,
+      channelId = randomBytes32(),
       id = Random.nextInt(Int.MaxValue),
       amountMsat = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       cltvExpiry = CltvExpiry(Random.nextInt(Int.MaxValue)),
-      paymentHash = randomBytes32,
+      paymentHash = randomBytes32(),
       onionRoutingPacket = TestConstants.emptyOnionPacket)
     val htlc1 = IncomingHtlc(add1)
     val htlc2 = OutgoingHtlc(add2)
@@ -156,16 +156,16 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     assert(originCodec.decodeValue(originCodec.encode(localHot).require).require === localCold)
     assert(originCodec.decodeValue(originCodec.encode(localCold).require).require === localCold)
 
-    val add = UpdateAddHtlc(randomBytes32, 4324, 11000000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket)
+    val add = UpdateAddHtlc(randomBytes32(), 4324, 11000000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket)
     val relayedHot = Origin.ChannelRelayedHot(replyTo, add, 11000000 msat)
     val relayedCold = Origin.ChannelRelayedCold(add.channelId, add.id, add.amountMsat, relayedHot.amountOut)
     assert(originCodec.decodeValue(originCodec.encode(relayedHot).require).require === relayedCold)
     assert(originCodec.decodeValue(originCodec.encode(relayedCold).require).require === relayedCold)
 
     val adds = Seq(
-      UpdateAddHtlc(randomBytes32, 1L, 1000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(randomBytes32, 1L, 2000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(randomBytes32, 2L, 3000 msat, randomBytes32, CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32(), 1L, 1000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32(), 1L, 2000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(randomBytes32(), 2L, 3000 msat, randomBytes32(), CltvExpiry(400000), TestConstants.emptyOnionPacket),
     )
     val trampolineRelayedHot = Origin.TrampolineRelayedHot(replyTo, adds)
     val trampolineRelayedCold = Origin.TrampolineRelayedCold(trampolineRelayedHot.htlcs)
@@ -176,23 +176,23 @@ class ChannelCodecs1Spec extends AnyFunSuite {
   test("encode/decode map of origins") {
     val map = Map(
       1L -> Origin.LocalCold(UUID.randomUUID()),
-      42L -> Origin.ChannelRelayedCold(randomBytes32, 4324, 12000000 msat, 11000000 msat),
-      43L -> Origin.TrampolineRelayedCold((randomBytes32, 17L) :: (randomBytes32, 21L) :: (randomBytes32, 21L) :: Nil),
-      130L -> Origin.ChannelRelayedCold(randomBytes32, -45, 13000000 msat, 12000000 msat),
-      140L -> Origin.TrampolineRelayedCold((randomBytes32, 0L) :: Nil),
-      1000L -> Origin.ChannelRelayedCold(randomBytes32, 10, 14000000 msat, 13000000 msat),
-      -32L -> Origin.ChannelRelayedCold(randomBytes32, 54, 15000000 msat, 14000000 msat),
-      -54L -> Origin.TrampolineRelayedCold((randomBytes32, 1L) :: (randomBytes32, 2L) :: Nil),
+      42L -> Origin.ChannelRelayedCold(randomBytes32(), 4324, 12000000 msat, 11000000 msat),
+      43L -> Origin.TrampolineRelayedCold((randomBytes32(), 17L) :: (randomBytes32(), 21L) :: (randomBytes32(), 21L) :: Nil),
+      130L -> Origin.ChannelRelayedCold(randomBytes32(), -45, 13000000 msat, 12000000 msat),
+      140L -> Origin.TrampolineRelayedCold((randomBytes32(), 0L) :: Nil),
+      1000L -> Origin.ChannelRelayedCold(randomBytes32(), 10, 14000000 msat, 13000000 msat),
+      -32L -> Origin.ChannelRelayedCold(randomBytes32(), 54, 15000000 msat, 14000000 msat),
+      -54L -> Origin.TrampolineRelayedCold((randomBytes32(), 1L) :: (randomBytes32(), 2L) :: Nil),
       -4L -> Origin.LocalCold(UUID.randomUUID()))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
 
   test("encode/decode map of spending txes") {
     val map = Map(
-      OutPoint(randomBytes32, 42) -> randomBytes32,
-      OutPoint(randomBytes32, 14502) -> randomBytes32,
-      OutPoint(randomBytes32, 0) -> randomBytes32,
-      OutPoint(randomBytes32, 454513) -> randomBytes32
+      OutPoint(randomBytes32(), 42) -> randomBytes32(),
+      OutPoint(randomBytes32(), 14502) -> randomBytes32(),
+      OutPoint(randomBytes32(), 0) -> randomBytes32(),
+      OutPoint(randomBytes32(), 454513) -> randomBytes32()
     )
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
   }

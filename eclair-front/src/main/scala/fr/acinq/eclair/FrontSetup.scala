@@ -46,8 +46,8 @@ class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
   logger.info(s"initializing secure random generator")
-  // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
-  secureRandom.nextInt()
+  // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later
+  randomGen.init()
 
   datadir.mkdirs()
 

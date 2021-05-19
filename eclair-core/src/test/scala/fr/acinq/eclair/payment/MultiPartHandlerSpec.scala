@@ -219,8 +219,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("Generated payment request contains the provided extra hops") { f =>
     import f._
 
-    val x = randomKey.publicKey
-    val y = randomKey.publicKey
+    val x = randomKey().publicKey
+    val y = randomKey().publicKey
     val extraHop_x_y = ExtraHop(x, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_y_z = ExtraHop(y, ShortChannelId(2), 20 msat, 21, CltvExpiryDelta(22))
     val extraHop_x_t = ExtraHop(x, ShortChannelId(3), 30 msat, 31, CltvExpiryDelta(32))
@@ -474,7 +474,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val amountMsat = 42000 msat
-    val paymentPreimage = randomBytes32
+    val paymentPreimage = randomBytes32()
     val paymentHash = Crypto.sha256(paymentPreimage)
     val payload = FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(amountMsat), OnionTlv.OutgoingCltv(defaultExpiry), OnionTlv.KeySend(paymentPreimage))))
 
@@ -495,7 +495,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     val amountMsat = 42000 msat
-    val paymentPreimage = randomBytes32
+    val paymentPreimage = randomBytes32()
     val paymentHash = Crypto.sha256(paymentPreimage)
     val payload = FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(amountMsat), OnionTlv.OutgoingCltv(defaultExpiry), OnionTlv.KeySend(paymentPreimage))))
 

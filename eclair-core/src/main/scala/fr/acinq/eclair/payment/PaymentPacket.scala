@@ -146,7 +146,7 @@ object OutgoingPacket {
    */
   def buildOnion[T <: Onion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(nodes: Seq[PublicKey], payloads: Seq[Onion.PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
-    val sessionKey = randomKey
+    val sessionKey = randomKey()
     val payloadsBin: Seq[ByteVector] = payloads
       .map {
         case p: Onion.FinalPayload => OnionCodecs.finalPerHopPayloadCodec.encode(p)

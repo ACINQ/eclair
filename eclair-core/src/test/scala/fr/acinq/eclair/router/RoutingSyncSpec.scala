@@ -135,7 +135,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     val watcher = system.actorOf(Props(new YesWatcher()))
     val alice = TestFSMRef(new Router(Alice.nodeParams, watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
-    val charlieId = randomKey.publicKey
+    val charlieId = randomKey().publicKey
     val sender = TestProbe()
     val extendedQueryFlags_opt = None
 
@@ -184,7 +184,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     val watcher = system.actorOf(Props(new YesWatcher()))
     val alice = TestFSMRef(new Router(Alice.nodeParams.copy(routerConf = Alice.nodeParams.routerConf.copy(requestNodeAnnouncements = requestNodeAnnouncements)), watcher))
     val bob = TestFSMRef(new Router(Bob.nodeParams, watcher))
-    val charlieId = randomKey.publicKey
+    val charlieId = randomKey().publicKey
     val sender = TestProbe()
     val extendedQueryFlags_opt = Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL))
 
@@ -312,8 +312,8 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
     def req = QueryShortChannelIds(Block.RegtestGenesisBlock.hash, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42))), TlvStream.empty)
 
-    val nodeIdA = randomKey.publicKey
-    val nodeIdB = randomKey.publicKey
+    val nodeIdA = randomKey().publicKey
+    val nodeIdB = randomKey().publicKey
 
     val sync1 = Map(nodeIdA -> Syncing(List(req, req, req), 4))
     assert(syncProgress(sync1) == SyncProgress(0.25D))
@@ -337,12 +337,12 @@ object RoutingSyncSpec {
     outputIndex <- 0 to 1
   } yield ShortChannelId(block, txindex, outputIndex)).foldLeft(SortedSet.empty[ShortChannelId])(_ + _)
 
-  val unused: PrivateKey = randomKey
+  val unused: PrivateKey = randomKey()
 
   def makeFakeRoutingInfo(pub2priv: mutable.Map[PublicKey, PrivateKey])(shortChannelId: ShortChannelId): (PublicChannel, NodeAnnouncement, NodeAnnouncement) = {
     val timestamp = System.currentTimeMillis / 1000
     val (priv1, priv2) = {
-      val (priv_a, priv_b) = (randomKey, randomKey)
+      val (priv_a, priv_b) = (randomKey(), randomKey())
       if (Announcements.isNode1(priv_a.publicKey, priv_b.publicKey)) (priv_a, priv_b) else (priv_b, priv_a)
     }
     val priv_funding1 = unused

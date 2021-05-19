@@ -55,7 +55,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultAmountMsat = 142000000 msat
   val defaultMaxFee = 4260000 msat // 3% of defaultAmountMsat
   val defaultExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(40000)
-  val defaultPaymentPreimage = randomBytes32
+  val defaultPaymentPreimage = randomBytes32()
   val defaultPaymentHash = Crypto.sha256(defaultPaymentPreimage)
   val defaultOrigin = Origin.LocalCold(UUID.randomUUID())
   val defaultExternalId = UUID.randomUUID().toString
@@ -144,7 +144,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedNodeRoute(Seq(randomKey.publicKey, randomKey.publicKey, randomKey.publicKey))), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
+    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedNodeRoute(Seq(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
     sender.send(paymentFSM, brokenRoute)
     routerForwarder.expectMsgType[FinalizeRoute]
     routerForwarder.forward(routerFixture.router)
@@ -157,7 +157,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val payFixture = createPaymentLifecycle()
     import payFixture._
 
-    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedChannelRoute(randomKey.publicKey, Seq(ShortChannelId(1), ShortChannelId(2)))), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
+    val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedChannelRoute(randomKey().publicKey, Seq(ShortChannelId(1), ShortChannelId(2)))), FinalLegacyPayload(defaultAmountMsat, defaultExpiry))
     sender.send(paymentFSM, brokenRoute)
     routerForwarder.expectMsgType[FinalizeRoute]
     routerForwarder.forward(routerFixture.router)
@@ -171,7 +171,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val recipient = randomKey.publicKey
+    val recipient = randomKey().publicKey
     val route = PredefinedNodeRoute(Seq(a, b, c, recipient))
     val routingHint = Seq(Seq(ExtraHop(c, ShortChannelId(561), 1 msat, 100, CltvExpiryDelta(144))))
     val request = SendPaymentToRoute(sender.ref, Left(route), FinalLegacyPayload(defaultAmountMsat, defaultExpiry), routingHint)
@@ -239,7 +239,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(ignore1.nodes.isEmpty)
 
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
-    sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, randomBytes32)))) // unparsable message
+    sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, randomBytes32())))) // unparsable message
 
     // then the payment lifecycle will ask for a new route excluding all intermediate nodes
     routerForwarder.expectMsg(defaultRouteRequest(nodeParams.nodeId, d, cfg).copy(ignore = Ignore(Set(c), Set.empty)))
@@ -315,7 +315,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, cmd1, Nil, _, _, _) = paymentFSM.stateData
 
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
-    sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(ByteVector32.Zeroes, 0, randomBytes32, FailureMessageCodecs.BADONION))))
+    sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFailMalformed(UpdateFailMalformedHtlc(ByteVector32.Zeroes, 0, randomBytes32(), FailureMessageCodecs.BADONION))))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(defaultRouteRequest(a, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab, a, b)))))
@@ -338,7 +338,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, cmd1, Nil, _, _, _) = paymentFSM.stateData
 
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
-    sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFail(HtlcsTimedoutDownstream(randomBytes32, Set.empty))))
+    sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFail(HtlcsTimedoutDownstream(randomBytes32(), Set.empty))))
 
     // this error is fatal
     routerForwarder.expectNoMsg(100 millis)

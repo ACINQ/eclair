@@ -137,7 +137,7 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
   }
 
   test("type hints") {
-    val e1 = PaymentSettlingOnChain(UUID.randomUUID, 42 msat, randomBytes32)
+    val e1 = PaymentSettlingOnChain(UUID.randomUUID, 42 msat, randomBytes32())
     assert(JsonSupport.serialization.writePretty(e1)(JsonSupport.formats).contains("\"type\" : \"payment-settling-onchain\""))
   }
 

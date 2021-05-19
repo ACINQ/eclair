@@ -114,7 +114,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     // with assisted routes
     val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
     val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId("569178x2331x1"), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val invoice1 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, randomKey, "description", CltvExpiryDelta(18), None, None, hints)
+    val invoice1 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, randomKey(), "description", CltvExpiryDelta(18), None, None, hints)
     eclair.send(Some(externalId1), nodeId, 123 msat, ByteVector32.Zeroes, invoice_opt = Some(invoice1))
     val send1 = paymentInitiator.expectMsgType[SendPaymentRequest]
     assert(send1.externalId === Some(externalId1))
@@ -157,13 +157,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val remoteNodeAnn1 = NodeAnnouncement(randomBytes64, Features.empty, 42L, randomKey.publicKey, Color(42, 42, 42), "LN-rocks", Nil)
-    val remoteNodeAnn2 = NodeAnnouncement(randomBytes64, Features.empty, 43L, randomKey.publicKey, Color(43, 43, 43), "LN-papers", Nil)
+    val remoteNodeAnn1 = NodeAnnouncement(randomBytes64(), Features.empty, 42L, randomKey().publicKey, Color(42, 42, 42), "LN-rocks", Nil)
+    val remoteNodeAnn2 = NodeAnnouncement(randomBytes64(), Features.empty, 43L, randomKey().publicKey, Color(43, 43, 43), "LN-papers", Nil)
     val allNodes = Seq(
-      NodeAnnouncement(randomBytes64, Features.empty, 561L, randomKey.publicKey, Color(0, 0, 0), "some-node", Nil),
+      NodeAnnouncement(randomBytes64(), Features.empty, 561L, randomKey().publicKey, Color(0, 0, 0), "some-node", Nil),
       remoteNodeAnn1,
       remoteNodeAnn2,
-      NodeAnnouncement(randomBytes64, Features.empty, 1105L, randomKey.publicKey, Color(0, 0, 0), "some-other-node", Nil),
+      NodeAnnouncement(randomBytes64(), Features.empty, 1105L, randomKey().publicKey, Color(0, 0, 0), "some-other-node", Nil),
     )
 
     {
@@ -189,7 +189,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       })
     }
     {
-      val fRes = eclair.nodes(Some(Set(randomKey.publicKey)))
+      val fRes = eclair.nodes(Some(Set(randomKey().publicKey)))
       router.expectMsg(Router.GetNodes)
       router.reply(allNodes)
       awaitCond(fRes.value match {
@@ -333,7 +333,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val kitWithPaymentHandler = kit.copy(paymentHandler = system.actorOf(PaymentHandler.props(Alice.nodeParams, TestProbe().ref)))
     val eclair = new EclairImpl(kitWithPaymentHandler)
-    val paymentPreimage = randomBytes32
+    val paymentPreimage = randomBytes32()
 
     val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage))
     awaitCond({
@@ -379,11 +379,11 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val route = PredefinedNodeRoute(Seq(randomKey.publicKey))
-    val trampolines = Seq(randomKey.publicKey, randomKey.publicKey)
+    val route = PredefinedNodeRoute(Seq(randomKey().publicKey))
+    val trampolines = Seq(randomKey().publicKey, randomKey().publicKey)
     val parentId = UUID.randomUUID()
-    val secret = randomBytes32
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey, "Some invoice", CltvExpiryDelta(18))
+    val secret = randomBytes32()
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), "Some invoice", CltvExpiryDelta(18))
     eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
 
     paymentInitiator.expectMsg(SendPaymentToRouteRequest(1000 msat, 1200 msat, Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
@@ -393,7 +393,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val nodeId = randomKey.publicKey
+    val nodeId = randomKey().publicKey
 
     eclair.sendWithPreimage(None, nodeId, 12345 msat)
     val send = paymentInitiator.expectMsgType[SendPaymentRequest]
@@ -413,7 +413,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val nodeId = randomKey.publicKey
+    val nodeId = randomKey().publicKey
     val expectedPaymentPreimage = ByteVector32(hex"deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
     val expectedPaymentHash = Crypto.sha256(expectedPaymentPreimage)
 

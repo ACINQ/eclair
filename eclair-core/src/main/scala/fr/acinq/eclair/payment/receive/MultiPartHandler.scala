@@ -54,7 +54,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType) =>
       Try {
-        val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32)
+        val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
         val features = {
