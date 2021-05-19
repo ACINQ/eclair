@@ -328,7 +328,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
 
     // the payment is requesting to use a capacity-optimized route which will select node G even though it's a bit more expensive
-    sender.send(nodes("A").paymentInitiator, SendPayment(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams.map(_.copy(ratios = Some(WeightRatios(0, 0, 0, 1))))))
+    sender.send(nodes("A").paymentInitiator, SendPayment(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams.map(_.copy(ratios = WeightRatios(0, 0, 0, 1, 0 msat, 0)))))
     sender.expectMsgType[UUID]
     sender.expectMsgType[PreimageReceived]
     val ps = sender.expectMsgType[PaymentSent]
