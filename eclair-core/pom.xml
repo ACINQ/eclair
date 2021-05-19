@@ -21,7 +21,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.13</artifactId>
-        <version>0.5.2-SNAPSHOT</version>
+        <version>0.6.0</version>
     </parent>
 
     <artifactId>eclair-core_2.13</artifactId>
