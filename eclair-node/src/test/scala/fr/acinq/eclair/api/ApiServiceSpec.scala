@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.api
 
+import java.util.UUID
+
 import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.headers.BasicHttpCredentials
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe}
-import akka.stream.Materializer
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -31,7 +32,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
 import fr.acinq.eclair._
-import fr.acinq.eclair.api.directives.ErrorResponse
+import fr.acinq.eclair.api.directives.{EclairDirectives, ErrorResponse}
 import fr.acinq.eclair.api.serde.JsonSupport
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelOpenResponse.ChannelOpened
@@ -52,7 +53,6 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._
 
-import java.util.UUID
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -68,13 +68,29 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   val aliceNodeId = PublicKey(hex"03af0ed6052cf28d670665549bc86f4b721c9fdb309d40c58f5811f63966e005d0")
   val bobNodeId = PublicKey(hex"039dc0e0b1d25905e44fdf6f8e89755a5e219685840d0bc1d28d3308f9628a3585")
 
+  object PluginApi extends RouteProvider {
+    override def route(directives: EclairDirectives): Route = {
+      import directives._
+      val route1 = postRequest("plugin-test") { implicit t =>
+        complete("fine")
+      }
+
+      val route2 = postRequest("payinvoice") { implicit t =>
+        complete("gets overridden by base API endpoint")
+      }
+
+      route1 ~ route2
+    }
+  }
+
   class MockService(eclair: Eclair) extends Service {
     override val eclairApi: Eclair = eclair
 
     override def password: String = "mock"
 
     override implicit val actorSystem: ActorSystem = system
-    override implicit val mat: Materializer = materializer
+
+    val route: Route = finalRoutes(Seq(PluginApi.route(this)))
   }
 
   def mockApi(eclair: Eclair = mock[Eclair]): MockService = {
@@ -167,6 +183,17 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         val response = entityAs[String]
         eclair.peers()(any[Timeout]).wasCalled(once)
         matchTestJson("peers", response)
+      }
+  }
+
+  test("plugin injects its own route") {
+    Post("/plugin-test") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockApi().route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "fine")
       }
   }
 

@@ -20,7 +20,8 @@ import java.io.File
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.stream.{ActorMaterializer, BindFailedException}
+import akka.http.scaladsl.server.Route
+import akka.stream.BindFailedException
 import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
 import kamon.Kamon
@@ -50,7 +51,8 @@ object Boot extends App with Logging {
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
       case Success(kit) =>
-        startApiServiceIfEnabled(kit)
+        val routeProviderPlugins = plugins.collect { case plugin: RouteProvider => plugin }
+        startApiServiceIfEnabled(kit, routeProviderPlugins)
         plugins.foreach(_.onKit(kit))
       case Failure(t) => onError(t)
     }
@@ -65,22 +67,21 @@ object Boot extends App with Logging {
    * @param system
    * @param ec
    */
-  def startApiServiceIfEnabled(kit: Kit)(implicit system: ActorSystem, ec: ExecutionContext) = {
+  def startApiServiceIfEnabled(kit: Kit, providers: Seq[RouteProvider] = Nil)(implicit system: ActorSystem, ec: ExecutionContext) = {
     val config = system.settings.config.getConfig("eclair")
     if (config.getBoolean("api.enabled")) {
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
-      implicit val materializer = ActorMaterializer()
       val apiPassword = config.getString("api.password") match {
         case "" => throw EmptyAPIPasswordException
         case valid => valid
       }
-      val apiRoute = new Service {
-        override val actorSystem = system
-        override val mat = materializer
-        override val password = apiPassword
+      val service: Service = new Service {
+        override val actorSystem: ActorSystem = system
+        override val password: String = apiPassword
         override val eclairApi: Eclair = new EclairImpl(kit)
-      }.route
-      Http().bindAndHandle(apiRoute, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+      }
+      val pluginRoutes = providers.map(_.route(service))
+      Http().bindAndHandle(service.finalRoutes(pluginRoutes), config.getString("api.binding-ip"), config.getInt("api.port")).recover {
         case _: BindFailedException => onError(TCPBindException(config.getInt("api.port")))
       }
     } else {

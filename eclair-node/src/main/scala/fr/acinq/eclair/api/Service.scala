@@ -18,7 +18,6 @@ package fr.acinq.eclair.api
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.server._
-import akka.stream.Materializer
 import fr.acinq.eclair.Eclair
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.handlers._
@@ -42,17 +41,11 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
   implicit val actorSystem: ActorSystem
 
   /**
-   * Materializer for sending and receiving tcp streams.
-   */
-  implicit val mat: Materializer
-
-  /**
    * Collect routes from all sub-routers here.
    * This is the main entrypoint for the global http request router of the API service.
    * This is where we handle errors to ensure all routes are correctly tried before rejecting.
    */
-  val route: Route = securedHandler {
-    nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
+  def finalRoutes(extraRoutes: Seq[Route]): Route = securedHandler {
+    extraRoutes.foldLeft(nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket)(_ ~ _)
   }
-
 }
