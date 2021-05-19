@@ -61,11 +61,12 @@ object EclairInternalsSerializer {
       ("searchMaxFeePct" | double) ::
       ("searchMaxRouteLength" | int32) ::
       ("searchMaxCltv" | int32.as[CltvExpiryDelta]) ::
-      ("searchHeuristicsEnabled" | bool(8)) ::
       ("searchRatioBias" | double) ::
       ("searchRatioCltv" | double) ::
       ("searchRatioChannelAge" | double) ::
       ("searchRatioChannelCapacity" | double) ::
+      ("searchHopCostBase" | millisatoshi) ::
+      ("searchHopCostMillionths" | int64) ::
       ("mppMinPartAmount" | millisatoshi) ::
       ("mppMaxParts" | int32)).as[RouterConf]
 

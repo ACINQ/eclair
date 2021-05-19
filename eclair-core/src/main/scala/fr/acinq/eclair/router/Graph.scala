@@ -45,7 +45,7 @@ object Graph {
    * We use heuristics to calculate the weight of an edge based on channel age, cltv delta and capacity.
    * We favor older channels, with bigger capacity and small cltv delta.
    */
-  case class WeightRatios(biasFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double) {
+  case class WeightRatios(biasFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopCostBase: MilliSatoshi, hopCostMillionths: Long) {
     require(biasFactor + cltvDeltaFactor + ageFactor + capacityFactor == 1, "The sum of heuristics ratios must be 1")
   }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
@@ -94,7 +94,7 @@ object Graph {
                         ignoredVertices: Set[PublicKey],
                         extraEdges: Set[GraphEdge],
                         pathsToFind: Int,
-                        wr: Option[WeightRatios],
+                        wr: WeightRatios,
                         currentBlockHeight: Long,
                         boundaries: RichWeight => Boolean,
                         includeLocalChannelCost: Boolean): Seq[WeightedPath] = {
@@ -186,7 +186,7 @@ object Graph {
                                    initialWeight: RichWeight,
                                    boundaries: RichWeight => Boolean,
                                    currentBlockHeight: Long,
-                                   wr: Option[WeightRatios],
+                                   wr: WeightRatios,
                                    includeLocalChannelCost: Boolean): Seq[GraphEdge] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
@@ -269,31 +269,27 @@ object Graph {
    * @param weightRatios            ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
-  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: Option[WeightRatios], includeLocalChannelCost: Boolean): RichWeight = {
+  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: WeightRatios, includeLocalChannelCost: Boolean): RichWeight = {
     val totalCost = if (edge.desc.a == sender && !includeLocalChannelCost) prev.cost else addEdgeFees(edge, prev.cost)
     val fee = totalCost - prev.cost
+    val hopCost = nodeFee(weightRatios.hopCostBase, weightRatios.hopCostMillionths, prev.cost)
     val totalCltv = if (edge.desc.a == sender && !includeLocalChannelCost) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
-    val factor = weightRatios match {
-      case None =>
-        1.0
-      case Some(wr) =>
-        import RoutingHeuristics._
+    import RoutingHeuristics._
 
-        // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
-        val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
-        val ageFactor = normalize(channelBlockHeight, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
+    // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
+    val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
+    val ageFactor = normalize(channelBlockHeight, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
 
-        // Every edge is weighted by channel capacity, larger channels add less weight
-        val edgeMaxCapacity = edge.capacity.toMilliSatoshi
-        val capFactor = 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
+    // Every edge is weighted by channel capacity, larger channels add less weight
+    val edgeMaxCapacity = edge.capacity.toMilliSatoshi
+    val capFactor = 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
 
-        // Every edge is weighted by its cltv-delta value, normalized
-        val cltvFactor = normalize(edge.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
+    // Every edge is weighted by its cltv-delta value, normalized
+    val cltvFactor = normalize(edge.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
 
-        // NB we're guaranteed to have weightRatios and factors > 0
-        wr.biasFactor + (cltvFactor * wr.cltvDeltaFactor) + (ageFactor * wr.ageFactor) + (capFactor * wr.capacityFactor)
-    }
-    val totalWeight = prev.weight + fee.toLong * factor
+    // NB we're guaranteed to have weightRatios and factors > 0
+    val factor = weightRatios.biasFactor + (cltvFactor * weightRatios.cltvDeltaFactor) + (ageFactor * weightRatios.ageFactor) + (capFactor * weightRatios.capacityFactor)
+    val totalWeight = prev.weight + (fee + hopCost).toLong * factor
     RichWeight(totalCost, prev.length + 1, totalCltv, totalWeight)
   }
 
@@ -334,7 +330,7 @@ object Graph {
    * @param wr                      ratios used to 'weight' edges when searching for the shortest path
    * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
-  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: Long, wr: Option[WeightRatios], includeLocalChannelCost: Boolean): RichWeight = {
+  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: Long, wr: WeightRatios, includeLocalChannelCost: Boolean): RichWeight = {
     path.foldRight(RichWeight(amount, 0, CltvExpiryDelta(0), 0)) { (edge, prev) =>
       addEdgeWeight(sender, edge, prev, currentBlockHeight, wr, includeLocalChannelCost)
     }
