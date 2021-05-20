@@ -1701,6 +1701,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       peer ! Peer.Disconnect(remoteNodeId)
       stay
 
+    // This handler is a workaround for an issue in lnd similar to the one above: they sometimes send announcement_signatures
+    // before channel_reestablish, which is a minor spec violation. It doesn't halt the channel, we can simply postpone
+    // that message.
+    case Event(remoteAnnSigs: AnnouncementSignatures, _) =>
+      log.warning("received announcement_signatures before channel_reestablish (known lnd bug): delaying...")
+      context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
+      stay
+
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
 
     case Event(c: CurrentFeerates, d: HasCommitments) =>
