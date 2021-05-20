@@ -401,7 +401,11 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
     def getUnconfirmedAncestorCount(utxo: Utxo): Future[(ByteVector32, Long)] = client.rpcClient.invoke("getmempoolentry", utxo.txId).map(json => {
       val JInt(ancestorCount) = json \ "ancestorcount"
       (utxo.txId, ancestorCount.toLong)
-    })
+    }).recover {
+      case ex: Throwable =>
+        log.warn(s"could not retrieve unconfirmed ancestor count for txId=${utxo.txId} amount=${utxo.amount}", ex)
+        (utxo.txId, 0)
+    }
 
     def getUnconfirmedAncestorCountMap(utxos: Seq[Utxo]): Future[Map[ByteVector32, Long]] = Future.sequence(utxos.filter(_.confirmations == 0).map(getUnconfirmedAncestorCount)).map(_.toMap)
 
