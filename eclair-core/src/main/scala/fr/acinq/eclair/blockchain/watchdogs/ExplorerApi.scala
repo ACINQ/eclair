@@ -85,7 +85,7 @@ object ExplorerApi {
           Behaviors.stopped
 
         case WrappedFailure(e) =>
-          context.log.error(s"${explorer.name} failed: ", e)
+          context.log.warn(s"${explorer.name} failed: ", e)
           Metrics.WatchdogError.withTag(Tags.Source, explorer.name).increment()
           Behaviors.stopped
       }
