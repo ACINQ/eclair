@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed
-import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
@@ -85,6 +84,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
       } else {
         stay using d.copy(channels = channels1)
       }
+
+    // This event is usually handled while we're connected, but if our peer disconnects right when we're emitting this,
+    // we still want to record the channelId mapping.
+    case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d: DisconnectedData) =>
+      log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
+      stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
     case Event(_: LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
   }
