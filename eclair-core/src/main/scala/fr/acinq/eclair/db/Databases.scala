@@ -127,8 +127,12 @@ object Databases extends Logging {
       readOnlyUser_opt.foreach { readOnlyUser =>
         PgUtils.inTransaction { connection =>
           using(connection.createStatement()) { statement =>
-            logger.info(s"granting read-only access to user=$readOnlyUser")
-            statement.executeUpdate(s"GRANT SELECT ON ALL TABLES IN SCHEMA public TO $readOnlyUser")
+            val schemas = "public" :: "audit" :: "local" :: "network" :: "payments" :: Nil
+            schemas.foreach { schema =>
+              logger.info(s"granting read-only access to user=$readOnlyUser schema=$schema")
+              statement.executeUpdate(s"GRANT USAGE ON SCHEMA $schema TO $readOnlyUser")
+              statement.executeUpdate(s"GRANT SELECT ON ALL TABLES IN SCHEMA $schema TO $readOnlyUser")
+            }
           }
         }
       }

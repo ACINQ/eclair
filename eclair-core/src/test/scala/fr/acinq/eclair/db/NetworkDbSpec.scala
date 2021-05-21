@@ -286,7 +286,7 @@ class NetworkDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migration test 2->3 (postgres)") {
+  test("migration test 2->4 (postgres)") {
     val dbs = TestPgDatabases()
     migrationCheck(
       dbs = dbs,
@@ -317,7 +317,7 @@ class NetworkDbSpec extends AnyFunSuite {
         }
       },
       dbName = "network",
-      targetVersion = 3,
+      targetVersion = 4,
       postCheck = _ => {
         assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
         // NB: channel updates are not migrated
@@ -335,16 +335,16 @@ class NetworkDbSpec extends AnyFunSuite {
       t.update_1_opt.foreach(db.updateChannel)
       t.update_2_opt.foreach(db.updateChannel)
     }
-    dbs.connection.execSQLUpdate("UPDATE nodes SET json='{}'")
-    dbs.connection.execSQLUpdate("UPDATE channels SET channel_announcement_json='{}',channel_update_1_json=NULL,channel_update_2_json=NULL")
+    dbs.connection.execSQLUpdate("UPDATE network.nodes SET json='{}'")
+    dbs.connection.execSQLUpdate("UPDATE network.public_channels SET channel_announcement_json='{}',channel_update_1_json=NULL,channel_update_2_json=NULL")
     db.asInstanceOf[PgNetworkDb].resetJsonColumns(dbs.connection)
     assert({
-      val res = dbs.connection.execSQLQuery("SELECT * FROM nodes")
+      val res = dbs.connection.execSQLQuery("SELECT * FROM network.nodes")
       res.next()
       res.getString("json").length > 100
     })
     assert({
-      val res = dbs.connection.execSQLQuery("SELECT * FROM channels WHERE channel_update_1_json IS NOT NULL")
+      val res = dbs.connection.execSQLQuery("SELECT * FROM network.public_channels WHERE channel_update_1_json IS NOT NULL")
       res.next()
       res.getString("channel_announcement_json").length > 100
       res.getString("channel_update_1_json").length > 100

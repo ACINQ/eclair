@@ -199,7 +199,7 @@ class ChannelsDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate channel database v2 -> v3/v5") {
+  test("migrate channel database v2 -> v3/v6") {
     def postCheck(channelsDb: ChannelsDb): Unit = {
       assert(channelsDb.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
       for (testCase <- testCases.filterNot(_.isClosed)) {
@@ -242,7 +242,7 @@ class ChannelsDbSpec extends AnyFunSuite {
             }
           },
           dbName = "channels",
-          targetVersion = 5,
+          targetVersion = 6,
           postCheck = _ => postCheck(dbs.channels)
         )
       case dbs: TestSqliteDatabases =>
@@ -283,7 +283,7 @@ class ChannelsDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate pg channel database v3->v5") {
+  test("migrate pg channel database v3->v6") {
     val dbs = TestPgDatabases()
 
     migrationCheck(
@@ -312,7 +312,7 @@ class ChannelsDbSpec extends AnyFunSuite {
         }
       },
       dbName = "channels",
-      targetVersion = 5,
+      targetVersion = 6,
       postCheck = connection => {
         assert(dbs.channels.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
         testCases.foreach { testCase =>
@@ -331,10 +331,10 @@ class ChannelsDbSpec extends AnyFunSuite {
     val db = dbs.channels
     val channel = ChannelCodecsSpec.normal
     db.addOrUpdateChannel(channel)
-    dbs.connection.execSQLUpdate("UPDATE local_channels SET json='{}'")
+    dbs.connection.execSQLUpdate("UPDATE local.channels SET json='{}'")
     db.asInstanceOf[PgChannelsDb].resetJsonColumns(dbs.connection)
     assert({
-      val res = dbs.connection.execSQLQuery("SELECT * FROM local_channels")
+      val res = dbs.connection.execSQLQuery("SELECT * FROM local.channels")
       res.next()
       res.getString("json").length > 100
     })
@@ -387,7 +387,7 @@ object ChannelsDbSpec {
   }
 
   def getPgTimestamp(connection: Connection, channelId: ByteVector32, columnName: String): Option[Long] = {
-    using(connection.prepareStatement(s"SELECT $columnName FROM local_channels WHERE channel_id=?")) { statement =>
+    using(connection.prepareStatement(s"SELECT $columnName FROM local.channels WHERE channel_id=?")) { statement =>
       statement.setString(1, channelId.toHex)
       val rs = statement.executeQuery()
       rs.next()
