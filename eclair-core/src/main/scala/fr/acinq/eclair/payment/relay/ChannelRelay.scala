@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment.relay
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
@@ -32,6 +30,8 @@ import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, channel, nodeFee}
+
+import java.util.UUID
 
 object ChannelRelay {
 
@@ -81,7 +81,11 @@ object ChannelRelay {
       case f: HtlcResult.RemoteFail => CMD_FAIL_HTLC(originHtlcId, Left(f.fail.reason), commit = true)
       case f: HtlcResult.RemoteFailMalformed => CMD_FAIL_MALFORMED_HTLC(originHtlcId, f.fail.onionHash, f.fail.failureCode, commit = true)
       case _: HtlcResult.OnChainFail => CMD_FAIL_HTLC(originHtlcId, Right(PermanentChannelFailure), commit = true)
-      case f: HtlcResult.Disconnected => CMD_FAIL_HTLC(originHtlcId, Right(TemporaryChannelFailure(f.channelUpdate)), commit = true)
+      case f: HtlcResult.Disconnected =>
+        f.channelUpdate match {
+          case Some(channelUpdate) => CMD_FAIL_HTLC(originHtlcId, Right(TemporaryChannelFailure(channelUpdate)), commit = true)
+          case None => CMD_FAIL_HTLC(originHtlcId, Right(UnknownNextPeer), commit = true)
+        }
     }
   }
 

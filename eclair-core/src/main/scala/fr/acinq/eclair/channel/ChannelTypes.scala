@@ -20,7 +20,6 @@ import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.TxPublisher.PublishTx
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -210,7 +209,7 @@ object HtlcResult {
   case class RemoteFail(fail: UpdateFailHtlc) extends Fail
   case class RemoteFailMalformed(fail: UpdateFailMalformedHtlc) extends Fail
   case class OnChainFail(cause: ChannelException) extends Fail
-  case class Disconnected(channelUpdate: ChannelUpdate) extends Fail { assert(!Announcements.isEnabled(channelUpdate.channelFlags), "channel update must have disabled flag set") }
+  case class Disconnected(channelUpdate: Option[ChannelUpdate]) extends Fail { assert(channelUpdate.forall(u => !Announcements.isEnabled(u.channelFlags)), "channel update must have disabled flag set") }
 }
 final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
