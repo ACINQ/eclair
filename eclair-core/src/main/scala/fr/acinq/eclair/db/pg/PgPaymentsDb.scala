@@ -33,7 +33,6 @@ import scodec.codecs._
 import java.sql.ResultSet
 import java.util.UUID
 import javax.sql.DataSource
-import scala.collection.immutable.Queue
 import scala.concurrent.duration._
 
 class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb with Logging {
@@ -168,12 +167,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM sent_payments WHERE id = ?")) { statement =>
         statement.setString(1, id.toString)
-        val rs = statement.executeQuery()
-        if (rs.next()) {
-          Some(parseOutgoingPayment(rs))
-        } else {
-          None
-        }
+        statement.executeQuery().map(parseOutgoingPayment).headOption
       }
     }
   }
@@ -182,12 +176,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM sent_payments WHERE parent_id = ? ORDER BY created_at")) { statement =>
         statement.setString(1, parentId.toString)
-        val rs = statement.executeQuery()
-        var q: Queue[OutgoingPayment] = Queue()
-        while (rs.next()) {
-          q = q :+ parseOutgoingPayment(rs)
-        }
-        q
+        statement.executeQuery().map(parseOutgoingPayment).toSeq
       }
     }
   }
@@ -196,12 +185,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
         statement.setString(1, paymentHash.toHex)
-        val rs = statement.executeQuery()
-        var q: Queue[OutgoingPayment] = Queue()
-        while (rs.next()) {
-          q = q :+ parseOutgoingPayment(rs)
-        }
-        q
+        statement.executeQuery().map(parseOutgoingPayment).toSeq
       }
     }
   }
@@ -211,12 +195,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       using(pg.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
-        val rs = statement.executeQuery()
-        var q: Queue[OutgoingPayment] = Queue()
-        while (rs.next()) {
-          q = q :+ parseOutgoingPayment(rs)
-        }
-        q
+        statement.executeQuery().map { rs =>
+          parseOutgoingPayment(rs)
+        }.toSeq
       }
     }
   }
@@ -271,12 +252,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
         statement.setString(1, paymentHash.toHex)
-        val rs = statement.executeQuery()
-        if (rs.next()) {
-          Some(parseIncomingPayment(rs))
-        } else {
-          None
-        }
+        statement.executeQuery().map(parseIncomingPayment).headOption
       }
     }
   }
@@ -286,12 +262,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       using(pg.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
-        val rs = statement.executeQuery()
-        var q: Queue[IncomingPayment] = Queue()
-        while (rs.next()) {
-          q = q :+ parseIncomingPayment(rs)
-        }
-        q
+        statement.executeQuery().map(parseIncomingPayment).toSeq
       }
     }
   }
@@ -301,12 +272,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       using(pg.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
         statement.setLong(1, from)
         statement.setLong(2, to)
-        val rs = statement.executeQuery()
-        var q: Queue[IncomingPayment] = Queue()
-        while (rs.next()) {
-          q = q :+ parseIncomingPayment(rs)
-        }
-        q
+        statement.executeQuery().map(parseIncomingPayment).toSeq
       }
     }
   }
@@ -317,12 +283,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setLong(1, from)
         statement.setLong(2, to)
         statement.setLong(3, System.currentTimeMillis)
-        val rs = statement.executeQuery()
-        var q: Queue[IncomingPayment] = Queue()
-        while (rs.next()) {
-          q = q :+ parseIncomingPayment(rs)
-        }
-        q
+        statement.executeQuery().map(parseIncomingPayment).toSeq
       }
     }
   }
@@ -333,12 +294,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setLong(1, from)
         statement.setLong(2, to)
         statement.setLong(3, System.currentTimeMillis)
-        val rs = statement.executeQuery()
-        var q: Queue[IncomingPayment] = Queue()
-        while (rs.next()) {
-          q = q :+ parseIncomingPayment(rs)
-        }
-        q
+        statement.executeQuery().map(parseIncomingPayment).toSeq
       }
     }
   }
@@ -388,31 +344,28 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       """.stripMargin
       )) { statement =>
         statement.setInt(1, limit)
-        val rs = statement.executeQuery()
-        var q: Queue[PlainPayment] = Queue()
-        while (rs.next()) {
-          val parentId = rs.getUUIDNullable("parent_id")
-          val externalId_opt = rs.getStringNullable("external_id")
-          val paymentHash = rs.getByteVector32FromHex("payment_hash")
-          val paymentType = rs.getString("payment_type")
-          val paymentRequest_opt = rs.getStringNullable("payment_request")
-          val amount_opt = rs.getMilliSatoshiNullable("final_amount")
-          val createdAt = rs.getLong("created_at")
-          val completedAt_opt = rs.getLongNullable("completed_at")
-          val expireAt_opt = rs.getLongNullable("expire_at")
+        statement.executeQuery()
+          .map { rs =>
+            val parentId = rs.getUUIDNullable("parent_id")
+            val externalId_opt = rs.getStringNullable("external_id")
+            val paymentHash = rs.getByteVector32FromHex("payment_hash")
+            val paymentType = rs.getString("payment_type")
+            val paymentRequest_opt = rs.getStringNullable("payment_request")
+            val amount_opt = rs.getMilliSatoshiNullable("final_amount")
+            val createdAt = rs.getLong("created_at")
+            val completedAt_opt = rs.getLongNullable("completed_at")
+            val expireAt_opt = rs.getLongNullable("expire_at")
 
-          val p = if (rs.getString("type") == "received") {
-            val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)
-            PlainIncomingPayment(paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
-          } else {
-            val preimage_opt = rs.getByteVector32Nullable("payment_preimage")
-            // note that the resulting status will not contain any details (routes, failures...)
-            val status: OutgoingPaymentStatus = buildOutgoingPaymentStatus(preimage_opt, None, None, completedAt_opt, None)
-            PlainOutgoingPayment(parentId, externalId_opt, paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
-          }
-          q = q :+ p
-        }
-        q
+            if (rs.getString("type") == "received") {
+              val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)
+              PlainIncomingPayment(paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
+            } else {
+              val preimage_opt = rs.getByteVector32Nullable("payment_preimage")
+              // note that the resulting status will not contain any details (routes, failures...)
+              val status: OutgoingPaymentStatus = buildOutgoingPaymentStatus(preimage_opt, None, None, completedAt_opt, None)
+              PlainOutgoingPayment(parentId, externalId_opt, paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
+            }
+          }.toSeq
       }
     }
   }

@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.db
 
-import java.io.File
-import java.nio.file.{Files, StandardCopyOption}
-
 import akka.actor.{Actor, ActorLogging, Props}
 import akka.dispatch.{BoundedMessageQueueSemantics, RequiresMessageQueue}
 import fr.acinq.eclair.KamonExt
@@ -26,6 +23,8 @@ import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.Monitoring.Metrics
 
+import java.io.File
+import java.nio.file.{Files, StandardCopyOption}
 import scala.sys.process.Process
 import scala.util.{Failure, Success, Try}
 

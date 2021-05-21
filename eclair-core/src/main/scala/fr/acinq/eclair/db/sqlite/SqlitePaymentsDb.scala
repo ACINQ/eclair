@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{Connection, ResultSet, Statement}
-import java.util.UUID
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.MilliSatoshi
@@ -32,7 +30,8 @@ import scodec.Attempt
 import scodec.bits.BitVector
 import scodec.codecs._
 
-import scala.collection.immutable.Queue
+import java.sql.{Connection, ResultSet, Statement}
+import java.util.UUID
 import scala.concurrent.duration._
 
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
@@ -217,36 +216,21 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] = withMetrics("payments/get-outgoing", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE id = ?")) { statement =>
       statement.setString(1, id.toString)
-      val rs = statement.executeQuery()
-      if (rs.next()) {
-        Some(parseOutgoingPayment(rs))
-      } else {
-        None
-      }
+      statement.executeQuery().map(parseOutgoingPayment).headOption
     }
   }
 
   override def listOutgoingPayments(parentId: UUID): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-parent-id", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE parent_id = ? ORDER BY created_at")) { statement =>
       statement.setString(1, parentId.toString)
-      val rs = statement.executeQuery()
-      var q: Queue[OutgoingPayment] = Queue()
-      while (rs.next()) {
-        q = q :+ parseOutgoingPayment(rs)
-      }
-      q
+      statement.executeQuery().map(parseOutgoingPayment).toSeq
     }
   }
 
   override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-payment-hash", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
-      val rs = statement.executeQuery()
-      var q: Queue[OutgoingPayment] = Queue()
-      while (rs.next()) {
-        q = q :+ parseOutgoingPayment(rs)
-      }
-      q
+      statement.executeQuery().map(parseOutgoingPayment).toSeq
     }
   }
 
@@ -254,12 +238,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      var q: Queue[OutgoingPayment] = Queue()
-      while (rs.next()) {
-        q = q :+ parseOutgoingPayment(rs)
-      }
-      q
+      statement.executeQuery().map(parseOutgoingPayment).toSeq
     }
   }
 
@@ -308,12 +287,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = withMetrics("payments/get-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
-      val rs = statement.executeQuery()
-      if (rs.next()) {
-        Some(parseIncomingPayment(rs))
-      } else {
-        None
-      }
+      statement.executeQuery().map(parseIncomingPayment).headOption
     }
   }
 
@@ -321,12 +295,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      var q: Queue[IncomingPayment] = Queue()
-      while (rs.next()) {
-        q = q :+ parseIncomingPayment(rs)
-      }
-      q
+      statement.executeQuery().map(parseIncomingPayment).toSeq
     }
   }
 
@@ -334,12 +303,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      var q: Queue[IncomingPayment] = Queue()
-      while (rs.next()) {
-        q = q :+ parseIncomingPayment(rs)
-      }
-      q
+      statement.executeQuery().map(parseIncomingPayment).toSeq
     }
   }
 
@@ -348,12 +312,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(1, from)
       statement.setLong(2, to)
       statement.setLong(3, System.currentTimeMillis)
-      val rs = statement.executeQuery()
-      var q: Queue[IncomingPayment] = Queue()
-      while (rs.next()) {
-        q = q :+ parseIncomingPayment(rs)
-      }
-      q
+      statement.executeQuery().map(parseIncomingPayment).toSeq
     }
   }
 
@@ -362,12 +321,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(1, from)
       statement.setLong(2, to)
       statement.setLong(3, System.currentTimeMillis)
-      val rs = statement.executeQuery()
-      var q: Queue[IncomingPayment] = Queue()
-      while (rs.next()) {
-        q = q :+ parseIncomingPayment(rs)
-      }
-      q
+      statement.executeQuery().map(parseIncomingPayment).toSeq
     }
   }
 
@@ -415,31 +369,28 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       """.stripMargin
     )) { statement =>
       statement.setInt(1, limit)
-      val rs = statement.executeQuery()
-      var q: Queue[PlainPayment] = Queue()
-      while (rs.next()) {
-        val parentId = rs.getUUIDNullable("parent_id")
-        val externalId_opt = rs.getStringNullable("external_id")
-        val paymentHash = rs.getByteVector32("payment_hash")
-        val paymentType = rs.getString("payment_type")
-        val paymentRequest_opt = rs.getStringNullable("payment_request")
-        val amount_opt = rs.getMilliSatoshiNullable("final_amount")
-        val createdAt = rs.getLong("created_at")
-        val completedAt_opt = rs.getLongNullable("completed_at")
-        val expireAt_opt = rs.getLongNullable("expire_at")
+      statement.executeQuery()
+        .map { rs =>
+          val parentId = rs.getUUIDNullable("parent_id")
+          val externalId_opt = rs.getStringNullable("external_id")
+          val paymentHash = rs.getByteVector32("payment_hash")
+          val paymentType = rs.getString("payment_type")
+          val paymentRequest_opt = rs.getStringNullable("payment_request")
+          val amount_opt = rs.getMilliSatoshiNullable("final_amount")
+          val createdAt = rs.getLong("created_at")
+          val completedAt_opt = rs.getLongNullable("completed_at")
+          val expireAt_opt = rs.getLongNullable("expire_at")
 
-        val p = if (rs.getString("type") == "received") {
-          val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)
-          PlainIncomingPayment(paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
-        } else {
-          val preimage_opt = rs.getByteVector32Nullable("payment_preimage")
-          // note that the resulting status will not contain any details (routes, failures...)
-          val status: OutgoingPaymentStatus = buildOutgoingPaymentStatus(preimage_opt, None, None, completedAt_opt, None)
-          PlainOutgoingPayment(parentId, externalId_opt, paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
-        }
-        q = q :+ p
-      }
-      q
+          if (rs.getString("type") == "received") {
+            val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)
+            PlainIncomingPayment(paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt, expireAt_opt)
+          } else {
+            val preimage_opt = rs.getByteVector32Nullable("payment_preimage")
+            // note that the resulting status will not contain any details (routes, failures...)
+            val status: OutgoingPaymentStatus = buildOutgoingPaymentStatus(preimage_opt, None, None, completedAt_opt, None)
+            PlainOutgoingPayment(parentId, externalId_opt, paymentHash, paymentType, amount_opt, paymentRequest_opt, status, createdAt, completedAt_opt)
+          }
+        }.toSeq
     }
   }
 

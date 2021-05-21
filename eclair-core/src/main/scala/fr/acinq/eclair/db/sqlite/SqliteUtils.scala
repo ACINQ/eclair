@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{Connection, Statement}
-
 import fr.acinq.eclair.db.jdbc.JdbcUtils
+
+import java.sql.Connection
 
 object SqliteUtils extends JdbcUtils {
 
