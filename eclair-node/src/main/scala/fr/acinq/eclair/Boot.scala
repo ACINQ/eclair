@@ -51,9 +51,9 @@ object Boot extends App with Logging {
     plugins.foreach(_.onSetup(setup))
     setup.bootstrap onComplete {
       case Success(kit) =>
+        plugins.foreach(_.onKit(kit))
         val routeProviderPlugins = plugins.collect { case plugin: RouteProvider => plugin }
         startApiServiceIfEnabled(kit, routeProviderPlugins)
-        plugins.foreach(_.onKit(kit))
       case Failure(t) => onError(t)
     }
   } catch {
