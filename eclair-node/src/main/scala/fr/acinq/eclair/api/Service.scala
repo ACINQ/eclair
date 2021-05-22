@@ -18,7 +18,7 @@ package fr.acinq.eclair.api
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.server._
-import fr.acinq.eclair.Eclair
+import fr.acinq.eclair.{Eclair, RouteProvider}
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.handlers._
 import grizzled.slf4j.Logging
@@ -45,7 +45,8 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
    * This is the main entrypoint for the global http request router of the API service.
    * This is where we handle errors to ensure all routes are correctly tried before rejecting.
    */
-  def finalRoutes(extraRoutes: Seq[Route]): Route = securedHandler {
-    extraRoutes.foldLeft(nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket)(_ ~ _)
+  def finalRoutes(extraRouteProviders: Seq[RouteProvider] = Nil): Route = securedHandler {
+    val baseRoutes = nodeRoutes ~ channelRoutes ~ feeRoutes ~ pathFindingRoutes ~ invoiceRoutes ~ paymentRoutes ~ messageRoutes ~ onChainRoutes ~ webSocket
+    extraRouteProviders.map(_.route(this)).foldLeft(baseRoutes)(_ ~ _)
   }
 }

@@ -20,7 +20,6 @@ import java.io.File
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.server.Route
 import akka.stream.BindFailedException
 import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
@@ -80,8 +79,7 @@ object Boot extends App with Logging {
         override val password: String = apiPassword
         override val eclairApi: Eclair = new EclairImpl(kit)
       }
-      val pluginRoutes = providers.map(_.route(service))
-      Http().bindAndHandle(service.finalRoutes(pluginRoutes), config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+      Http().newServerAt(config.getString("api.binding-ip"), config.getInt("api.port")).bindFlow(service.finalRoutes(providers)).recover {
         case _: BindFailedException => onError(TCPBindException(config.getInt("api.port")))
       }
     } else {
