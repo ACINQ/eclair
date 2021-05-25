@@ -35,6 +35,7 @@ import fr.acinq.eclair.{Logs, NodeParams}
 import java.util.concurrent.Executors
 import scala.collection.immutable.SortedMap
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.util.{Failure, Success}
 
 /**
  * Created by t-bast on 25/03/2021.
@@ -61,13 +62,13 @@ object TxPublisher {
    * Publish an unsigned transaction. Once (csv and cltv) delays have been satisfied, the tx publisher will set the fees,
    * sign the transaction and broadcast it.
    */
-  case class SignAndPublishTx(txInfo: TransactionWithInputInfo, commitments: Commitments) extends PublishTx {
+  case class SignAndPublishTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments) extends PublishTx {
     override def tx: Transaction = txInfo.tx
     override def desc: String = txInfo.desc
   }
   case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   case class ParentTxConfirmed(childTx: PublishTx, parentTxId: ByteVector32) extends Command
-  case class PublishNextBlock(p: PublishTx) extends Command
+  case class WrappedTxPublishResult(result: TxPublish.TxPublishResult) extends Command
   case class SetChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
   // @formatter:on
 
@@ -91,6 +92,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.C
 
   private val log = context.log
   private val watchConfirmedResponseMapper: ActorRef[WatchParentTxConfirmedTriggered] = context.messageAdapter(w => ParentTxConfirmed(w.childTx, w.tx.txid))
+  private val publishTxResponseMapper: ActorRef[TxPublish.TxPublishResult] = context.messageAdapter(r => WrappedTxPublishResult(r))
 
   /**
    * @param cltvDelayedTxs when transactions are cltv-delayed, we wait until the target blockchain height is reached.
@@ -150,10 +152,16 @@ private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.C
         toPublish.values.flatten.foreach(tx => publish(tx, channelInfo))
         run(cltvDelayedTxs -- toPublish.keys, csvDelayedTxs, channelInfo)
 
-      case PublishNextBlock(p) =>
-        val nextBlockCount = nodeParams.currentBlockHeight + 1
-        val cltvDelayedTxs1 = cltvDelayedTxs + (nextBlockCount -> (cltvDelayedTxs.getOrElse(nextBlockCount, Seq.empty) :+ p))
-        run(cltvDelayedTxs1, csvDelayedTxs, channelInfo)
+      case WrappedTxPublishResult(result) =>
+        result match {
+          case _: TxPublish.InsufficientFunds =>
+            // We retry when the next block has been found, we may have more funds available.
+            val nextBlockCount = nodeParams.currentBlockHeight + 1
+            val cltvDelayedTxs1 = cltvDelayedTxs + (nextBlockCount -> (cltvDelayedTxs.getOrElse(nextBlockCount, Seq.empty) :+ result.cmd))
+            run(cltvDelayedTxs1, csvDelayedTxs, channelInfo)
+          case _ =>
+            Behaviors.same
+        }
 
       case SetChannelId(remoteNodeId, channelId) =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(channelId))) {
@@ -162,7 +170,7 @@ private class TxPublisher(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.C
     }
 
   private def publish(tx: PublishTx, channelInfo: ChannelInfo): Unit = {
-    context.spawnAnonymous(TxPublish(nodeParams, client, channelInfo)) ! TxPublish.DoPublish(context.self, tx)
+    context.spawnAnonymous(TxPublish(nodeParams, client, channelInfo)) ! TxPublish.DoPublish(publishTxResponseMapper, tx)
   }
 
 }
@@ -174,7 +182,18 @@ object TxPublish {
 
   // @formatter:off
   sealed trait Command
-  case class DoPublish(replyTo: ActorRef[TxPublisher.PublishNextBlock], tx: TxPublisher.PublishTx) extends Command
+  case class DoPublish(replyTo: ActorRef[TxPublishResult], tx: TxPublisher.PublishTx) extends Command
+  private case class SignFundedTx(fundedTx: TransactionWithInputInfo) extends Command
+  private case class PublishSignedTx(signedTx: Transaction) extends Command
+
+  sealed trait TxPublishResult extends Command {
+    def cmd: TxPublisher.PublishTx
+  }
+  case class TxPublished(cmd: TxPublisher.PublishTx, txId: ByteVector32) extends TxPublishResult
+  sealed trait TxPublishFailed extends TxPublishResult { def message: String }
+  case class InsufficientFunds(cmd: TxPublisher.SignAndPublishTx, reason: Throwable) extends TxPublishFailed { override def message: String = s"insufficient funds: ${reason.getMessage}" }
+  case class TxSkipped(cmd: TxPublisher.SignAndPublishTx) extends TxPublishFailed { override def message: String = s"tx skipped: ${cmd.txInfo.getClass.getSimpleName}" }
+  case class UnknownFailure(cmd: TxPublisher.PublishTx, reason: Throwable) extends TxPublishFailed { override def message: String = s"unknown failure: ${reason.getMessage}" }
   // @formatter:on
 
   // NOTE: we use a single thread to publish transactions so that it preserves order.
@@ -184,7 +203,7 @@ object TxPublish {
   def apply(nodeParams: NodeParams, client: ExtendedBitcoinClient, channelInfo: TxPublisher.ChannelInfo): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(channelInfo.remoteNodeId), channelId_opt = channelInfo.channelId_opt)) {
-        new TxPublish(nodeParams, client, context).run()
+        new TxPublish(nodeParams, client, context).start()
       }
     }
 
@@ -285,73 +304,130 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
 
   private val log = context.log
 
-  private def run(): Behavior[Command] =
-    Behaviors.receiveMessage {
-      case DoPublish(replyTo, tx) =>
-        publish(replyTo, tx)
-        Behaviors.same
-    }
-
-  private def publish(replyTo: ActorRef[TxPublisher.PublishNextBlock], p: TxPublisher.PublishTx): Future[ByteVector32] = {
-    p match {
-      case TxPublisher.SignAndPublishTx(txInfo, commitments) =>
-        log.info("publishing {}: input={}:{} txid={} tx={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid, p.tx)
-        val publishF = txInfo match {
-          case tx: ClaimLocalAnchorOutputTx => publishLocalAnchorTx(tx, commitments)
-          case tx: HtlcTx => publishHtlcTx(tx, commitments)
-          case _ =>
-            log.error(s"ignoring unhandled transaction type ${txInfo.getClass.getSimpleName}")
-            Future.successful(ByteVector32.Zeroes)
+  private def start(): Behavior[Command] = {
+    Behaviors.receiveMessagePartial {
+      case cmd: DoPublish =>
+        cmd.tx match {
+          case p: TxPublisher.PublishRawTx =>
+            publishing(cmd, p.tx)
+          case p: TxPublisher.SignAndPublishTx =>
+            val commitTx = p.commitments.localCommit.publishableTxs.commitTx.tx
+            val commitFeerate = p.commitments.localCommit.spec.feeratePerKw
+            val targetFeerate = feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
+            p.txInfo match {
+              case _: ClaimLocalAnchorOutputTx =>
+                if (targetFeerate <= commitFeerate) {
+                  log.info("publishing commit-tx without the anchor (current feerate={}): txid={}", commitFeerate, commitTx.txid)
+                  stopping(cmd, TxSkipped(p))
+                } else {
+                  funding(cmd, p, targetFeerate)
+                }
+              case txInfo: HtlcTx =>
+                HtlcTxAndWitnessData(txInfo, p.commitments) match {
+                  case Some(txWithWitnessData) =>
+                    if (targetFeerate <= commitFeerate) {
+                      val channelKeyPath = keyManager.keyPath(p.commitments.localParams, p.commitments.channelVersion)
+                      val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, p.commitments.localCommit.index)
+                      val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
+                      val localSig = keyManager.sign(txInfo, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, p.commitments.commitmentFormat)
+                      val signedHtlcTx = txWithWitnessData.addSigs(localSig, p.commitments.commitmentFormat)
+                      log.info("publishing {} without adding inputs: txid={}", txInfo.desc, signedHtlcTx.tx.txid)
+                      publishing(cmd, signedHtlcTx.tx)
+                    } else {
+                      funding(cmd, p, targetFeerate)
+                    }
+                  case None =>
+                    log.error("witness data not found for htlcId={}, skipping...", txInfo.htlcId)
+                    stopping(cmd, TxSkipped(p))
+                }
+            }
         }
-        publishF.recoverWith {
-          case t: Throwable if t.getMessage.contains("(code: -4)") || t.getMessage.contains("(code: -6)") =>
-            log.warn("not enough funds to publish {}, will retry next block: reason={} input={}:{} txid={}", txInfo.desc, t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
-            replyTo ! TxPublisher.PublishNextBlock(p)
-            Future.failed(t)
-          case t: Throwable =>
-            log.error("cannot publish {}: reason={} input={}:{} txid={}", txInfo.desc, t.getMessage, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, p.tx.txid)
-            Future.failed(t)
-        }
-      case TxPublisher.PublishRawTx(tx, desc) =>
-        log.info("publishing {}: txid={} tx={}", desc, tx.txid, tx)
-        publish(tx, desc)
     }
   }
 
-  /**
-   * This method uses a single thread to publish transactions so that it preserves the order of publication.
-   * We need that to prevent concurrency issues while publishing parent and child transactions.
-   */
-  private def publish(tx: Transaction, desc: String): Future[ByteVector32] = {
-    client.publishTransaction(tx)(singleThreadExecutionContext).recoverWith {
-      case t: Throwable =>
-        log.error("cannot publish {}: reason={} txid={}", desc, t.getMessage, tx.txid)
-        Future.failed(t)
+  private def funding(cmd: DoPublish, p: TxPublisher.SignAndPublishTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+    log.info("adding more inputs to {} (input={}:{}, target feerate={})", p.txInfo.desc, p.txInfo.input.outPoint.txid, p.txInfo.input.outPoint.index, targetFeerate)
+    p.txInfo match {
+      case txInfo: ClaimLocalAnchorOutputTx =>
+        context.pipeToSelf(addInputs(txInfo, targetFeerate, p.commitments)) {
+          case Success(fundedTx) => SignFundedTx(fundedTx)
+          case Failure(ex) => InsufficientFunds(p, ex)
+        }
+      case txInfo: HtlcTx =>
+        context.pipeToSelf(addInputs(txInfo, targetFeerate, p.commitments)) {
+          case Success(fundedTx) => SignFundedTx(fundedTx)
+          case Failure(ex) => InsufficientFunds(p, ex)
+        }
+    }
+    Behaviors.receiveMessagePartial {
+      case SignFundedTx(fundedTx) =>
+        signing(cmd, p, fundedTx)
+      case failure: TxPublishFailed =>
+        log.warn("cannot add inputs to {}: reason={} txid={}", p.txInfo.desc, failure.message, p.tx.txid)
+        stopping(cmd, failure)
     }
   }
 
-  /**
-   * Publish an anchor tx that spends from the commit tx and helps get it confirmed with CPFP (if the commit tx feerate
-   * was too low).
-   */
-  private def publishLocalAnchorTx(txInfo: ClaimLocalAnchorOutputTx, commitments: Commitments): Future[ByteVector32] = {
-    val commitFeerate = commitments.localCommit.spec.feeratePerKw
-    val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
-    val targetFeerate = feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
-    if (targetFeerate <= commitFeerate) {
-      log.info(s"publishing commit-tx without the anchor (current feerate=$commitFeerate): txid=${commitTx.txid}")
-      Future.successful(commitTx.txid)
-    } else {
-      log.info(s"bumping commit-tx with the anchor (target feerate=$targetFeerate): txid=${commitTx.txid}")
-      addInputs(txInfo, targetFeerate, commitments).flatMap(claimAnchorTx => {
-        val claimAnchorSig = keyManager.sign(claimAnchorTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitments.commitmentFormat)
+  private def signing(cmd: DoPublish, p: TxPublisher.SignAndPublishTx, fundedTx: TransactionWithInputInfo): Behavior[Command] = {
+    fundedTx match {
+      case claimAnchorTx: ClaimLocalAnchorOutputTx =>
+        val claimAnchorSig = keyManager.sign(claimAnchorTx, keyManager.fundingPublicKey(p.commitments.localParams.fundingKeyPath), TxOwner.Local, p.commitments.commitmentFormat)
         val signedClaimAnchorTx = addSigs(claimAnchorTx, claimAnchorSig)
         val commitInfo = ExtendedBitcoinClient.PreviousTx(signedClaimAnchorTx.input, signedClaimAnchorTx.tx.txIn.head.witness)
-        client.signTransaction(signedClaimAnchorTx.tx, Seq(commitInfo))
-      }).flatMap(signTxResponse => {
-        publish(signTxResponse.tx, txInfo.desc)
-      })
+        context.pipeToSelf(client.signTransaction(signedClaimAnchorTx.tx, Seq(commitInfo))) {
+          case Success(signedTx) => PublishSignedTx(signedTx.tx)
+          case Failure(ex) => UnknownFailure(p, ex)
+        }
+      case htlcTx: HtlcTx =>
+        HtlcTxAndWitnessData(htlcTx, p.commitments) match {
+          case Some(txWithWitnessData) =>
+            val channelKeyPath = keyManager.keyPath(p.commitments.localParams, p.commitments.channelVersion)
+            val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, p.commitments.localCommit.index)
+            val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
+            val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, p.commitments.commitmentFormat)
+            val signedHtlcTx = txWithWitnessData.addSigs(localSig, p.commitments.commitmentFormat)
+            val inputInfo = ExtendedBitcoinClient.PreviousTx(signedHtlcTx.input, signedHtlcTx.tx.txIn.head.witness)
+            context.pipeToSelf(client.signTransaction(signedHtlcTx.tx, Seq(inputInfo), allowIncomplete = true).map(signTxResponse => {
+              // NB: bitcoind messes up the witness stack for our htlc input, so we need to restore it.
+              // See https://github.com/bitcoin/bitcoin/issues/21151
+              signedHtlcTx.tx.copy(txIn = signedHtlcTx.tx.txIn.head +: signTxResponse.tx.txIn.tail)
+            })) {
+              case Success(signedTx) => PublishSignedTx(signedTx)
+              case Failure(ex) => UnknownFailure(p, ex)
+            }
+          case None => context.self ! TxSkipped(p)
+        }
     }
+    Behaviors.receiveMessagePartial {
+      case PublishSignedTx(signedTx) =>
+        publishing(cmd, signedTx)
+      case failure: TxPublishFailed =>
+        log.warn("cannot sign {}: reason={} txid={}", p.txInfo.desc, failure.message, p.tx.txid)
+        stopping(cmd, failure)
+    }
+  }
+
+  private def publishing(cmd: DoPublish, tx: Transaction): Behavior[Command] = {
+    cmd.tx match {
+      case _: TxPublisher.PublishRawTx => log.info("publishing {}: txid={} tx={}", cmd.tx.desc, tx.txid, tx)
+      case TxPublisher.SignAndPublishTx(txInfo, _) => log.info("publishing {}: input={}:{} txid={} tx={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, tx.txid, tx)
+    }
+    // NB: we use a single thread to publish transactions so that it preserves the order of publication.
+    // We need that to prevent concurrency issues while publishing parent and child transactions.
+    context.pipeToSelf(client.publishTransaction(tx)(singleThreadExecutionContext)) {
+      case Success(txId) => TxPublished(cmd.tx, txId)
+      case Failure(ex) =>
+        log.error("cannot publish {}: reason={} txid={}", cmd.tx.desc, ex.getMessage, tx.txid)
+        UnknownFailure(cmd.tx, ex)
+    }
+    Behaviors.receiveMessagePartial {
+      case result: TxPublishResult => stopping(cmd, result)
+    }
+  }
+
+  private def stopping(cmd: DoPublish, result: TxPublishResult): Behavior[Command] = {
+    cmd.replyTo ! result
+    Behaviors.stopped
   }
 
   private def addInputs(txInfo: ClaimLocalAnchorOutputTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[ClaimLocalAnchorOutputTx] = {
@@ -393,42 +469,6 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
       val unsignedTx = txInfo.copy(tx = fundTxResponse.tx.copy(txIn = txInfo.tx.txIn.head +: fundTxResponse.tx.txIn))
       adjustAnchorOutputChange(unsignedTx, commitTx, fundTxResponse.amountIn + AnchorOutputsCommitmentFormat.anchorAmount, commitFeerate, targetFeerate, dustLimit)
     })
-  }
-
-  /**
-   * Publish an htlc tx, and optionally RBF it before by adding new inputs/outputs to help get it confirmed.
-   */
-  private def publishHtlcTx(txInfo: HtlcTx, commitments: Commitments): Future[ByteVector32] = {
-    val currentFeerate = commitments.localCommit.spec.feeratePerKw
-    val targetFeerate = feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
-    val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelVersion)
-    val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index)
-    val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
-    HtlcTxAndWitnessData(txInfo, commitments) match {
-      case Some(txWithWitnessData) =>
-        if (targetFeerate <= currentFeerate) {
-          val localSig = keyManager.sign(txInfo, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
-          val signedHtlcTx = txWithWitnessData.addSigs(localSig, commitments.commitmentFormat)
-          log.info("publishing {} without adding inputs: txid={}", txInfo.desc, signedHtlcTx.tx.txid)
-          publish(signedHtlcTx.tx, txInfo.desc)
-        } else {
-          log.info("publishing {} with additional inputs: commit input={}:{} target feerate={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, targetFeerate)
-          addInputs(txInfo, targetFeerate, commitments).flatMap(unsignedTx => {
-            val localSig = keyManager.sign(unsignedTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
-            val signedHtlcTx = txWithWitnessData.updateTx(unsignedTx.tx).addSigs(localSig, commitments.commitmentFormat)
-            val inputInfo = ExtendedBitcoinClient.PreviousTx(signedHtlcTx.input, signedHtlcTx.tx.txIn.head.witness)
-            client.signTransaction(signedHtlcTx.tx, Seq(inputInfo), allowIncomplete = true).flatMap(signTxResponse => {
-              // NB: bitcoind messes up the witness stack for our htlc input, so we need to restore it.
-              // See https://github.com/bitcoin/bitcoin/issues/21151
-              val completeTx = signedHtlcTx.tx.copy(txIn = signedHtlcTx.tx.txIn.head +: signTxResponse.tx.txIn.tail)
-              log.info("publishing bumped {}: commit input={}:{} txid={} tx={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, completeTx.txid, completeTx)
-              publish(completeTx, txInfo.desc)
-            })
-          })
-        }
-      case None =>
-        Future.failed(new IllegalArgumentException(s"witness data not found for htlcId=${txInfo.htlcId}, skipping..."))
-    }
   }
 
   private def addInputs(txInfo: HtlcTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[HtlcTx] = {
