@@ -403,7 +403,7 @@ object PostRestartHtlcCleaner {
     // If the HTLC is not in their commitment, it means that we have already fulfilled/failed it and that we can remove
     // the command from the pending relay db.
     val channel2Htlc: Seq[(ByteVector32, Long)] = htlcsIn.map { case IncomingHtlc(add, _) => (add.channelId, add.id) }
-    val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listSettlementCommands()
+    val pendingRelay: Set[(ByteVector32, Long)] = relayDb.listSettlementCommands().map { case (channelId, cmd) => (channelId, cmd.id) }.toSet
     val toClean = pendingRelay -- channel2Htlc
     toClean.foreach {
       case (channelId, htlcId) =>

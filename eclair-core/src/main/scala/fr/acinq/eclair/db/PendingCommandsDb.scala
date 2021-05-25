@@ -16,13 +16,13 @@
 
 package fr.acinq.eclair.db
 
-import java.io.Closeable
-
-import akka.actor.{ActorContext, ActorRef}
+import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc, UpdateMessage}
+
+import java.io.Closeable
 
 /**
  * This database stores CMD_FULFILL_HTLC and CMD_FAIL_HTLC that we have received from downstream
@@ -44,7 +44,7 @@ trait PendingCommandsDb extends Closeable {
 
   def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand]
 
-  def listSettlementCommands(): Set[(ByteVector32, Long)]
+  def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)]
 
 }
 

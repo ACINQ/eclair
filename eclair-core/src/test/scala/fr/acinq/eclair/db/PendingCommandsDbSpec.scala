@@ -70,9 +70,9 @@ class PendingCommandsDbSpec extends AnyFunSuite {
       db.addSettlementCommand(channelId2, msg1)
       assert(db.listSettlementCommands(channelId1).toSet === Set(msg0, msg1, msg2, msg3, msg4))
       assert(db.listSettlementCommands(channelId2).toSet === Set(msg0, msg1))
-      assert(db.listSettlementCommands === Set((channelId1, msg0.id), (channelId1, msg1.id), (channelId1, msg2.id), (channelId1, msg3.id), (channelId1, msg4.id), (channelId2, msg0.id), (channelId2, msg1.id)))
+      assert(db.listSettlementCommands().toSet === Set((channelId1, msg0), (channelId1, msg1), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
       db.removeSettlementCommand(channelId1, msg1.id)
-      assert(db.listSettlementCommands === Set((channelId1, msg0.id), (channelId1, msg2.id), (channelId1, msg3.id), (channelId1, msg4.id), (channelId2, msg0.id), (channelId2, msg1.id)))
+      assert(db.listSettlementCommands().toSet === Set((channelId1, msg0), (channelId1, msg2), (channelId1, msg3), (channelId1, msg4), (channelId2, msg0), (channelId2, msg1)))
     }
   }
 
@@ -98,7 +98,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
           dbName = "pending_relay",
           targetVersion = 2,
           postCheck = _ =>
-            assert(dbs.pendingCommands.listSettlementCommands() === testCases.map(tc => (tc.channelId, tc.cmd.id)))
+            assert(dbs.pendingCommands.listSettlementCommands().toSet === testCases.map(tc => tc.channelId -> tc.cmd))
         )
       case dbs: TestSqliteDatabases =>
         migrationCheck(
@@ -120,7 +120,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
           dbName = "pending_relay",
           targetVersion = 2,
           postCheck = _ =>
-            assert(dbs.pendingCommands.listSettlementCommands() === testCases.map(tc => (tc.channelId, tc.cmd.id)))
+            assert(dbs.pendingCommands.listSettlementCommands().toSet === testCases.map(tc => tc.channelId -> tc.cmd))
         )
     }
   }

@@ -91,15 +91,15 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
     }
   }
 
-  override def listSettlementCommands(): Set[(ByteVector32, Long)] = withMetrics("pending-relay/list", DbBackends.Postgres) {
+  override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = withMetrics("pending-relay/list", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT channel_id, htlc_id FROM pending_settlement_commands")) { statement =>
+      using(pg.prepareStatement("SELECT channel_id, data FROM pending_settlement_commands")) { statement =>
         val rs = statement.executeQuery()
-        var q: Queue[(ByteVector32, Long)] = Queue()
+        var q: Queue[(ByteVector32, HtlcSettlementCommand)] = Queue()
         while (rs.next()) {
-          q = q :+ (rs.getByteVector32FromHex("channel_id"), rs.getLong("htlc_id"))
+          q = q :+ (rs.getByteVector32FromHex("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value)
         }
-        q.toSet
+        q
       }
     }
   }

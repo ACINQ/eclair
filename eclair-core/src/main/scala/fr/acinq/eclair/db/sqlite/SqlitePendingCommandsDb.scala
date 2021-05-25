@@ -79,14 +79,14 @@ class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with
     }
   }
 
-  override def listSettlementCommands(): Set[(ByteVector32, Long)] = withMetrics("pending-relay/list", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT channel_id, htlc_id FROM pending_settlement_commands")) { statement =>
+  override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = withMetrics("pending-relay/list", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT channel_id, data FROM pending_settlement_commands")) { statement =>
       val rs = statement.executeQuery()
-      var q: Queue[(ByteVector32, Long)] = Queue()
+      var q: Queue[(ByteVector32, HtlcSettlementCommand)] = Queue()
       while (rs.next()) {
-        q = q :+ (rs.getByteVector32("channel_id"), rs.getLong("htlc_id"))
+        q = q :+ (rs.getByteVector32("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value)
       }
-      q.toSet
+      q
     }
   }
 
