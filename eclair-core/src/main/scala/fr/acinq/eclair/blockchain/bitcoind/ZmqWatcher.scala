@@ -403,7 +403,7 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
       (utxo.txId, ancestorCount.toLong)
     }).recover {
       case ex: Throwable =>
-        log.warn(s"could not retrieve unconfirmed ancestor count for txId=${utxo.txId} amount=${utxo.amount}", ex)
+        log.warn(s"could not retrieve unconfirmed ancestor count for txId=${utxo.txId} amount=${utxo.amount}:", ex)
         (utxo.txId, 0)
     }
 

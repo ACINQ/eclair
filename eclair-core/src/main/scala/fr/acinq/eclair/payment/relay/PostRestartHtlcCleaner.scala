@@ -70,11 +70,12 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
     val nonStandardRelayedOutHtlcs: Map[Origin, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn, nodeParams, log) }.flatten.toMap
     val relayedOut: Map[Origin, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
 
+    val settledHtlcs: Set[(ByteVector32, Long)] = nodeParams.db.pendingCommands.listSettlementCommands().map { case (channelId, cmd) => (channelId, cmd.id) }.toSet
     val notRelayed = htlcsIn.filterNot(htlcIn => {
       // If an HTLC has been relayed and then settled downstream, it will not have a matching entry in relayedOut.
       // When that happens, there will be an HTLC settlement command in the pendingRelay DB, and we will let the channel
       // replay it instead of sending a conflicting command.
-      relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)) || nodeParams.db.pendingCommands.listSettlementCommands(htlcIn.add.channelId).exists(_.id == htlcIn.add.id)
+      relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)) || settledHtlcs.contains((htlcIn.add.channelId, htlcIn.add.id))
     })
     cleanupRelayDb(htlcsIn, nodeParams.db.pendingCommands)
 
