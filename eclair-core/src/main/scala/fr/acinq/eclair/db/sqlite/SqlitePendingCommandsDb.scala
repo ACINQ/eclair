@@ -20,33 +20,42 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.HtlcSettlementCommand
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
-import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.wire.internal.CommandCodecs.cmdCodec
+import grizzled.slf4j.Logging
 
-import java.sql.Connection
+import java.sql.{Connection, Statement}
 import scala.collection.immutable.Queue
 
-class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
+class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with Logging {
 
   import SqliteUtils.ExtendedResultSet._
   import SqliteUtils._
 
   val DB_NAME = "pending_relay"
-  val CURRENT_VERSION = 1
+  val CURRENT_VERSION = 2
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
+
+    def migration12(statement: Statement): Unit = {
+      statement.executeUpdate("ALTER TABLE pending_relay RENAME TO pending_settlement_commands")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         // note: should we use a foreign key to local_channels table here?
-        statement.executeUpdate("CREATE TABLE pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+        statement.executeUpdate("CREATE TABLE pending_settlement_commands (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+      case Some(v@1) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+        migration12(statement)
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addPendingRelay(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending_relay VALUES (?, ?, ?)")) { statement =>
+  override def addSettlementCommand(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending_settlement_commands VALUES (?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, cmd.id)
       statement.setBytes(3, cmdCodec.encode(cmd).require.toByteArray)
@@ -54,30 +63,30 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     }
   }
 
-  override def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit = withMetrics("pending-relay/remove", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=? AND htlc_id=?")) { statement =>
+  override def removeSettlementCommand(channelId: ByteVector32, htlcId: Long): Unit = withMetrics("pending-relay/remove", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("DELETE FROM pending_settlement_commands WHERE channel_id=? AND htlc_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, htlcId)
       statement.executeUpdate()
     }
   }
 
-  override def listPendingRelay(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT data FROM pending_relay WHERE channel_id=?")) { statement =>
+  override def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT data FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       val rs = statement.executeQuery()
       codecSequence(rs, cmdCodec)
     }
   }
 
-  override def listPendingRelay(): Set[(ByteVector32, Long)] = withMetrics("pending-relay/list", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
+  override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = withMetrics("pending-relay/list", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT channel_id, data FROM pending_settlement_commands")) { statement =>
       val rs = statement.executeQuery()
-      var q: Queue[(ByteVector32, Long)] = Queue()
+      var q: Queue[(ByteVector32, HtlcSettlementCommand)] = Queue()
       while (rs.next()) {
-        q = q :+ (rs.getByteVector32("channel_id"), rs.getLong("htlc_id"))
+        q = q :+ (rs.getByteVector32("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value)
       }
-      q.toSet
+      q
     }
   }
 

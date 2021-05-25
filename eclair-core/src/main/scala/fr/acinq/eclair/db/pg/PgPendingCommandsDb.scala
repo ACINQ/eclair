@@ -21,28 +21,38 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{Command, HtlcSettlementCommand}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
-import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.db.pg.PgUtils._
 import fr.acinq.eclair.wire.internal.CommandCodecs.cmdCodec
+import grizzled.slf4j.Logging
 
+import java.sql.Statement
 import javax.sql.DataSource
 import scala.collection.immutable.Queue
 
-class PgPendingRelayDb(implicit ds: DataSource, lock: PgLock) extends PendingRelayDb {
+class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends PendingCommandsDb with Logging {
 
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import lock._
 
   val DB_NAME = "pending_relay"
-  val CURRENT_VERSION = 1
+  val CURRENT_VERSION = 2
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
+
+      def migration12(statement: Statement): Unit = {
+        statement.executeUpdate("ALTER TABLE pending_relay RENAME TO pending_settlement_commands")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           // note: should we use a foreign key to local_channels table here?
-          statement.executeUpdate("CREATE TABLE pending_relay (channel_id TEXT NOT NULL, htlc_id BIGINT NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+          statement.executeUpdate("CREATE TABLE pending_settlement_commands (channel_id TEXT NOT NULL, htlc_id BIGINT NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+        case Some(v@1) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+          migration12(statement)
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -50,9 +60,9 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: PgLock) extends PendingRel
     }
   }
 
-  override def addPendingRelay(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add", DbBackends.Postgres) {
+  override def addSettlementCommand(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("INSERT INTO pending_relay VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+      using(pg.prepareStatement("INSERT INTO pending_settlement_commands VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, cmd.id)
         statement.setBytes(3, cmdCodec.encode(cmd).require.toByteArray)
@@ -61,9 +71,9 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: PgLock) extends PendingRel
     }
   }
 
-  override def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit = withMetrics("pending-relay/remove", DbBackends.Postgres) {
+  override def removeSettlementCommand(channelId: ByteVector32, htlcId: Long): Unit = withMetrics("pending-relay/remove", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("DELETE FROM pending_relay WHERE channel_id=? AND htlc_id=?")) { statement =>
+      using(pg.prepareStatement("DELETE FROM pending_settlement_commands WHERE channel_id=? AND htlc_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, htlcId)
         statement.executeUpdate()
@@ -71,9 +81,9 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: PgLock) extends PendingRel
     }
   }
 
-  override def listPendingRelay(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel", DbBackends.Postgres) {
+  override def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
+      using(pg.prepareStatement("SELECT htlc_id, data FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         val rs = statement.executeQuery()
         codecSequence(rs, cmdCodec)
@@ -81,15 +91,15 @@ class PgPendingRelayDb(implicit ds: DataSource, lock: PgLock) extends PendingRel
     }
   }
 
-  override def listPendingRelay(): Set[(ByteVector32, Long)] = withMetrics("pending-relay/list", DbBackends.Postgres) {
+  override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = withMetrics("pending-relay/list", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT channel_id, htlc_id FROM pending_relay")) { statement =>
+      using(pg.prepareStatement("SELECT channel_id, data FROM pending_settlement_commands")) { statement =>
         val rs = statement.executeQuery()
-        var q: Queue[(ByteVector32, Long)] = Queue()
+        var q: Queue[(ByteVector32, HtlcSettlementCommand)] = Queue()
         while (rs.next()) {
-          q = q :+ (rs.getByteVector32FromHex("channel_id"), rs.getLong("htlc_id"))
+          q = q :+ (rs.getByteVector32FromHex("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value)
         }
-        q.toSet
+        q
       }
     }
   }

@@ -117,7 +117,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   }
 
   override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
+    using(sqlite.prepareStatement("DELETE FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.executeUpdate()
     }

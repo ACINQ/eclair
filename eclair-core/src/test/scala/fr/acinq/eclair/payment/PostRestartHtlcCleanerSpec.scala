@@ -645,11 +645,11 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     val cmd1 = CMD_FAIL_HTLC(id = 0L, reason = Left(ByteVector.empty), replyTo_opt = None)
     val cmd2 = CMD_FAIL_HTLC(id = 1L, reason = Left(ByteVector.empty), replyTo_opt = None)
     val nodeParams1 = nodeParams.copy(pluginParams = List(pluginParams))
-    nodeParams1.db.pendingRelay.addPendingRelay(channelId_ab_1, cmd1)
-    nodeParams1.db.pendingRelay.addPendingRelay(channelId_ab_1, cmd2)
+    nodeParams1.db.pendingCommands.addSettlementCommand(channelId_ab_1, cmd1)
+    nodeParams1.db.pendingCommands.addSettlementCommand(channelId_ab_1, cmd2)
     f.createRelayer(nodeParams1)
     register.expectNoMsg(100 millis)
-    awaitCond(Seq(cmd1) == nodeParams1.db.pendingRelay.listPendingRelay(channelId_ab_1))
+    awaitCond(Seq(cmd1) == nodeParams1.db.pendingCommands.listSettlementCommands(channelId_ab_1))
   }
 
 }

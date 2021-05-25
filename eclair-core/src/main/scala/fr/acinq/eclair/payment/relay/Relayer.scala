@@ -25,7 +25,7 @@ import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, MilliSatoshi, NodeParams, ShortChannelId}
@@ -69,7 +69,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
         case Right(r: IncomingPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
-            PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
+            PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))
           } else {
             nodeRelayer ! NodeRelayer.Relay(r)
           }
@@ -77,11 +77,11 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
           log.warning(s"couldn't parse onion: reason=${badOnion.message}")
           val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, badOnion.onionHash, badOnion.code, commit = true)
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
-          PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
+          PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
         case Left(failure) =>
           log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} reason=$failure")
           val cmdFail = CMD_FAIL_HTLC(add.id, Right(failure), commit = true)
-          PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmdFail)
+          PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmdFail)
       }
 
     case r: RES_ADD_SETTLED[_, _] => r.origin match {

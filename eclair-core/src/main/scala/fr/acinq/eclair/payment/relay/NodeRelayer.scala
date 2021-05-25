@@ -20,7 +20,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.CMD_FAIL_HTLC
-import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{Logs, NodeParams}
@@ -85,7 +85,7 @@ object NodeRelayer {
                 context.log.warn("rejecting htlc #{} from channel {}: missing payment secret", htlcIn.id, htlcIn.channelId)
                 val failureMessage = IncorrectOrUnknownPaymentDetails(htlcIn.amountMsat, nodeParams.currentBlockHeight)
                 val cmd = CMD_FAIL_HTLC(htlcIn.id, Right(failureMessage), commit = true)
-                PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, htlcIn.channelId, cmd)
+                PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, htlcIn.channelId, cmd)
                 Behaviors.same
             }
           case RelayComplete(childHandler, paymentHash, paymentSecret) =>
