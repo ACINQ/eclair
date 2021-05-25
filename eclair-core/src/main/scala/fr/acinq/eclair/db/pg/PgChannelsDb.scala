@@ -126,7 +126,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
   override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
+      using(pg.prepareStatement("DELETE FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.executeUpdate()
       }

@@ -23,7 +23,7 @@ import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
-import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.IncomingPacket.NodeRelayPacket
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
@@ -323,7 +323,7 @@ class NodeRelay private(nodeParams: NodeParams,
   private def rejectHtlc(htlcId: Long, channelId: ByteVector32, amount: MilliSatoshi, failure: Option[FailureMessage] = None): Unit = {
     val failureMessage = failure.getOrElse(IncorrectOrUnknownPaymentDetails(amount, nodeParams.currentBlockHeight))
     val cmd = CMD_FAIL_HTLC(htlcId, Right(failureMessage), commit = true)
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, cmd)
+    PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
   }
 
   private def rejectPayment(upstream: Upstream.Trampoline, failure: Option[FailureMessage]): Unit = {
@@ -333,7 +333,7 @@ class NodeRelay private(nodeParams: NodeParams,
 
   private def fulfillPayment(upstream: Upstream.Trampoline, paymentPreimage: ByteVector32): Unit = upstream.adds.foreach(add => {
     val cmd = CMD_FULFILL_HTLC(add.id, paymentPreimage, commit = true)
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, add.channelId, cmd)
+    PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, cmd)
   })
 
   private def success(upstream: Upstream.Trampoline, fulfilledUpstream: Boolean, paymentSent: PaymentSent): Unit = {

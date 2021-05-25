@@ -38,7 +38,7 @@ trait Databases {
   def channels: ChannelsDb
   def peers: PeersDb
   def payments: PaymentsDb
-  def pendingRelay: PendingRelayDb
+  def pendingCommands: PendingCommandsDb
   //@formatter:on
 }
 
@@ -59,7 +59,7 @@ object Databases extends Logging {
                                      channels: SqliteChannelsDb,
                                      peers: SqlitePeersDb,
                                      payments: SqlitePaymentsDb,
-                                     pendingRelay: SqlitePendingRelayDb,
+                                     pendingCommands: SqlitePendingCommandsDb,
                                      private val backupConnection: Connection) extends Databases with FileBackup {
     override def backup(backupFile: File): Unit = SqliteUtils.using(backupConnection.createStatement()) {
       statement => {
@@ -75,7 +75,7 @@ object Databases extends Logging {
       channels = new SqliteChannelsDb(eclairJdbc),
       peers = new SqlitePeersDb(eclairJdbc),
       payments = new SqlitePaymentsDb(eclairJdbc),
-      pendingRelay = new SqlitePendingRelayDb(eclairJdbc),
+      pendingCommands = new SqlitePendingCommandsDb(eclairJdbc),
       backupConnection = eclairJdbc
     )
   }
@@ -85,7 +85,7 @@ object Databases extends Logging {
                                        channels: PgChannelsDb,
                                        peers: PgPeersDb,
                                        payments: PgPaymentsDb,
-                                       pendingRelay: PgPendingRelayDb,
+                                       pendingCommands: PgPendingCommandsDb,
                                        dataSource: HikariDataSource,
                                        lock: PgLock) extends Databases with ExclusiveLock {
     override def obtainExclusiveLock(): Unit = lock.obtainExclusiveLock(dataSource)
@@ -119,7 +119,7 @@ object Databases extends Logging {
         channels = new PgChannelsDb,
         peers = new PgPeersDb,
         payments = new PgPaymentsDb,
-        pendingRelay = new PgPendingRelayDb,
+        pendingCommands = new PgPendingCommandsDb,
         dataSource = ds,
         lock = lock)
 

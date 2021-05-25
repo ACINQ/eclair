@@ -56,7 +56,7 @@ class ChannelsDbSpec extends AnyFunSuite {
   test("add/remove/list channels") {
     forAllDbs { dbs =>
       val db = dbs.channels
-      dbs.pendingRelay // needed by db.removeChannel
+      dbs.pendingCommands // needed by db.removeChannel
 
       val channel1 = ChannelCodecsSpec.normal
       val channel2a = ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(randomBytes32())

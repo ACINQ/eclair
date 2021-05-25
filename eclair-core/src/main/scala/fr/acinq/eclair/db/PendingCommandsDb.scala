@@ -36,48 +36,48 @@ import fr.acinq.eclair.wire.protocol.{UpdateFailHtlc, UpdateFailMalformedHtlc, U
  * to handle all corner cases.
  *
  */
-trait PendingRelayDb extends Closeable {
+trait PendingCommandsDb extends Closeable {
 
-  def addPendingRelay(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit
+  def addSettlementCommand(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit
 
-  def removePendingRelay(channelId: ByteVector32, htlcId: Long): Unit
+  def removeSettlementCommand(channelId: ByteVector32, htlcId: Long): Unit
 
-  def listPendingRelay(channelId: ByteVector32): Seq[HtlcSettlementCommand]
+  def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand]
 
-  def listPendingRelay(): Set[(ByteVector32, Long)]
+  def listSettlementCommands(): Set[(ByteVector32, Long)]
 
 }
 
-object PendingRelayDb {
+object PendingCommandsDb {
   /**
    * We store [[CMD_FULFILL_HTLC]]/[[CMD_FAIL_HTLC]]/[[CMD_FAIL_MALFORMED_HTLC]]
    * in a database because we don't want to lose preimages, or to forget to fail
    * incoming htlcs, which would lead to unwanted channel closings.
    */
-  def safeSend(register: ActorRef, db: PendingRelayDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
+  def safeSend(register: ActorRef, db: PendingCommandsDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
     // htlc settlement commands don't have replyTo
     register ! Register.Forward(ActorRef.noSender, channelId, cmd)
     // we store the command in a db (note that this happens *after* forwarding the command to the channel, so we don't add latency)
-    db.addPendingRelay(channelId, cmd)
+    db.addSettlementCommand(channelId, cmd)
   }
 
-  def ackCommand(db: PendingRelayDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
-    db.removePendingRelay(channelId, cmd.id)
+  def ackSettlementCommand(db: PendingCommandsDb, channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = {
+    db.removeSettlementCommand(channelId, cmd.id)
   }
 
-  def ackPendingFailsAndFulfills(db: PendingRelayDb, updates: List[UpdateMessage])(implicit log: LoggingAdapter): Unit = updates.collect {
+  def ackSettlementCommands(db: PendingCommandsDb, updates: List[UpdateMessage])(implicit log: LoggingAdapter): Unit = updates.collect {
     case u: UpdateFulfillHtlc =>
       log.debug(s"fulfill acked for htlcId=${u.id}")
-      db.removePendingRelay(u.channelId, u.id)
+      db.removeSettlementCommand(u.channelId, u.id)
     case u: UpdateFailHtlc =>
       log.debug(s"fail acked for htlcId=${u.id}")
-      db.removePendingRelay(u.channelId, u.id)
+      db.removeSettlementCommand(u.channelId, u.id)
     case u: UpdateFailMalformedHtlc =>
       log.debug(s"fail-malformed acked for htlcId=${u.id}")
-      db.removePendingRelay(u.channelId, u.id)
+      db.removeSettlementCommand(u.channelId, u.id)
   }
 
-  def getPendingFailsAndFulfills(db: PendingRelayDb, channelId: ByteVector32)(implicit  log: LoggingAdapter): Seq[HtlcSettlementCommand] = {
-    db.listPendingRelay(channelId)
+  def getSettlementCommands(db: PendingCommandsDb, channelId: ByteVector32)(implicit log: LoggingAdapter): Seq[HtlcSettlementCommand] = {
+    db.listSettlementCommands(channelId)
   }
 }

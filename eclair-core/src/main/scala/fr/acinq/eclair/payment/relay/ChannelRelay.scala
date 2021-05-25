@@ -25,7 +25,7 @@ import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.PendingRelayDb
+import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
@@ -158,7 +158,7 @@ class ChannelRelay private(nodeParams: NodeParams,
 
   def safeSendAndStop(channelId: ByteVector32, cmd: channel.Command with channel.HtlcSettlementCommand): Behavior[Command] = {
     // NB: we are not using an adapter here because we are stopping anyway so we won't be there to get the result
-    PendingRelayDb.safeSend(register, nodeParams.db.pendingRelay, channelId, cmd)
+    PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, channelId, cmd)
     Behaviors.stopped
   }
 
