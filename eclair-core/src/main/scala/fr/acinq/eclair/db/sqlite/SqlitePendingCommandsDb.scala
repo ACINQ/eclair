@@ -25,7 +25,6 @@ import fr.acinq.eclair.wire.internal.CommandCodecs.cmdCodec
 import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
-import scala.collection.immutable.Queue
 
 class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with Logging {
 
@@ -74,19 +73,16 @@ class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with
   override def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
-      val rs = statement.executeQuery()
-      codecSequence(rs, cmdCodec)
+      statement.executeQuery()
+        .mapCodec(cmdCodec).toSeq
     }
   }
 
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = withMetrics("pending-relay/list", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT channel_id, data FROM pending_settlement_commands")) { statement =>
-      val rs = statement.executeQuery()
-      var q: Queue[(ByteVector32, HtlcSettlementCommand)] = Queue()
-      while (rs.next()) {
-        q = q :+ (rs.getByteVector32("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value)
-      }
-      q
+      statement.executeQuery()
+        .map(rs => (rs.getByteVector32("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value))
+        .toSeq
     }
   }
 

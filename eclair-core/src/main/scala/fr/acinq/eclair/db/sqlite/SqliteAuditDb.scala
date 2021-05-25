@@ -31,7 +31,6 @@ import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
 import java.util.UUID
-import scala.collection.immutable.Queue
 
 class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
@@ -232,124 +231,117 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      var sentByParentId = Map.empty[UUID, PaymentSent]
-      while (rs.next()) {
-        val parentId = UUID.fromString(rs.getString("parent_payment_id"))
-        val part = PaymentSent.PartialPayment(
-          UUID.fromString(rs.getString("payment_id")),
-          MilliSatoshi(rs.getLong("amount_msat")),
-          MilliSatoshi(rs.getLong("fees_msat")),
-          rs.getByteVector32("to_channel_id"),
-          None, // we don't store the route in the audit DB
-          rs.getLong("timestamp"))
-        val sent = sentByParentId.get(parentId) match {
-          case Some(s) => s.copy(parts = s.parts :+ part)
-          case None => PaymentSent(
-            parentId,
-            rs.getByteVector32("payment_hash"),
-            rs.getByteVector32("payment_preimage"),
-            MilliSatoshi(rs.getLong("recipient_amount_msat")),
-            PublicKey(rs.getByteVector("recipient_node_id")),
-            Seq(part))
-        }
-        sentByParentId = sentByParentId + (parentId -> sent)
-      }
-      sentByParentId.values.toSeq.sortBy(_.timestamp)
+      statement.executeQuery()
+        .foldLeft(Map.empty[UUID, PaymentSent]) { (sentByParentId, rs) =>
+          val parentId = UUID.fromString(rs.getString("parent_payment_id"))
+          val part = PaymentSent.PartialPayment(
+            UUID.fromString(rs.getString("payment_id")),
+            MilliSatoshi(rs.getLong("amount_msat")),
+            MilliSatoshi(rs.getLong("fees_msat")),
+            rs.getByteVector32("to_channel_id"),
+            None, // we don't store the route in the audit DB
+            rs.getLong("timestamp"))
+          val sent = sentByParentId.get(parentId) match {
+            case Some(s) => s.copy(parts = s.parts :+ part)
+            case None => PaymentSent(
+              parentId,
+              rs.getByteVector32("payment_hash"),
+              rs.getByteVector32("payment_preimage"),
+              MilliSatoshi(rs.getLong("recipient_amount_msat")),
+              PublicKey(rs.getByteVector("recipient_node_id")),
+              Seq(part))
+          }
+          sentByParentId + (parentId -> sent)
+        }.values.toSeq.sortBy(_.timestamp)
     }
 
   override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
     using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      var receivedByHash = Map.empty[ByteVector32, PaymentReceived]
-      while (rs.next()) {
-        val paymentHash = rs.getByteVector32("payment_hash")
-        val part = PaymentReceived.PartialPayment(
-          MilliSatoshi(rs.getLong("amount_msat")),
-          rs.getByteVector32("from_channel_id"),
-          rs.getLong("timestamp"))
-        val received = receivedByHash.get(paymentHash) match {
-          case Some(r) => r.copy(parts = r.parts :+ part)
-          case None => PaymentReceived(paymentHash, Seq(part))
-        }
-        receivedByHash = receivedByHash + (paymentHash -> received)
-      }
-      receivedByHash.values.toSeq.sortBy(_.timestamp)
+      statement.executeQuery()
+        .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
+          val paymentHash = rs.getByteVector32("payment_hash")
+          val part = PaymentReceived.PartialPayment(
+            MilliSatoshi(rs.getLong("amount_msat")),
+            rs.getByteVector32("from_channel_id"),
+            rs.getLong("timestamp"))
+          val received = receivedByHash.get(paymentHash) match {
+            case Some(r) => r.copy(parts = r.parts :+ part)
+            case None => PaymentReceived(paymentHash, Seq(part))
+          }
+          receivedByHash + (paymentHash -> received)
+        }.values.toSeq.sortBy(_.timestamp)
     }
 
   override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] = {
-    var trampolineByHash = Map.empty[ByteVector32, (MilliSatoshi, PublicKey)]
-    using(sqlite.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+    val trampolineByHash = using(sqlite.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      while (rs.next()) {
-        val paymentHash = rs.getByteVector32("payment_hash")
-        val amount = MilliSatoshi(rs.getLong("amount_msat"))
-        val nodeId = PublicKey(rs.getByteVector("next_node_id"))
-        trampolineByHash += (paymentHash -> (amount, nodeId))
-      }
+      statement.executeQuery()
+        .map { rs =>
+          val paymentHash = rs.getByteVector32("payment_hash")
+          val amount = MilliSatoshi(rs.getLong("amount_msat"))
+          val nodeId = PublicKey(rs.getByteVector("next_node_id"))
+          paymentHash -> (amount, nodeId)
+        }
+        .toMap
     }
-    using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
+    val relayedByHash = using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      var relayedByHash = Map.empty[ByteVector32, Seq[RelayedPart]]
-      while (rs.next()) {
-        val paymentHash = rs.getByteVector32("payment_hash")
-        val part = RelayedPart(
-          rs.getByteVector32("channel_id"),
-          MilliSatoshi(rs.getLong("amount_msat")),
-          rs.getString("direction"),
-          rs.getString("relay_type"),
-          rs.getLong("timestamp"))
-        relayedByHash = relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
-      }
-      relayedByHash.flatMap {
-        case (paymentHash, parts) =>
-          // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
-          // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
-          val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
-          val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
-          parts.headOption match {
-            case Some(RelayedPart(_, _, _, "channel", timestamp)) => incoming.zip(outgoing).map {
-              case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
-            }
-            case Some(RelayedPart(_, _, _, "trampoline", timestamp)) =>
-              val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
-              TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, timestamp) :: Nil
-            case _ => Nil
+      statement.executeQuery()
+        .foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
+          val paymentHash = rs.getByteVector32("payment_hash")
+          val part = RelayedPart(
+            rs.getByteVector32("channel_id"),
+            MilliSatoshi(rs.getLong("amount_msat")),
+            rs.getString("direction"),
+            rs.getString("relay_type"),
+            rs.getLong("timestamp"))
+          relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
+        }
+    }
+    relayedByHash.flatMap {
+      case (paymentHash, parts) =>
+        // We may have been routing multiple payments for the same payment_hash (MPP) in both cases (trampoline and channel).
+        // NB: we may link the wrong in-out parts, but the overall sum will be correct: we sort by amounts to minimize the risk of mismatch.
+        val incoming = parts.filter(_.direction == "IN").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
+        val outgoing = parts.filter(_.direction == "OUT").map(p => PaymentRelayed.Part(p.amount, p.channelId)).sortBy(_.amount)
+        parts.headOption match {
+          case Some(RelayedPart(_, _, _, "channel", timestamp)) => incoming.zip(outgoing).map {
+            case (in, out) => ChannelPaymentRelayed(in.amount, out.amount, paymentHash, in.channelId, out.channelId, timestamp)
           }
-      }.toSeq.sortBy(_.timestamp)
-    }
+          case Some(RelayedPart(_, _, _, "trampoline", timestamp)) =>
+            val (nextTrampolineAmount, nextTrampolineNodeId) = trampolineByHash.getOrElse(paymentHash, (0 msat, PlaceHolderPubKey))
+            TrampolinePaymentRelayed(paymentHash, incoming, outgoing, nextTrampolineNodeId, nextTrampolineAmount, timestamp) :: Nil
+          case _ => Nil
+        }
+    }.toSeq.sortBy(_.timestamp)
   }
 
   override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
     using(sqlite.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
-      val rs = statement.executeQuery()
-      var q: Queue[NetworkFee] = Queue()
-      while (rs.next()) {
-        q = q :+ NetworkFee(
-          remoteNodeId = PublicKey(rs.getByteVector("node_id")),
-          channelId = rs.getByteVector32("channel_id"),
-          txId = rs.getByteVector32("tx_id"),
-          fee = Satoshi(rs.getLong("fee_sat")),
-          txType = rs.getString("tx_type"),
-          timestamp = rs.getLong("timestamp"))
-      }
-      q
+      statement.executeQuery()
+        .map { rs =>
+          NetworkFee(
+            remoteNodeId = PublicKey(rs.getByteVector("node_id")),
+            channelId = rs.getByteVector32("channel_id"),
+            txId = rs.getByteVector32("tx_id"),
+            fee = Satoshi(rs.getLong("fee_sat")),
+            txType = rs.getString("tx_type"),
+            timestamp = rs.getLong("timestamp"))
+        }.toSeq
     }
 
   override def stats(from: Long, to: Long): Seq[Stats] = {
-    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { case (feeByChannelId, f) =>
+    val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
       feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
     }
     case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
-    val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { case (previous, e) =>
+    val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { (previous, e) =>
       // NB: we must avoid counting the fee twice: we associate it to the outgoing channels rather than the incoming ones.
       val current = e match {
         case c: ChannelPaymentRelayed => Map(

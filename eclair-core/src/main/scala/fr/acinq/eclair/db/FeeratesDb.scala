@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.db
 
-import java.io.Closeable
-
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKB
+
+import java.io.Closeable
 
 /**
  * This database stores the fee rates retrieved by a [[fr.acinq.eclair.blockchain.fee.FeeProvider]].

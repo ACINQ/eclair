@@ -16,14 +16,13 @@
 
 package fr.acinq.eclair.db
 
-import java.io.Closeable
-
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
+import java.io.Closeable
 import scala.collection.immutable.SortedMap
 
 trait NetworkDb extends Closeable {

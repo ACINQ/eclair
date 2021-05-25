@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PeersDb
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, getVersion, setVersion, using}
+import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, setVersion, using}
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.BitVector
 
@@ -69,21 +69,21 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
   override def getPeer(nodeId: PublicKey): Option[NodeAddress] = withMetrics("peers/get", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM peers WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
-      val rs = statement.executeQuery()
-      codecSequence(rs, CommonCodecs.nodeaddress).headOption
+      statement.executeQuery()
+        .mapCodec(CommonCodecs.nodeaddress)
+        .headOption
     }
   }
 
   override def listPeers(): Map[PublicKey, NodeAddress] = withMetrics("peers/list", DbBackends.Sqlite) {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT node_id, data FROM peers")
-      var m: Map[PublicKey, NodeAddress] = Map()
-      while (rs.next()) {
-        val nodeid = PublicKey(rs.getByteVector("node_id"))
-        val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
-        m += (nodeid -> nodeaddress)
-      }
-      m
+      statement.executeQuery("SELECT node_id, data FROM peers")
+        .map { rs =>
+          val nodeid = PublicKey(rs.getByteVector("node_id"))
+          val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
+          nodeid -> nodeaddress
+        }
+        .toMap
     }
   }
 

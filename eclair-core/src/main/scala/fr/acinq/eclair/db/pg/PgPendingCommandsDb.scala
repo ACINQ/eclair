@@ -18,7 +18,7 @@ package fr.acinq.eclair.db.pg
 
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.{Command, HtlcSettlementCommand}
+import fr.acinq.eclair.channel.HtlcSettlementCommand
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -28,7 +28,6 @@ import grizzled.slf4j.Logging
 
 import java.sql.Statement
 import javax.sql.DataSource
-import scala.collection.immutable.Queue
 
 class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends PendingCommandsDb with Logging {
 
@@ -85,8 +84,8 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
     withLock { pg =>
       using(pg.prepareStatement("SELECT htlc_id, data FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
-        val rs = statement.executeQuery()
-        codecSequence(rs, cmdCodec)
+        statement.executeQuery()
+          .mapCodec(cmdCodec).toSeq
       }
     }
   }
@@ -94,12 +93,9 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = withMetrics("pending-relay/list", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT channel_id, data FROM pending_settlement_commands")) { statement =>
-        val rs = statement.executeQuery()
-        var q: Queue[(ByteVector32, HtlcSettlementCommand)] = Queue()
-        while (rs.next()) {
-          q = q :+ (rs.getByteVector32FromHex("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value)
-        }
-        q
+        statement.executeQuery()
+          .map(rs => (rs.getByteVector32FromHex("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value))
+          .toSeq
       }
     }
   }

@@ -16,14 +16,16 @@
 
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{Connection, Statement}
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
 import fr.acinq.eclair.db.FeeratesDb
 import grizzled.slf4j.Logging
 
+import java.sql.{Connection, Statement}
+
 class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
 
+  import SqliteUtils.ExtendedResultSet._
   import SqliteUtils._
 
   val DB_NAME = "feerates"
@@ -89,22 +91,21 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
 
   override def getFeerates(): Option[FeeratesPerKB] = {
     using(sqlite.prepareStatement("SELECT rate_block_1, rate_blocks_2, rate_blocks_6, rate_blocks_12, rate_blocks_36, rate_blocks_72, rate_blocks_144, rate_blocks_1008 FROM feerates_per_kb")) { statement =>
-      val rs = statement.executeQuery()
-      if (rs.next()) {
-        Some(FeeratesPerKB(
-          // NB: we don't bother storing this value in the DB, because it's unused on mobile.
-          mempoolMinFee = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_1008"))),
-          block_1 = FeeratePerKB(Satoshi(rs.getLong("rate_block_1"))),
-          blocks_2 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_2"))),
-          blocks_6 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_6"))),
-          blocks_12 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_12"))),
-          blocks_36 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_36"))),
-          blocks_72 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_72"))),
-          blocks_144 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_144"))),
-          blocks_1008 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_1008")))))
-      } else {
-        None
-      }
+      statement.executeQuery()
+        .map { rs =>
+          FeeratesPerKB(
+            // NB: we don't bother storing this value in the DB, because it's unused on mobile.
+            mempoolMinFee = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_1008"))),
+            block_1 = FeeratePerKB(Satoshi(rs.getLong("rate_block_1"))),
+            blocks_2 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_2"))),
+            blocks_6 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_6"))),
+            blocks_12 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_12"))),
+            blocks_36 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_36"))),
+            blocks_72 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_72"))),
+            blocks_144 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_144"))),
+            blocks_1008 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_1008"))))
+        }
+        .headOption
     }
   }
 
