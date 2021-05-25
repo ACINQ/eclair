@@ -170,7 +170,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   override def isPruned(shortChannelId: ShortChannelId): Boolean = withMetrics("network/is-pruned", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
       statement.setLong(1, shortChannelId.toLong)
-      statement.executeQuery().next()
+      statement.executeQuery().nonEmpty
     }
   }
 

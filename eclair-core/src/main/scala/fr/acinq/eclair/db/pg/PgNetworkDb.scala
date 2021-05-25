@@ -181,7 +181,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
         statement.setLong(1, shortChannelId.toLong)
-        statement.executeQuery().next()
+        statement.executeQuery().nonEmpty
       }
     }
   }
