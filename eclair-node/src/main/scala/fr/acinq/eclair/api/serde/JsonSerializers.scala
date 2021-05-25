@@ -33,7 +33,7 @@ import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTx, ClosingTx, HtlcSu
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, JsonAST, TypeHints, jackson}
+import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, JsonAST, ShortTypeHints, TypeHints, jackson}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -371,25 +371,42 @@ case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
 }
 
 object CustomTypeHints {
-  val incomingPaymentStatus = CustomTypeHints(Map(
+  val incomingPaymentStatus: CustomTypeHints = CustomTypeHints(Map(
     IncomingPaymentStatus.Pending.getClass -> "pending",
     IncomingPaymentStatus.Expired.getClass -> "expired",
     classOf[IncomingPaymentStatus.Received] -> "received"
   ))
 
-  val outgoingPaymentStatus = CustomTypeHints(Map(
+  val outgoingPaymentStatus: CustomTypeHints = CustomTypeHints(Map(
     OutgoingPaymentStatus.Pending.getClass -> "pending",
     classOf[OutgoingPaymentStatus.Failed] -> "failed",
     classOf[OutgoingPaymentStatus.Succeeded] -> "sent"
   ))
 
-  val paymentEvent = CustomTypeHints(Map(
+  val paymentEvent: CustomTypeHints = CustomTypeHints(Map(
     classOf[PaymentSent] -> "payment-sent",
     classOf[ChannelPaymentRelayed] -> "payment-relayed",
     classOf[TrampolinePaymentRelayed] -> "trampoline-payment-relayed",
     classOf[PaymentReceived] -> "payment-received",
     classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
     classOf[PaymentFailed] -> "payment-failed"
+  ))
+
+  val channelStates: ShortTypeHints = ShortTypeHints(
+    List(
+    classOf[Nothing],
+    classOf[DATA_WAIT_FOR_OPEN_CHANNEL],
+    classOf[DATA_WAIT_FOR_ACCEPT_CHANNEL],
+    classOf[DATA_WAIT_FOR_FUNDING_INTERNAL],
+    classOf[DATA_WAIT_FOR_FUNDING_CREATED],
+    classOf[DATA_WAIT_FOR_FUNDING_SIGNED],
+    classOf[DATA_WAIT_FOR_FUNDING_LOCKED],
+    classOf[DATA_WAIT_FOR_FUNDING_CONFIRMED],
+    classOf[DATA_NORMAL],
+    classOf[DATA_SHUTDOWN],
+    classOf[DATA_NEGOTIATING],
+    classOf[DATA_CLOSING],
+    classOf[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
   ))
 }
 
@@ -436,7 +453,8 @@ object JsonSupport extends Json4sSupport {
     new OriginSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
-    CustomTypeHints.paymentEvent).withTypeHintFieldName("type")
+    CustomTypeHints.paymentEvent +
+    CustomTypeHints.channelStates).withTypeHintFieldName("type")
 
   def featuresToJson(features: Features): JObject = JObject(
     JField("activated", JObject(features.activated.map { case (feature, support) =>
