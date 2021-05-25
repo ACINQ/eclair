@@ -90,7 +90,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     override implicit val actorSystem: ActorSystem = system
 
-    val route: Route = finalRoutes(Seq(PluginApi.route(this)))
+    val route: Route = finalRoutes(PluginApi :: Nil)
   }
 
   def mockApi(eclair: Eclair = mock[Eclair]): MockService = {
