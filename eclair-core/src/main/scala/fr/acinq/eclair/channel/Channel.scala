@@ -1443,7 +1443,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay (note that we don't store the state)
       closingType_opt match {
         case Some(closingType) =>
-          log.info(s"channel closed (type=$closingType)")
+          log.info(s"channel closed (type=${closingType_opt.map(c => EventType.Closed(c).label).getOrElse("UnknownYet")})")
           context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
           goto(CLOSED) using d1 storing()
         case None =>
@@ -1699,6 +1699,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(_: FundingLocked, _) =>
       log.warning("received funding_locked before channel_reestablish (known lnd bug): disconnecting...")
       peer ! Peer.Disconnect(remoteNodeId)
+      stay
+
+    // This handler is a workaround for an issue in lnd similar to the one above: they sometimes send announcement_signatures
+    // before channel_reestablish, which is a minor spec violation. It doesn't halt the channel, we can simply postpone
+    // that message.
+    case Event(remoteAnnSigs: AnnouncementSignatures, _) =>
+      log.warning("received announcement_signatures before channel_reestablish (known lnd bug): delaying...")
+      context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
       stay
 
     case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
@@ -2125,11 +2133,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   private def handleLocalError(cause: Throwable, d: Data, msg: Option[Any]) = {
     cause match {
       case _: ForcedLocalCommit => log.warning(s"force-closing channel at user request")
+      case _ if stateName == WAIT_FOR_OPEN_CHANNEL => log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
       case _ => log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
     }
     cause match {
       case _: ChannelException => ()
-      case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData ")
+      case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData")
     }
     val error = Error(d.channelId, cause.getMessage)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = true))

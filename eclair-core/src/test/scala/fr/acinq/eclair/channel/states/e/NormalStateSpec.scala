@@ -24,9 +24,9 @@ import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw}
+import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
 import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel._
@@ -39,7 +39,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, HtlcSuccessTx, weight2fee}
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
@@ -1362,6 +1362,25 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! c
     sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), 42)))
     assert(initialState == bob.stateData)
+  }
+
+  test("recv CMD_FAIL_HTLC (htlc pending fulfill)") { f =>
+    import f._
+
+    val sender = TestProbe()
+    val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // HTLC is fulfilled but alice doesn't send its revocation.
+    bob ! CMD_FULFILL_HTLC(htlc.id, r)
+    bob ! CMD_SIGN()
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
+    bob2alice.expectMsgType[CommitSig]
+
+    // We cannot fail the HTLC, we must wait for the fulfill to be acked.
+    val c = CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), replyTo_opt = Some(sender.ref))
+    bob ! c
+    sender.expectMsg(RES_FAILURE(c, UnknownHtlcId(channelId(bob), htlc.id)))
   }
 
   test("recv CMD_FAIL_HTLC (acknowledge in case of failure)") { f =>

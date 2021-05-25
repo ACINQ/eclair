@@ -31,9 +31,9 @@ import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
@@ -52,8 +52,11 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
   import PostRestartHtlcCleanerSpec._
 
   case class FixtureParam(nodeParams: NodeParams, register: TestProbe, sender: TestProbe, eventListener: TestProbe) {
-    def createRelayer(nodeParams1: NodeParams): ActorRef = {
-      system.actorOf(Relayer.props(nodeParams1, TestProbe().ref, register.ref, TestProbe().ref))
+    def createRelayer(nodeParams1: NodeParams): (ActorRef, ActorRef) = {
+      val relayer = system.actorOf(Relayer.props(nodeParams1, TestProbe().ref, register.ref, TestProbe().ref))
+      // we need ensure the post-htlc-restart child actor is initialized
+      sender.send(relayer, Relayer.GetChildActors(sender.ref))
+      (relayer, sender.expectMsgType[Relayer.ChildActors].postRestartCleaner)
     }
   }
 
@@ -220,7 +223,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupLocalPayments(nodeParams)
-    val relayer = createRelayer(nodeParams)
+    val (relayer, _) = createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     sender.send(relayer, testCase.fails(1))
@@ -249,7 +252,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupLocalPayments(nodeParams)
-    val relayer = f.createRelayer(nodeParams)
+    val (relayer, _) = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     sender.send(relayer, testCase.fulfills(1))
@@ -391,7 +394,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     nodeParams.db.channels.addOrUpdateChannel(data_upstream_3)
     nodeParams.db.channels.addOrUpdateChannel(data_downstream)
 
-    val relayer = f.createRelayer(nodeParams)
+    val (relayer, _) = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis) // nothing should happen while channels are still offline.
 
     val (channel_upstream_1, channel_upstream_2, channel_upstream_3) = (TestProbe(), TestProbe(), TestProbe())
@@ -405,10 +408,6 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel_upstream_1.expectNoMsg(100 millis)
     channel_upstream_2.expectNoMsg(100 millis)
 
-    // we need a reference to the post-htlc-restart child actor
-    sender.send(relayer, Relayer.GetChildActors(sender.ref))
-    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
-
     // Payment 2 should fulfill once we receive the preimage.
     val origin_2 = Origin.TrampolineRelayedCold(upstream_2.adds.map(u => (u.channelId, u.id)).toList)
     sender.send(relayer, RES_ADD_SETTLED(origin_2, htlc_2_2, HtlcResult.OnChainFulfill(preimage2)))
@@ -421,11 +420,32 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel_upstream_3.expectNoMsg(100 millis)
   }
 
+  test("ignore htlcs that have a pending settlement command") { f =>
+    import f._
+
+    // Our channel contains two HTLCs that should be settled as soon as our peer comes back online.
+    // The downstream HTLCs have already been settled, so they may look like they haven't been relayed but in fact they have.
+    val htlc_ab = Seq(
+      buildHtlcIn(1, channelId_ab_1, randomBytes32()),
+      buildHtlcIn(4, channelId_ab_1, randomBytes32()),
+    )
+    val channelData = ChannelCodecsSpec.makeChannelDataNormal(htlc_ab, Map.empty)
+    nodeParams.db.channels.addOrUpdateChannel(channelData)
+    nodeParams.db.pendingCommands.addSettlementCommand(channelId_ab_1, CMD_FULFILL_HTLC(1, randomBytes32()))
+    nodeParams.db.pendingCommands.addSettlementCommand(channelId_ab_1, CMD_FAIL_HTLC(4, Right(PermanentChannelFailure)))
+
+    val (_, postRestart) = f.createRelayer(nodeParams)
+    sender.send(postRestart, PostRestartHtlcCleaner.GetBrokenHtlcs)
+    val brokenHtlcs = sender.expectMsgType[PostRestartHtlcCleaner.BrokenHtlcs]
+    assert(brokenHtlcs.relayedOut.isEmpty)
+    assert(brokenHtlcs.notRelayed.isEmpty)
+  }
+
   test("handle a channel relay htlc-fail") { f =>
     import f._
 
     val testCase = setupChannelRelayedPayments(nodeParams)
-    val relayer = f.createRelayer(nodeParams)
+    val (relayer, _) = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
     sender.send(relayer, buildForwardFail(testCase.downstream, testCase.origin))
@@ -440,12 +460,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupChannelRelayedPayments(nodeParams)
-    val relayer = f.createRelayer(nodeParams)
+    val (relayer, _) = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
-
-    // we need a reference to the post-htlc-restart child actor
-    sender.send(relayer, Relayer.GetChildActors(sender.ref))
-    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
 
     sender.send(relayer, buildForwardFulfill(testCase.downstream, testCase.origin, preimage1))
     register.expectMsg(Register.Forward(ActorRef.noSender, testCase.origin.originChannelId, CMD_FULFILL_HTLC(testCase.origin.originHtlcId, preimage1, commit = true)))
@@ -460,12 +476,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
-    val relayer = f.createRelayer(nodeParams)
+    val (relayer, _) = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
-
-    // we need a reference to the post-htlc-restart child actor
-    sender.send(relayer, Relayer.GetChildActors(sender.ref))
-    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
 
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFail(testCase.downstream_1_1, testCase.origin_1))
@@ -494,12 +506,8 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
-    val relayer = f.createRelayer(nodeParams)
+    val (relayer, _) = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
-
-    // we need a reference to the post-htlc-restart child actor
-    sender.send(relayer, Relayer.GetChildActors(sender.ref))
-    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
 
     // This downstream HTLC has two upstream HTLCs.
     sender.send(relayer, buildForwardFulfill(testCase.downstream_1_1, testCase.origin_1, preimage1))
@@ -527,15 +535,10 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     import f._
 
     val testCase = setupTrampolinePayments(nodeParams)
-    val relayer = f.createRelayer(nodeParams)
+    val (relayer, _) = f.createRelayer(nodeParams)
     register.expectNoMsg(100 millis)
 
-    // we need a reference to the post-htlc-restart child actor
-    sender.send(relayer, Relayer.GetChildActors(sender.ref))
-    val postRestartHtlcCleaner = sender.expectMsgType[Relayer.ChildActors].postRestartCleaner
-
     sender.send(relayer, buildForwardFail(testCase.downstream_2_1, testCase.origin_2))
-
     sender.send(relayer, buildForwardFulfill(testCase.downstream_2_2, testCase.origin_2, preimage2))
     register.expectMsg(testCase.origin_2.htlcs.map {
       case (channelId, htlcId) => Register.Forward(ActorRef.noSender, channelId, CMD_FULFILL_HTLC(htlcId, preimage2, commit = true))
@@ -546,7 +549,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     eventListener.expectNoMsg(100 millis)
   }
 
-  test("Relayed nonstandard->standard HTLC is retained") { f =>
+  test("relayed non-standard->standard HTLC is retained") { f =>
     import f._
 
     val relayedPaymentHash = randomBytes32()
@@ -559,7 +562,10 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     // @formatter:off
     val pluginParams = new CustomCommitmentsPlugin {
       override def name = "test with incoming HTLC from remote"
-      override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None), PostRestartHtlcCleaner.IncomingHtlc(nonRelayedHtlc2In.add, None))
+      override def getIncomingHtlcs(np: NodeParams, log: LoggingAdapter): Seq[PostRestartHtlcCleaner.IncomingHtlc] = List(
+        PostRestartHtlcCleaner.IncomingHtlc(relayedHtlc1In.add, None),
+        PostRestartHtlcCleaner.IncomingHtlc(nonRelayedHtlc2In.add, None)
+      )
       override def getHtlcsRelayedOut(htlcsIn: Seq[PostRestartHtlcCleaner.IncomingHtlc], np: NodeParams, log: LoggingAdapter): Map[Origin, Set[(ByteVector32, Long)]] = Map.empty
     }
     // @formatter:on
@@ -597,7 +603,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMsg(100 millis)
   }
 
-  test("Relayed standard->nonstandard HTLC is retained") { f =>
+  test("relayed standard->non-standard HTLC is retained") { f =>
     import f._
 
     val relayedPaymentHash = randomBytes32()
@@ -628,7 +634,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     channel.expectNoMsg(100 millis)
   }
 
-  test("Non-standard HTLC CMD_FAIL in relayDb is retained") { f =>
+  test("non-standard HTLC CMD_FAIL in relayDb is retained") { f =>
     import f._
 
     val trampolineRelayedPaymentHash = randomBytes32()
