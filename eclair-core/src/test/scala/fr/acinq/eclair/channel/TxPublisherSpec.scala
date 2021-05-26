@@ -19,12 +19,12 @@ package fr.acinq.eclair.channel
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SIGHASH_ALL, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Base58, Bech32, BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SIGHASH_ALL, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchParentTxConfirmed, WatchTxConfirmed}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransactionResponse, MempoolTx, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.TxPublish._
@@ -34,6 +34,7 @@ import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, Htlc
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
+import org.json4s.JsonAST.JNull
 import org.scalatest.funsuite.AnyFunSuiteLike
 import org.scalatest.{BeforeAndAfterAll, Tag}
 
@@ -66,6 +67,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
                      bob2blockchain: TestProbe,
                      blockCount: AtomicLong,
                      bitcoinClient: ExtendedBitcoinClient,
+                     bitcoinRpcClient: BitcoinJsonRPCClient,
                      bitcoinWallet: BitcoinCoreWallet,
                      txPublisher: akka.actor.typed.ActorRef[TxPublisher.Command],
                      probe: TestProbe) {
@@ -129,7 +131,7 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     // Execute our test.
     val txPublisher = system.spawn(TxPublisher(aliceNodeParams, TestConstants.Bob.nodeParams.nodeId, alice2blockchain.ref, bitcoinClient), testId.toString)
     try {
-      testFun(Fixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, blockCount, bitcoinClient, bitcoinWallet, txPublisher, probe))
+      testFun(Fixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, blockCount, bitcoinClient, walletRpcClient, bitcoinWallet, txPublisher, probe))
     } finally {
       system.stop(txPublisher.ref.toClassic)
     }
@@ -272,26 +274,34 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     withFixture(Seq(10.1 millibtc), f => {
       import f._
 
-      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f)
-
-      // wait for the commit tx to be published, anchor will not be published because we don't have enough funds
-      val mempoolTx1 = getMempoolTxs(1).head
-      assert(mempoolTx1.txid === commitTx.txid)
-
-      // add more funds to our wallet
-      bitcoinWallet.getReceiveAddress().pipeTo(probe.ref)
-      val walletAddress = probe.expectMsgType[String]
-      sendToAddress(walletAddress, 1 millibtc, probe)
+      // add confirmed funds to an address not yet in our wallet
+      val privKey = randomKey()
+      val walletAddress = Bech32.encodeWitnessAddress("bcrt", 0, privKey.publicKey.hash160)
+      sendToAddress(walletAddress, 100 millibtc, probe)
+      getMempoolTxs(1)
       createBlocks(1)
 
+      // close channel and wait for the commit tx to be published, anchor will not be published because we don't have enough funds
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f)
+      val mempoolCommitTx = getMempoolTxs(1).head
+      assert(mempoolCommitTx.txid === commitTx.txid)
+
+      // add more funds to our wallet, without generating a block (otherwise the commit tx would be confirmed so we would not publish the anchor)
+      bitcoinRpcClient.invoke("importprivkey", privKey.toBase58(Base58.Prefix.SecretKeyTestnet)).pipeTo(probe.ref)
+      probe.expectMsg(JNull)
+      // simulate a new block to reevaluate what transactions should be broadcast
+      txPublisher ! WrappedCurrentBlockCount(blockCount.get() + 1)
+
       // wait for the anchor tx to be published
-      val mempoolTx2 = getMempoolTxs(1).head
-      bitcoinClient.getTransaction(mempoolTx2.txid).pipeTo(probe.ref)
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.exists(_.txid == commitTx.txid))
+      val mempoolAnchorTx = mempoolTxs.find(_.txid != commitTx.txid).get
+      bitcoinClient.getTransaction(mempoolAnchorTx.txid).pipeTo(probe.ref)
       val publishedAnchorTx = probe.expectMsgType[Transaction]
       assert(publishedAnchorTx.txid !== anchorTx.tx.txid)
-      assert(publishedAnchorTx.txIn.exists(_.outPoint.txid == mempoolTx1.txid))
-      val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, (mempoolTx1.weight + mempoolTx2.weight).toInt)
-      val actualFee = mempoolTx1.fees + mempoolTx2.fees
+      assert(publishedAnchorTx.txIn.exists(_.outPoint.txid == commitTx.txid))
+      val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, (mempoolCommitTx.weight + mempoolAnchorTx.weight).toInt)
+      val actualFee = mempoolCommitTx.fees + mempoolAnchorTx.fees
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
     })
   }
@@ -340,6 +350,30 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
       assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+    })
+  }
+
+  test("commit tx already confirmed, not spending anchor output") {
+    withFixture(Seq(50 millibtc, 25 millibtc), f => {
+      import f._
+
+      val commitFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+      assert(commitFeerate < TestConstants.feeratePerKw)
+      setOnChainFeerate(commitFeerate)
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f)
+
+      // wait for the commit tx to be published
+      val mempoolTx = getMempoolTxs(1).head
+      assert(mempoolTx.txid === commitTx.txid)
+      // make the commit tx confirm
+      createBlocks(1)
+
+      // even if the on-chain feerate rises, there's no reason to spend the anchor if the commit tx is already confirmed
+      setOnChainFeerate(commitFeerate * 2)
+      txPublisher ! anchorTx
+      // wait for the tx to be handled: we should improve this test once the TxPublisher keeps track of transactions
+      probe.expectNoMessage(1 second)
+      assert(getMempool.isEmpty)
     })
   }
 

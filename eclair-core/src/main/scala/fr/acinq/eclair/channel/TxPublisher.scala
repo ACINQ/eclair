@@ -345,12 +345,20 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
     }
   }
 
+  case object CommitTxAlreadyConfirmed extends RuntimeException
+
   private def funding(cmd: DoPublish, p: TxPublisher.SignAndPublishTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
     log.info("adding more inputs to {} (input={}:{}, target feerate={})", p.txInfo.desc, p.txInfo.input.outPoint.txid, p.txInfo.input.outPoint.index, targetFeerate)
     p.txInfo match {
       case txInfo: ClaimLocalAnchorOutputTx =>
-        context.pipeToSelf(addInputs(txInfo, targetFeerate, p.commitments)) {
+        // We don't claim our anchor if one of the commit txs has already been confirmed.
+        val fundingOutpoint = p.commitments.commitInput.outPoint
+        context.pipeToSelf(client.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
+          case false => Future.failed(CommitTxAlreadyConfirmed)
+          case true => addInputs(txInfo, targetFeerate, p.commitments)
+        }) {
           case Success(fundedTx) => SignFundedTx(fundedTx)
+          case Failure(CommitTxAlreadyConfirmed) => TxSkipped(p)
           case Failure(ex) => InsufficientFunds(p, ex)
         }
       case txInfo: HtlcTx =>
@@ -361,9 +369,13 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
     }
     Behaviors.receiveMessagePartial {
       case SignFundedTx(fundedTx) =>
+        log.info(s"added ${fundedTx.tx.txIn.length - 1} wallet input(s) and ${fundedTx.tx.txOut.length - 1} wallet output(s) to ${fundedTx.desc} spending commit input=${fundedTx.input.outPoint.txid}:${fundedTx.input.outPoint.index}")
         signing(cmd, p, fundedTx)
       case failure: TxPublishFailed =>
-        log.warn("cannot add inputs to {}: reason={} txid={}", p.txInfo.desc, failure.message, p.tx.txid)
+        failure match {
+          case TxSkipped(_) => log.info("skipping {} (input={}:{}): commit tx is already confirmed", p.txInfo.desc, p.txInfo.input.outPoint.txid, p.txInfo.input.outPoint.index)
+          case _ => log.warn("cannot add inputs to {}: reason={} txid={}", p.txInfo.desc, failure.message, p.tx.txid)
+        }
         stopping(cmd, failure)
     }
   }
@@ -416,12 +428,15 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
     // We need that to prevent concurrency issues while publishing parent and child transactions.
     context.pipeToSelf(client.publishTransaction(tx)(singleThreadExecutionContext)) {
       case Success(txId) => TxPublished(cmd.tx, txId)
-      case Failure(ex) =>
-        log.error("cannot publish {}: reason={} txid={}", cmd.tx.desc, ex.getMessage, tx.txid)
-        UnknownFailure(cmd.tx, ex)
+      case Failure(ex) => UnknownFailure(cmd.tx, ex)
     }
     Behaviors.receiveMessagePartial {
-      case result: TxPublishResult => stopping(cmd, result)
+      case result: TxPublishResult =>
+        result match {
+          case f: TxPublishFailed => log.error("cannot publish {}: reason={} txid={}", cmd.tx.desc, f.message, tx.txid)
+          case _ => // nothing to do
+        }
+        stopping(cmd, result)
     }
   }
 
@@ -491,7 +506,6 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
     // change output amount (unless bitcoind didn't add any change output, in that case we will overpay the fee slightly).
     val weightRatio = 1.0 + (htlcInputMaxWeight.toDouble / (htlcTxWeight + claimP2WPKHOutputWeight))
     client.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, lockUtxos = true, changePosition = Some(1))).map(fundTxResponse => {
-      log.info(s"added ${fundTxResponse.tx.txIn.length} wallet input(s) and ${fundTxResponse.tx.txOut.length - 1} wallet output(s) to ${txInfo.desc} spending commit input=${txInfo.input.outPoint.txid}:${txInfo.input.outPoint.index}")
       // We add the HTLC input (from the commit tx) and restore the HTLC output.
       // NB: we can't modify them because they are signed by our peer (with SIGHASH_SINGLE | SIGHASH_ANYONECANPAY).
       val txWithHtlcInput = fundTxResponse.tx.copy(
