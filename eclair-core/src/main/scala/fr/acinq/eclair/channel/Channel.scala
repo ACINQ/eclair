@@ -1787,7 +1787,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(_: RevocationTimeout, _) => stay
 
     // we reschedule with a random delay to prevent herd effect when there are a lot of channels
-    case Event(c@CurrentBlockCount(_), _) =>
+    case Event(c: CurrentBlockCount, _) =>
       context.system.scheduler.scheduleOnce(blockProcessingDelay, self, ProcessCurrentBlockCount(c))
       stay
 
@@ -2559,5 +2559,4 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   initialize()
 
 }
-
 
