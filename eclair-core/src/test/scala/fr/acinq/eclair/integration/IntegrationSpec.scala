@@ -77,7 +77,8 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     "eclair.bitcoind.wallet" -> defaultWallet,
     "eclair.mindepth-blocks" -> 2,
     "eclair.max-htlc-value-in-flight-msat" -> 100000000000L,
-    "eclair.router.broadcast-interval" -> "2 second",
+    "eclair.max-block-processing-delay" -> "2 seconds",
+    "eclair.router.broadcast-interval" -> "2 seconds",
     "eclair.auto-reconnect" -> false,
     "eclair.to-remote-delay-blocks" -> 24,
     "eclair.multi-part-payment-expiry" -> "20 seconds").asJava).withFallback(ConfigFactory.load())
