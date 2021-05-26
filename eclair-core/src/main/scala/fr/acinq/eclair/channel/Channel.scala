@@ -37,21 +37,19 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
-import fr.acinq.eclair.db.pg.PgUtils.PgLock.logger
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentSettlingOnChain
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, TxOwner}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
-import org.sqlite.SQLiteException
 import scodec.bits.ByteVector
 
 import java.sql.SQLException
 import scala.collection.immutable.Queue
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Random, Success, Try}
 
 /**
  * Created by PM on 20/08/2015.
@@ -125,6 +123,9 @@ object Channel {
    */
   case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 
+  /** We don't immediately process [[CurrentBlockCount]] to avoid herd effects */
+  case class ProcessCurrentBlockCount(c: CurrentBlockCount)
+
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: Channel.TxPublisherFactory, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
@@ -150,6 +151,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
+  // the constant delay by which we delay processing of blocks (it will be smoothened among all channels)
+  private val blockProcessingDelay = Random.nextLong(nodeParams.maxBlockProcessingDelay.toMillis + 1).millis
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
 
@@ -631,7 +634,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleFundingPublishFailed(d)
 
-    case Event(c: CurrentBlockCount, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.fundingTx match {
+    case Event(ProcessCurrentBlockCount(c), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.fundingTx match {
       case Some(_) => stay // we are funder, we're still waiting for the funding tx to be confirmed
       case None if c.blockCount - d.waitingSinceBlock > FUNDING_TIMEOUT_FUNDEE =>
         log.warning(s"funding tx hasn't been published in ${c.blockCount - d.waitingSinceBlock} blocks")
@@ -943,7 +946,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         }
       }
 
-    case Event(c: CurrentBlockCount, d: DATA_NORMAL) => handleNewBlock(c, d)
+    case Event(ProcessCurrentBlockCount(c), d: DATA_NORMAL) => handleNewBlock(c, d)
 
     case Event(c: CurrentFeerates, d: DATA_NORMAL) => handleCurrentFeerate(c, d)
 
@@ -1221,7 +1224,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(r: RevocationTimeout, d: DATA_SHUTDOWN) => handleRevocationTimeout(r, d)
 
-    case Event(c: CurrentBlockCount, d: DATA_SHUTDOWN) => handleNewBlock(c, d)
+    case Event(ProcessCurrentBlockCount(c), d: DATA_SHUTDOWN) => handleNewBlock(c, d)
 
     case Event(c: CurrentFeerates, d: DATA_SHUTDOWN) => handleCurrentFeerate(c, d)
 
@@ -1519,7 +1522,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // note: this can only happen if state is NORMAL or SHUTDOWN
     // -> in NEGOTIATING there are no more htlcs
     // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
-    case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
+    case Event(ProcessCurrentBlockCount(c), d: HasCommitments) => handleNewBlock(c, d)
 
     case Event(c: CurrentFeerates, d: HasCommitments) =>
       handleOfflineFeerate(c, d)
@@ -1710,7 +1713,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
       stay
 
-    case Event(c: CurrentBlockCount, d: HasCommitments) => handleNewBlock(c, d)
+    case Event(ProcessCurrentBlockCount(c), d: HasCommitments) => handleNewBlock(c, d)
 
     case Event(c: CurrentFeerates, d: HasCommitments) =>
       handleOfflineFeerate(c, d)
@@ -1792,8 +1795,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // we only care about this event in NORMAL and SHUTDOWN state, and there may be cases where the task is not cancelled
     case Event(_: RevocationTimeout, _) => stay
 
+    // we reschedule with a random delay to prevent herd effect when there are a lot of channels
+    case Event(c: CurrentBlockCount, _) =>
+      context.system.scheduler.scheduleOnce(blockProcessingDelay, self, ProcessCurrentBlockCount(c))
+      stay
+
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
-    case Event(CurrentBlockCount(_), _) => stay
+    case Event(ProcessCurrentBlockCount(_), _) => stay
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
     case Event(CurrentFeerates(_), _) => stay
@@ -2567,5 +2575,4 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   initialize()
 
 }
-
 
