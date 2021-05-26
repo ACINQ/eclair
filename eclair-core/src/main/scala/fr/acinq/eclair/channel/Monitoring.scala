@@ -31,6 +31,7 @@ object Monitoring {
     val HtlcValueInFlightGlobal = Kamon.gauge("channels.htlc-value-in-flight-global", "Global HTLC value in flight across all channels")
     val LocalFeeratePerKw = Kamon.gauge("channels.local-feerate-per-kw")
     val RemoteFeeratePerKw = Kamon.histogram("channels.remote-feerate-per-kw")
+    val ProcessMessage = Kamon.timer("channels.messages-processed")
 
     def recordHtlcsInFlight(remoteSpec: CommitmentSpec, previousRemoteSpec: CommitmentSpec): Unit = {
       for (direction <- Tags.Directions.Incoming :: Tags.Directions.Outgoing :: Nil) {

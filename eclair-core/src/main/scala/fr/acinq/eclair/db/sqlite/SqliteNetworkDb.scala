@@ -82,8 +82,9 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = withMetrics("network/get-node", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM nodes WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
-      val rs = statement.executeQuery()
-      codecSequence(rs, nodeAnnouncementCodec).headOption
+      statement.executeQuery()
+        .mapCodec(nodeAnnouncementCodec)
+        .headOption
     }
   }
 
@@ -96,8 +97,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
 
   override def listNodes(): Seq[NodeAnnouncement] = withMetrics("network/list-nodes", DbBackends.Sqlite) {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT data FROM nodes")
-      codecSequence(rs, nodeAnnouncementCodec)
+      statement.executeQuery("SELECT data FROM nodes")
+        .mapCodec(nodeAnnouncementCodec).toSeq
     }
   }
 
@@ -122,17 +123,15 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
 
   override def listChannels(): SortedMap[ShortChannelId, PublicChannel] = withMetrics("network/list-channels", DbBackends.Sqlite) {
     using(sqlite.createStatement()) { statement =>
-      val rs = statement.executeQuery("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM channels")
-      var m = SortedMap.empty[ShortChannelId, PublicChannel]
-      while (rs.next()) {
-        val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
-        val txId = ByteVector32.fromValidHex(rs.getString("txid"))
-        val capacity = rs.getLong("capacity_sat")
-        val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
-        val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
-        m = m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
-      }
-      m
+      statement.executeQuery("SELECT channel_announcement, txid, capacity_sat, channel_update_1, channel_update_2 FROM channels")
+        .foldLeft(SortedMap.empty[ShortChannelId, PublicChannel]) { (m, rs) =>
+            val ann = channelAnnouncementCodec.decode(rs.getBitVectorOpt("channel_announcement").get).require.value
+            val txId = ByteVector32.fromValidHex(rs.getString("txid"))
+            val capacity = rs.getLong("capacity_sat")
+            val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
+            val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
+            m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
+        }
     }
   }
 
@@ -171,8 +170,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   override def isPruned(shortChannelId: ShortChannelId): Boolean = withMetrics("network/is-pruned", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT short_channel_id from pruned WHERE short_channel_id=?")) { statement =>
       statement.setLong(1, shortChannelId.toLong)
-      val rs = statement.executeQuery()
-      rs.next()
+      statement.executeQuery().nonEmpty
     }
   }
 

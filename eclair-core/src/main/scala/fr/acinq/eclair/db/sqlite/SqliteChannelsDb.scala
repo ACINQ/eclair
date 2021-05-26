@@ -27,7 +27,6 @@ import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
-import scala.collection.immutable.Queue
 
 class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
@@ -135,8 +134,8 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
 
   override def listLocalChannels(): Seq[HasCommitments] = withMetrics("channels/list-local-channels", DbBackends.Sqlite) {
     using(sqlite.createStatement) { statement =>
-      val rs = statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
-      codecSequence(rs, stateDataCodec)
+      statement.executeQuery("SELECT data FROM local_channels WHERE is_closed=0")
+        .mapCodec(stateDataCodec).toSeq
     }
   }
 
@@ -154,12 +153,9 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
       statement.setBytes(1, channelId.toArray)
       statement.setLong(2, commitmentNumber)
-      val rs = statement.executeQuery
-      var q: Queue[(ByteVector32, CltvExpiry)] = Queue()
-      while (rs.next()) {
-        q = q :+ (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
-      }
-      q
+      statement.executeQuery
+        .map(rs => (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry"))))
+        .toSeq
     }
   }
 

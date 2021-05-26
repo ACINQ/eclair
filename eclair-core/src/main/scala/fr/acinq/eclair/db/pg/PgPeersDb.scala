@@ -78,8 +78,9 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb {
     withLock { pg =>
       using(pg.prepareStatement("SELECT data FROM peers WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
-        val rs = statement.executeQuery()
-        codecSequence(rs, CommonCodecs.nodeaddress).headOption
+        statement.executeQuery()
+          .mapCodec(CommonCodecs.nodeaddress)
+          .headOption
       }
     }
   }
@@ -87,14 +88,13 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb {
   override def listPeers(): Map[PublicKey, NodeAddress] = withMetrics("peers/list", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.createStatement()) { statement =>
-        val rs = statement.executeQuery("SELECT node_id, data FROM peers")
-        var m: Map[PublicKey, NodeAddress] = Map()
-        while (rs.next()) {
-          val nodeid = PublicKey(rs.getByteVectorFromHex("node_id"))
-          val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
-          m += (nodeid -> nodeaddress)
-        }
-        m
+        statement.executeQuery("SELECT node_id, data FROM peers")
+          .map { rs =>
+            val nodeid = PublicKey(rs.getByteVectorFromHex("node_id"))
+            val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
+            nodeid -> nodeaddress
+          }
+          .toMap
       }
     }
   }

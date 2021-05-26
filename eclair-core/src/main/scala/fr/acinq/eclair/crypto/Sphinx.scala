@@ -356,7 +356,7 @@ object Sphinx extends Logging {
       require(packet.length == PacketLength, s"invalid error packet length ${packet.length}, must be $PacketLength")
 
       @tailrec
-      def loop(packet: ByteVector, sharedSecrets: Seq[(ByteVector32, PublicKey)]): DecryptedFailurePacket = sharedSecrets match {
+      def loop(packet: ByteVector, secrets: Seq[(ByteVector32, PublicKey)]): DecryptedFailurePacket = secrets match {
         case Nil => throw new RuntimeException(s"couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
         case (secret, pubkey) :: tail =>
           val packet1 = wrap(packet, secret)

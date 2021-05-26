@@ -19,15 +19,16 @@ package fr.acinq.eclair.db.jdbc
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
 import org.sqlite.SQLiteConnection
-import scodec.Codec
+import scodec.Decoder
 import scodec.bits.{BitVector, ByteVector}
 
 import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.util.UUID
 import javax.sql.DataSource
-import scala.collection.immutable.Queue
 
 trait JdbcUtils {
+
+  import ExtendedResultSet._
 
   def withConnection[T](f: Connection => T)(implicit dataSource: DataSource): T = {
     val connection = dataSource.getConnection()
@@ -72,15 +73,16 @@ trait JdbcUtils {
   def getVersion(statement: Statement, db_name: String): Option[Int] = {
     createVersionTable(statement)
     // if there was a previous version installed, this will return a different value from current version
-    val rs = statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
-    if (rs.next()) Some(rs.getInt("version")) else None
+    statement.executeQuery(s"SELECT version FROM versions WHERE db_name='$db_name'")
+      .map(rs => rs.getInt("version"))
+      .headOption
   }
 
   /**
    * Updates the version for a particular logical database, it will overwrite the previous version.
    *
    * NB: we could define this method in [[fr.acinq.eclair.db.sqlite.SqliteUtils]] and [[fr.acinq.eclair.db.pg.PgUtils]]
-   *     but it would make testing more complicated because we need to use one or the other depending on the backend.
+   * but it would make testing more complicated because we need to use one or the other depending on the backend.
    */
   def setVersion(statement: Statement, db_name: String, newVersion: Int): Unit = {
     createVersionTable(statement)
@@ -96,20 +98,25 @@ trait JdbcUtils {
     }
   }
 
-  /**
-   * This helper assumes that there is a "data" column available, decodable with the provided codec
-   *
-   * TODO: we should use an scala.Iterator instead
-   */
-  def codecSequence[T](rs: ResultSet, codec: Codec[T]): Seq[T] = {
-    var q: Queue[T] = Queue()
-    while (rs.next()) {
-      q = q :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
-    }
-    q
-  }
+  case class ExtendedResultSet(rs: ResultSet) extends Iterable[ResultSet] {
 
-  case class ExtendedResultSet(rs: ResultSet) {
+    /**
+     * Iterates over all rows of a result set.
+     *
+     * Careful: the iterator is lazy, it must be materialized before the [[ResultSet]] is closed, by converting the end
+     * result in a collection or an option.
+     */
+    override def iterator: Iterator[ResultSet] = {
+      // @formatter:off
+      new Iterator[ResultSet] {
+        def hasNext: Boolean = rs.next()
+        def next(): ResultSet = rs
+      }
+      // @formatter:on
+    }
+
+    /** This helper assumes that there is a "data" column available, that can be decoded with the provided codec */
+    def mapCodec[T](codec: Decoder[T]): Iterable[T] = rs.map(rs => codec.decode(BitVector(rs.getBytes("data"))).require.value)
 
     def getByteVectorFromHex(columnLabel: String): ByteVector = {
       val s = rs.getString(columnLabel).stripPrefix("\\x")
@@ -166,7 +173,6 @@ trait JdbcUtils {
       val result = rs.getTimestamp(label)
       if (rs.wasNull()) None else Some(result)
     }
-
   }
 
   object ExtendedResultSet {

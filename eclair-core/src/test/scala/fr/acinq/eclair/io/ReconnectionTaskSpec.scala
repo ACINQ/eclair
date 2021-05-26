@@ -216,7 +216,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     peer.send(reconnectionTask, Peer.Connect(remoteNodeId, None))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
-    awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
+    awaitCond(mockServer.accept() != null, max = 60 seconds, interval = 1 second)
     mockServer.close()
   }
 

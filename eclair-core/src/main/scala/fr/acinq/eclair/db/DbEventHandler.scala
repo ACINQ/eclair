@@ -20,7 +20,7 @@ import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.Helpers.Closing.{ClosingType, CurrentRemoteClose, LocalClose, MutualClose, NextRemoteClose, RecoveryClose, RevokedClose}
+import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel.Monitoring.{Metrics => ChannelMetrics, Tags => ChannelTags}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent

@@ -177,7 +177,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             }
             RemoteFailure(cfg.fullRoute(route), e)
           case Failure(t) =>
-            log.warning(s"cannot parse returned error: ${t.getMessage}")
+            log.warning(s"cannot parse returned error ${fail.reason.toHex} with sharedSecrets=$sharedSecrets: ${t.getMessage}")
             UnreadableRemoteFailure(cfg.fullRoute(route))
         }
         log.warning(s"too many failed attempts, failing the payment")

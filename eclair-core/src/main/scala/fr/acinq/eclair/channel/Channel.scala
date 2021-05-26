@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, TypedActorRefOps, actorRefAdapter}
-import akka.actor.{ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
+import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
+import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SetChannelId, SignAndPublishTx}
 import fr.acinq.eclair.crypto.ShaChain
@@ -1446,7 +1447,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay (note that we don't store the state)
       closingType_opt match {
         case Some(closingType) =>
-          log.info(s"channel closed (type=$closingType)")
+          log.info(s"channel closed (type=${closingType_opt.map(c => EventType.Closed(c).label).getOrElse("UnknownYet")})")
           context.system.eventStream.publish(ChannelClosed(self, d.channelId, closingType, d.commitments))
           goto(CLOSED) using d1 storing()
         case None =>
@@ -1702,6 +1703,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(_: FundingLocked, _) =>
       log.warning("received funding_locked before channel_reestablish (known lnd bug): disconnecting...")
       peer ! Peer.Disconnect(remoteNodeId)
+      stay
+
+    // This handler is a workaround for an issue in lnd similar to the one above: they sometimes send announcement_signatures
+    // before channel_reestablish, which is a minor spec violation. It doesn't halt the channel, we can simply postpone
+    // that message.
+    case Event(remoteAnnSigs: AnnouncementSignatures, _) =>
+      log.warning("received announcement_signatures before channel_reestablish (known lnd bug): delaying...")
+      context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
       stay
 
     case Event(ProcessCurrentBlockCount(c), d: HasCommitments) => handleNewBlock(c, d)
@@ -2133,11 +2142,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   private def handleLocalError(cause: Throwable, d: Data, msg: Option[Any]) = {
     cause match {
       case _: ForcedLocalCommit => log.warning(s"force-closing channel at user request")
+      case _ if stateName == WAIT_FOR_OPEN_CHANNEL => log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
       case _ => log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
     }
     cause match {
       case _: ChannelException => ()
-      case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData ")
+      case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData")
     }
     val error = Error(d.channelId, cause.getMessage)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = true))
@@ -2555,6 +2565,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   // we let the peer decide what to do
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
+
+  override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
+    KamonExt.time(ProcessMessage.withTag("MessageType", msg.getClass.getSimpleName)) {
+      super.aroundReceive(receive, msg)
+    }
+  }
 
   initialize()
 

@@ -367,6 +367,23 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(init.fundingAmount === 15000.sat)
     assert(init.pushAmount === 100.msat)
   }
+
+  test("handle final channelId assigned in state DISCONNECTED") { f =>
+    import f._
+    val probe = TestProbe()
+    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    peer ! ConnectionDown(peerConnection.ref)
+    probe.send(peer, Peer.GetPeerInfo)
+    val peerInfo1 = probe.expectMsgType[Peer.PeerInfo]
+    assert(peerInfo1.state === "DISCONNECTED")
+    assert(peerInfo1.channels === 1)
+    peer ! ChannelIdAssigned(probe.ref, remoteNodeId, randomBytes32(), randomBytes32())
+    probe.send(peer, Peer.GetPeerInfo)
+    val peerInfo2 = probe.expectMsgType[Peer.PeerInfo]
+    assert(peerInfo2.state === "DISCONNECTED")
+    assert(peerInfo2.channels === 2)
+  }
+
 }
 
 object PeerSpec {

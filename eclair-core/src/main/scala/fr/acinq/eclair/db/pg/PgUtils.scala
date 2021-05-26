@@ -20,6 +20,7 @@ import com.zaxxer.hikari.util.IsolationLevel
 import fr.acinq.eclair.db.Monitoring.Metrics._
 import fr.acinq.eclair.db.Monitoring.Tags
 import fr.acinq.eclair.db.jdbc.JdbcUtils
+import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler.LockException
 import grizzled.slf4j.Logging
 import org.postgresql.util.{PGInterval, PSQLException}
@@ -215,14 +216,14 @@ object PgUtils extends JdbcUtils {
       private def getCurrentLease(implicit connection: Connection): Option[LockLease] = {
         using(connection.createStatement()) {
           statement =>
-            val rs = statement.executeQuery(s"SELECT expires_at, instance, now() > expires_at AS expired FROM $LeaseTable WHERE id = 1")
-            if (rs.next())
-              Some(LockLease(
-                expiresAt = rs.getTimestamp("expires_at"),
-                instanceId = UUID.fromString(rs.getString("instance")),
-                expired = rs.getBoolean("expired")))
-            else
-              None
+            statement.executeQuery(s"SELECT expires_at, instance, now() > expires_at AS expired FROM $LeaseTable WHERE id = 1")
+              .map { rs =>
+                LockLease(
+                  expiresAt = rs.getTimestamp("expires_at"),
+                  instanceId = UUID.fromString(rs.getString("instance")),
+                  expired = rs.getBoolean("expired"))
+              }
+              .headOption
         }
       }
 

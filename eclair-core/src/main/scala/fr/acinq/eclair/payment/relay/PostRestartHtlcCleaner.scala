@@ -70,7 +70,13 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
     val nonStandardRelayedOutHtlcs: Map[Origin, Set[(ByteVector32, Long)]] = nodeParams.pluginParams.collect { case p: CustomCommitmentsPlugin => p.getHtlcsRelayedOut(htlcsIn, nodeParams, log) }.flatten.toMap
     val relayedOut: Map[Origin, Set[(ByteVector32, Long)]] = getHtlcsRelayedOut(channels, htlcsIn) ++ nonStandardRelayedOutHtlcs
 
-    val notRelayed = htlcsIn.filterNot(htlcIn => relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)))
+    val settledHtlcs: Set[(ByteVector32, Long)] = nodeParams.db.pendingCommands.listSettlementCommands().map { case (channelId, cmd) => (channelId, cmd.id) }.toSet
+    val notRelayed = htlcsIn.filterNot(htlcIn => {
+      // If an HTLC has been relayed and then settled downstream, it will not have a matching entry in relayedOut.
+      // When that happens, there will be an HTLC settlement command in the pendingRelay DB, and we will let the channel
+      // replay it instead of sending a conflicting command.
+      relayedOut.keys.exists(origin => matchesOrigin(htlcIn.add, origin)) || settledHtlcs.contains((htlcIn.add.channelId, htlcIn.add.id))
+    })
     cleanupRelayDb(htlcsIn, nodeParams.db.pendingCommands)
 
     log.info(s"htlcsIn=${htlcsIn.length} notRelayed=${notRelayed.length} relayedOut=${relayedOut.values.flatten.size}")
@@ -332,6 +338,7 @@ object PostRestartHtlcCleaner {
   def groupByOrigin(htlcsOut: Seq[(Origin, ByteVector32, Long)], htlcsIn: Seq[IncomingHtlc]): Map[Origin, Set[(ByteVector32, Long)]] =
     htlcsOut
       .groupBy { case (origin, _, _) => origin }
+      .view
       .mapValues(_.map { case (_, channelId, htlcId) => (channelId, htlcId) }.toSet)
       // We are only interested in HTLCs that are pending upstream (not fulfilled nor failed yet).
       // It may be the case that we have unresolved HTLCs downstream that have been resolved upstream when the downstream

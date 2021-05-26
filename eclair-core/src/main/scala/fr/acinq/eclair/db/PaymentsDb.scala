@@ -16,14 +16,14 @@
 
 package fr.acinq.eclair.db
 
-import java.io.Closeable
-import java.util.UUID
-
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+
+import java.io.Closeable
+import java.util.UUID
 
 trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
