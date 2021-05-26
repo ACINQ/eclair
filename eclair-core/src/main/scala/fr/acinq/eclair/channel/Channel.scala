@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, TypedActorRefOps, actorRefAdapter}
-import akka.actor.{ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
+import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
+import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SetChannelId, SignAndPublishTx}
 import fr.acinq.eclair.crypto.ShaChain
@@ -2556,6 +2557,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   // we let the peer decide what to do
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
+
+  override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
+    KamonExt.time(ProcessMessage.withTag("MessageType", msg.getClass.getSimpleName)) {
+      super.aroundReceive(receive, msg)
+    }
+  }
 
   initialize()
 
