@@ -377,6 +377,24 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
     })
   }
 
+  test("unlock utxos when anchor tx cannot be published") {
+    withFixture(Seq(500 millibtc, 200 millibtc), f => {
+      import f._
+
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f)
+
+      // wait for the commit tx and anchor tx to be published
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.map(_.txid).contains(commitTx.txid))
+
+      // we try to publish the anchor again (can be caused by a node restart): it will fail but we must ensure we don't leave some utxos locked.
+      txPublisher ! anchorTx
+      probe.expectNoMessage(1 second)
+      getMempoolTxs(2)
+      assert(getLocks(probe, bitcoinRpcClient).isEmpty)
+    })
+  }
+
   test("adjust anchor tx change amount", Tag("fuzzy")) {
     withFixture(Seq(500 millibtc), f => {
       val commitFeerate = f.alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
@@ -622,6 +640,27 @@ class TxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoin
       val htlcSuccessTx = getMempoolTxs(1).head
       val htlcSuccessTargetFee = Transactions.weight2fee(TestConstants.feeratePerKw, htlcSuccessTx.weight.toInt)
       assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.1, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
+    })
+  }
+
+  test("unlock utxos when htlc tx cannot be published") {
+    withFixture(Seq(500 millibtc, 200 millibtc), f => {
+      import f._
+
+      val (commitTx, htlcSuccess, _) = closeChannelWithHtlcs(f)
+      txPublisher ! htlcSuccess
+      // HTLC txs will only be published once the commit tx is confirmed (csv delay)
+      getMempoolTxs(1)
+      createBlocks(2)
+      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
+      val htlcSuccessTx = getMempoolTxs(1).head
+
+      // we try to publish the htlc-success again (can be caused by a node restart): it will fail but we must ensure we don't leave some utxos locked.
+      txPublisher ! htlcSuccess
+      txPublisher ! ParentTxConfirmed(htlcSuccess, commitTx.txid)
+      probe.expectNoMessage(1 second)
+      assert(getMempoolTxs(1).head.txid === htlcSuccessTx.txid)
+      assert(getLocks(probe, bitcoinRpcClient).isEmpty)
     })
   }
 

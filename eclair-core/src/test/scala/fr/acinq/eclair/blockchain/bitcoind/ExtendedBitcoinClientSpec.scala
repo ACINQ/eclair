@@ -105,6 +105,66 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     }
   }
 
+  test("unlock utxos when transaction is published") {
+    val sender = TestProbe()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+
+    // create a first transaction with multiple inputs
+    val tx1 = {
+      val fundedTxs = (1 to 3).map(_ => {
+        val txNotFunded = Transaction(2, Nil, TxOut(15000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+        bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw, lockUtxos = true)).pipeTo(sender.ref)
+        sender.expectMsgType[FundTransactionResponse].tx
+      })
+      val fundedTx = Transaction(2, fundedTxs.flatMap(_.txIn), fundedTxs.flatMap(_.txOut), 0)
+      assert(fundedTx.txIn.length >= 3)
+
+      // tx inputs should be locked
+      val lockedUtxos = getLocks(sender)
+      fundedTx.txIn.foreach(txIn => assert(lockedUtxos.contains(txIn.outPoint)))
+
+      bitcoinClient.signTransaction(fundedTx, Nil).pipeTo(sender.ref)
+      val signTxResponse = sender.expectMsgType[SignTransactionResponse]
+      bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
+      sender.expectMsg(signTxResponse.tx.txid)
+      // once the tx is published, the inputs should be automatically unlocked
+      assert(getLocks(sender).isEmpty)
+      signTxResponse.tx
+    }
+
+    // create a second transaction that double-spends one of the inputs of the first transaction
+    val tx2 = {
+      val txNotFunded = tx1.copy(txIn = tx1.txIn.take(1))
+      bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw * 2, lockUtxos = true)).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
+      assert(fundedTx.txIn.length >= 2) // we added at least one new input
+
+      val lockedUtxos = getLocks(sender)
+      fundedTx.txIn.foreach(txIn => {
+        if (txIn.outPoint === tx1.txIn.head.outPoint) {
+          assert(!lockedUtxos.contains(txIn.outPoint)) // this utxo is spent in the mempool so it can't be locked
+        } else {
+          assert(lockedUtxos.contains(txIn.outPoint)) // newly added inputs should be locked
+        }
+      })
+
+      bitcoinClient.signTransaction(fundedTx, Nil).pipeTo(sender.ref)
+      val signTxResponse = sender.expectMsgType[SignTransactionResponse]
+      bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
+      sender.expectMsg(signTxResponse.tx.txid)
+      // once the tx is published, the inputs should be automatically unlocked
+      assert(getLocks(sender).isEmpty)
+      signTxResponse.tx
+    }
+
+    // tx2 replaced tx1 in the mempool
+    bitcoinClient.getMempool().pipeTo(sender.ref)
+    val mempoolTxs = sender.expectMsgType[Seq[Transaction]]
+    assert(mempoolTxs.length === 1)
+    assert(mempoolTxs.head.txid === tx2.txid)
+    assert(tx2.txIn.map(_.outPoint).intersect(tx1.txIn.map(_.outPoint)).length === 1)
+  }
+
   test("sign transactions") {
     val sender = TestProbe()
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)

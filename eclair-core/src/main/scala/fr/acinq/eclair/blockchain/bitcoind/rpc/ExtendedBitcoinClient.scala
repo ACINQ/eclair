@@ -23,12 +23,13 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, Ut
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
+import grizzled.slf4j.Logging
 import org.json4s.Formats
 import org.json4s.JsonAST._
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by PM on 26/04/2016.
@@ -39,7 +40,7 @@ import scala.util.Try
  * Note that all wallet utilities (signing transactions, setting fees, locking outputs, etc) can be found in
  * [[fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet]].
  */
-class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
+class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging {
 
   import ExtendedBitcoinClient._
 
@@ -150,6 +151,30 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         // "missing inputs (code: -25)": it may be that the tx has already been published and its output spent.
         getRawTransaction(tx.txid).map(_ => tx.txid).recoverWith { case _ => Future.failed(e) }
     }
+
+  /**
+   * @param outPoints outpoints to unlock.
+   * @return true if all outpoints were successfully unlocked, false otherwise.
+   */
+  def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
+    // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually locked and the rest would not be processed
+    val futures = outPoints
+      .map(outPoint => Utxo(outPoint.txid, outPoint.index))
+      .map(utxo => rpcClient
+        .invoke("lockunspent", true, List(utxo))
+        .mapTo[JBool]
+        .transformWith {
+          case Success(JBool(result)) => Future.successful(result)
+          case Failure(JsonRPCError(error)) if error.message.contains("expected locked output") =>
+            Future.successful(true) // we consider that the outpoint was successfully unlocked (since it was not locked to begin with)
+          case Failure(t) =>
+            logger.warn(s"cannot unlock utxo=$utxo:", t)
+            Future.successful(false)
+        })
+    val future = Future.sequence(futures)
+    // return true if all outpoints were unlocked false otherwise
+    future.map(_.forall(b => b))
+  }
 
   def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
@@ -295,6 +320,8 @@ object ExtendedBitcoinClient {
    * @param descendantFees  transactions fees for the package consisting of this transaction and its unconfirmed children (without its unconfirmed parents).
    */
   case class MempoolTx(txid: ByteVector32, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi)
+
+  case class Utxo(txid: ByteVector32, vout: Long)
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 

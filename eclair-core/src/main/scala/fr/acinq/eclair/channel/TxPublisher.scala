@@ -185,6 +185,7 @@ object TxPublish {
   case class DoPublish(replyTo: ActorRef[TxPublishResult], tx: TxPublisher.PublishTx) extends Command
   private case class SignFundedTx(fundedTx: TransactionWithInputInfo) extends Command
   private case class PublishSignedTx(signedTx: Transaction) extends Command
+  private case object Stop extends Command
 
   sealed trait TxPublishResult extends Command {
     def cmd: TxPublisher.PublishTx
@@ -318,7 +319,7 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
               case _: ClaimLocalAnchorOutputTx =>
                 if (targetFeerate <= commitFeerate) {
                   log.info("publishing commit-tx without the anchor (current feerate={}): txid={}", commitFeerate, commitTx.txid)
-                  stopping(cmd, TxSkipped(p))
+                  stopping(cmd, TxSkipped(p), None)
                 } else {
                   funding(cmd, p, targetFeerate)
                 }
@@ -338,7 +339,7 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
                     }
                   case None =>
                     log.error("witness data not found for htlcId={}, skipping...", txInfo.htlcId)
-                    stopping(cmd, TxSkipped(p))
+                    stopping(cmd, TxSkipped(p), None)
                 }
             }
         }
@@ -376,7 +377,7 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
           case TxSkipped(_) => log.info("skipping {} (input={}:{}): commit tx is already confirmed", p.txInfo.desc, p.txInfo.input.outPoint.txid, p.txInfo.input.outPoint.index)
           case _ => log.warn("cannot add inputs to {}: reason={} txid={}", p.txInfo.desc, failure.message, p.tx.txid)
         }
-        stopping(cmd, failure)
+        stopping(cmd, failure, None)
     }
   }
 
@@ -415,7 +416,7 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
         publishing(cmd, signedTx)
       case failure: TxPublishFailed =>
         log.warn("cannot sign {}: reason={} txid={}", p.txInfo.desc, failure.message, p.tx.txid)
-        stopping(cmd, failure)
+        stopping(cmd, failure, Some(fundedTx.tx))
     }
   }
 
@@ -436,13 +437,24 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
           case f: TxPublishFailed => log.error("cannot publish {}: reason={} txid={}", cmd.tx.desc, f.message, tx.txid)
           case _ => // nothing to do
         }
-        stopping(cmd, result)
+        stopping(cmd, result, Some(tx))
     }
   }
 
-  private def stopping(cmd: DoPublish, result: TxPublishResult): Behavior[Command] = {
+  private def stopping(cmd: DoPublish, result: TxPublishResult, finalTx_opt: Option[Transaction]): Behavior[Command] = {
     cmd.replyTo ! result
-    Behaviors.stopped
+    // We unlock utxos in some failure cases.
+    (finalTx_opt, result) match {
+      case (Some(finalTx), _: TxPublishFailed) =>
+        val toUnlock = finalTx.txIn.map(_.outPoint).diff(cmd.tx.tx.txIn.map(_.outPoint))
+        log.debug("unlocking utxos={}", toUnlock.mkString(", "))
+        context.pipeToSelf(client.unlockOutpoints(toUnlock))(_ => Stop)
+      case _ =>
+        context.self ! Stop
+    }
+    Behaviors.receiveMessagePartial {
+      case Stop => Behaviors.stopped
+    }
   }
 
   private def addInputs(txInfo: ClaimLocalAnchorOutputTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[ClaimLocalAnchorOutputTx] = {
