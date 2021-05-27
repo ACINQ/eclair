@@ -324,15 +324,15 @@ object Commitments {
       }
     }
 
+    // We apply local *and* remote restrictions, to ensure both peers are happy with the resulting number of HTLCs.
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since outgoingHtlcs is a Set).
     val htlcValueInFlight = outgoingHtlcs.toSeq.map(_.amountMsat).sum
-    if (commitments1.remoteParams.maxHtlcValueInFlightMsat < htlcValueInFlight) {
-      // TODO: this should be a specific UPDATE error
-      return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+    if (Seq(commitments1.localParams.maxHtlcValueInFlightMsat, commitments1.remoteParams.maxHtlcValueInFlightMsat).min < htlcValueInFlight) {
+      // TODO: this should be a specific UPDATE error (but it would require a spec change)
+      return Left(HtlcValueTooHighInFlight(commitments.channelId, maximum = Seq(commitments1.localParams.maxHtlcValueInFlightMsat, commitments1.remoteParams.maxHtlcValueInFlightMsat).min, actual = htlcValueInFlight))
     }
-
-    if (outgoingHtlcs.size > commitments1.remoteParams.maxAcceptedHtlcs) {
-      return Left(TooManyAcceptedHtlcs(commitments.channelId, maximum = commitments1.remoteParams.maxAcceptedHtlcs))
+    if (Seq(commitments1.localParams.maxAcceptedHtlcs, commitments1.remoteParams.maxAcceptedHtlcs).min < outgoingHtlcs.size) {
+      return Left(TooManyAcceptedHtlcs(commitments.channelId, maximum = Seq(commitments1.localParams.maxAcceptedHtlcs, commitments1.remoteParams.maxAcceptedHtlcs).min))
     }
 
     Right(commitments1, add)

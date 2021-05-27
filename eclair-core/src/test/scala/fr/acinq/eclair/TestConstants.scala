@@ -106,7 +106,7 @@ object TestConstants {
         defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw),
         perNodeFeerateTolerance = Map.empty
       ),
-      maxHtlcValueInFlightMsat = UInt64(150000000),
+      maxHtlcValueInFlightMsat = UInt64(500000000),
       maxAcceptedHtlcs = 100,
       expiryDelta = CltvExpiryDelta(144),
       fulfillSafetyBeforeTimeout = CltvExpiryDelta(6),

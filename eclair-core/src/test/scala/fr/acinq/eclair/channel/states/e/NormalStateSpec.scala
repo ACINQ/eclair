@@ -94,7 +94,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val h = randomBytes32()
     for (i <- 0 until 10) {
-      alice ! CMD_ADD_HTLC(sender.ref, 50000000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+      alice ! CMD_ADD_HTLC(sender.ref, 500000 msat, h, CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
       assert(htlc.id == i && htlc.paymentHash == h)
@@ -237,7 +237,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectNoMsg(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)") { f =>
+  test("recv CMD_ADD_HTLC (HTLC dips into remote funder fee reserve)", Tag(StateTestsTags.NoMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
     addHtlc(758640000 msat, alice, bob, alice2bob, bob2alice)
@@ -246,13 +246,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     // at this point alice has the minimal amount to sustain a channel
-    // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first two HTLCs should be allowed
+    // alice maintains an extra reserve to accommodate for a few more HTLCs, so the first few HTLCs should be allowed
     for (_ <- 1 to 7) {
       bob ! CMD_ADD_HTLC(sender.ref, 12000000 msat, randomBytes32(), CltvExpiry(400144), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     }
 
-    // but this one will dip alice below her reserve: we must wait for the two previous HTLCs to settle before sending any more
     // but this one will dip alice below her reserve: we must wait for the previous HTLCs to settle before sending any more
     val failedAdd = CMD_ADD_HTLC(sender.ref, 11000000 msat, randomBytes32(), CltvExpiry(400144), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     bob ! failedAdd
@@ -260,7 +259,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.expectMsg(RES_ADD_FAILED(failedAdd, error, Some(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)))
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { f =>
+  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)", Tag(StateTestsTags.NoMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -280,7 +279,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectNoMsg(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)") { f =>
+  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)", Tag(StateTestsTags.NoMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -297,10 +296,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectNoMsg(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (over max inflight htlc value)") { f =>
+  test("recv CMD_ADD_HTLC (over remote max inflight htlc value)", Tag(StateTestsTags.AliceLowMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat === UInt64.MaxValue)
+    assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat === UInt64(150000000))
     val add = CMD_ADD_HTLC(sender.ref, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     bob ! add
     val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000 msat)
@@ -308,10 +309,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectNoMsg(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (over max inflight htlc value with duplicate amounts)") { f =>
+  test("recv CMD_ADD_HTLC (over remote max inflight htlc value with duplicate amounts)", Tag(StateTestsTags.AliceLowMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat === UInt64.MaxValue)
+    assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat === UInt64(150000000))
     val add = CMD_ADD_HTLC(sender.ref, 75500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     bob ! add
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
@@ -323,12 +326,26 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectNoMsg(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (over max accepted htlcs)") { f =>
+  test("recv CMD_ADD_HTLC (over local max inflight htlc value)", Tag(StateTestsTags.AliceLowMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    // Bob accepts a maximum of 30 htlcs
-    for (i <- 0 until 30) {
+    assert(initialState.commitments.localParams.maxHtlcValueInFlightMsat === UInt64(150000000))
+    assert(initialState.commitments.remoteParams.maxHtlcValueInFlightMsat === UInt64.MaxValue)
+    val add = CMD_ADD_HTLC(sender.ref, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    alice ! add
+    val error = HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000 msat)
+    sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
+    alice2bob.expectNoMsg(200 millis)
+  }
+
+  test("recv CMD_ADD_HTLC (over remote max accepted htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.localParams.maxAcceptedHtlcs === 100)
+    assert(initialState.commitments.remoteParams.maxAcceptedHtlcs === 30) // Bob accepts a maximum of 30 htlcs
+    for (_ <- 0 until 30) {
       alice ! CMD_ADD_HTLC(sender.ref, 10000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
       sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
       alice2bob.expectMsgType[UpdateAddHtlc]
@@ -340,7 +357,25 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.expectNoMsg(200 millis)
   }
 
-  test("recv CMD_ADD_HTLC (over capacity)") { f =>
+  test("recv CMD_ADD_HTLC (over local max accepted htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+    assert(initialState.commitments.localParams.maxAcceptedHtlcs === 30) // Bob accepts a maximum of 30 htlcs
+    assert(initialState.commitments.remoteParams.maxAcceptedHtlcs === 100) // Alice accepts more, but Bob will stop at 30 HTLCs
+    for (_ <- 0 until 30) {
+      bob ! CMD_ADD_HTLC(sender.ref, 2500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+      sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+      bob2alice.expectMsgType[UpdateAddHtlc]
+    }
+    val add = CMD_ADD_HTLC(sender.ref, 2500000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    bob ! add
+    val error = TooManyAcceptedHtlcs(channelId(bob), maximum = 30)
+    sender.expectMsg(RES_ADD_FAILED(add, error, Some(initialState.channelUpdate)))
+    bob2alice.expectNoMsg(200 millis)
+  }
+
+  test("recv CMD_ADD_HTLC (over capacity)", Tag(StateTestsTags.NoMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -405,14 +440,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     // let's make alice send an htlc
-    val add1 = CMD_ADD_HTLC(sender.ref, 500000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    val add1 = CMD_ADD_HTLC(sender.ref, 50000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add1
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     // at the same time bob initiates a closing
     bob ! CMD_CLOSE(sender.ref, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // this command will be received by alice right after having received the shutdown
-    val add2 = CMD_ADD_HTLC(sender.ref, 100000000 msat, randomBytes32(), CltvExpiry(300000), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    val add2 = CMD_ADD_HTLC(sender.ref, 10000000 msat, randomBytes32(), CltvExpiry(300000), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     // messages cross
     alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
@@ -527,7 +562,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2blockchain.expectMsgType[WatchTxConfirmed]
   }
 
-  test("recv UpdateAddHtlc (over max inflight htlc value)") { f =>
+  test("recv UpdateAddHtlc (over max inflight htlc value)", Tag(StateTestsTags.AliceLowMaxHtlcValueInFlight)) { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
     alice2bob.forward(alice, UpdateAddHtlc(ByteVector32.Zeroes, 0, 151000000 msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket))
