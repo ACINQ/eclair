@@ -68,6 +68,10 @@ object StateTestsTags {
   val ChannelsPublic = "channels_public"
   /** If set, no amount will be pushed when opening a channel (by default we push a small amount). */
   val NoPushMsat = "no_push_msat"
+  /** If set, max-htlc-value-in-flight will be set to the highest possible value for Alice and Bob. */
+  val NoMaxHtlcValueInFlight = "no_max_htlc_value_in_flight"
+  /** If set, max-htlc-value-in-flight will be set to a low value for Alice. */
+  val AliceLowMaxHtlcValueInFlight = "alice_low_max_htlc_value_in_flight"
 }
 
 trait StateTestsHelperMethods extends TestKitBase {
@@ -127,8 +131,13 @@ trait StateTestsHelperMethods extends TestKitBase {
     ).reduce(_ | _)
 
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val aliceParams = setChannelFeatures(Alice.channelParams, tags).modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
-    val bobParams = setChannelFeatures(Bob.channelParams, tags).modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+    val aliceParams = setChannelFeatures(Alice.channelParams, tags)
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
+    val bobParams = setChannelFeatures(Bob.channelParams, tags)
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
     val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(StateTestsTags.NoPushMsat)) {
       (TestConstants.fundingSatoshis, 0.msat)
