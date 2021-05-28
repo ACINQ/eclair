@@ -101,9 +101,12 @@ trait StateTestsHelperMethods extends TestKitBase with FixtureTestSuite with Par
       .modify(_.channelReserve).setToIf(channelVersion.hasZeroReserve)(0.sat)
       .modify(_.features).setToIf(channelVersion.hasStaticRemotekey)(Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional))))
       .modify(_.staticPaymentBasepoint).setToIf(channelVersion.hasStaticRemotekey)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains("no_max_htlc_value_inflight"))(UInt64.MaxValue)
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains("alice_low_max_htlc_value_inflight"))(UInt64(150000000))
     val bobParams = Bob.channelParams
       .modify(_.features).setToIf(channelVersion.hasStaticRemotekey)(Features(Set(ActivatedFeature(Features.StaticRemoteKey, FeatureSupport.Optional))))
       .modify(_.staticPaymentBasepoint).setToIf(channelVersion.hasStaticRemotekey)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains("no_max_htlc_value_inflight"))(UInt64.MaxValue)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
