@@ -1915,6 +1915,24 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == NORMAL)
   }
 
+  test("recv CMD_FORCECLOSE (with pending unsigned htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
+    val update1a = alice2bob.expectMsgType[ChannelUpdate]
+    assert(Announcements.isEnabled(update1a.channelFlags))
+    val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(aliceData.commitments.localChanges.proposed.size == 1)
+
+    // actual test starts here
+    Thread.sleep(1100)
+    alice ! CMD_FORCECLOSE(sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
+    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].result.cause.isInstanceOf[ForcedLocalCommit])
+  }
+
   def testShutdown(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
     import f._
     val bobParams = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams
