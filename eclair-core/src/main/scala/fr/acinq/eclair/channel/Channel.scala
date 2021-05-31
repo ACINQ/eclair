@@ -1790,7 +1790,16 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case data: HasCommitments =>
           val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
           replyTo ! RES_SUCCESS(c, data.channelId)
-          handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c))
+          val failure = ForcedLocalCommit(data.channelId)
+          // if we are in NORMAL state, we may have outgoing unsigned htlcs that we can fail right away
+          data match {
+            case _: DATA_NORMAL =>
+              data.commitments.localChanges.proposed.collect {
+              case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(data.commitments.originChannels(add.id), add, HtlcResult.OnChainFail(failure))
+            }
+            case _ => ()
+          }
+          handleLocalError(failure, data, Some(c))
         case _ => handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
       }
 
