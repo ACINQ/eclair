@@ -289,6 +289,16 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
     val features = JField("features", JsonSupport.featuresToJson(Features(p.features.bitmask)))
+    val routingInfo = JField("routingInfo", Extraction.decompose(p.routingInfo)(
+      DefaultFormats +
+        new ByteVector32Serializer +
+        new ByteVectorSerializer +
+        new PublicKeySerializer +
+        new ShortChannelIdSerializer +
+        new MilliSatoshiSerializer +
+        new CltvExpiryDeltaSerializer
+    )
+    )
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
       JField("nodeId", JString(p.nodeId.toString())),
@@ -301,7 +311,9 @@ class PaymentRequestSerializer extends CustomSerializer[PaymentRequest](_ => ( {
       expiry ++
       minFinalCltvExpiry ++
       amount :+
-      features
+      features :+
+      routingInfo
+
     JObject(fieldList)
 }))
 
