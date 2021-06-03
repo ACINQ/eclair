@@ -57,7 +57,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     }
   }
 
-  test("take additional HTLC fee into account") { f =>
+  test("take additional HTLC fee into account", Tag("no_max_htlc_value_inflight")) { f =>
     import f._
     // The fee for a single HTLC is 1720000 msat but the funder keeps an extra reserve to make sure we're able to handle
     // an additional HTLC at twice the feerate (hence the multiplier).

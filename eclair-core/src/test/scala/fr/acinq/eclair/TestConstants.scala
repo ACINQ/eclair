@@ -118,7 +118,7 @@ object TestConstants {
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1
       ),
-      maxHtlcValueInFlightMsat = UInt64(150000000),
+      maxHtlcValueInFlightMsat = UInt64(500000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = CltvExpiryDelta(144),
       fulfillSafetyBeforeTimeoutBlocks = CltvExpiryDelta(6),
