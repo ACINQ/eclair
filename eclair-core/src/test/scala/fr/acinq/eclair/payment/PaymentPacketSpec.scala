@@ -392,7 +392,7 @@ object PaymentPacketSpec {
     val remoteParams = RemoteParams(randomKey.publicKey, null, null, null, null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null)
     val commitInput = InputInfo(OutPoint(randomBytes32, 1), TxOut(testCapacity, Nil), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw.MinimumFeeratePerKw, toRemote = testAvailableBalanceForSend, toLocal = testAvailableBalanceForReceive), randomBytes32, randomKey.publicKey)
-    new Commitments(ChannelVersion.STANDARD, params, remoteParams, 0.toByte, null, remoteCommit, null, null, 0, 0, Map.empty, Right(randomKey.publicKey), commitInput, null, channelId) {
+    new Commitments(ChannelVersion.STANDARD, params, remoteParams, 0.toByte, null, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil), 0, 0, Map.empty, Right(randomKey.publicKey), commitInput, null, channelId) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }
