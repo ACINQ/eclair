@@ -83,12 +83,17 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
     case e: NetworkFeePaid => auditDb.add(e)
 
     case e: ChannelErrorOccurred =>
+      // first pattern matching level is to ignore some errors, second level is to separate between different kind of errors
       e.error match {
-        case LocalError(_) if e.isFatal => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = true).increment()
-        case LocalError(_) if !e.isFatal => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = false).increment()
-        case RemoteError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Remote).increment()
+        case LocalError(_: CannotAffordFees) => () // will be thrown at each new block if our balance is too low to update the commitment fee
+        case _ =>
+          e.error match {
+            case LocalError(_) if e.isFatal => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = true).increment()
+            case LocalError(_) if !e.isFatal => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Local).withTag(ChannelTags.Fatal, value = false).increment()
+            case RemoteError(_) => ChannelMetrics.ChannelErrors.withTag(ChannelTags.Origin, ChannelTags.Origins.Remote).increment()
+          }
+          auditDb.add(e)
       }
-      auditDb.add(e)
 
     case e: ChannelStateChanged =>
       // NB: order matters!
