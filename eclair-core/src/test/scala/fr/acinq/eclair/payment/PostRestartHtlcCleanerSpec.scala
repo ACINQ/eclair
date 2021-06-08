@@ -32,7 +32,6 @@ import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
-import fr.acinq.eclair.wire.protocol.Onion.FinalLegacyPayload
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -674,7 +673,7 @@ object PostRestartHtlcCleanerSpec {
   val (paymentHash1, paymentHash2, paymentHash3) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3))
 
   def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): UpdateAddHtlc = {
-    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, Onion.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32()))
     UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
   }
 
@@ -683,7 +682,7 @@ object PostRestartHtlcCleanerSpec {
   def buildHtlcOut(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = OutgoingHtlc(buildHtlc(htlcId, channelId, paymentHash))
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
-    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, TestConstants.Bob.nodeParams.nodeId, channelUpdate_ab) :: Nil, FinalLegacyPayload(finalAmount, finalExpiry))
+    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, TestConstants.Bob.nodeParams.nodeId, channelUpdate_ab) :: Nil, Onion.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32()))
     IncomingHtlc(UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion))
   }
 

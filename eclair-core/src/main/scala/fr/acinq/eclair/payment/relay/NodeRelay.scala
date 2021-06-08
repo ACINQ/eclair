@@ -37,7 +37,7 @@ import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator
 import fr.acinq.eclair.router.Router.RouteParams
 import fr.acinq.eclair.router.{BalanceTooLow, RouteCalculation, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, nodeFee, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
 
 import java.util.UUID
 import scala.collection.immutable.Queue
@@ -81,7 +81,6 @@ object NodeRelay {
             register: ActorRef,
             relayId: UUID,
             nodeRelayPacket: NodeRelayPacket,
-            paymentSecret: ByteVector32,
             outgoingPaymentFactory: OutgoingPaymentFactory): Behavior[Command] =
     Behaviors.setup { context =>
       val paymentHash = nodeRelayPacket.add.paymentHash
@@ -97,7 +96,7 @@ object NodeRelay {
           context.messageAdapter[MultiPartPaymentFSM.MultiPartPaymentSucceeded](WrappedMultiPartPaymentSucceeded)
         }.toClassic
         val incomingPaymentHandler = context.actorOf(MultiPartPaymentFSM.props(nodeParams, paymentHash, totalAmountIn, mppFsmAdapters))
-        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, paymentSecret, context, outgoingPaymentFactory)
+        new NodeRelay(nodeParams, parent, register, relayId, paymentHash, nodeRelayPacket.outerPayload.paymentSecret, context, outgoingPaymentFactory)
           .receiving(Queue.empty, nodeRelayPacket.innerPayload, nodeRelayPacket.nextPacket, incomingPaymentHandler)
       }
     }
@@ -110,6 +109,8 @@ object NodeRelay {
       Some(TrampolineExpiryTooSoon)
     } else if (payloadOut.outgoingCltv <= CltvExpiry(nodeParams.currentBlockHeight)) {
       Some(TrampolineExpiryTooSoon)
+    } else if (payloadOut.invoiceFeatures.isDefined && payloadOut.paymentSecret.isEmpty) {
+      Some(InvalidOnionPayload(UInt64(8), 0)) // payment secret field is missing
     } else {
       None
     }
@@ -180,15 +181,11 @@ class NodeRelay private(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case Relay(IncomingPacket.NodeRelayPacket(add, outer, _, _)) => outer.paymentSecret match {
         // TODO: @pm: maybe those checks should be done by the mpp FSM?
-        case None =>
-          context.log.warn("rejecting htlc #{} from channel {}: missing payment secret", add.id, add.channelId)
-          rejectHtlc(add.id, add.channelId, add.amountMsat)
-          Behaviors.same
-        case Some(incomingSecret) if incomingSecret != paymentSecret =>
+        case incomingSecret if incomingSecret != paymentSecret =>
           context.log.warn("rejecting htlc #{} from channel {}: payment secret doesn't match other HTLCs in the set", add.id, add.channelId)
           rejectHtlc(add.id, add.channelId, add.amountMsat)
           Behaviors.same
-        case Some(incomingSecret) if incomingSecret == paymentSecret =>
+        case incomingSecret if incomingSecret == paymentSecret =>
           context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", add.id, add.channelId)
           handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
           receiving(htlcs :+ add, nextPayload, nextPacket, handler)
@@ -276,20 +273,20 @@ class NodeRelay private(nodeParams: NodeParams,
     val payFSM = payloadOut.invoiceFeatures match {
       case Some(features) =>
         val routingHints = payloadOut.invoiceRoutingInfo.map(_.map(_.toSeq).toSeq).getOrElse(Nil)
-        payloadOut.paymentSecret match {
-          case Some(paymentSecret) if Features(features).hasFeature(Features.BasicMultiPartPayment) =>
-            context.log.debug("sending the payment to non-trampoline recipient using MPP")
-            val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
-            val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
-            payFSM ! payment
-            payFSM
-          case _ =>
-            context.log.debug("sending the payment to non-trampoline recipient without MPP")
-            val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, payloadOut.paymentSecret)
-            val payment = SendPayment(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
-            val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
-            payFSM ! payment
-            payFSM
+        val paymentSecret = payloadOut.paymentSecret.get // NB: we've verified that there was a payment secret in validateRelay
+        if (Features(features).hasFeature(Features.BasicMultiPartPayment)) {
+          context.log.debug("sending the payment to non-trampoline recipient using MPP")
+          val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+          val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
+          payFSM ! payment
+          payFSM
+        } else {
+          context.log.debug("sending the payment to non-trampoline recipient without MPP")
+          val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret)
+          val payment = SendPayment(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, Some(routeParams))
+          val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
+          payFSM ! payment
+          payFSM
         }
       case None =>
         context.log.debug("sending the payment to the next trampoline node")

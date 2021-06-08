@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.Onion.FinalTlvPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -92,7 +92,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(Crypto.sha256(incoming.get.paymentPreimage) === pr.paymentHash)
 
       val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, pr.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
-      sender.send(handlerWithoutMpp, IncomingPacket.FinalPacket(add, Onion.FinalLegacyPayload(add.amountMsat, add.cltvExpiry)))
+      sender.send(handlerWithoutMpp, IncomingPacket.FinalPacket(add, Onion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, pr.paymentSecret.get)))
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
@@ -111,7 +111,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
 
       val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, pr.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
-      sender.send(handlerWithMpp, IncomingPacket.FinalPacket(add, Onion.FinalLegacyPayload(add.amountMsat, add.cltvExpiry)))
+      sender.send(handlerWithMpp, IncomingPacket.FinalPacket(add, Onion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, pr.paymentSecret.get)))
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
@@ -129,7 +129,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
 
       val add = UpdateAddHtlc(ByteVector32.One, 0, amountMsat, pr.paymentHash, CltvExpiryDelta(3).toCltvExpiry(nodeParams.currentBlockHeight), TestConstants.emptyOnionPacket)
-      sender.send(handlerWithMpp, IncomingPacket.FinalPacket(add, Onion.FinalLegacyPayload(add.amountMsat, add.cltvExpiry)))
+      sender.send(handlerWithMpp, IncomingPacket.FinalPacket(add, Onion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, pr.paymentSecret.get)))
       val cmd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
       assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(amountMsat, nodeParams.currentBlockHeight)))
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
@@ -243,7 +243,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(pr.isExpired)
 
     val add = UpdateAddHtlc(ByteVector32.One, 0, 1000 msat, pr.paymentHash, defaultExpiry, TestConstants.emptyOnionPacket)
-    sender.send(handlerWithoutMpp, IncomingPacket.FinalPacket(add, Onion.FinalLegacyPayload(add.amountMsat, add.cltvExpiry)))
+    sender.send(handlerWithoutMpp, IncomingPacket.FinalPacket(add, Onion.createSinglePartPayload(add.amountMsat, add.cltvExpiry, pr.paymentSecret.get)))
     register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
     val Some(incoming) = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(incoming.paymentRequest.isExpired && incoming.status === IncomingPaymentStatus.Expired)
@@ -476,7 +476,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val amountMsat = 42000 msat
     val paymentPreimage = randomBytes32()
     val paymentHash = Crypto.sha256(paymentPreimage)
-    val payload = FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(amountMsat), OnionTlv.OutgoingCltv(defaultExpiry), OnionTlv.KeySend(paymentPreimage))))
+    val paymentSecret = randomBytes32()
+    val payload = FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(amountMsat), OnionTlv.OutgoingCltv(defaultExpiry), OnionTlv.PaymentData(paymentSecret, 0 msat), OnionTlv.KeySend(paymentPreimage))))
 
     assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
 
@@ -497,7 +498,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val amountMsat = 42000 msat
     val paymentPreimage = randomBytes32()
     val paymentHash = Crypto.sha256(paymentPreimage)
-    val payload = FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(amountMsat), OnionTlv.OutgoingCltv(defaultExpiry), OnionTlv.KeySend(paymentPreimage))))
+    val paymentSecret = randomBytes32()
+    val payload = FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(amountMsat), OnionTlv.OutgoingCltv(defaultExpiry), OnionTlv.PaymentData(paymentSecret, 0 msat), OnionTlv.KeySend(paymentPreimage))))
 
     assert(nodeParams.db.payments.getIncomingPayment(paymentHash) === None)
 

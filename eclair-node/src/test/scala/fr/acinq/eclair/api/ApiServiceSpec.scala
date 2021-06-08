@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.api
 
-import java.util.UUID
-
 import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.model.FormData
 import akka.http.scaladsl.model.StatusCodes._
@@ -53,6 +51,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._
 
+import java.util.UUID
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.io.Source
@@ -370,7 +369,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
   test("'send' method should handle payment failures") {
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.failed(new IllegalArgumentException("invoice has expired"))
+    eclair.send(any, any, any, any, any, any)(any[Timeout]) returns Future.failed(new IllegalArgumentException("invoice has expired"))
     val mockService = new MockService(eclair)
 
     val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
@@ -383,7 +382,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == BadRequest)
         val resp = entityAs[ErrorResponse](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
         assert(resp.error == "invoice has expired")
-        eclair.send(None, any, 1258000 msat, any, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.send(None, 1258000 msat, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
   }
 
@@ -392,7 +391,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
 
-    eclair.sendBlocking(any, any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(Left(PreimageReceived(ByteVector32.Zeroes, ByteVector32.One))))
+    eclair.sendBlocking(any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(Left(PreimageReceived(ByteVector32.Zeroes, ByteVector32.One))))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.payInvoice) ~>
@@ -406,7 +405,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val uuid = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
     val paymentSent = PaymentSent(uuid, ByteVector32.Zeroes, ByteVector32.One, 25 msat, aliceNodeId, Seq(PaymentSent.PartialPayment(uuid, 21 msat, 1 msat, ByteVector32.Zeroes, None, 1553784337711L)))
-    eclair.sendBlocking(any, any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(Right(paymentSent)))
+    eclair.sendBlocking(any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(Right(paymentSent)))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.payInvoice) ~>
@@ -419,7 +418,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
 
     val paymentFailed = PaymentFailed(uuid, ByteVector32.Zeroes, failures = Seq.empty, timestamp = 1553784963659L)
-    eclair.sendBlocking(any, any, any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(Right(paymentFailed)))
+    eclair.sendBlocking(any, any, any, any, any, any)(any[Timeout]).returns(Future.successful(Right(paymentFailed)))
     Post("/payinvoice", FormData("invoice" -> invoice, "blocking" -> "true").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.payInvoice) ~>
@@ -436,7 +435,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
 
     val eclair = mock[Eclair]
-    eclair.send(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.send(any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice).toEntity) ~>
@@ -445,7 +444,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(None, any, 1258000 msat, any, any, any, any, any)(any[Timeout]).wasCalled(once)
+        eclair.send(None, 1258000 msat, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
 
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123", "feeThresholdSat" -> "112233", "maxFeePct" -> "2.34", "externalId" -> "42").toEntity) ~>
@@ -454,7 +453,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(Some("42"), any, 123 msat, any, any, any, Some(112233 sat), Some(2.34))(any[Timeout]).wasCalled(once)
+        eclair.send(Some("42"), 123 msat, any, any, Some(112233 sat), Some(2.34))(any[Timeout]).wasCalled(once)
       }
 
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "456", "feeThresholdSat" -> "10", "maxFeePct" -> "0.5").toEntity) ~>
@@ -463,7 +462,48 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.send(None, any, 456 msat, any, any, any, Some(10 sat), Some(0.5))(any[Timeout]).wasCalled(once)
+        eclair.send(None, 456 msat, any, any, Some(10 sat), Some(0.5))(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'sendtonode'") {
+    val eclair = mock[Eclair]
+    eclair.sendWithPreimage(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    val mockService = new MockService(eclair)
+    val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+
+    Post("/sendtonode", FormData("amountMsat" -> "123").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.sendToNode) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+
+    Post("/sendtonode", FormData("nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.sendToNode) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+
+    Post("/sendtonode", FormData("amountMsat" -> "123", "nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.sendToNode) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None)(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/sendtonode", FormData("amountMsat" -> "123", "nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87", "feeThresholdSat" -> "10000", "maxFeePct" -> "2.5", "externalId" -> "42").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.sendToNode) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.sendWithPreimage(Some("42"), remoteNodeId, 123 msat, any, any, Some(10000 sat), Some(2.5))(any[Timeout]).wasCalled(once)
       }
   }
 

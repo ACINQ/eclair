@@ -62,7 +62,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           val allowMultiPart = nodeParams.features.hasFeature(Features.BasicMultiPartPayment)
           val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
           val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
-          Some(PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*))
+          PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*)
         }
         val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
         log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
@@ -101,9 +101,8 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               } else {
                 PaymentRequestFeatures(Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
               }
-
               // Insert a fake invoice and then restart the incoming payment handler
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, features = Some(features))
+              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
               log.debug("generated fake payment request={} from amount={} (KeySend)", PaymentRequest.write(paymentRequest), amount)
               db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
@@ -245,10 +244,10 @@ object MultiPartHandler {
     if (payment.payload.amount < payment.payload.totalAmount && !pr.features.allowMultiPart) {
       log.warning("received multi-part payment but invoice doesn't support it for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
-    } else if (payment.payload.amount < payment.payload.totalAmount && pr.paymentSecret != payment.payload.paymentSecret) {
+    } else if (payment.payload.amount < payment.payload.totalAmount && !pr.paymentSecret.contains(payment.payload.paymentSecret)) {
       log.warning("received multi-part payment with invalid secret={} for amount={} totalAmount={}", payment.payload.paymentSecret, payment.add.amountMsat, payment.payload.totalAmount)
       false
-    } else if (payment.payload.paymentSecret.isDefined && pr.paymentSecret != payment.payload.paymentSecret) {
+    } else if (!pr.paymentSecret.contains(payment.payload.paymentSecret)) {
       log.warning("received payment with invalid secret={} for amount={} totalAmount={}", payment.payload.paymentSecret, payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {

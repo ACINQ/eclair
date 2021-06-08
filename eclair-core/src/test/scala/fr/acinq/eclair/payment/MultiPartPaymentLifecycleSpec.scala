@@ -36,8 +36,8 @@ import fr.acinq.eclair.wire.protocol._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
-import java.util.UUID
 
+import java.util.UUID
 import scala.concurrent.duration._
 
 /**
@@ -85,7 +85,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val childPayment = childPayFsm.expectMsgType[SendPaymentToRoute]
     assert(childPayment.route === Right(singleRoute))
     assert(childPayment.finalPayload.expiry === expiry)
-    assert(childPayment.finalPayload.paymentSecret === Some(payment.paymentSecret))
+    assert(childPayment.finalPayload.paymentSecret === payment.paymentSecret)
     assert(childPayment.finalPayload.amount === finalAmount)
     assert(childPayment.finalPayload.totalAmount === finalAmount)
     assert(payFsm.stateName === PAYMENT_IN_PROGRESS)
@@ -114,7 +114,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val childPayments = childPayFsm.expectMsgType[SendPaymentToRoute] :: childPayFsm.expectMsgType[SendPaymentToRoute] :: Nil
     assert(childPayments.map(_.route).toSet === routes.map(r => Right(r)).toSet)
     assert(childPayments.map(_.finalPayload.expiry).toSet === Set(expiry))
-    assert(childPayments.map(_.finalPayload.paymentSecret.get).toSet === Set(payment.paymentSecret))
+    assert(childPayments.map(_.finalPayload.paymentSecret).toSet === Set(payment.paymentSecret))
     assert(childPayments.map(_.finalPayload.amount).toSet === Set(500000 msat, 700000 msat))
     assert(childPayments.map(_.finalPayload.totalAmount).toSet === Set(1200000 msat))
     assert(payFsm.stateName === PAYMENT_IN_PROGRESS)
