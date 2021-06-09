@@ -27,8 +27,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateFulfillHtlc
 import fr.acinq.eclair.{Logs, NodeParams}
 
-import java.util.concurrent.Executors
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 
 /**
@@ -43,7 +42,7 @@ object TxPublish {
   // @formatter:off
   sealed trait Command
   case class DoPublish(replyTo: ActorRef[TxPublishResult], tx: TxPublisher.PublishTx) extends Command
-  private case class SignFundedTx(fundedTx: TransactionWithInputInfo) extends Command
+  private case class SignFundedTx(fundedTx: ReplaceableTransactionWithInputInfo) extends Command
   private case class PublishSignedTx(signedTx: Transaction) extends Command
   private case object Stop extends Command
 
@@ -56,10 +55,6 @@ object TxPublish {
   case class TxSkipped(cmd: TxPublisher.SignAndPublishTx) extends TxPublishFailed { override def message: String = s"tx skipped: ${cmd.txInfo.getClass.getSimpleName}" }
   case class UnknownFailure(cmd: TxPublisher.PublishTx, reason: Throwable) extends TxPublishFailed { override def message: String = s"unknown failure: ${reason.getMessage}" }
   // @formatter:on
-
-  // NOTE: we use a single thread to publish transactions so that it preserves order.
-  // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS!
-  val singleThreadExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
   def apply(nodeParams: NodeParams, client: ExtendedBitcoinClient, channelInfo: TxPublisher.ChannelInfo): Behavior[Command] =
     Behaviors.setup { context =>
@@ -216,7 +211,10 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
         val fundingOutpoint = p.commitments.commitInput.outPoint
         context.pipeToSelf(client.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
           case false => Future.failed(CommitTxAlreadyConfirmed)
-          case true => addInputs(txInfo, targetFeerate, p.commitments)
+          case true =>
+            // We must ensure our local commit tx is in the mempool before publishing the anchor.
+            // If it's already published, this call will be a no-op.
+            client.publishTransaction(p.commitments.localCommit.publishableTxs.commitTx.tx).flatMap(_ => addInputs(txInfo, targetFeerate, p.commitments))
         }) {
           case Success(fundedTx) => SignFundedTx(fundedTx)
           case Failure(CommitTxAlreadyConfirmed) => TxSkipped(p)
@@ -241,7 +239,7 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
     }
   }
 
-  private def signing(cmd: DoPublish, p: TxPublisher.SignAndPublishTx, fundedTx: TransactionWithInputInfo): Behavior[Command] = {
+  private def signing(cmd: DoPublish, p: TxPublisher.SignAndPublishTx, fundedTx: ReplaceableTransactionWithInputInfo): Behavior[Command] = {
     fundedTx match {
       case claimAnchorTx: ClaimLocalAnchorOutputTx =>
         val claimAnchorSig = keyManager.sign(claimAnchorTx, keyManager.fundingPublicKey(p.commitments.localParams.fundingKeyPath), TxOwner.Local, p.commitments.commitmentFormat)
@@ -281,13 +279,20 @@ private class TxPublish(nodeParams: NodeParams, client: ExtendedBitcoinClient, c
   }
 
   private def publishing(cmd: DoPublish, tx: Transaction): Behavior[Command] = {
-    cmd.tx match {
-      case _: TxPublisher.PublishRawTx => log.info("publishing {}: txid={} tx={}", cmd.tx.desc, tx.txid, tx)
-      case TxPublisher.SignAndPublishTx(txInfo, _) => log.info("publishing {}: input={}:{} txid={} tx={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, tx.txid, tx)
+    val parentTx_opt = cmd.tx match {
+      case TxPublisher.PublishRawTx(_, _, parentTx_opt) =>
+        log.info("publishing {}: txid={} tx={}", cmd.tx.desc, tx.txid, tx)
+        parentTx_opt
+      case TxPublisher.SignAndPublishTx(txInfo, _) =>
+        log.info("publishing {}: input={}:{} txid={} tx={}", txInfo.desc, txInfo.input.outPoint.txid, txInfo.input.outPoint.index, tx.txid, tx)
+        None
     }
-    // NB: we use a single thread to publish transactions so that it preserves the order of publication.
-    // We need that to prevent concurrency issues while publishing parent and child transactions.
-    context.pipeToSelf(client.publishTransaction(tx)(singleThreadExecutionContext)) {
+    context.pipeToSelf(client.publishTransaction(tx).recoverWith {
+      case ex if parentTx_opt.nonEmpty && ex.getMessage.contains("bad-txns-inputs-missingorspent") =>
+        // We optimistically published the transaction in parallel with its parent, so we retry after ensuring the parent
+        // transaction has been published.
+        client.publishTransaction(parentTx_opt.get).flatMap(_ => client.publishTransaction(tx))
+    }) {
       case Success(txId) => TxPublished(cmd.tx, txId)
       case Failure(ex) => UnknownFailure(cmd.tx, ex)
     }

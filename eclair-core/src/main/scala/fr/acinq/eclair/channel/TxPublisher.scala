@@ -49,9 +49,9 @@ object TxPublisher {
     def desc: String
   }
   /**  Publish a fully signed transaction without modifying it. */
-  case class PublishRawTx(tx: Transaction, desc: String) extends PublishTx
+  case class PublishRawTx(tx: Transaction, desc: String, parentTx_opt: Option[Transaction]) extends PublishTx
   object PublishRawTx {
-    def apply(txInfo: TransactionWithInputInfo): PublishRawTx = PublishRawTx(txInfo.tx, txInfo.desc)
+    def apply(txInfo: TransactionWithInputInfo, parentTx_opt: Option[Transaction]): PublishRawTx = PublishRawTx(txInfo.tx, txInfo.desc, parentTx_opt)
   }
   /**
    * Publish an unsigned transaction. Once (csv and cltv) delays have been satisfied, the tx publisher will set the fees,

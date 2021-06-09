@@ -285,11 +285,11 @@ trait StateTestsHelperMethods extends TestKitBase {
       assert(s2blockchain.expectMsgType[SignAndPublishTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishRawTx(tx)))
+    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishRawTx(tx, None)))
     closingState.commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
-        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => PublishRawTx(tx) }: _*)
+        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => PublishRawTx(tx, Some(commitTx)) }: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
       case Transactions.AnchorOutputsCommitmentFormat =>
         // all htlcs success/timeout should be published with a fee bumping strategy, without claiming their outputs
@@ -328,12 +328,12 @@ trait StateTestsHelperMethods extends TestKitBase {
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      s2blockchain.expectMsg(PublishRawTx(claimMain))
+      s2blockchain.expectMsg(PublishRawTx(claimMain, None))
     })
     // all htlcs success/timeout should be claimed
     val claimHtlcTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTx) => tx }.toSeq
     claimHtlcTxs.foreach(claimHtlc => Transaction.correctlySpends(claimHtlc.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => PublishRawTx(claimHtlc)): _*)
+    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => PublishRawTx(claimHtlc, None)): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === rCommitTx.txid)
