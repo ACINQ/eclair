@@ -162,7 +162,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
     sender.send(bob, aliceCloseSig.copy(feeSatoshis = 99000 sat)) // sig doesn't matter, it is checked later
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray).startsWith("invalid close fee: fee_satoshis=Satoshi(99000)"))
+    assert(new String(error.data.toArray).startsWith("invalid close fee: fee_satoshis=99000 sat"))
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx)
     bob2blockchain.expectMsgType[PublishTx]
     bob2blockchain.expectMsgType[WatchTxConfirmed]
