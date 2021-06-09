@@ -414,8 +414,16 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     // Transaction is still in the mempool at that point
     bitcoinClient.getTxConfirmations(tx1.txid).pipeTo(sender.ref)
     sender.expectMsg(Some(0))
+    // If we omit the mempool, tx1's input is still considered unspent.
+    bitcoinClient.isTransactionOutputSpendable(tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt, includeMempool = false).pipeTo(sender.ref)
+    sender.expectMsg(true)
+    // If we include the mempool, we see that tx1's input is now spent.
+    bitcoinClient.isTransactionOutputSpendable(tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt, includeMempool = true).pipeTo(sender.ref)
+    sender.expectMsg(false)
+    // If we omit the mempool, tx1's output is not considered spendable because we can't even find that output.
     bitcoinClient.isTransactionOutputSpendable(tx1.txid, 0, includeMempool = false).pipeTo(sender.ref)
     sender.expectMsg(false)
+    // If we include the mempool, we see that tx1 produces an output that is still unspent.
     bitcoinClient.isTransactionOutputSpendable(tx1.txid, 0, includeMempool = true).pipeTo(sender.ref)
     sender.expectMsg(true)
 
