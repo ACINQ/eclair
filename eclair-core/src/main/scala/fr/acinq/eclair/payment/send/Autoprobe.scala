@@ -64,7 +64,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
             ),
             ByteVector.empty)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=${fakeInvoice.paymentHash}")
-          paymentInitiator ! PaymentInitiator.SendPaymentRequest(PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1)
+          paymentInitiator ! PaymentInitiator.SendPayment(PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()

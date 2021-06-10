@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentRequest
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPayment
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, PermanentChannelFailure, UpdateAddHtlc}
@@ -145,7 +145,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val preimage = randomBytes32()
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = SendPaymentRequest(100000000 msat, PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, nodes("F").nodeParams.privateKey, "test", finalCltvExpiryDelta), maxAttempts = 1, routeParams = integrationTestRouteParams)
+    val paymentReq = SendPayment(100000000 msat, PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, nodes("F").nodeParams.privateKey, "test", finalCltvExpiryDelta), maxAttempts = 1, routeParams = integrationTestRouteParams)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID]
@@ -368,7 +368,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     def send(amountMsat: MilliSatoshi, paymentHandler: ActorRef, paymentInitiator: ActorRef): UUID = {
       sender.send(paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
       val pr = sender.expectMsgType[PaymentRequest]
-      val sendReq = SendPaymentRequest(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams)
+      val sendReq = SendPayment(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams)
       sender.send(paymentInitiator, sendReq)
       sender.expectMsgType[UUID]
     }
@@ -666,7 +666,7 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
 
     // then we make the actual payment
-    sender.send(nodes("C").paymentInitiator, SendPaymentRequest(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta))
+    sender.send(nodes("C").paymentInitiator, SendPayment(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta))
     val paymentId = sender.expectMsgType[UUID]
     val preimage = sender.expectMsgType[PreimageReceived].paymentPreimage
     assert(Crypto.sha256(preimage) === pr.paymentHash)

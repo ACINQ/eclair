@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest, SendPaymentToRouteResponse, SendSpontaneousPaymentRequest}
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPayment, SendPaymentToRoute, SendPaymentToRouteResponse, SendSpontaneousPayment}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{NetworkStats, RouteCalculation, Router}
 import fr.acinq.eclair.wire.protocol._
@@ -279,7 +279,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32], trampolineFees_opt: Option[MilliSatoshi], trampolineExpiryDelta_opt: Option[CltvExpiryDelta], trampolineNodes_opt: Seq[PublicKey])(implicit timeout: Timeout): Future[SendPaymentToRouteResponse] = {
     val recipientAmount = recipientAmount_opt.getOrElse(invoice.amount.getOrElse(amount))
-    val sendPayment = SendPaymentToRouteRequest(amount, recipientAmount, invoice, finalCltvExpiryDelta, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFees_opt.getOrElse(0 msat), trampolineExpiryDelta_opt.getOrElse(CltvExpiryDelta(0)), trampolineNodes_opt)
+    val sendPayment = SendPaymentToRoute(amount, recipientAmount, invoice, finalCltvExpiryDelta, route, externalId_opt, parentId_opt, trampolineSecret_opt, trampolineFees_opt.getOrElse(0 msat), trampolineExpiryDelta_opt.getOrElse(CltvExpiryDelta(0)), trampolineNodes_opt)
     if (invoice.isExpired) {
       Future.failed(new IllegalArgumentException("invoice has expired"))
     } else if (route.isEmpty) {
@@ -295,7 +295,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
     }
   }
 
-  private def createPaymentRequest(externalId_opt: Option[String], amount: MilliSatoshi, invoice: PaymentRequest, maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double]): Either[IllegalArgumentException, SendPaymentRequest] = {
+  private def createPaymentRequest(externalId_opt: Option[String], amount: MilliSatoshi, invoice: PaymentRequest, maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double]): Either[IllegalArgumentException, SendPayment] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     val defaultRouteParams = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf)
     val routeParams = defaultRouteParams.copy(
@@ -307,8 +307,8 @@ class EclairImpl(appKit: Kit) extends Eclair {
       case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
       case _ if invoice.isExpired => Left(new IllegalArgumentException("invoice has expired"))
       case _ => invoice.minFinalCltvExpiryDelta match {
-        case Some(minFinalCltvExpiryDelta) => Right(SendPaymentRequest(amount, invoice, maxAttempts, minFinalCltvExpiryDelta, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams)))
-        case None => Right(SendPaymentRequest(amount, invoice, maxAttempts, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams)))
+        case Some(minFinalCltvExpiryDelta) => Right(SendPayment(amount, invoice, maxAttempts, minFinalCltvExpiryDelta, externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams)))
+        case None => Right(SendPayment(amount, invoice, maxAttempts, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = Some(routeParams)))
       }
     }
   }
@@ -337,7 +337,7 @@ class EclairImpl(appKit: Kit) extends Eclair {
       maxFeePct = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeePct),
       maxFeeBase = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeBase)
     )
-    val sendPayment = SendSpontaneousPaymentRequest(amount, recipientNodeId, paymentPreimage, maxAttempts, externalId_opt, Some(routeParams))
+    val sendPayment = SendSpontaneousPayment(amount, recipientNodeId, paymentPreimage, maxAttempts, externalId_opt, Some(routeParams))
     (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
   }
 

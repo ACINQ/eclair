@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentRequest, SendPaymentToRouteRequest, SendSpontaneousPaymentRequest}
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPayment, SendPaymentToRoute, SendSpontaneousPayment}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
@@ -103,7 +103,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodePrivKey = randomKey()
     val invoice0 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, "description", CltvExpiryDelta(18))
     eclair.send(None, 123 msat, invoice0)
-    val send = paymentInitiator.expectMsgType[SendPaymentRequest]
+    val send = paymentInitiator.expectMsgType[SendPayment]
     assert(send.externalId === None)
     assert(send.recipientNodeId === nodePrivKey.publicKey)
     assert(send.recipientAmount === 123.msat)
@@ -116,7 +116,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId("569178x2331x1"), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val invoice1 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, "description", CltvExpiryDelta(18), None, None, hints)
     eclair.send(Some(externalId1), 123 msat, invoice1)
-    val send1 = paymentInitiator.expectMsgType[SendPaymentRequest]
+    val send1 = paymentInitiator.expectMsgType[SendPayment]
     assert(send1.externalId === Some(externalId1))
     assert(send1.recipientNodeId === nodePrivKey.publicKey)
     assert(send1.recipientAmount === 123.msat)
@@ -128,7 +128,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
     val invoice2 = PaymentRequest("lntb", Some(123 msat), System.currentTimeMillis() / 1000L, nodePrivKey.publicKey, List(PaymentRequest.MinFinalCltvExpiry(96), PaymentRequest.PaymentHash(ByteVector32.Zeroes), PaymentRequest.Description("description")), ByteVector.empty)
     eclair.send(Some(externalId2), 123 msat, invoice2)
-    val send2 = paymentInitiator.expectMsgType[SendPaymentRequest]
+    val send2 = paymentInitiator.expectMsgType[SendPayment]
     assert(send2.externalId === Some(externalId2))
     assert(send2.recipientNodeId === nodePrivKey.publicKey)
     assert(send2.recipientAmount === 123.msat)
@@ -138,7 +138,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // with custom route fees parameters
     eclair.send(None, 123 msat, invoice0, feeThreshold_opt = Some(123 sat), maxFeePct_opt = Some(4.20))
-    val send3 = paymentInitiator.expectMsgType[SendPaymentRequest]
+    val send3 = paymentInitiator.expectMsgType[SendPayment]
     assert(send3.externalId === None)
     assert(send3.recipientNodeId === nodePrivKey.publicKey)
     assert(send3.recipientAmount === 123.msat)
@@ -386,7 +386,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), "Some invoice", CltvExpiryDelta(18))
     eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
 
-    paymentInitiator.expectMsg(SendPaymentToRouteRequest(1000 msat, 1200 msat, pr, CltvExpiryDelta(123), route, Some("42"), Some(parentId), Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
+    paymentInitiator.expectMsg(SendPaymentToRoute(1000 msat, 1200 msat, pr, CltvExpiryDelta(123), route, Some("42"), Some(parentId), Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
   }
 
   test("call sendWithPreimage, which generates a random preimage, to perform a KeySend payment") { f =>
@@ -396,7 +396,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodeId = randomKey().publicKey
 
     eclair.sendWithPreimage(None, nodeId, 12345 msat)
-    val send = paymentInitiator.expectMsgType[SendSpontaneousPaymentRequest]
+    val send = paymentInitiator.expectMsgType[SendSpontaneousPayment]
     assert(send.externalId === None)
     assert(send.recipientNodeId === nodeId)
     assert(send.recipientAmount === 12345.msat)
@@ -413,7 +413,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val expectedPaymentHash = Crypto.sha256(expectedPaymentPreimage)
 
     eclair.sendWithPreimage(None, nodeId, 12345 msat, paymentPreimage = expectedPaymentPreimage)
-    val send = paymentInitiator.expectMsgType[SendSpontaneousPaymentRequest]
+    val send = paymentInitiator.expectMsgType[SendSpontaneousPayment]
     assert(send.externalId === None)
     assert(send.recipientNodeId === nodeId)
     assert(send.recipientAmount === 12345.msat)
