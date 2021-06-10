@@ -266,25 +266,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
-  test("fail to relay when incoming payment secrets don't match") { f =>
-    import f._
-
-    val p1 = createValidIncomingPacket(2000000 msat, 3000000 msat, CltvExpiry(500000), 2500000 msat, outgoingExpiry)
-    val p2 = createValidIncomingPacket(1000000 msat, 3000000 msat, CltvExpiry(500000), 2500000 msat, outgoingExpiry).copy(
-      outerPayload = Onion.createMultiPartPayload(1000000 msat, 3000000 msat, CltvExpiry(500000), randomBytes32())
-    )
-    val (nodeRelayer, _) = f.createNodeRelay(p1)
-    nodeRelayer ! NodeRelay.Relay(p1)
-    nodeRelayer ! NodeRelay.Relay(p2)
-
-    val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
-    assert(fwd.channelId === p2.add.channelId)
-    val failure = IncorrectOrUnknownPaymentDetails(1000000 msat, nodeParams.currentBlockHeight)
-    assert(fwd.message === CMD_FAIL_HTLC(p2.add.id, Right(failure), commit = true))
-
-    register.expectNoMessage(100 millis)
-  }
-
   test("fail to relay when expiry is too soon (single-part)") { f =>
     import f._
 

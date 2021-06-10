@@ -179,17 +179,11 @@ class NodeRelay private(nodeParams: NodeParams,
    */
   private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case Relay(IncomingPacket.NodeRelayPacket(add, outer, _, _)) => outer.paymentSecret match {
-        // TODO: @pm: maybe those checks should be done by the mpp FSM?
-        case incomingSecret if incomingSecret != paymentSecret =>
-          context.log.warn("rejecting htlc #{} from channel {}: payment secret doesn't match other HTLCs in the set", add.id, add.channelId)
-          rejectHtlc(add.id, add.channelId, add.amountMsat)
-          Behaviors.same
-        case incomingSecret if incomingSecret == paymentSecret =>
-          context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", add.id, add.channelId)
-          handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
-          receiving(htlcs :+ add, nextPayload, nextPacket, handler)
-      }
+      case Relay(IncomingPacket.NodeRelayPacket(add, outer, _, _)) =>
+        require(outer.paymentSecret == paymentSecret, "payment secret mismatch")
+        context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", add.id, add.channelId)
+        handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
+        receiving(htlcs :+ add, nextPayload, nextPacket, handler)
       case WrappedMultiPartPaymentFailed(MultiPartPaymentFSM.MultiPartPaymentFailed(_, failure, parts)) =>
         context.log.warn("could not complete incoming multi-part payment (parts={} paidAmount={} failure={})", parts.size, parts.map(_.amount).sum, failure)
         Metrics.recordPaymentRelayFailed(failure.getClass.getSimpleName, Tags.RelayType.Trampoline)
