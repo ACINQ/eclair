@@ -383,29 +383,30 @@ class PaymentRequestSpec extends AnyFunSuite {
 
   test("supported payment request features") {
     val nodeParams = TestConstants.Alice.nodeParams.copy(features = Features(knownFeatures.map(f => f -> FeatureSupport.Optional).toMap))
-    case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule"
+    case class Result(allowMultiPart: Boolean, requirePaymentSecret: Boolean, areSupported: Boolean) // "supported" is based on the "it's okay to be odd" rule
     val featureBits = Map(
-      PaymentRequestFeatures(bin"               00000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"               00010100001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
-      PaymentRequestFeatures(bin"               00011000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"               00101000001000000000") -> Result(allowMultiPart = true, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"               01000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"          0000010000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"          0000011000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"          0000110000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"          0000100000001000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
+      PaymentRequestFeatures(bin"               00000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"               00100100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"               00010100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"               00100100000100000000") -> Result(allowMultiPart = true, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"               01000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"          0000010000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"          0000011000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"          0000110000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"          0000100000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
-      PaymentRequestFeatures(bin"          0010000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
-      PaymentRequestFeatures(bin"     000001000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
-      PaymentRequestFeatures(bin"     000100000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = true),
-      PaymentRequestFeatures(bin"00000010000000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false),
-      PaymentRequestFeatures(bin"00001000000000000000000000000000000") -> Result(allowMultiPart = false, requirePaymentSecret = false, areSupported = false)
+      PaymentRequestFeatures(bin"          0010000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
+      PaymentRequestFeatures(bin"     000001000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
+      PaymentRequestFeatures(bin"     000100000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
+      PaymentRequestFeatures(bin"00001000000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false)
     )
 
     for ((features, res) <- featureBits) {
-      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = Some(features))
+      println(features.features)
+      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = features)
       assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.areSupported(nodeParams)) === res)
       assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
     }
@@ -448,7 +449,7 @@ class PaymentRequestSpec extends AnyFunSuite {
 
     // A multi-part invoice must use a payment secret.
     assertThrows[IllegalArgumentException](
-      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(BasicMultiPartPayment.optional, VariableLengthOnion.optional)))
+      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", CltvExpiryDelta(18), features = PaymentRequestFeatures(BasicMultiPartPayment.optional, VariableLengthOnion.optional))
     )
   }
 
@@ -456,11 +457,11 @@ class PaymentRequestSpec extends AnyFunSuite {
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18))
     assert(!pr.features.allowTrampoline)
 
-    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, TrampolinePayment.optional)))
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, TrampolinePayment.optional))
     assert(!pr1.features.allowMultiPart)
     assert(pr1.features.allowTrampoline)
 
-    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = Some(PaymentRequestFeatures(VariableLengthOnion.optional, PaymentSecret.optional, BasicMultiPartPayment.optional, TrampolinePayment.optional)))
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional, TrampolinePayment.optional))
     assert(pr2.features.allowMultiPart)
     assert(pr2.features.allowTrampoline)
 

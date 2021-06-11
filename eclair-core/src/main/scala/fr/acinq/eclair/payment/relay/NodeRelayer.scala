@@ -19,10 +19,7 @@ package fr.acinq.eclair.payment.relay
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.CMD_FAIL_HTLC
-import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{Logs, NodeParams}
 
 import java.util.UUID
@@ -65,28 +62,19 @@ object NodeRelayer {
         Behaviors.receiveMessage {
           case Relay(nodeRelayPacket) =>
             val htlcIn = nodeRelayPacket.add
-            nodeRelayPacket.outerPayload.paymentSecret match {
-              case Some(paymentSecret) =>
-                val childKey = PaymentKey(htlcIn.paymentHash, paymentSecret)
-                children.get(childKey) match {
-                  case Some(handler) =>
-                    context.log.debug("forwarding incoming htlc #{} from channel {} to existing handler", htlcIn.id, htlcIn.channelId)
-                    handler ! NodeRelay.Relay(nodeRelayPacket)
-                    Behaviors.same
-                  case None =>
-                    val relayId = UUID.randomUUID()
-                    context.log.debug(s"spawning a new handler with relayId=$relayId")
-                    val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, nodeRelayPacket, childKey.paymentSecret, outgoingPaymentFactory), relayId.toString)
-                    context.log.debug("forwarding incoming htlc #{} from channel {} to new handler", htlcIn.id, htlcIn.channelId)
-                    handler ! NodeRelay.Relay(nodeRelayPacket)
-                    apply(nodeParams, register, outgoingPaymentFactory, children + (childKey -> handler))
-                }
-              case None =>
-                context.log.warn("rejecting htlc #{} from channel {}: missing payment secret", htlcIn.id, htlcIn.channelId)
-                val failureMessage = IncorrectOrUnknownPaymentDetails(htlcIn.amountMsat, nodeParams.currentBlockHeight)
-                val cmd = CMD_FAIL_HTLC(htlcIn.id, Right(failureMessage), commit = true)
-                PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, htlcIn.channelId, cmd)
+            val childKey = PaymentKey(htlcIn.paymentHash, nodeRelayPacket.outerPayload.paymentSecret)
+            children.get(childKey) match {
+              case Some(handler) =>
+                context.log.debug("forwarding incoming htlc #{} from channel {} to existing handler", htlcIn.id, htlcIn.channelId)
+                handler ! NodeRelay.Relay(nodeRelayPacket)
                 Behaviors.same
+              case None =>
+                val relayId = UUID.randomUUID()
+                context.log.debug(s"spawning a new handler with relayId=$relayId")
+                val handler = context.spawn(NodeRelay.apply(nodeParams, context.self, register, relayId, nodeRelayPacket, outgoingPaymentFactory), relayId.toString)
+                context.log.debug("forwarding incoming htlc #{} from channel {} to new handler", htlcIn.id, htlcIn.channelId)
+                handler ! NodeRelay.Relay(nodeRelayPacket)
+                apply(nodeParams, register, outgoingPaymentFactory, children + (childKey -> handler))
             }
           case RelayComplete(childHandler, paymentHash, paymentSecret) =>
             // we do a back-and-forth between parent and child before stopping the child to prevent a race condition

@@ -123,7 +123,8 @@ object PaymentRequest {
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
     Block.TestnetGenesisBlock.hash -> "lntb",
-    Block.LivenetGenesisBlock.hash -> "lnbc")
+    Block.LivenetGenesisBlock.hash -> "lnbc"
+  )
 
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
@@ -135,30 +136,31 @@ object PaymentRequest {
             expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil,
             timestamp: Long = System.currentTimeMillis() / 1000L,
-            features: Option[PaymentRequestFeatures] = Some(PaymentRequestFeatures(Features.VariableLengthOnion.mandatory, Features.PaymentSecret.mandatory))): PaymentRequest = {
-
+            paymentSecret: ByteVector32 = randomBytes32(),
+            features: PaymentRequestFeatures = PaymentRequestFeatures(Features.VariableLengthOnion.mandatory, Features.PaymentSecret.mandatory)): PaymentRequest = {
+    require(features.requirePaymentSecret, "invoices must require a payment secret")
     val prefix = prefixes(chainHash)
     val tags = {
       val defaultTags = List(
         Some(PaymentHash(paymentHash)),
         Some(Description(description)),
+        Some(PaymentSecret(paymentSecret)),
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),
         Some(MinFinalCltvExpiry(minFinalCltvExpiryDelta.toInt)),
-        features).flatten
-      val paymentSecretTag = if (features.exists(_.allowPaymentSecret)) PaymentSecret(randomBytes32()) :: Nil else Nil
+        Some(features)
+      ).flatten
       val routingInfoTags = extraHops.map(RoutingInfo)
-      defaultTags ++ paymentSecretTag ++ routingInfoTags
+      defaultTags ++ routingInfoTags
     }
-
     PaymentRequest(
       prefix = prefix,
       amount = amount,
       timestamp = timestamp,
       nodeId = privateKey.publicKey,
       tags = tags,
-      signature = ByteVector.empty)
-      .sign(privateKey)
+      signature = ByteVector.empty
+    ).sign(privateKey)
   }
 
   case class Bolt11Data(timestamp: Long, taggedFields: List[TaggedField], signature: ByteVector)
@@ -485,7 +487,7 @@ object PaymentRequest {
   }
 
   // char -> 5 bits value
-  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.mapValues(BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian)).toMap
+  val charToint5: Map[Char, BitVector] = Bech32.alphabet.zipWithIndex.toMap.view.mapValues(BitVector.fromInt(_, size = 5, ordering = ByteOrdering.BigEndian)).toMap
 
   // TODO: could be optimized by preallocating the resulting buffer
   def string2Bits(data: String): BitVector = data.map(charToint5).foldLeft(BitVector.empty)(_ ++ _)

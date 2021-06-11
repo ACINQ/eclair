@@ -19,10 +19,11 @@ package fr.acinq.eclair.payment.send
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, RemoteFailure}
+import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, PaymentRequest, RemoteFailure}
 import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, randomLong}
+import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 
@@ -52,9 +53,18 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
     case TickProbe =>
       pickPaymentDestination(nodeParams.nodeId, routingData) match {
         case Some(targetNodeId) =>
-          val paymentHash = randomBytes32() // we don't even know the preimage (this needs to be a secure random!)
-          log.info(s"sending payment probe to node=$targetNodeId payment_hash=$paymentHash")
-          paymentInitiator ! PaymentInitiator.SendPaymentRequest(PAYMENT_AMOUNT_MSAT, paymentHash, targetNodeId, maxAttempts = 1)
+          val fakeInvoice = PaymentRequest(
+            PaymentRequest.prefixes(nodeParams.chainHash),
+            Some(PAYMENT_AMOUNT_MSAT),
+            System.currentTimeMillis(),
+            targetNodeId,
+            List(
+              PaymentRequest.PaymentHash(randomBytes32()), // we don't even know the preimage (this needs to be a secure random!)
+              PaymentRequest.Description("ignored"),
+            ),
+            ByteVector.empty)
+          log.info(s"sending payment probe to node=$targetNodeId payment_hash=${fakeInvoice.paymentHash}")
+          paymentInitiator ! PaymentInitiator.SendPayment(PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()
@@ -76,7 +86,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
 
 object Autoprobe {
 
-  def props(nodeParams: NodeParams, router: ActorRef, paymentInitiator: ActorRef) = Props(classOf[Autoprobe], nodeParams, router, paymentInitiator)
+  def props(nodeParams: NodeParams, router: ActorRef, paymentInitiator: ActorRef) = Props(new Autoprobe(nodeParams, router, paymentInitiator))
 
   val ROUTING_TABLE_REFRESH_INTERVAL = 10 minutes
 

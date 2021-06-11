@@ -16,8 +16,6 @@
 
 package fr.acinq.eclair.payment
 
-import java.util.UUID
-
 import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
@@ -30,6 +28,7 @@ import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64, rando
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
+import java.util.UUID
 import scala.reflect.ClassTag
 
 /**
@@ -86,7 +85,6 @@ object IncomingPacket {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
       case Right(DecodedOnionPacket(payload: Onion.ChannelRelayPayload, next)) => Right(ChannelRelayPacket(add, payload, next))
-      case Right(DecodedOnionPacket(payload: Onion.FinalLegacyPayload, _)) => validateFinal(add, payload)
       case Right(DecodedOnionPacket(payload: Onion.FinalTlvPayload, _)) => payload.records.get[OnionTlv.TrampolineOnion] match {
         case Some(OnionTlv.TrampolineOnion(trampolinePacket)) => decryptOnion(add, privateKey)(trampolinePacket, Sphinx.TrampolinePacket) match {
           case Left(failure) => Left(failure)
@@ -117,12 +115,10 @@ object IncomingPacket {
       Left(FinalIncorrectCltvExpiry(add.cltvExpiry)) // previous trampoline didn't forward the right expiry
     } else if (outerPayload.totalAmount != innerPayload.amount) {
       Left(FinalIncorrectHtlcAmount(outerPayload.totalAmount)) // previous trampoline didn't forward the right amount
-    } else if (innerPayload.paymentSecret.isEmpty) {
-      Left(InvalidOnionPayload(UInt64(8), 0)) // trampoline recipients always provide a payment secret in the invoice
     } else {
       // We merge contents from the outer and inner payloads.
       // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-      Right(FinalPacket(add, Onion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret.get)))
+      Right(FinalPacket(add, Onion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret)))
     }
   }
 
@@ -174,8 +170,7 @@ object OutgoingPacket {
     hops.reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[Onion.PerHopPayload](finalPayload))) {
       case ((amount, expiry, payloads), hop) =>
         val payload = hop match {
-          // Since we don't have any scenario where we add tlv data for intermediate hops, we use legacy payloads.
-          case hop: ChannelHop => Onion.RelayLegacyPayload(hop.lastUpdate.shortChannelId, amount, expiry)
+          case hop: ChannelHop => Onion.ChannelRelayTlvPayload(hop.lastUpdate.shortChannelId, amount, expiry)
           case hop: NodeHop => Onion.createNodeRelayPayload(amount, expiry, hop.nextNodeId)
         }
         (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads)
