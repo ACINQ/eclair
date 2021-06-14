@@ -45,6 +45,7 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
+import java.lang.management.ManagementFactory
 import java.sql.SQLException
 import scala.collection.immutable.Queue
 import scala.concurrent.ExecutionContext
@@ -125,6 +126,38 @@ object Channel {
 
   /** We don't immediately process [[CurrentBlockCount]] to avoid herd effects */
   case class ProcessCurrentBlockCount(c: CurrentBlockCount)
+
+  // @formatter:off
+  /** What do we do if we detect that our local commitment is outdated. */
+  sealed trait OutdatedCommitmentStrategy
+  object OutdatedCommitmentStrategy {
+    /**
+     * Ask our counterparty to close the channel, whenever our peer proves to us *or* simply tells us (could be lying)
+     * that we are using an outdated commitment.
+     * This may be the best choice for smaller loosely administered nodes.
+     */
+    case object AlwaysRequestRemoteClose extends OutdatedCommitmentStrategy
+    /**
+     * If the node was just restarted, just log an error and stop the app. The goal is to prevent unwanted mass
+     * force-close of channels if we accidentally restarted the node with an outdated backup. After a few minutes, we
+     * revert to the default behavior of requesting our peer to force close, otherwise this opens a huge attack vector
+     * where any peer can remotely stop our node.
+     * This strategy may be better suited for larger nodes, closely administered.
+     */
+    case object HaltIfJustRestarted extends OutdatedCommitmentStrategy
+  }
+  // @formatter:on
+
+  // @formatter:off
+  /** What do we do if we have a local unhandled exception. */
+  sealed trait UnhandledExceptionStrategy
+  object UnhandledExceptionStrategy {
+    /** Ask our counterparty to close the channel. This may be the best choice for smaller loosely administered nodes.*/
+    case object LocalForceClose extends UnhandledExceptionStrategy
+    /** Just log an error and stop the node. May be better for larger nodes, to prevent unwanted mass force-close.*/
+    case object LogAndStop extends UnhandledExceptionStrategy
+  }
+  // @formatter:on
 
 }
 
@@ -1591,9 +1624,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             log.warning(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${d.commitments.localCommit.index} theirCommitmentNumber=$nextRemoteRevocationNumber")
             // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
             // would punish us by taking all the funds in the channel
-            val exc = PleasePublishYourCommitment(d.channelId)
-            val error = Error(d.channelId, exc.getMessage)
-            goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish) storing() sending error
+            handleOutdatedCommitment(channelReestablish, d)
           } else {
             // they lied! the last per_commitment_secret they claimed to have received from us is invalid
             throw InvalidRevokedCommitProof(d.channelId, d.commitments.localCommit.index, nextRemoteRevocationNumber, yourLastPerCommitmentSecret)
@@ -1604,9 +1635,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
           // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
           // not that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
-          val exc = PleasePublishYourCommitment(d.channelId)
-          val error = Error(d.channelId, exc.getMessage)
-          goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish) storing() sending error
+          handleOutdatedCommitment(channelReestablish, d)
         case _ =>
           // normal case, our data is up-to-date
           if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
@@ -2141,14 +2170,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   private def handleLocalError(cause: Throwable, d: Data, msg: Option[Any]) = {
     cause match {
-      case _: ForcedLocalCommit => log.warning(s"force-closing channel at user request")
-      case _ if stateName == WAIT_FOR_OPEN_CHANNEL => log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
-      case _ => log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
+      case _: ForcedLocalCommit =>
+        log.warning(s"force-closing channel at user request")
+      case _: ChannelException =>
+        log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
+      case _ =>
+        // unhandled error: we dump the channel data, and print the stack trace
+        log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData:")
     }
-    cause match {
-      case _: ChannelException => ()
-      case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData")
-    }
+
     val error = Error(d.channelId, cause.getMessage)
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, LocalError(cause), isFatal = true))
 
@@ -2158,7 +2188,22 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         log.info(s"we have a valid closing tx, publishing it instead of our commitment: closingTxId=${bestUnpublishedClosingTx.tx.txid}")
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
-      case dd: HasCommitments => spendLocalCurrent(dd) sending error // otherwise we use our current commitment
+      case dd: HasCommitments =>
+        cause match {
+          case _: ChannelException =>
+            // known channel exception: we force close using our current commitment
+            spendLocalCurrent(dd) sending error
+          case _ =>
+            // unhandled exception: we apply the configured strategy
+            nodeParams.unhandledExceptionStrategy match {
+              case UnhandledExceptionStrategy.LocalForceClose =>
+                spendLocalCurrent(dd) sending error
+              case UnhandledExceptionStrategy.LogAndStop =>
+                log.error("stopping the node (unhandled exception")
+                System.exit(1)
+                stop(FSM.Shutdown)
+            }
+        }
       case _ => goto(CLOSED) sending error // when there is no commitment yet, we just send an error to our peer and go to CLOSED state
     }
   }
@@ -2399,6 +2444,19 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(ERR_INFORMATION_LEAK) calling doPublish(localCommitPublished, d.commitments) sending error
   }
 
+  private def handleOutdatedCommitment(channelReestablish: ChannelReestablish, d: HasCommitments) = {
+    nodeParams.outdatedCommitmentStrategy match {
+      case OutdatedCommitmentStrategy.HaltIfJustRestarted if ManagementFactory.getRuntimeMXBean.getUptime.millis < 10.minutes =>
+        log.error("we just restarted and may have an outdated commitment! stopping the node")
+        System.exit(1)
+        stop(FSM.Shutdown)
+      case OutdatedCommitmentStrategy.AlwaysRequestRemoteClose =>
+        val exc = PleasePublishYourCommitment(d.channelId)
+        val error = Error(d.channelId, exc.getMessage)
+        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish) storing() sending error
+    }
+  }
+
   private def handleSync(channelReestablish: ChannelReestablish, d: HasCommitments): (Commitments, Queue[LightningMessage]) = {
     var sendQueue = Queue.empty[LightningMessage]
     // first we clean up unacknowledged updates
@@ -2564,7 +2622,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   }
 
   // we let the peer decide what to do
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
+  override val supervisorStrategy: OneForOneStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
 
   override def aroundReceive(receive: Actor.Receive, msg: Any): Unit = {
     KamonExt.time(ProcessMessage.withTag("MessageType", msg.getClass.getSimpleName)) {
