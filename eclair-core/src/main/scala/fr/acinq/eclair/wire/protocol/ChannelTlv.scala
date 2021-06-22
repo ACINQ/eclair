@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.featuresCodec
+import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
+import fr.acinq.eclair.{Features, UInt64}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -40,8 +41,11 @@ object OpenChannelTlv {
 
   import ChannelTlv._
 
+  case class ChannelTypes(proposed: List[Features]) extends OpenChannelTlv
+
   val openTlvCodec: Codec[TlvStream[OpenChannelTlv]] = tlvStream(discriminated[OpenChannelTlv].by(varint)
     .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript])
+    .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, list(featuresCodec)).as[ChannelTypes])
   )
 
 }
@@ -50,7 +54,11 @@ object AcceptChannelTlv {
 
   import ChannelTlv._
 
+  case class ChannelType(features: Features) extends AcceptChannelTlv
+
   val acceptTlvCodec: Codec[TlvStream[AcceptChannelTlv]] = tlvStream(discriminated[AcceptChannelTlv].by(varint)
     .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript])
+    .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, featuresCodec).as[ChannelType])
   )
+
 }

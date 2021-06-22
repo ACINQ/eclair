@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.{Block, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeerateTolerance}
+import fr.acinq.eclair.channel.ChannelType
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -86,9 +87,19 @@ class StartupSpec extends AnyFunSuite {
   }
 
   test("NodeParams should fail if features are inconsistent") {
+    // We don't want to test inconsistencies between channel types and features in this test, so we only keep the
+    // standard channel type that requires no feature.
+    val defaultChannelTypes = ConfigFactory.parseString(
+      """
+        |  channel-types {
+        |    commitment-format = ["standard"]
+        |  }
+      """.stripMargin
+    )
+
     // Because of https://github.com/ACINQ/eclair/issues/1434, we need to remove the default features when falling back
     // to the default configuration.
-    def finalizeConf(testCfg: Config): Config = testCfg.withFallback(defaultConf.withoutPath("features"))
+    def finalizeConf(testCfg: Config): Config = testCfg.withFallback(defaultChannelTypes).withFallback(defaultConf.withoutPath("features"))
 
     val legalFeaturesConf = ConfigFactory.parseMap(Map(
       s"features.${OptionDataLossProtect.rfcName}" -> "optional",
@@ -135,6 +146,7 @@ class StartupSpec extends AnyFunSuite {
       s"features.${ChannelRangeQueriesExtended.rfcName}" -> "optional"
     ).asJava)
 
+    makeNodeParamsWithDefaults(finalizeConf(legalFeaturesConf))
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(legalFeaturesConf))).isSuccess)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(noVariableLengthOnionConf))).isFailure)
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(optionalVarOnionOptinConf))).isFailure)
@@ -143,25 +155,178 @@ class StartupSpec extends AnyFunSuite {
     assert(Try(makeNodeParamsWithDefaults(finalizeConf(illegalFeaturesConf))).isFailure)
   }
 
-  test("parse human readable override features") {
+  test("NodeParams should fail if channel types are inconsistent with features") {
+    val validConf1 = ConfigFactory.parseString(
+      """
+        |  features {
+        |    var_onion_optin = mandatory
+        |    payment_secret = mandatory
+        |    basic_mpp = mandatory
+        |    option_static_remotekey = optional
+        |  }
+        |  channel-types {
+        |    commitment-format = ["standard", "static_remotekey"]
+        |  }
+      """.stripMargin
+    )
+
+    val validConf2 = ConfigFactory.parseString(
+      """
+        |  features {
+        |    var_onion_optin = mandatory
+        |    payment_secret = mandatory
+        |    basic_mpp = mandatory
+        |    option_static_remotekey = optional
+        |    option_anchor_outputs = optional
+        |  }
+        |  channel-types {
+        |    commitment-format = ["standard", "static_remotekey", "anchor_outputs"]
+        |  }
+      """.stripMargin
+    )
+
+    val unknownChannelType = ConfigFactory.parseString(
+      """
+        |  features {
+        |    var_onion_optin = mandatory
+        |    payment_secret = mandatory
+        |    basic_mpp = mandatory
+        |    option_static_remotekey = optional
+        |  }
+        |  channel-types {
+        |    commitment-format = ["standard", "much_commitment_very_format"]
+        |  }
+      """.stripMargin
+    )
+
+    val missingFeature = ConfigFactory.parseString(
+      """
+        |  features {
+        |    var_onion_optin = mandatory
+        |    payment_secret = mandatory
+        |    basic_mpp = mandatory
+        |    option_static_remotekey = optional
+        |  }
+        |  channel-types {
+        |    commitment-format = ["standard", "anchor_outputs"]
+        |  }
+      """.stripMargin
+    )
+
+    assert(Try(makeNodeParamsWithDefaults(validConf1.withFallback(defaultConf))).isSuccess)
+    assert(Try(makeNodeParamsWithDefaults(validConf2.withFallback(defaultConf))).isSuccess)
+    assert(Try(makeNodeParamsWithDefaults(unknownChannelType.withFallback(defaultConf))).isFailure)
+    assert(Try(makeNodeParamsWithDefaults(missingFeature.withFallback(defaultConf))).isFailure)
+  }
+
+  test("override features and channel types") {
+    val defaultFeatures = ConfigFactory.parseString(
+      """
+        |  features {
+        |    var_onion_optin = mandatory
+        |    payment_secret = mandatory
+        |    option_static_remotekey = optional
+        |  }
+      """.stripMargin
+    ).withFallback(defaultConf.withoutPath("features"))
+    val defaultChannelTypes = ConfigFactory.parseString(
+      """
+        |  channel-types {
+        |    commitment-format = ["standard", "static_remotekey"]
+        |  }
+      """.stripMargin
+    )
     val perNodeConf = ConfigFactory.parseString(
       """
         |  override-features = [ // optional per-node features
         |      {
         |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        |          features {
-        |            var_onion_optin = mandatory
-        |            payment_secret = mandatory
-        |            basic_mpp = mandatory
-        |          }
+        |        features {
+        |          var_onion_optin = mandatory
+        |          payment_secret = mandatory
+        |          basic_mpp = mandatory
+        |        }
+        |        channel-types {
+        |          commitment-format = ["standard"]
+        |        }
+        |      },
+        |      {
+        |        nodeid = "02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        |        features {
+        |          var_onion_optin = mandatory
+        |          payment_secret = mandatory
+        |          option_static_remotekey = optional
+        |          option_anchor_outputs = optional
+        |        }
+        |        channel-types {
+        |          commitment-format = ["static_remotekey", "anchor_outputs"]
+        |        }
+        |      },
+        |      {
+        |        nodeid = "02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        |        features {
+        |          var_onion_optin = mandatory
+        |          payment_secret = mandatory
+        |          option_static_remotekey = optional
+        |          option_anchor_outputs = optional
+        |        }
+        |      },
+        |      {
+        |        nodeid = "02dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        |        channel-types {
+        |          commitment-format = ["static_remotekey"]
+        |        }
+        |      }
+        |  ]
+      """.stripMargin
+    )
+    val invalidPerNodeConf = ConfigFactory.parseString(
+      """
+        |  override-features = [ // optional per-node features
+        |      {
+        |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        |        features {
+        |          var_onion_optin = mandatory
+        |          payment_secret = mandatory
+        |          basic_mpp = mandatory
+        |        }
+        |        channel-types = ["basic", "anchor_outputs"]
         |      }
         |  ]
       """.stripMargin
     )
 
-    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    val perNodeFeatures = nodeParams.featuresFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
-    assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory))
+    assert(Try(makeNodeParamsWithDefaults(invalidPerNodeConf.withFallback(defaultChannelTypes).withFallback(defaultFeatures))).isFailure)
+    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultChannelTypes).withFallback(defaultFeatures))
+
+    {
+      val alice = PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
+      val perNodeFeatures = nodeParams.featuresFor(alice)
+      val perNodeChannelTypes = nodeParams.channelTypesFor(alice)
+      assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory))
+      assert(perNodeChannelTypes === List(ChannelType(Features.empty)))
+    }
+    {
+      val bob = PublicKey(ByteVector.fromValidHex("02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"))
+      val perNodeFeatures = nodeParams.featuresFor(bob)
+      val perNodeChannelTypes = nodeParams.channelTypesFor(bob)
+      assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
+      assert(perNodeChannelTypes === List(ChannelType(Features(StaticRemoteKey -> Optional)), ChannelType(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))))
+    }
+    {
+      val carol = PublicKey(ByteVector.fromValidHex("02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"))
+      val perNodeFeatures = nodeParams.featuresFor(carol)
+      val perNodeChannelTypes = nodeParams.channelTypesFor(carol)
+      assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
+      assert(perNodeChannelTypes === List(ChannelType(Features.empty), ChannelType(Features(StaticRemoteKey -> Optional))))
+    }
+    {
+      val dave = PublicKey(ByteVector.fromValidHex("02dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"))
+      val perNodeFeatures = nodeParams.featuresFor(dave)
+      val perNodeChannelTypes = nodeParams.channelTypesFor(dave)
+      assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, StaticRemoteKey -> Optional))
+      assert(perNodeChannelTypes === List(ChannelType(Features(StaticRemoteKey -> Optional))))
+    }
   }
 
   test("override feerate mismatch tolerance") {

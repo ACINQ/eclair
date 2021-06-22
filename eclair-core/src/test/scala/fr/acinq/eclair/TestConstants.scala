@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf, _}
-import fr.acinq.eclair.channel.LocalParams
+import fr.acinq.eclair.channel.{ChannelType, LocalParams}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Router.RouterConf
@@ -93,6 +93,7 @@ object TestConstants {
         ),
         Set(UnknownFeature(TestFeature.optional))
       ),
+      channelTypes = List(ChannelType(Features.empty)),
       pluginParams = List(pluginParams),
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,
@@ -199,6 +200,7 @@ object TestConstants {
         PaymentSecret -> Mandatory,
         BasicMultiPartPayment -> Optional
       ),
+      channelTypes = List(ChannelType(Features.empty)),
       pluginParams = Nil,
       overrideFeatures = Map.empty,
       syncWhitelist = Set.empty,

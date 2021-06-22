@@ -483,6 +483,8 @@ object ChannelFlags {
   val Empty = 0x00.toByte
 }
 
+case class ChannelType(features: Features)
+
 case class ChannelVersion(bits: BitVector) {
   import ChannelVersion._
 

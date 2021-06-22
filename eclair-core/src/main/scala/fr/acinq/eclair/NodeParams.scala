@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.{Channel, ChannelType}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
@@ -52,7 +52,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       color: Color,
                       publicAddresses: List[NodeAddress],
                       features: Features,
-                      private val overrideFeatures: Map[PublicKey, Features],
+                      channelTypes: List[ChannelType],
+                      private val overrideFeatures: Map[PublicKey, (Features, List[ChannelType])],
                       syncWhitelist: Set[PublicKey],
                       pluginParams: Seq[PluginParams],
                       dustLimit: Satoshi,
@@ -100,7 +101,16 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
 
   def currentBlockHeight: Long = blockCount.get
 
-  def featuresFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features)
+  def featuresFor(nodeId: PublicKey): Features = overrideFeatures.get(nodeId) match {
+    case Some((featuresOverride, _)) if featuresOverride.activated.nonEmpty => featuresOverride
+    case _ => features
+  }
+
+  def channelTypesFor(nodeId: PublicKey): List[ChannelType] = overrideFeatures.get(nodeId) match {
+    case Some((_, channelTypesOverride)) if channelTypesOverride.nonEmpty => channelTypesOverride
+    case _ => channelTypes
+  }
+
 }
 
 object NodeParams extends Logging {
@@ -247,6 +257,28 @@ object NodeParams extends Logging {
     val features = Features.fromConfiguration(config)
     validateFeatures(features)
 
+    def parseChannelTypes(config: Config): List[ChannelType] = {
+      if (!config.hasPath("channel-types")) {
+        Nil
+      } else {
+        config.getStringList("channel-types.commitment-format").asScala.toList.map {
+          case "standard" => ChannelType(Features.empty)
+          case "static_remotekey" => ChannelType(Features(Features.StaticRemoteKey -> FeatureSupport.Optional))
+          case "anchor_outputs" => ChannelType(Features(Features.StaticRemoteKey -> FeatureSupport.Optional, Features.AnchorOutputs -> FeatureSupport.Optional))
+          case unknown => throw new RuntimeException(s"unsupported channel type: $unknown")
+        }
+      }
+    }
+
+    def validateChannelTypes(features: Features, channelTypes: List[ChannelType]): Unit = {
+      channelTypes.foreach(channelType => channelType.features.activated.keys.foreach(f =>
+        require(features.hasFeature(f), s"feature $f is necessary for channel-type $channelType: you must either enable $f or disable $channelType")
+      ))
+    }
+
+    val channelTypes = parseChannelTypes(config)
+    validateChannelTypes(features, channelTypes)
+
     require(pluginMessageParams.forall(_.feature.mandatory > 128), "Plugin mandatory feature bit is too low, must be > 128")
     require(pluginMessageParams.forall(_.feature.mandatory % 2 == 0), "Plugin mandatory feature bit is odd, must be even")
     require(pluginMessageParams.flatMap(_.messageTags).forall(_ > 32768), "Plugin messages tags must be > 32768")
@@ -256,11 +288,19 @@ object NodeParams extends Logging {
 
     val coreAndPluginFeatures = features.copy(unknown = features.unknown ++ pluginMessageParams.map(_.pluginFeature))
 
-    val overrideFeatures: Map[PublicKey, Features] = config.getConfigList("override-features").asScala.map { e =>
+    val overrideFeatures: Map[PublicKey, (Features, List[ChannelType])] = config.getConfigList("override-features").asScala.map { e =>
       val p = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
-      val f = Features.fromConfiguration(e)
-      validateFeatures(f)
-      p -> f.copy(unknown = f.unknown ++ pluginMessageParams.map(_.pluginFeature))
+      val featuresOverride = Features.fromConfiguration(e) match {
+        case f if f.activated.nonEmpty => f
+        case _ => features
+      }
+      validateFeatures(featuresOverride)
+      val channelTypesOverride = parseChannelTypes(e) match {
+        case ct if ct.nonEmpty => ct
+        case _ => channelTypes
+      }
+      validateChannelTypes(featuresOverride, channelTypesOverride)
+      p -> (featuresOverride.copy(unknown = featuresOverride.unknown ++ pluginMessageParams.map(_.pluginFeature)), channelTypesOverride)
     }.toMap
 
     val syncWhitelist: Set[PublicKey] = config.getStringList("sync-whitelist").asScala.map(s => PublicKey(ByteVector.fromValidHex(s))).toSet
@@ -309,6 +349,7 @@ object NodeParams extends Logging {
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
       features = coreAndPluginFeatures,
+      channelTypes = channelTypes,
       pluginParams = pluginParams,
       overrideFeatures = overrideFeatures,
       syncWhitelist = syncWhitelist,
