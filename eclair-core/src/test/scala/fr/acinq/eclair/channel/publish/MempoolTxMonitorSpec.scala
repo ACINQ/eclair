@@ -27,7 +27,8 @@ import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpen
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.publish.MempoolTxMonitor.{Publish, Stop, TxConfirmed, TxRejected}
-import fr.acinq.eclair.channel.publish.TxPublisher.{ConflictingTxConfirmed, ConflictingTxUnconfirmed, TxPublishInfo, WalletInputGone}
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishInfo
+import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike

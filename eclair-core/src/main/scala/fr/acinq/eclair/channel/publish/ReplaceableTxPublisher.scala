@@ -200,7 +200,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       log.info("skipping {}: commit feerate is high enough (feerate={})", cmd.desc, commitFeerate)
       // We set retry = true in case the on-chain feerate rises before the commit tx is confirmed: if that happens we'll
       // want to claim our anchor to raise the feerate of the commit tx and get it confirmed faster.
-      sendResult(replyTo, TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, TxPublisher.TxSkipped(retryNextBlock = true)))
+      sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
     } else {
       // We verify that:
       //  - our commit is not confirmed (if it is, no need to claim our anchor)
@@ -224,14 +224,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         case PreconditionsOk => fund(replyTo, cmd, targetFeerate)
         case CommitTxAlreadyConfirmed =>
           log.debug("commit tx is already confirmed, no need to claim our anchor")
-          sendResult(replyTo, TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, TxPublisher.TxSkipped(retryNextBlock = false)))
+          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
         case RemoteCommitTxPublished =>
           log.warn("cannot publish commit tx: there is a conflicting tx in the mempool")
           // We retry until that conflicting commit tx is confirmed or we're able to publish our local commit tx.
-          sendResult(replyTo, TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, TxPublisher.TxSkipped(retryNextBlock = true)))
+          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
         case UnknownFailure(reason) =>
           log.error(s"could not check ${cmd.desc} preconditions", reason)
-          sendResult(replyTo, TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, TxPublisher.UnknownTxFailure))
+          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
         case Stop => Behaviors.stopped
       }
     }
@@ -254,7 +254,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         fund(replyTo, cmd, targetFeerate)
       case None =>
         log.error("witness data not found for htlcId={}, skipping...", htlcTx.htlcId)
-        sendResult(replyTo, TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, TxPublisher.TxSkipped(retryNextBlock = false)))
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
     }
   }
 
@@ -273,7 +273,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         } else {
           log.error("cannot add inputs to {}: {}", cmd.desc, reason)
         }
-        sendResult(replyTo, TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, TxPublisher.CouldNotFund))
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.CouldNotFund))
       case Stop =>
         // We've asked bitcoind to lock utxos, so we can't stop right now without unlocking them.
         // Since we don't know yet what utxos have been locked, we defer the message.
@@ -315,7 +315,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case PublishSignedTx(signedTx) => publish(replyTo, cmd, signedTx)
       case UnknownFailure(reason) =>
         log.error("cannot sign {}: {}", cmd.desc, reason)
-        replyTo ! TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, TxPublisher.UnknownTxFailure)
+        replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure)
         // We wait for our parent to stop us: when that happens we will unlock utxos.
         Behaviors.same
       case Stop => unlockAndStop(cmd.input, fundedTx.tx)
@@ -326,9 +326,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx, cmd.input)
     Behaviors.receiveMessagePartial {
-      case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.PublishTxResult.TxConfirmed(cmd, tx))
+      case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, tx))
       case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) =>
-        replyTo ! TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, reason)
+        replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
         // We wait for our parent to stop us: when that happens we will unlock utxos.
         Behaviors.same
       case Stop =>

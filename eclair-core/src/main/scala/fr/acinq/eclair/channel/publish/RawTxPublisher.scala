@@ -110,7 +110,7 @@ private class RawTxPublisher(nodeParams: NodeParams,
             Behaviors.same
           case UnknownFailure(reason) =>
             log.error("could not check parent tx", reason)
-            sendResult(replyTo, TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, TxPublisher.UnknownTxFailure))
+            sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
           case Stop => Behaviors.stopped
         }
       case None => publish(replyTo, cmd)
@@ -121,8 +121,8 @@ private class RawTxPublisher(nodeParams: NodeParams,
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input)
     Behaviors.receiveMessagePartial {
-      case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.PublishTxResult.TxConfirmed(cmd, cmd.tx))
-      case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) => sendResult(replyTo, TxPublisher.PublishTxResult.TxRejected(loggingInfo.id, cmd, reason))
+      case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, cmd.tx))
+      case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) => sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
       case Stop =>
         txMonitor ! MempoolTxMonitor.Stop
         Behaviors.stopped

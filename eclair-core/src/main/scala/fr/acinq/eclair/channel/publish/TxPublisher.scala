@@ -94,30 +94,30 @@ object TxPublisher {
   sealed trait PublishTxResult extends Command {
     def cmd: PublishTx
   }
-  object PublishTxResult {
-    /**
-     * The requested transaction has been confirmed.
-     *
-     * @param tx the confirmed transaction (which may be different from the initial tx because of RBF).
-     */
-    case class TxConfirmed(cmd: PublishTx, tx: Transaction) extends PublishTxResult
-    /** The requested transaction could not be published at that time, or was evicted from the mempool. */
-    case class TxRejected(id: UUID, cmd: PublishTx, reason: TxRejectedReason) extends PublishTxResult
-  }
+  /**
+   * The requested transaction has been confirmed.
+   *
+   * @param tx the confirmed transaction (which may be different from the initial tx because of RBF).
+   */
+  case class TxConfirmed(cmd: PublishTx, tx: Transaction) extends PublishTxResult
+  /** The requested transaction could not be published at that time, or was evicted from the mempool. */
+  case class TxRejected(id: UUID, cmd: PublishTx, reason: TxRejectedReason) extends PublishTxResult
 
   sealed trait TxRejectedReason
-  /** We don't have enough funds in our wallet to reach the given feerate. */
-  case object CouldNotFund extends TxRejectedReason
-  /** The transaction was published but then evicted from the mempool, because one of its wallet inputs disappeared (e.g. unconfirmed output of a transaction that was replaced). */
-  case object WalletInputGone extends TxRejectedReason
-  /** A conflicting transaction spending the same input has been confirmed. */
-  case object ConflictingTxConfirmed extends TxRejectedReason
-  /** A conflicting transaction spending the same input is in the mempool and we failed to replace it. */
-  case object ConflictingTxUnconfirmed extends TxRejectedReason
-  /** The transaction wasn't published because it's unnecessary or we're missing information. */
-  case class TxSkipped(retryNextBlock: Boolean) extends TxRejectedReason
-  /** Unrecoverable failure. */
-  case object UnknownTxFailure extends TxRejectedReason
+  object TxRejectedReason {
+    /** We don't have enough funds in our wallet to reach the given feerate. */
+    case object CouldNotFund extends TxRejectedReason
+    /** The transaction was published but then evicted from the mempool, because one of its wallet inputs disappeared (e.g. unconfirmed output of a transaction that was replaced). */
+    case object WalletInputGone extends TxRejectedReason
+    /** A conflicting transaction spending the same input has been confirmed. */
+    case object ConflictingTxConfirmed extends TxRejectedReason
+    /** A conflicting transaction spending the same input is in the mempool and we failed to replace it. */
+    case object ConflictingTxUnconfirmed extends TxRejectedReason
+    /** The transaction wasn't published because it's unnecessary or we're missing information. */
+    case class TxSkipped(retryNextBlock: Boolean) extends TxRejectedReason
+    /** Unrecoverable failure. */
+    case object UnknownTxFailure extends TxRejectedReason
+  }
 
   case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   case class SetChannelId(remoteNodeId: PublicKey, channelId: ByteVector32) extends Command
@@ -215,36 +215,36 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         }
 
       case result: PublishTxResult => result match {
-        case PublishTxResult.TxConfirmed(cmd, _) =>
+        case TxConfirmed(cmd, _) =>
           pending.get(cmd.input).foreach(stopAttempts)
           run(pending - cmd.input, retryNextBlock, channelInfo)
-        case PublishTxResult.TxRejected(id, cmd, reason) =>
+        case TxRejected(id, cmd, reason) =>
           val (rejectedAttempts, remainingAttempts) = pending.getOrElse(cmd.input, Seq.empty).partition(_.id == id)
           stopAttempts(rejectedAttempts)
           val pending2 = if (remainingAttempts.isEmpty) pending - cmd.input else pending + (cmd.input -> remainingAttempts)
           reason match {
-            case WalletInputGone =>
+            case TxRejectedReason.WalletInputGone =>
               // Our transaction has been evicted from the mempool because it depended on an unconfirmed input that has
               // been replaced. We should be able to retry right now with new wallet inputs (no need to wait for a new
               // block).
               timers.startSingleTimer(cmd, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
               run(pending2, retryNextBlock, channelInfo)
-            case CouldNotFund =>
+            case TxRejectedReason.CouldNotFund =>
               // We don't have enough funds at the moment to afford our target feerate, but it may change once pending
               // transactions confirm, so we retry when a new block is found.
               run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelInfo)
-            case TxSkipped(retry) =>
+            case TxRejectedReason.TxSkipped(retry) =>
               val retryNextBlock2 = if (retry) retryNextBlock ++ rejectedAttempts.map(_.cmd) else retryNextBlock
               run(pending2, retryNextBlock2, channelInfo)
-            case ConflictingTxUnconfirmed =>
+            case TxRejectedReason.ConflictingTxUnconfirmed =>
               // Our transaction was replaced by a transaction that pays more fees, so it doesn't make sense to retry now.
               // We will automatically retry with a higher fee if we get close to the deadline.
               run(pending2, retryNextBlock, channelInfo)
-            case ConflictingTxConfirmed =>
+            case TxRejectedReason.ConflictingTxConfirmed =>
               // Our transaction was double-spent by a competing transaction that has been confirmed, so it doesn't make
               // sense to retry.
               run(pending2, retryNextBlock, channelInfo)
-            case UnknownTxFailure =>
+            case TxRejectedReason.UnknownTxFailure =>
               // We don't automatically retry unknown failures, they should be investigated manually.
               run(pending2, retryNextBlock, channelInfo)
           }

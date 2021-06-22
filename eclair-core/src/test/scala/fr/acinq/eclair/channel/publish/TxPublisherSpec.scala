@@ -25,7 +25,7 @@ import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.publish
-import fr.acinq.eclair.channel.publish.TxPublisher.PublishTxResult.{TxConfirmed, TxRejected}
+import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, InputInfo}
 import fr.acinq.eclair.{NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}

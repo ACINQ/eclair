@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop}
-import fr.acinq.eclair.channel.publish.TxPublisher.PublishTxResult.{TxConfirmed, TxRejected}
+import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.{ConflictingTxUnconfirmed, CouldNotFund, TxSkipped}
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, HtlcTimeoutTx}

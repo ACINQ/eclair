@@ -27,8 +27,8 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.publish.RawTxPublisher.{Publish, Stop}
-import fr.acinq.eclair.channel.publish.TxPublisher.PublishTxResult.{TxConfirmed, TxRejected}
-import fr.acinq.eclair.channel.publish.TxPublisher.{ConflictingTxConfirmed, PublishRawTx, TxPublishInfo}
+import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.ConflictingTxConfirmed
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, TxConfirmed, TxPublishInfo, TxRejected}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
