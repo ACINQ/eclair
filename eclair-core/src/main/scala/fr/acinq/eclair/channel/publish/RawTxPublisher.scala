@@ -93,11 +93,11 @@ private class RawTxPublisher(nodeParams: NodeParams,
 
   def checkParentPublished(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishRawTx): Behavior[Command] = {
     cmd.parentTx_opt match {
-      case Some(parentTx) =>
+      case Some(parentTxId) =>
         context.self ! CheckParentTx
         Behaviors.receiveMessagePartial {
           case CheckParentTx =>
-            context.pipeToSelf(bitcoinClient.getTxConfirmations(parentTx.txid)) {
+            context.pipeToSelf(bitcoinClient.getTxConfirmations(parentTxId)) {
               case Success(Some(_)) => ParentTxOk
               case Success(None) => ParentTxMissing
               case Failure(reason) => UnknownFailure(reason)

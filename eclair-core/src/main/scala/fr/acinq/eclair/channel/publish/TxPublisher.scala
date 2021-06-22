@@ -81,9 +81,9 @@ object TxPublisher {
    * NB: the parent tx should only be provided when it's being concurrently published, it's unnecessary when it is
    * confirmed or when the tx has a relative delay.
    */
-  case class PublishRawTx(tx: Transaction, input: OutPoint, desc: String, parentTx_opt: Option[Transaction]) extends PublishTx
+  case class PublishRawTx(tx: Transaction, input: OutPoint, desc: String, parentTx_opt: Option[ByteVector32]) extends PublishTx
   object PublishRawTx {
-    def apply(txInfo: TransactionWithInputInfo, parentTx_opt: Option[Transaction]): PublishRawTx = PublishRawTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, parentTx_opt)
+    def apply(txInfo: TransactionWithInputInfo, parentTx_opt: Option[ByteVector32]): PublishRawTx = PublishRawTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
   case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments) extends PublishTx {

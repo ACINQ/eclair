@@ -297,7 +297,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     closingState.commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
-        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishRawTx(tx, Some(commitTx)) }: _*)
+        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishRawTx(tx, Some(commitTx.txid)) }: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
       case Transactions.AnchorOutputsCommitmentFormat =>
         // all htlcs success/timeout should be published as replaceable txs, without claiming their outputs

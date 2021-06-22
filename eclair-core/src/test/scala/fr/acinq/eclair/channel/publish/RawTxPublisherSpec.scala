@@ -111,7 +111,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val ancestorTx = sendToAddress(address, 125_000 sat, probe)
     val parentTx = createSpendP2WPKH(ancestorTx, priv, priv.publicKey, 2_500 sat, 0, 0)
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_000 sat, 0, 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-with-parent", Some(parentTx))
+    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-with-parent", Some(parentTx.txid))
     publisher ! Publish(probe.ref, cmd)
 
     // Since the parent is not published yet, we can't publish the child tx either:
