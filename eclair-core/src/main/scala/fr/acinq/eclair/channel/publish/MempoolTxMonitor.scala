@@ -186,7 +186,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: ExtendedBi
   private def computeInputStatus(parentConfirmations: Option[Int], spendableMempoolExcluded: Boolean, spendableMempoolIncluded: Boolean): InputStatus = {
     parentConfirmations match {
       case Some(0) => InputStatus(spentConfirmed = false, spentUnconfirmed = !spendableMempoolIncluded)
-      case Some(_) => InputStatus(!spendableMempoolExcluded, !spendableMempoolIncluded)
+      case Some(_) => InputStatus(!spendableMempoolExcluded, spendableMempoolExcluded && !spendableMempoolIncluded)
       case None => InputStatus(spentConfirmed = false, spentUnconfirmed = false)
     }
   }
