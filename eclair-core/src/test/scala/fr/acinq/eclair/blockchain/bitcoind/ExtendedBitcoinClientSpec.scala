@@ -105,6 +105,61 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     }
   }
 
+  test("unlock utxos when transaction is published") {
+    val sender = TestProbe()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+
+    // create a first transaction with multiple inputs
+    val tx1 = {
+      val fundedTxs = (1 to 3).map(_ => {
+        val txNotFunded = Transaction(2, Nil, TxOut(15000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+        bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw, lockUtxos = true)).pipeTo(sender.ref)
+        sender.expectMsgType[FundTransactionResponse].tx
+      })
+      val fundedTx = Transaction(2, fundedTxs.flatMap(_.txIn), fundedTxs.flatMap(_.txOut), 0)
+      assert(fundedTx.txIn.length >= 3)
+
+      // tx inputs should be locked
+      val lockedUtxos = getLocks(sender)
+      fundedTx.txIn.foreach(txIn => assert(lockedUtxos.contains(txIn.outPoint)))
+
+      bitcoinClient.signTransaction(fundedTx, Nil).pipeTo(sender.ref)
+      val signTxResponse = sender.expectMsgType[SignTransactionResponse]
+      bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
+      sender.expectMsg(signTxResponse.tx.txid)
+      // once the tx is published, the inputs should be automatically unlocked
+      assert(getLocks(sender).isEmpty)
+      signTxResponse.tx
+    }
+
+    // create a second transaction that double-spends one of the inputs of the first transaction
+    val tx2 = {
+      val txNotFunded = tx1.copy(txIn = tx1.txIn.take(1))
+      bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(TestConstants.feeratePerKw * 2, lockUtxos = true)).pipeTo(sender.ref)
+      val fundedTx = sender.expectMsgType[FundTransactionResponse].tx
+      assert(fundedTx.txIn.length >= 2) // we added at least one new input
+
+      // newly added inputs should be locked
+      val lockedUtxos = getLocks(sender)
+      fundedTx.txIn.foreach(txIn => assert(lockedUtxos.contains(txIn.outPoint)))
+
+      bitcoinClient.signTransaction(fundedTx, Nil).pipeTo(sender.ref)
+      val signTxResponse = sender.expectMsgType[SignTransactionResponse]
+      bitcoinClient.publishTransaction(signTxResponse.tx).pipeTo(sender.ref)
+      sender.expectMsg(signTxResponse.tx.txid)
+      // once the tx is published, the inputs should be automatically unlocked
+      assert(getLocks(sender).isEmpty)
+      signTxResponse.tx
+    }
+
+    // tx2 replaced tx1 in the mempool
+    bitcoinClient.getMempool().pipeTo(sender.ref)
+    val mempoolTxs = sender.expectMsgType[Seq[Transaction]]
+    assert(mempoolTxs.length === 1)
+    assert(mempoolTxs.head.txid === tx2.txid)
+    assert(tx2.txIn.map(_.outPoint).intersect(tx1.txIn.map(_.outPoint)).length === 1)
+  }
+
   test("sign transactions") {
     val sender = TestProbe()
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
@@ -234,6 +289,10 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     bitcoinClient.publishTransaction(txWithUnknownInputs).pipeTo(sender.ref)
     sender.expectMsgType[Failure]
 
+    // invalid txs shouldn't be found in either the mempool or the blockchain
+    bitcoinClient.getTxConfirmations(txWithUnknownInputs.txid).pipeTo(sender.ref)
+    sender.expectMsg(None)
+
     bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(100000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0), FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
     val txUnsignedInputs = sender.expectMsgType[FundTransactionResponse].tx
     bitcoinClient.publishTransaction(txUnsignedInputs).pipeTo(sender.ref)
@@ -354,8 +413,16 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
     // Transaction is still in the mempool at that point
     bitcoinClient.getTxConfirmations(tx1.txid).pipeTo(sender.ref)
     sender.expectMsg(Some(0))
+    // If we omit the mempool, tx1's input is still considered unspent.
+    bitcoinClient.isTransactionOutputSpendable(tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt, includeMempool = false).pipeTo(sender.ref)
+    sender.expectMsg(true)
+    // If we include the mempool, we see that tx1's input is now spent.
+    bitcoinClient.isTransactionOutputSpendable(tx1.txIn.head.outPoint.txid, tx1.txIn.head.outPoint.index.toInt, includeMempool = true).pipeTo(sender.ref)
+    sender.expectMsg(false)
+    // If we omit the mempool, tx1's output is not considered spendable because we can't even find that output.
     bitcoinClient.isTransactionOutputSpendable(tx1.txid, 0, includeMempool = false).pipeTo(sender.ref)
     sender.expectMsg(false)
+    // If we include the mempool, we see that tx1 produces an output that is still unspent.
     bitcoinClient.isTransactionOutputSpendable(tx1.txid, 0, includeMempool = true).pipeTo(sender.ref)
     sender.expectMsg(true)
 

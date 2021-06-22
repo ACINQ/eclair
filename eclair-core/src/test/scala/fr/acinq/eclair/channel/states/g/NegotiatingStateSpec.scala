@@ -23,8 +23,8 @@ import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.{ClosingSigned, Error, Shutdown}
@@ -146,8 +146,8 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
     assert(aliceCloseFee === bobCloseFee)
     bob2alice.forward(alice)
-    val mutualCloseTxAlice = alice2blockchain.expectMsgType[PublishTx].tx
-    val mutualCloseTxBob = bob2blockchain.expectMsgType[PublishTx].tx
+    val mutualCloseTxAlice = alice2blockchain.expectMsgType[PublishRawTx].tx
+    val mutualCloseTxBob = bob2blockchain.expectMsgType[PublishRawTx].tx
     assert(mutualCloseTxAlice === mutualCloseTxBob)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === mutualCloseTxAlice.txid)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === mutualCloseTxBob.txid)
@@ -197,7 +197,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // bob publishes the mutual close and alice is notified that the funding tx has been spent
     // actual test starts here
     assert(alice.stateName == NEGOTIATING)
-    val mutualCloseTx = bob2blockchain.expectMsgType[PublishTx].tx
+    val mutualCloseTx = bob2blockchain.expectMsgType[PublishRawTx].tx
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === mutualCloseTx.txid)
     alice ! WatchFundingSpentTriggered(mutualCloseTx)
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === mutualCloseTx)

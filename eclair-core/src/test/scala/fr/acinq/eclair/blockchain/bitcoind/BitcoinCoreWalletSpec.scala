@@ -20,7 +20,7 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, Btc, BtcDouble, ByteVector32, MilliBtc, MilliBtcDouble, OutPoint, Satoshi, SatoshiLong, Script, Transaction}
+import fr.acinq.bitcoin.{Block, Btc, BtcDouble, ByteVector32, MilliBtc, MilliBtcDouble, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
@@ -53,17 +53,6 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
 
   override def afterAll(): Unit = {
     stopBitcoind()
-  }
-
-  def getLocks(sender: TestProbe = TestProbe()): Set[OutPoint] = {
-    sender.send(bitcoincli, BitcoinReq("listlockunspent"))
-    val JArray(locks) = sender.expectMsgType[JValue]
-    val txids = locks.map { item =>
-      val JString(txid) = item \ "txid"
-      val JInt(vout) = item \ "vout"
-      OutPoint(ByteVector32.fromValidHex(txid).reverse, vout.toInt)
-    }
-    txids.toSet
   }
 
   test("unlock transaction inputs if publishing fails") {
@@ -143,7 +132,6 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
   test("absence of rounding") {
     val txIn = Transaction(1, Nil, Nil, 42)
     val hexOut = "02000000013361e994f6bd5cbe9dc9e8cb3acdc12bc1510a3596469d9fc03cfddd71b223720000000000feffffff02c821354a00000000160014b6aa25d6f2a692517f2cf1ad55f243a5ba672cac404b4c0000000000220020822eb4234126c5fc84910e51a161a9b7af94eb67a2344f7031db247e0ecc2f9200000000"
-    val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
 
     0 to 9 foreach { satoshi =>
       val apiAmount = JDecimal(BigDecimal(s"0.0000000$satoshi"))

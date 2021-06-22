@@ -1171,12 +1171,16 @@ object Helpers {
      *   - not watch for confirmations if we know the tx is already confirmed
      *   - not watch the corresponding utxo when we already know the final spending tx
      *
-     * @param tx               a tx with only one input
+     * @param tx               an arbitrary transaction
      * @param irrevocablySpent a map of known spent outpoints
      * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
      */
     def inputsAlreadySpent(tx: Transaction, irrevocablySpent: Map[OutPoint, Transaction]): Boolean = {
       tx.txIn.exists(txIn => irrevocablySpent.contains(txIn.outPoint))
+    }
+
+    def inputAlreadySpent(input: OutPoint, irrevocablySpent: Map[OutPoint, Transaction]): Boolean = {
+      irrevocablySpent.contains(input)
     }
 
     /**

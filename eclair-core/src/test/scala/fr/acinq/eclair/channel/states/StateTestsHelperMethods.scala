@@ -22,11 +22,12 @@ import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.FeeTargets
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
-import fr.acinq.eclair.channel.TxPublisher.{PublishRawTx, PublishTx, SignAndPublishTx}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
@@ -34,7 +35,6 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair._
 import org.scalatest.{FixtureTestSuite, ParallelTestExecution}
 
 import java.util.UUID
@@ -270,9 +270,9 @@ trait StateTestsHelperMethods extends TestKitBase {
       rCloseFee = r2s.expectMsgType[ClosingSigned].feeSatoshis
       r2s.forward(s)
     } while (sCloseFee != rCloseFee)
-    s2blockchain.expectMsgType[PublishTx]
+    s2blockchain.expectMsgType[TxPublisher.PublishTx]
     s2blockchain.expectMsgType[WatchTxConfirmed]
-    r2blockchain.expectMsgType[PublishTx]
+    r2blockchain.expectMsgType[TxPublisher.PublishTx]
     r2blockchain.expectMsgType[WatchTxConfirmed]
     awaitCond(s.stateName == CLOSING)
     awaitCond(r.stateName == CLOSING)
@@ -288,23 +288,22 @@ trait StateTestsHelperMethods extends TestKitBase {
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
 
-    assert(s2blockchain.expectMsgType[PublishTx].tx == commitTx)
+    assert(s2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx == commitTx)
     if (closingState.commitments.commitmentFormat == Transactions.AnchorOutputsCommitmentFormat) {
-      assert(s2blockchain.expectMsgType[SignAndPublishTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(PublishRawTx(tx)))
+    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishRawTx(tx, None)))
     closingState.commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
-        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => PublishRawTx(tx) }: _*)
+        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishRawTx(tx, Some(commitTx.txid)) }: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
       case Transactions.AnchorOutputsCommitmentFormat =>
-        // all htlcs success/timeout should be published with a fee bumping strategy, without claiming their outputs
-        val htlcTxs = localCommitPublished.htlcTxs.values.collect { case Some(tx: HtlcTx) => tx.tx }
-        val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[PublishTx])
-        assert(publishedTxs.map(_.tx).toSet == htlcTxs.toSet)
-        publishedTxs.foreach(p => p.isInstanceOf[SignAndPublishTx])
+        // all htlcs success/timeout should be published as replaceable txs, without claiming their outputs
+        val htlcTxs = localCommitPublished.htlcTxs.values.collect { case Some(tx: HtlcTx) => tx }
+        val publishedTxs = htlcTxs.map(_ => s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx])
+        assert(publishedTxs.map(_.input).toSet == htlcTxs.map(_.input.outPoint).toSet)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
     }
 
@@ -336,12 +335,12 @@ trait StateTestsHelperMethods extends TestKitBase {
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      s2blockchain.expectMsg(PublishRawTx(claimMain))
+      s2blockchain.expectMsg(TxPublisher.PublishRawTx(claimMain, None))
     })
     // all htlcs success/timeout should be claimed
     val claimHtlcTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTx) => tx }.toSeq
     claimHtlcTxs.foreach(claimHtlc => Transaction.correctlySpends(claimHtlc.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => PublishRawTx(claimHtlc)): _*)
+    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => TxPublisher.PublishRawTx(claimHtlc, None)): _*)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === rCommitTx.txid)
