@@ -16,9 +16,11 @@
 
 package fr.acinq.eclair.db
 
+import akka.actor.typed.scaladsl.adapter.ClassicActorSystemOps
 import akka.testkit.TestProbe
 import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.Databases.FileBackup
+import fr.acinq.eclair.db.FileBackupHandler.{BackupCompleted, BackupEvent}
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.{TestConstants, TestDatabases, TestKitBaseClass, TestUtils, randomBytes32}
@@ -27,27 +29,33 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 import java.io.File
 import java.sql.DriverManager
 import java.util.UUID
+import scala.concurrent.duration.DurationInt
 
 class SqliteFileBackupHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
   test("process backups") {
     val db = TestDatabases.inMemoryDb()
-    val wip = new File(TestUtils.BUILD_DIRECTORY, s"wip-${UUID.randomUUID()}")
     val dest = new File(TestUtils.BUILD_DIRECTORY, s"backup-${UUID.randomUUID()}")
-    wip.deleteOnExit()
     dest.deleteOnExit()
     val channel = ChannelCodecsSpec.normal
     db.channels.addOrUpdateChannel(channel)
     assert(db.channels.listLocalChannels() == Seq(channel))
 
-    val handler = system.actorOf(FileBackupHandler.props(db.asInstanceOf[FileBackup], dest, None))
+    val params = FileBackupHandler.FileBackupParams(
+      interval = 10 seconds,
+      targetFile = dest,
+      script_opt = None
+    )
+
+    val handler = system.spawn(FileBackupHandler(db.asInstanceOf[FileBackup], params), name = "filebackup")
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[BackupEvent])
 
-    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null)
-    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null)
-    handler ! ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null)
-    probe.expectMsg(BackupCompleted)
+    handler ! FileBackupHandler.WrappedChannelPersisted(ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null))
+    handler ! FileBackupHandler.WrappedChannelPersisted(ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null))
+    handler ! FileBackupHandler.WrappedChannelPersisted(ChannelPersisted(null, TestConstants.Alice.nodeParams.nodeId, randomBytes32(), null))
+    probe.expectMsg(20 seconds, BackupCompleted)
+    probe.expectNoMessage()
 
     val db1 = new SqliteChannelsDb(DriverManager.getConnection(s"jdbc:sqlite:$dest"))
     val check = db1.listLocalChannels()
