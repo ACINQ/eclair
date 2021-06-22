@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.{OutPoint, Transaction}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishInfo, TxRejectedReason}
+import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
 
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
@@ -54,7 +54,7 @@ object MempoolTxMonitor {
   case class TxRejected(reason: TxPublisher.TxRejectedReason) extends TxResult
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, loggingInfo: TxPublishInfo): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(loggingInfo.mdc()) {
         new MempoolTxMonitor(nodeParams, bitcoinClient, context).start()

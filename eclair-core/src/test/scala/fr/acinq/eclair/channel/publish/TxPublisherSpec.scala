@@ -61,12 +61,12 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   case class RawTxPublisherSpawned(id: UUID, actor: TestProbe)
   case class ReplaceableTxPublisherSpawned(id: UUID, actor: TestProbe)
   case class FakeChildFactory(factoryProbe: TestProbe) extends TxPublisher.ChildFactory {
-    override def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublisher.TxPublishInfo): ActorRef[RawTxPublisher.Command] = {
+    override def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublisher.TxPublishLogContext): ActorRef[RawTxPublisher.Command] = {
       val actor = TestProbe()
       factoryProbe.ref ! RawTxPublisherSpawned(loggingInfo.id, actor)
       actor.ref
     }
-    override def spawnReplaceableTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublisher.TxPublishInfo): ActorRef[ReplaceableTxPublisher.Command] = {
+    override def spawnReplaceableTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublisher.TxPublishLogContext): ActorRef[ReplaceableTxPublisher.Command] = {
       val actor = TestProbe()
       factoryProbe.ref ! ReplaceableTxPublisherSpawned(loggingInfo.id, actor)
       actor.ref

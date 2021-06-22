@@ -24,7 +24,7 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishInfo
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.transactions.Scripts
 
 /**
@@ -47,7 +47,7 @@ object TxTimeLocksMonitor {
   case object Stop extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishInfo): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(loggingInfo.mdc()) {
         new TxTimeLocksMonitor(nodeParams, watcher, context).start()

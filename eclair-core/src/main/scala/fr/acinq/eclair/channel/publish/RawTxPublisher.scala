@@ -21,7 +21,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishInfo
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
 
 import scala.concurrent.ExecutionContext
@@ -50,7 +50,7 @@ object RawTxPublisher {
   case object Stop extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishInfo): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
@@ -67,7 +67,7 @@ private class RawTxPublisher(nodeParams: NodeParams,
                              watcher: ActorRef[ZmqWatcher.Command],
                              context: ActorContext[RawTxPublisher.Command],
                              timers: TimerScheduler[RawTxPublisher.Command],
-                             loggingInfo: TxPublishInfo)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+                             loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import RawTxPublisher._
 

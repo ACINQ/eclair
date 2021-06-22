@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishInfo
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
 import fr.acinq.eclair.channel.{Commitments, HtlcTxAndSigs}
 import fr.acinq.eclair.transactions.Transactions
@@ -61,7 +61,7 @@ object ReplaceableTxPublisher {
   case object Stop extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishInfo): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
@@ -165,7 +165,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
                                      watcher: ActorRef[ZmqWatcher.Command],
                                      context: ActorContext[ReplaceableTxPublisher.Command],
                                      timers: TimerScheduler[ReplaceableTxPublisher.Command],
-                                     loggingInfo: TxPublishInfo)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+                                     loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import ReplaceableTxPublisher._
   import nodeParams.{channelKeyManager => keyManager}

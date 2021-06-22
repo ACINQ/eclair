@@ -124,25 +124,27 @@ object TxPublisher {
   // @formatter:on
 
   // @formatter:off
-  case class ChannelInfo(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32])
-  case class TxPublishInfo(id: UUID, remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
+  case class ChannelLogContext(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
+    def mdc(): Map[String, String] = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = channelId_opt)
+  }
+  case class TxPublishLogContext(id: UUID, remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
     def mdc(): Map[String, String] = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = channelId_opt, paymentId_opt = Some(id))
   }
   // @formatter:on
 
   trait ChildFactory {
     // @formatter:off
-    def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishInfo): ActorRef[RawTxPublisher.Command]
-    def spawnReplaceableTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishInfo): ActorRef[ReplaceableTxPublisher.Command]
+    def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[RawTxPublisher.Command]
+    def spawnReplaceableTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[ReplaceableTxPublisher.Command]
     // @formatter:on
   }
 
   case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command]) extends ChildFactory {
     // @formatter:off
-    override def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishInfo): ActorRef[RawTxPublisher.Command] = {
+    override def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[RawTxPublisher.Command] = {
       context.spawn(RawTxPublisher(nodeParams, bitcoinClient, watcher, loggingInfo), s"raw-tx-${loggingInfo.id}")
     }
-    override def spawnReplaceableTxPublisher(context: ActorContext[Command], loggingInfo: TxPublishInfo): ActorRef[ReplaceableTxPublisher.Command] = {
+    override def spawnReplaceableTxPublisher(context: ActorContext[Command], loggingInfo: TxPublishLogContext): ActorRef[ReplaceableTxPublisher.Command] = {
       context.spawn(ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, loggingInfo), s"replaceable-tx-${loggingInfo.id}")
     }
     // @formatter:on
@@ -153,7 +155,7 @@ object TxPublisher {
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
           context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
-          new TxPublisher(nodeParams, factory, context, timers).run(Map.empty, Seq.empty, ChannelInfo(remoteNodeId, None))
+          new TxPublisher(nodeParams, factory, context, timers).run(Map.empty, Seq.empty, ChannelLogContext(remoteNodeId, None))
         }
       }
     }
@@ -176,7 +178,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
   private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, feerate: FeeratePerKw, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
   // @formatter:on
 
-  private def run(pending: Map[OutPoint, Seq[PublishAttempt]], retryNextBlock: Seq[PublishTx], channelInfo: ChannelInfo): Behavior[Command] = {
+  private def run(pending: Map[OutPoint, Seq[PublishAttempt]], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
     Behaviors.receiveMessage {
       case cmd: PublishRawTx =>
         val attempts = pending.getOrElse(cmd.input, Seq.empty)
@@ -190,7 +192,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         } else {
           val publishId = UUID.randomUUID()
           log.info("publishing {} txid={} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index, publishId, attempts.length)
-          val actor = factory.spawnRawTxPublisher(context, TxPublishInfo(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
+          val actor = factory.spawnRawTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
           actor ! RawTxPublisher.Publish(context.self, cmd)
           run(pending + (cmd.input -> attempts.appended(RawAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
         }
@@ -209,7 +211,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         } else {
           val publishId = UUID.randomUUID()
           log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.length)
-          val actor = factory.spawnReplaceableTxPublisher(context, TxPublishInfo(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
+          val actor = factory.spawnReplaceableTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
           actor ! ReplaceableTxPublisher.Publish(context.self, cmd, targetFeerate)
           run(pending + (cmd.input -> attempts.appended(ReplaceableAttempt(publishId, cmd, targetFeerate, actor))), retryNextBlock, channelInfo)
         }
@@ -256,8 +258,9 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         run(pending, Seq.empty, channelInfo)
 
       case SetChannelId(remoteNodeId, channelId) =>
-        Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = Some(channelId))) {
-          run(pending, retryNextBlock, channelInfo.copy(remoteNodeId = remoteNodeId, channelId_opt = Some(channelId)))
+        val channelInfo2 = channelInfo.copy(remoteNodeId = remoteNodeId, channelId_opt = Some(channelId))
+        Behaviors.withMdc(channelInfo2.mdc()) {
+          run(pending, retryNextBlock, channelInfo2)
         }
     }
   }

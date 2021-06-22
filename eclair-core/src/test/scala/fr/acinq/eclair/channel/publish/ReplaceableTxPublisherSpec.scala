@@ -68,7 +68,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
                      probe: TestProbe) {
 
     def createPublisher(): ActorRef[ReplaceableTxPublisher.Command] = {
-      system.spawnAnonymous(ReplaceableTxPublisher(alice.underlyingActor.nodeParams, walletClient, alice2blockchain.ref, TxPublishInfo(UUID.randomUUID(), randomKey().publicKey, None)))
+      system.spawnAnonymous(ReplaceableTxPublisher(alice.underlyingActor.nodeParams, walletClient, alice2blockchain.ref, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
     }
 
     def getMempool: Seq[Transaction] = {
@@ -118,7 +118,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     // TODO: do I need a method that generateBlocks AND sets blockCount AND sends event?
 
     // Execute our test.
-    val publisher = system.spawn(ReplaceableTxPublisher(aliceNodeParams, bitcoinClient, alice2blockchain.ref, TxPublishInfo(testId, TestConstants.Bob.nodeParams.nodeId, None)), testId.toString)
+    val publisher = system.spawn(ReplaceableTxPublisher(aliceNodeParams, bitcoinClient, alice2blockchain.ref, TxPublishLogContext(testId, TestConstants.Bob.nodeParams.nodeId, None)), testId.toString)
     try {
       testFun(Fixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bitcoinClient, walletRpcClient, bitcoinWallet, publisher, probe))
     } finally {

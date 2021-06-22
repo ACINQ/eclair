@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpen
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.publish.MempoolTxMonitor.{Publish, Stop, TxConfirmed, TxRejected}
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishInfo
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
@@ -53,7 +53,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
   def createFixture(): Fixture = {
     val probe = TestProbe()
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val monitor = system.spawnAnonymous(MempoolTxMonitor(TestConstants.Alice.nodeParams, bitcoinClient, TxPublishInfo(UUID.randomUUID(), randomKey().publicKey, None)))
+    val monitor = system.spawnAnonymous(MempoolTxMonitor(TestConstants.Alice.nodeParams, bitcoinClient, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
 
     val address = getNewAddress(probe)
     val priv = dumpPrivateKey(address, probe)
