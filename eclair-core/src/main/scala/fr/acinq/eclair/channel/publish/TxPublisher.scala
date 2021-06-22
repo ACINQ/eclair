@@ -181,7 +181,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
       case cmd: PublishRawTx =>
         val attempts = pending.getOrElse(cmd.input, Seq.empty)
         val alreadyPublished = attempts.exists {
-          case a: RawAttempt if a.cmd.tx.txid == cmd.tx.txid => true
+          case a: RawAttempt => a.cmd.tx.txid == cmd.tx.txid
           case _ => false
         }
         if (alreadyPublished) {
@@ -200,7 +200,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         val attempts = pending.getOrElse(cmd.input, Seq.empty)
         val alreadyPublished = attempts.exists {
           // If there is already an attempt at spending this outpoint with a higher feerate, there is no point in publishing again.
-          case a: ReplaceableAttempt if targetFeerate <= a.feerate => true
+          case a: ReplaceableAttempt => targetFeerate <= a.feerate
           case _ => false
         }
         if (alreadyPublished) {
