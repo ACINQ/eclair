@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
@@ -30,6 +31,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
+import scodec.bits.ByteVector
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -83,6 +85,43 @@ case class Commitments(channelId: ByteVector32,
                        remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
 
   require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
+
+  /**
+   *
+   * @param scriptPubKey optional local script pubkey provided in CMD_CLOSE
+   * @return the actual local shutdown script that we should use
+   */
+  def getLocalShutdownScript(scriptPubKey: Option[ByteVector]): Either[ChannelException, ByteVector] = {
+    // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
+    val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
+    (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), scriptPubKey) match {
+      case (true, Some(script)) if script != localParams.defaultFinalScriptPubKey => Left(InvalidFinalScript(channelId))
+      case (false, Some(script)) if !Closing.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (false, Some(script)) => Right(script)
+      case _ => Right(localParams.defaultFinalScriptPubKey)
+    }
+  }
+
+  /**
+   *
+   * @param remoteScriptPubKey remote script included in a Shutdown message
+   * @return the actual remote script that we should use
+   */
+  def getRemoteShutdownScript(remoteScriptPubKey: ByteVector): Either[ChannelException, ByteVector] = {
+    // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
+    val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
+    (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), remoteParams.shutdownScript) match {
+      case (false, _) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit )=> Left(InvalidFinalScript(channelId))
+      case (false, _)  => Right(remoteScriptPubKey)
+      case (true, None) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit )=> {
+        // this is a special case: they set option_upfront_shutdown_script but did not provide a script in their open/accept message
+        Left(InvalidFinalScript(channelId))
+      }
+      case (true, None) => Right(remoteScriptPubKey)
+      case (true, Some(script)) if script != remoteScriptPubKey => Left(InvalidFinalScript(channelId))
+      case (true, Some(script)) => Right(script)
+    }
+  }
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 

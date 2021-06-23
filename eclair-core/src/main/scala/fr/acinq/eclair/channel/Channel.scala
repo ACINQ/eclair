@@ -195,12 +195,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, _, localParams, remote, _, channelFlags, channelConfig, _), Nothing) =>
+    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, _, localParams, remote, _, channelFlags, channelConfig, channelFeatures), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = true, temporaryChannelId, initialFeeratePerKw, Some(fundingTxFeeratePerKw)))
       activeConnection = remote
       txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
+      // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
+      // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+      val localShutdownScript = if (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
       val open = OpenChannel(nodeParams.chainHash,
         temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
@@ -219,9 +222,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
         firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
         channelFlags = channelFlags,
-        // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
-        // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-        tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+        tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(localShutdownScript)))
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _, _), Nothing) if !localParams.isFunder =>
@@ -339,13 +340,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit, channelConfig, channelFeatures))) =>
       log.info("received OpenChannel={}", open)
+      val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.ShutdownAnySegwit)
       Helpers.validateParamsFundee(nodeParams, localParams.initFeatures, channelFeatures, open, remoteNodeId) match {
         case Left(t) => handleLocalError(t, d, Some(open))
-        case _ =>
+        case Right(remoteShutdownScript) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
           val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
           val minimumDepth = Helpers.minDepthForFunding(nodeParams, open.fundingSatoshis)
+          // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
+          // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
+          val localShutdownScript = if (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else ByteVector.empty
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimit,
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
@@ -360,9 +365,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
             htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
-            // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
-            // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-            tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+            tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(localShutdownScript)))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
@@ -377,7 +380,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             delayedPaymentBasepoint = open.delayedPaymentBasepoint,
             htlcBasepoint = open.htlcBasepoint,
             initFeatures = remoteInit.features,
-            shutdownScript = None)
+            shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, None, open.firstPerCommitmentPoint, open.channelFlags, channelConfig, channelFeatures, accept) sending accept
       }
@@ -392,9 +395,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, initialRelayFees_opt, localParams, _, remoteInit, _, channelConfig, channelFeatures), open)) =>
       log.info(s"received AcceptChannel=$accept")
-      Helpers.validateParamsFunder(nodeParams, open, accept) match {
+      Helpers.validateParamsFunder(nodeParams, channelFeatures, open, accept) match {
         case Left(t) => handleLocalError(t, d, Some(accept))
-        case _ =>
+        case Right(remoteShutdownScript) =>
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = accept.dustLimitSatoshis,
@@ -409,7 +412,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
             htlcBasepoint = accept.htlcBasepoint,
             initFeatures = remoteInit.features,
-            shutdownScript = None)
+            shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
@@ -869,84 +872,88 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(r: RevocationTimeout, d: DATA_NORMAL) => handleRevocationTimeout(r, d)
 
     case Event(c: CMD_CLOSE, d: DATA_NORMAL) =>
-      val localScriptPubKey = c.scriptPubKey.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
-      val allowAnySegwit = Features.canUseFeature(d.commitments.localParams.initFeatures, d.commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
-      if (d.localShutdown.isDefined) {
-        handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
-      } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) {
-        // NB: simplistic behavior, we could also sign-then-close
-        handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
-      } else if (Commitments.localHasUnsignedOutgoingUpdateFee(d.commitments)) {
-        handleCommandError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), c)
-      } else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey, allowAnySegwit)) {
-        handleCommandError(InvalidFinalScript(d.channelId), c)
-      } else {
-        val shutdown = Shutdown(d.channelId, localScriptPubKey)
-        handleCommandSuccess(c, d.copy(localShutdown = Some(shutdown))) storing() sending shutdown
+      d.commitments.getLocalShutdownScript(c.scriptPubKey) match {
+        case Left(e) => handleCommandError(e, c)
+        case Right(localShutdownScript) =>
+          if (d.localShutdown.isDefined) {
+            handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
+          } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) {
+            // NB: simplistic behavior, we could also sign-then-close
+            handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), c)
+          } else if (Commitments.localHasUnsignedOutgoingUpdateFee(d.commitments)) {
+            handleCommandError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), c)
+          } else {
+            val shutdown = Shutdown(d.channelId, localShutdownScript)
+            handleCommandSuccess(c, d.copy(localShutdown = Some(shutdown))) storing() sending shutdown
+          }
       }
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d: DATA_NORMAL) =>
-      // they have pending unsigned htlcs         => they violated the spec, close the channel
-      // they don't have pending unsigned htlcs
-      //    we have pending unsigned htlcs
-      //      we already sent a shutdown message  => spec violation (we can't send htlcs after having sent shutdown)
-      //      we did not send a shutdown message
-      //        we are ready to sign              => we stop sending further htlcs, we initiate a signature
-      //        we are waiting for a rev          => we stop sending further htlcs, we wait for their revocation, will resign immediately after, and then we will send our shutdown message
-      //    we have no pending unsigned htlcs
-      //      we already sent a shutdown message
-      //        there are pending signed changes  => send our shutdown message, go to SHUTDOWN
-      //        there are no htlcs                => send our shutdown message, go to NEGOTIATING
-      //      we did not send a shutdown message
-      //        there are pending signed changes  => go to SHUTDOWN
-      //        there are no htlcs                => go to NEGOTIATING
-      val allowAnySegwit = Features.canUseFeature(d.commitments.localParams.initFeatures, d.commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
-      if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit)) {
-        handleLocalError(InvalidFinalScript(d.channelId), d, Some(remoteShutdown))
-      } else if (Commitments.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
-        handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d, Some(remoteShutdown))
-      } else if (Commitments.remoteHasUnsignedOutgoingUpdateFee(d.commitments)) {
-        handleLocalError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), d, Some(remoteShutdown))
-      } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
-        require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
-        // are we in the middle of a signature?
-        d.commitments.remoteNextCommitInfo match {
-          case Left(waitForRevocation) =>
-            // yes, let's just schedule a new signature ASAP, which will include all pending unsigned changes
-            val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
-            // in the meantime we won't send new changes
-            stay using d.copy(commitments = commitments1, remoteShutdown = Some(remoteShutdown))
-          case Right(_) =>
-            // no, let's sign right away
-            self ! CMD_SIGN()
-            // in the meantime we won't send new changes
-            stay using d.copy(remoteShutdown = Some(remoteShutdown))
-        }
-      } else {
-        // so we don't have any unsigned outgoing changes
-        val (localShutdown, sendList) = d.localShutdown match {
-          case Some(localShutdown) =>
-            (localShutdown, Nil)
-          case None =>
-            val localShutdown = Shutdown(d.channelId, d.commitments.localParams.defaultFinalScriptPubKey)
-            // we need to send our shutdown if we didn't previously
-            (localShutdown, localShutdown :: Nil)
-        }
-        // are there pending signed changes on either side? we need to have received their last revocation!
-        if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
-          // there are no pending signed changes, let's go directly to NEGOTIATING
-          if (d.commitments.localParams.isFunder) {
-            // we are funder, need to initiate the negotiation by sending the first closing_signed
-            val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
-            goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending sendList :+ closingSigned
+      d.commitments.getRemoteShutdownScript(remoteScriptPubKey) match {
+        case Left(e) =>
+          log.warning("they sent an invalid closing script")
+          peer ! Peer.Disconnect(remoteNodeId)
+          stay()
+        case Right(remoteShutdownScript) =>
+          // they have pending unsigned htlcs         => they violated the spec, close the channel
+          // they don't have pending unsigned htlcs
+          //    we have pending unsigned htlcs
+          //      we already sent a shutdown message  => spec violation (we can't send htlcs after having sent shutdown)
+          //      we did not send a shutdown message
+          //        we are ready to sign              => we stop sending further htlcs, we initiate a signature
+          //        we are waiting for a rev          => we stop sending further htlcs, we wait for their revocation, will resign immediately after, and then we will send our shutdown message
+          //    we have no pending unsigned htlcs
+          //      we already sent a shutdown message
+          //        there are pending signed changes  => send our shutdown message, go to SHUTDOWN
+          //        there are no htlcs                => send our shutdown message, go to NEGOTIATING
+          //      we did not send a shutdown message
+          //        there are pending signed changes  => go to SHUTDOWN
+          //        there are no htlcs                => go to NEGOTIATING
+          if (Commitments.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
+            handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d, Some(remoteShutdown))
+          } else if (Commitments.remoteHasUnsignedOutgoingUpdateFee(d.commitments)) {
+            handleLocalError(CannotCloseWithUnsignedOutgoingUpdateFee(d.channelId), d, Some(remoteShutdown))
+          } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
+            require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
+            // are we in the middle of a signature?
+            d.commitments.remoteNextCommitInfo match {
+              case Left(waitForRevocation) =>
+                // yes, let's just schedule a new signature ASAP, which will include all pending unsigned changes
+                val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+                // in the meantime we won't send new changes
+                stay using d.copy(commitments = commitments1, remoteShutdown = Some(remoteShutdown))
+              case Right(_) =>
+                // no, let's sign right away
+                self ! CMD_SIGN()
+                // in the meantime we won't send new changes
+                stay using d.copy(remoteShutdown = Some(remoteShutdown))
+            }
           } else {
-            // we are fundee, will wait for their closing_signed
-            goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending sendList
+            // so we don't have any unsigned outgoing changes
+            val (localShutdown, sendList) = d.localShutdown match {
+              case Some(localShutdown) =>
+                (localShutdown, Nil)
+              case None =>
+                val localShutdown = Shutdown(d.channelId, d.commitments.localParams.defaultFinalScriptPubKey)
+                // we need to send our shutdown if we didn't previously
+                (localShutdown, localShutdown :: Nil)
+            }
+            // are there pending signed changes on either side? we need to have received their last revocation!
+            if (d.commitments.hasNoPendingHtlcsOrFeeUpdate) {
+              // there are no pending signed changes, let's go directly to NEGOTIATING
+              if (d.commitments.localParams.isFunder) {
+                // we are funder, need to initiate the negotiation by sending the first closing_signed
+                val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, localShutdown.scriptPubKey, remoteShutdownScript, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+                goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, List(List(ClosingTxProposed(closingTx, closingSigned))), bestUnpublishedClosingTx_opt = None) storing() sending sendList :+ closingSigned
+              } else {
+                // we are fundee, will wait for their closing_signed
+                goto(NEGOTIATING) using DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing() sending sendList
+              }
+            } else {
+              // there are some pending signed changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
+              goto(SHUTDOWN) using DATA_SHUTDOWN(d.commitments, localShutdown, remoteShutdown) storing() sending sendList
+            }
           }
-        } else {
-          // there are some pending signed changes, we need to wait for them to be settled (fail/fulfill htlcs and sign fee updates)
-          goto(SHUTDOWN) using DATA_SHUTDOWN(d.commitments, localShutdown, remoteShutdown) storing() sending sendList
-        }
       }
 
     case Event(ProcessCurrentBlockCount(c), d: DATA_NORMAL) => handleNewBlock(c, d)

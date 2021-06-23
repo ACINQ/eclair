@@ -148,6 +148,11 @@ object Features {
     val mandatory = 2
   }
 
+  case object OptionUpfrontShutdownScript extends Feature {
+    val rfcName = "option_upfront_shutdown_script"
+    val mandatory = 4
+  }
+
   case object ChannelRangeQueries extends Feature {
     val rfcName = "gossip_queries"
     val mandatory = 6
@@ -209,6 +214,7 @@ object Features {
   val knownFeatures: Set[Feature] = Set(
     OptionDataLossProtect,
     InitialRoutingSync,
+    OptionUpfrontShutdownScript,
     ChannelRangeQueries,
     VariableLengthOnion,
     ChannelRangeQueriesExtended,
