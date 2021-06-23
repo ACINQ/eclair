@@ -16,80 +16,115 @@
 
 package fr.acinq.eclair.db
 
-import akka.actor.{Actor, ActorLogging, Props}
-import akka.dispatch.{BoundedMessageQueueSemantics, RequiresMessageQueue}
+import akka.Done
+import akka.actor.typed.Behavior
+import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.channel.ChannelPersisted
 import fr.acinq.eclair.db.Databases.FileBackup
+import fr.acinq.eclair.db.FileBackupHandler._
 import fr.acinq.eclair.db.Monitoring.Metrics
 
 import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
+import java.util.concurrent.Executors
+import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration.FiniteDuration
 import scala.sys.process.Process
 import scala.util.{Failure, Success, Try}
 
 
 /**
- * This actor will synchronously make a backup of the database it was initialized with whenever it receives
- * a ChannelPersisted event.
- * To avoid piling up messages and entering an endless backup loop, it is supposed to be used with a bounded mailbox
- * with a single item:
- *
- * backup-mailbox {
- *   mailbox-type = "akka.dispatch.NonBlockingBoundedMailbox"
- *   mailbox-capacity = 1
- * }
- *
- * Messages that cannot be processed will be sent to dead letters
- *
- * NB: Constructor is private so users will have to use BackupHandler.props() which always specific a custom mailbox.
- *
- * @param databases        database to backup
- * @param backupFile       backup file
- * @param backupScript_opt (optional) script to execute after the backup completes
+ * This actor will make a backup of the database it was initialized with at a scheduled interval. It will only
+ * perform a backup if a ChannelPersisted event was received since the previous backup.
  */
-class FileBackupHandler private(databases: FileBackup, backupFile: File, backupScript_opt: Option[String]) extends Actor with RequiresMessageQueue[BoundedMessageQueueSemantics] with ActorLogging {
+object FileBackupHandler {
 
-  // we listen to ChannelPersisted events, which will trigger a backup
-  context.system.eventStream.subscribe(self, classOf[ChannelPersisted])
+  // @formatter:off
 
-  def receive: Receive = {
-    case persisted: ChannelPersisted =>
-      KamonExt.time(Metrics.FileBackupDuration.withoutTags()) {
-        val tmpFile = new File(backupFile.getAbsolutePath.concat(".tmp"))
-        databases.backup(tmpFile)
+  /**
+   * @param targetFile  backup file
+   * @param script_opt  (optional) script to execute after the backup completes
+   * @param interval    interval between two backups
+   */
+  case class FileBackupParams(interval: FiniteDuration,
+                              targetFile: File,
+                              script_opt: Option[String])
 
-        // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
-        // as the temporary file
-        Files.move(tmpFile.toPath, backupFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+  sealed trait Command
+  case class WrappedChannelPersisted(wrapped: ChannelPersisted) extends Command
+  private case object TickBackup extends Command
+  private case class BackupResult(result: Try[Done]) extends Command
 
-        // publish a notification that we have updated our backup
-        context.system.eventStream.publish(BackupCompleted)
-        Metrics.FileBackupCompleted.withoutTags().increment()
+  sealed trait BackupEvent
+  // this notification is sent when we have completed our backup process (our backup file is ready to be used)
+  case object BackupCompleted extends BackupEvent
+  // @formatter:on
+
+  // the backup task will run in this thread pool
+  private val ec = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
+
+  def apply(databases: FileBackup, backupParams: FileBackupParams): Behavior[Command] =
+    Behaviors.setup { context =>
+      // we listen to ChannelPersisted events, which will trigger a backup
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelPersisted](WrappedChannelPersisted))
+      Behaviors.withTimers { timers =>
+        timers.startTimerAtFixedRate(TickBackup, backupParams.interval)
+        new FileBackupHandler(databases, backupParams, context).waiting(willBackupAtNextTick = false)
       }
-
-      backupScript_opt.foreach(backupScript => {
-        Try {
-          // run the script in the current thread and wait until it terminates
-          Process(backupScript).!
-        } match {
-          case Success(exitCode) => log.debug(s"backup notify script $backupScript returned $exitCode")
-          case Failure(cause) => log.warning(s"cannot start backup notify script $backupScript:  $cause")
-        }
-      })
-  }
+    }
 }
 
-sealed trait BackupEvent
+class FileBackupHandler private(databases: FileBackup,
+                                backupParams: FileBackupParams,
+                                context: ActorContext[Command]) {
 
-// this notification is sent when we have completed our backup process (our backup file is ready to be used)
-case object BackupCompleted extends BackupEvent
+  def waiting(willBackupAtNextTick: Boolean): Behavior[Command] =
+    Behaviors.receiveMessagePartial {
+      case _: WrappedChannelPersisted =>
+        context.log.debug("will perform backup at next tick")
+        waiting(willBackupAtNextTick = true)
+      case TickBackup => if (willBackupAtNextTick) {
+        context.log.debug("performing backup")
+        context.pipeToSelf(doBackup())(BackupResult)
+        backuping(willBackupAtNextTick = false)
+      } else {
+        Behaviors.same
+      }
+    }
 
-object FileBackupHandler {
-  // using this method is the only way to create a BackupHandler actor
-  // we make sure that it uses a custom bounded mailbox, and a custom pinned dispatcher (i.e our actor will have its own thread pool with 1 single thread)
-  def props(databases: FileBackup, backupFile: File, backupScript_opt: Option[String]) =
-    Props(new FileBackupHandler(databases, backupFile, backupScript_opt))
-      .withMailbox("eclair.backup-mailbox")
-      .withDispatcher("eclair.backup-dispatcher")
+  def backuping(willBackupAtNextTick: Boolean): Behavior[Command] =
+    Behaviors.receiveMessagePartial {
+      case _: WrappedChannelPersisted =>
+        context.log.debug("will perform backup at next tick")
+        backuping(willBackupAtNextTick = true)
+      case BackupResult(res) =>
+        res match {
+          case Success(Done) => context.log.debug("backup succeeded")
+          case Failure(cause) => context.log.warn(s"backup failed: $cause")
+        }
+        waiting(willBackupAtNextTick)
+    }
+
+  private def doBackup(): Future[Done] = Future {
+    KamonExt.time(Metrics.FileBackupDuration.withoutTags()) {
+      val tmpFile = new File(backupParams.targetFile.getAbsolutePath.concat(".tmp"))
+      databases.backup(tmpFile)
+
+      // this will throw an exception if it fails, which is possible if the backup file is not on the same filesystem
+      // as the temporary file
+      Files.move(tmpFile.toPath, backupParams.targetFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+
+      // publish a notification that we have updated our backup
+      context.system.eventStream ! EventStream.Publish(BackupCompleted)
+      Metrics.FileBackupCompleted.withoutTags().increment()
+    }
+
+    // run the script in the current thread and wait until it terminates
+    backupParams.script_opt.foreach(backupScript => Process(backupScript).!)
+
+    Done
+  }(ec)
+
 }

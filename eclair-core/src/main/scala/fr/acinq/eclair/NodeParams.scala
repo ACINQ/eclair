@@ -192,7 +192,10 @@ object NodeParams extends Logging {
       // v0.4.3
       "min-feerate" -> "on-chain-fees.min-feerate",
       "smooth-feerate-window" -> "on-chain-fees.smoothing-window",
-      "feerate-provider-timeout" -> "on-chain-fees.provider-timeout"
+      "feerate-provider-timeout" -> "on-chain-fees.provider-timeout",
+      // v0.6.1
+      "enable-db-backup" -> "file-backup.enabled",
+      "backup-notify-script" -> "file-backup.notify-script"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")

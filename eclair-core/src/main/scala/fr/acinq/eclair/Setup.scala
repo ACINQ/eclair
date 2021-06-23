@@ -34,6 +34,7 @@ import fr.acinq.eclair.channel.{Channel, Register}
 import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.db.Databases.FileBackup
+import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Peer, Server, Switchboard}
 import fr.acinq.eclair.payment.receive.PaymentHandler
@@ -248,15 +249,15 @@ class Setup(val datadir: File,
       wallet = new BitcoinCoreWallet(bitcoin)
       _ = wallet.getReceiveAddress().map(address => logger.info(s"initial wallet address=$address"))
 
-      // do not change the name of this actor. it is used in the configuration to specify a custom bounded mailbox
-      backupHandler = if (config.getBoolean("enable-db-backup")) {
+      _ = if (config.getBoolean("file-backup.enabled")) {
         nodeParams.db match {
-          case fileBackup: FileBackup => system.actorOf(SimpleSupervisor.props(
-            FileBackupHandler.props(
-              fileBackup,
-              new File(chaindir, "eclair.sqlite.bak"),
-              if (config.hasPath("backup-notify-script")) Some(config.getString("backup-notify-script")) else None),
-            "backuphandler", SupervisorStrategy.Resume))
+          case fileBackup: FileBackup if config.getBoolean("file-backup.enabled") =>
+            val fileBackupParams = FileBackupParams(
+              interval = FiniteDuration(config.getDuration("file-backup.interval").getSeconds, TimeUnit.SECONDS),
+              targetFile = new File(chaindir, config.getString("file-backup.target-file")),
+              script_opt = if (config.hasPath("file-backup.notify-script")) Some(config.getString("file-backup.notify-script")) else None
+            )
+            system.spawn(Behaviors.supervise(FileBackupHandler(fileBackup, fileBackupParams)).onFailure(typed.SupervisorStrategy.restart), name = "backuphandler")
           case _ =>
             system.deadLetters
         }
