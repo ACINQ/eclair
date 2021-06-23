@@ -65,6 +65,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
       .modify(_.features).setToIf(test.tags.contains("static_remotekey"))(Features(StaticRemoteKey -> Optional))
+      .modify(_.channelTypes).setToIf(test.tags.contains("static_remotekey"))(List(ChannelType(Features.empty), ChannelType(Features(StaticRemoteKey -> Optional))))
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
       .modify(_.features).setToIf(test.tags.contains("anchor_outputs"))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
@@ -303,6 +304,76 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(probe.expectMsgType[Failure].cause.getMessage == s"fundingSatoshis=$fundingAmountBig is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)")
   }
 
+  test("don't spawn a channel if channel types and features are incompatible") { f =>
+    import f._
+
+    // Alice only wants to use standard channels, but both peers have turned on the static_remotekey feature.
+    // Alice can't know beforehand if Bob supports explicit channel type negotiation.
+    // If Bob does support it, they would open a standard channel.
+    // If Bob doesn't support it, they would open a static_remotekey channel (based on node feature bits).
+    // These two outcomes are incompatible, so we report a configuration issue.
+    val nodeParams = TestConstants.Alice.nodeParams.copy(
+      channelTypes = ChannelType(Features.empty) :: Nil,
+      features = Features(StaticRemoteKey -> Optional)
+    )
+    val peer = TestFSMRef(new Peer(nodeParams, remoteNodeId, new TestWallet(), FakeChannelFactory(channel)))
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
+    assert(peer.stateData.channels.isEmpty)
+
+    val probe = TestProbe()
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 25000 sat, 0 msat, None, None, None, None))
+    assert(probe.expectMsgType[Failure].cause.getMessage.contains("cannot find a suitable channel type"))
+  }
+
+  test("don't spawn a channel if channel types and features are incompatible (with peer override)") { f =>
+    import f._
+
+    // Alice only wants to use standard channels with Bob, but both peers have turned on the static_remotekey feature.
+    // Alice can't know beforehand if Bob supports explicit channel type negotiation.
+    // If Bob does support it, they would open a standard channel.
+    // If Bob doesn't support it, they would open a static_remotekey channel (based on node feature bits).
+    // These two outcomes are incompatible, so we report a configuration issue.
+    val nodeParams = TestConstants.Alice.nodeParams.copy(
+      channelTypes = ChannelType(Features.empty) :: ChannelType(Features(StaticRemoteKey -> Optional)) :: Nil,
+      features = Features(StaticRemoteKey -> Optional),
+      overrideFeatures = Map(remoteNodeId -> (Features(StaticRemoteKey -> Optional), ChannelType(Features.empty) :: Nil))
+    )
+    val peer = TestFSMRef(new Peer(nodeParams, remoteNodeId, new TestWallet(), FakeChannelFactory(channel)))
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
+    assert(peer.stateData.channels.isEmpty)
+
+    val probe = TestProbe()
+    probe.send(peer, Peer.OpenChannel(remoteNodeId, 25000 sat, 0 msat, None, None, None, None))
+    assert(probe.expectMsgType[Failure].cause.getMessage.contains("cannot find a suitable channel type"))
+  }
+
+  test("don't spawn a channel if we don't support their channel types") { f =>
+    import f._
+
+    connect(remoteNodeId, peer, peerConnection)
+    assert(peer.stateData.channels.isEmpty)
+
+    // They only support anchor outputs and we don't.
+    val openTlv = TlvStream[OpenChannelTlv](OpenChannelTlv.ChannelTypes(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional) :: Nil))
+    val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+    peerConnection.send(peer, open)
+    peerConnection.expectMsg(Error(open.temporaryChannelId, "incompatible channel types"))
+  }
+
+  test("choose from their channel types when spawning a channel", Tag("static_remotekey")) { f =>
+    import f._
+
+    // We both support option_static_remotekey but they don't propose it in their channel types.
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
+    assert(peer.stateData.channels.isEmpty)
+    val openTlv = TlvStream[OpenChannelTlv](OpenChannelTlv.ChannelTypes(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional) :: Features.empty :: Nil))
+    val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+    peerConnection.send(peer, open)
+    awaitCond(peer.stateData.channels.nonEmpty)
+    assert(channel.expectMsgType[INPUT_INIT_FUNDEE].channelVersion === ChannelVersion.STANDARD)
+    channel.expectMsg(open)
+  }
+
   test("use correct fee rates when spawning a channel") { f =>
     import f._
 
@@ -331,7 +402,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
-    assert(init.channelVersion.hasAnchorOutputs)
+    assert(init.channelVersion === ChannelVersion.ANCHOR_OUTPUTS)
     assert(init.fundingAmount === 15000.sat)
     assert(init.initialRelayFees_opt === None)
     assert(init.initialFeeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
@@ -345,7 +416,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
-    assert(init.channelVersion.hasStaticRemotekey)
+    assert(init.channelVersion === ChannelVersion.STATIC_REMOTEKEY)
     assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
     assert(init.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get)))
   }

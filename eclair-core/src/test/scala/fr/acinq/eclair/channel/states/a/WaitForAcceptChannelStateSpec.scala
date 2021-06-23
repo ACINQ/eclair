@@ -24,8 +24,8 @@ import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
-import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.wire.protocol.{AcceptChannel, AcceptChannelTlv, ChannelTlv, Error, Init, OpenChannel, TlvStream}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -79,7 +79,8 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
-    assert(accept.tlvStream === TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+    assert(accept.tlvStream.get[ChannelTlv.UpfrontShutdownScript] === Some(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+    assert(accept.channelType_opt === Some(Features.empty))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
   }
@@ -175,6 +176,16 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+  }
+
+  test("recv AcceptChannel (incompatible channel type)") { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel].copy(
+      tlvStream = TlvStream(AcceptChannelTlv.ChannelType(Features(Features.StaticRemoteKey -> FeatureSupport.Optional)))
+    )
+    bob2alice.forward(alice, accept)
+    alice2bob.expectMsgType[Error]
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv Error") { f =>

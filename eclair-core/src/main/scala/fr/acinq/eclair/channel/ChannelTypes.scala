@@ -25,7 +25,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
 
 import java.util.UUID
@@ -483,7 +483,11 @@ object ChannelFlags {
   val Empty = 0x00.toByte
 }
 
-case class ChannelType(features: Features)
+/** Each channel type is a specific combination of features listed in the RFC (Bolt 2). */
+case class ChannelType(features: Features) {
+  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
+  def paysDirectlyToWallet: Boolean = features.hasFeature(Features.StaticRemoteKey) && !features.hasFeature(Features.AnchorOutputs)
+}
 
 case class ChannelVersion(bits: BitVector) {
   import ChannelVersion._
@@ -496,6 +500,23 @@ case class ChannelVersion(bits: BitVector) {
     DefaultCommitmentFormat
   }
 
+  val channelType: ChannelType = {
+    if (hasAnchorOutputs) {
+      ChannelType(Features(Features.StaticRemoteKey -> FeatureSupport.Optional, Features.AnchorOutputs -> FeatureSupport.Optional))
+    } else if (hasStaticRemotekey) {
+      ChannelType(Features(Features.StaticRemoteKey -> FeatureSupport.Optional))
+    } else {
+      ChannelType(Features.empty)
+    }
+  }
+
+  /** Filter channel types to keep only those compatible with the current channel version. */
+  def filterChannelTypes(channelTypes: Seq[ChannelType]): Seq[ChannelType] = {
+    // We ensure we don't mix channel types that pay to our wallet with channel types that don't, since they use
+    // different methods to obtain the payment basepoint.
+    channelTypes.filter(_.paysDirectlyToWallet == paysDirectlyToWallet)
+  }
+
   def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
   def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
   def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
@@ -505,8 +526,7 @@ case class ChannelVersion(bits: BitVector) {
   def hasPubkeyKeyPath: Boolean = isSet(USE_PUBKEY_KEYPATH_BIT)
   def hasStaticRemotekey: Boolean = isSet(USE_STATIC_REMOTEKEY_BIT)
   def hasAnchorOutputs: Boolean = isSet(USE_ANCHOR_OUTPUTS_BIT)
-  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  def paysDirectlyToWallet: Boolean = hasStaticRemotekey && !hasAnchorOutputs
+  def paysDirectlyToWallet: Boolean = channelType.paysDirectlyToWallet
 }
 
 object ChannelVersion {
@@ -520,10 +540,25 @@ object ChannelVersion {
 
   def fromBit(bit: Int): ChannelVersion = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
 
+  /**
+   * Pick the channel version that should be applied based on features alone (in case our peer doesn't support explicit
+   * channel type negotiation).
+   */
   def pickChannelVersion(localFeatures: Features, remoteFeatures: Features): ChannelVersion = {
     if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
       ANCHOR_OUTPUTS
     } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.StaticRemoteKey)) {
+      STATIC_REMOTEKEY
+    } else {
+      STANDARD
+    }
+  }
+
+  /** Pick a channel version that matches the negotiated channel type. */
+  def pickChannelVersion(channelType: ChannelType): ChannelVersion = {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
+      ANCHOR_OUTPUTS
+    } else if (channelType.features.hasFeature(Features.StaticRemoteKey)) {
       STATIC_REMOTEKEY
     } else {
       STANDARD

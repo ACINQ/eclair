@@ -120,6 +120,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         stay
 
       case Event(c: Peer.OpenChannel, d: ConnectedData) =>
+        val channelVersion = ChannelVersion.pickChannelVersion(d.localFeatures, d.remoteFeatures)
         if (c.fundingSatoshis >= Channel.MAX_FUNDING && !d.localFeatures.hasFeature(Wumbo)) {
           sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
           stay
@@ -129,8 +130,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
           sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
           stay
+        } else if (channelVersion.filterChannelTypes(nodeParams.channelTypesFor(remoteNodeId)).isEmpty) {
+          sender ! Status.Failure(new RuntimeException(s"cannot find a suitable channel type with $remoteNodeId, make sure that 'channel-types' and 'features' are properly configured (see eclair.conf)"))
+          stay
         } else {
-          val channelVersion = ChannelVersion.pickChannelVersion(d.localFeatures, d.remoteFeatures)
           val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, funder = true, c.fundingSatoshis, origin_opt = Some(sender), channelVersion)
           c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
           val temporaryChannelId = randomBytes32()
@@ -144,13 +147,26 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
       case Event(msg: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case None =>
-            val channelVersion = ChannelVersion.pickChannelVersion(d.localFeatures, d.remoteFeatures)
-            val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None, channelVersion)
-            val temporaryChannelId = msg.temporaryChannelId
-            log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
-            channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelVersion)
-            channel ! msg
-            stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+            val channelVersion_opt = msg.channelTypes match {
+              case proposedChannelTypes if proposedChannelTypes.nonEmpty =>
+                // We select our preferred channel version based on their proposed channel types.
+                nodeParams.channelTypesFor(remoteNodeId).find(ct => msg.channelTypes.contains(ct.features)).map(chosenChannelType => ChannelVersion.pickChannelVersion(chosenChannelType))
+              case _ =>
+                Some(ChannelVersion.pickChannelVersion(d.localFeatures, d.remoteFeatures))
+            }
+            channelVersion_opt match {
+              case Some(channelVersion) =>
+                val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None, channelVersion)
+                val temporaryChannelId = msg.temporaryChannelId
+                log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
+                channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelVersion)
+                channel ! msg
+                stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+              case None =>
+                log.warning(s"rejecting channel: the proposed channel types are not supported: ${msg.channelTypes.mkString(", ")}")
+                d.peerConnection ! Error(msg.temporaryChannelId, IncompatibleChannelTypes(msg.temporaryChannelId, msg.channelTypes).getMessage)
+                stay
+            }
           case Some(_) =>
             log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
             stay

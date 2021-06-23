@@ -135,7 +135,7 @@ object Helpers {
   /**
    * Called by the funder
    */
-  def validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, Unit] = {
+  def validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel, proposedChannelVersion: ChannelVersion): Either[ChannelException, ChannelVersion] = {
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
@@ -162,7 +162,14 @@ object Helpers {
     val reserveToFundingRatio = accept.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    Right()
+    accept.channelType_opt match {
+      case Some(channelType) if !open.channelTypes.contains(channelType) =>
+        Left(IncompatibleChannelTypes(accept.temporaryChannelId, open.channelTypes))
+      case Some(channelType) =>
+        Right(ChannelVersion.pickChannelVersion(ChannelType(channelType)))
+      case None =>
+        Right(proposedChannelVersion)
+    }
   }
 
   /**

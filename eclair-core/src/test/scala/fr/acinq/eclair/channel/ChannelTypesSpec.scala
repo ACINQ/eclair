@@ -2,13 +2,15 @@ package fr.acinq.eclair.channel
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.FeatureSupport._
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateAddHtlc}
-import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -36,10 +38,6 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
   }
 
   test("pick channel version based on local and remote features") {
-    import fr.acinq.eclair.FeatureSupport._
-    import fr.acinq.eclair.Features
-    import fr.acinq.eclair.Features._
-
     case class TestCase(localFeatures: Features, remoteFeatures: Features, expectedChannelVersion: ChannelVersion)
     val testCases = Seq(
       TestCase(Features.empty, Features.empty, ChannelVersion.STANDARD),
@@ -54,6 +52,39 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
     for (testCase <- testCases) {
       assert(ChannelVersion.pickChannelVersion(testCase.localFeatures, testCase.remoteFeatures) === testCase.expectedChannelVersion)
     }
+  }
+
+  test("pick channel version based on channel type") {
+    val testCases = Seq(
+      ChannelType(Features.empty) -> ChannelVersion.STANDARD,
+      ChannelType(Features(StaticRemoteKey -> Optional)) -> ChannelVersion.STATIC_REMOTEKEY,
+      ChannelType(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)) -> ChannelVersion.ANCHOR_OUTPUTS,
+      // These channel types are invalid and should be filtered out, but we're able to handle them just in case
+      ChannelType(Features(StaticRemoteKey -> Mandatory)) -> ChannelVersion.STATIC_REMOTEKEY,
+      ChannelType(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional)) -> ChannelVersion.ANCHOR_OUTPUTS,
+    )
+
+    for ((channelType, expectedChannelVersion) <- testCases) {
+      assert(ChannelVersion.pickChannelVersion(channelType) === expectedChannelVersion)
+    }
+  }
+
+  test("filter compatible channel types") {
+    val standard = ChannelType(Features.empty)
+    val staticRemoteKey = ChannelType(Features(StaticRemoteKey -> Optional))
+    val anchorOutputs = ChannelType(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
+    assert(ChannelVersion.STANDARD.channelType === standard)
+    assert(ChannelVersion.STANDARD.filterChannelTypes(Seq(standard)) === Seq(standard))
+    assert(ChannelVersion.STANDARD.filterChannelTypes(Seq(staticRemoteKey)) === Nil)
+    assert(ChannelVersion.STANDARD.filterChannelTypes(Seq(standard, staticRemoteKey, anchorOutputs)) === Seq(standard, anchorOutputs))
+    assert(ChannelVersion.STATIC_REMOTEKEY.channelType === staticRemoteKey)
+    assert(ChannelVersion.STATIC_REMOTEKEY.filterChannelTypes(Seq(standard)) === Nil)
+    assert(ChannelVersion.STATIC_REMOTEKEY.filterChannelTypes(Seq(staticRemoteKey)) === Seq(staticRemoteKey))
+    assert(ChannelVersion.STATIC_REMOTEKEY.filterChannelTypes(Seq(standard, staticRemoteKey, anchorOutputs)) === Seq(staticRemoteKey))
+    assert(ChannelVersion.ANCHOR_OUTPUTS.channelType === anchorOutputs)
+    assert(ChannelVersion.ANCHOR_OUTPUTS.filterChannelTypes(Seq(standard)) === Seq(standard))
+    assert(ChannelVersion.ANCHOR_OUTPUTS.filterChannelTypes(Seq(anchorOutputs)) === Seq(anchorOutputs))
+    assert(ChannelVersion.ANCHOR_OUTPUTS.filterChannelTypes(Seq(standard, staticRemoteKey, anchorOutputs)) === Seq(standard, anchorOutputs))
   }
 
   case class HtlcWithPreimage(preimage: ByteVector32, htlc: UpdateAddHtlc)

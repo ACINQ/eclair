@@ -201,6 +201,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
       val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
+      val channelTypes = channelVersion.filterChannelTypes(nodeParams.channelTypesFor(remoteNodeId))
       val open = OpenChannel(nodeParams.chainHash,
         temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
@@ -221,7 +222,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         channelFlags = channelFlags,
         // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
         // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-        tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+        tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), OpenChannelTlv.ChannelTypes(channelTypes.map(_.features).toList)))
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(_, localParams, remote, _, _), Nothing) if !localParams.isFunder =>
@@ -362,7 +363,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
             // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script.
             // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
-            tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+            tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), AcceptChannelTlv.ChannelType(channelVersion.channelType.features)))
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = open.dustLimitSatoshis,
@@ -389,11 +390,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, initialRelayFees_opt, localParams, _, remoteInit, _, channelVersion), open)) =>
+    case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, initialRelayFees_opt, localParams, _, remoteInit, _, initialChannelVersion), open)) =>
       log.info(s"received AcceptChannel=$accept")
-      Helpers.validateParamsFunder(nodeParams, open, accept) match {
+      Helpers.validateParamsFunder(nodeParams, open, accept, initialChannelVersion) match {
         case Left(t) => handleLocalError(t, d, Some(accept))
-        case _ =>
+        case Right(finalChannelVersion) =>
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
             dustLimit = accept.dustLimitSatoshis,
@@ -412,7 +413,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
           wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeeratePerKw).pipeTo(self)
-          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, initialRelayFees_opt, accept.firstPerCommitmentPoint, channelVersion, open)
+          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, initialRelayFees_opt, accept.firstPerCommitmentPoint, finalChannelVersion, open)
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
