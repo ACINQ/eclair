@@ -465,7 +465,7 @@ object Helpers {
 
     def checkClosingSignature(keyManager: ChannelKeyManager, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, remoteClosingFee: Satoshi, remoteClosingSig: ByteVector64)(implicit log: LoggingAdapter): Either[ChannelException, ClosingTx] = {
       import commitments._
-      val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map(_.amount).sum
+      val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.map(_.amount).sum
       if (remoteClosingFee > lastCommitFeeSatoshi && !commitments.channelVersion.hasAnchorOutputs) {
         log.error(s"remote proposed a commit fee higher than the last commitment fee: remoteClosingFeeSatoshi=${remoteClosingFee.toLong} lastCommitFeeSatoshi=$lastCommitFeeSatoshi")
         Left(InvalidCloseFee(commitments.channelId, remoteClosingFee))
@@ -504,7 +504,7 @@ object Helpers {
      */
     def claimCurrentLocalCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): LocalCommitPublished = {
       import commitments._
-      require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
+      require(localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
       val channelKeyPath = keyManager.keyPath(localParams, channelVersion)
       val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index.toInt)
       val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
@@ -523,11 +523,12 @@ object Helpers {
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
 
-      val htlcTxs: Map[OutPoint, Option[HtlcTx]] = localCommit.publishableTxs.htlcTxsAndSigs.collect {
-        case HtlcTxAndSigs(txInfo@HtlcSuccessTx(_, _, paymentHash, _), localSig, remoteSig) =>
+      val htlcTxs: Map[OutPoint, Option[HtlcTx]] = localCommit.htlcTxsAndRemoteSigs.collect {
+        case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _), remoteSig) =>
           if (preimages.contains(paymentHash)) {
             // incoming htlc for which we have the preimage: we can spend it immediately
             txInfo.input.outPoint -> generateTx("htlc-success") {
+              val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
               Right(Transactions.addSigs(txInfo, localSig, remoteSig, preimages(paymentHash), commitmentFormat))
             }
           } else {
@@ -535,9 +536,10 @@ object Helpers {
             // preimage later, otherwise it will eventually timeout and they will get their funds back
             txInfo.input.outPoint -> None
           }
-        case HtlcTxAndSigs(txInfo: HtlcTimeoutTx, localSig, remoteSig) =>
+        case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
           txInfo.input.outPoint -> generateTx("htlc-timeout") {
+            val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
             Right(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
           }
       }.toMap
@@ -956,7 +958,7 @@ object Helpers {
      */
     def timedOutHtlcs(commitmentFormat: CommitmentFormat, localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec, commitmentFormat).map(_.add)
-      if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
+      if (tx.txid == localCommit.commitTxAndRemoteSig.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
         localCommit.spec.htlcs.collect(outgoing) -- untrimmedHtlcs
       } else {
@@ -1036,7 +1038,7 @@ object Helpers {
      * @param tx a transaction that is sufficiently buried in the blockchain
      */
     def onChainOutgoingHtlcs(localCommit: LocalCommit, remoteCommit: RemoteCommit, nextRemoteCommit_opt: Option[RemoteCommit], tx: Transaction): Set[UpdateAddHtlc] = {
-      if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
+      if (localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid) {
         localCommit.spec.htlcs.collect(outgoing)
       } else if (remoteCommit.txid == tx.txid) {
         remoteCommit.spec.htlcs.collect(incoming)
@@ -1055,7 +1057,7 @@ object Helpers {
       val localCommit = d.commitments.localCommit
       val remoteCommit = d.commitments.remoteCommit
       val nextRemoteCommit_opt = d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
-      if (localCommit.publishableTxs.commitTx.tx.txid == tx.txid) {
+      if (localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid) {
         // our commit got confirmed, so any htlc that is in their commitment but not in ours will never reach the chain
         val htlcsInRemoteCommit = remoteCommit.spec.htlcs ++ nextRemoteCommit_opt.map(_.spec.htlcs).getOrElse(Set.empty)
         // NB: from the p.o.v of remote, their incoming htlcs are our outgoing htlcs

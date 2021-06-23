@@ -129,7 +129,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   def closeChannelWithoutHtlcs(f: Fixture): (PublishRawTx, PublishReplaceableTx) = {
     import f._
 
-    val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx
+    val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(alice.underlyingActor.nodeParams.channelKeyManager)
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
@@ -177,7 +177,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(500 millibtc), f => {
       import f._
 
-      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx
+      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
       val (_, anchorTx) = closeChannelWithoutHtlcs(f)
       walletClient.publishTransaction(remoteCommit.tx).pipeTo(probe.ref)
       probe.expectMsg(remoteCommit.tx.txid)
@@ -194,7 +194,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     withFixture(Seq(500 millibtc), f => {
       import f._
 
-      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx
+      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
       val (_, anchorTx) = closeChannelWithoutHtlcs(f)
       walletClient.publishTransaction(remoteCommit.tx).pipeTo(probe.ref)
       probe.expectMsg(remoteCommit.tx.txid)
@@ -411,7 +411,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
 
     // Force-close channel and verify txs sent to watcher.
-    val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx
+    val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(alice.underlyingActor.nodeParams.channelKeyManager)
     assert(commitTx.tx.txOut.size === 6)
     probe.send(alice, CMD_FORCECLOSE(probe.ref))
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]

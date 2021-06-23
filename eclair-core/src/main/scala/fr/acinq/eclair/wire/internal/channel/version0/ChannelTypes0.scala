@@ -16,8 +16,12 @@
 
 package fr.acinq.eclair.wire.internal.channel.version0
 
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction, TxOut}
+import com.softwaremill.quicklens._
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel
+import fr.acinq.eclair.channel.{CommitTxAndRemoteSig, HtlcTxAndRemoteSig}
+import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 
 private[channel] object ChannelTypes0 {
@@ -95,11 +99,43 @@ private[channel] object ChannelTypes0 {
     }
   }
 
-  /**
-   * Starting with version2, we store a complete ClosingTx object for mutual close scenarios instead of simply storing
-   * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
-   * put dummy values in the migration.
-   */
-  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
+    /**
+     * Starting with version2, we store a complete ClosingTx object for mutual close scenarios instead of simply storing
+     * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
+     * put dummy values in the migration.
+     */
+    def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
 
+  case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
+
+  case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
+
+  case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
+    def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
+      val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
+      val unsignedCommitTx = publishableTxs.commitTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
+      val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
+        case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
+          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
+        case HtlcTxAndSigs(htlcTx: HtlcTimeoutTx, _, remoteSig) =>
+          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
+      }
+      channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
+    }
+
+    private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ByteVector64 = {
+      require(commitTx.tx.txIn.size == 1, s"commit tx must have exactly one input, found ${commitTx.tx.txIn.size}")
+      val ScriptWitness(Seq(_, sig1, sig2, redeemScript)) = commitTx.tx.txIn.head.witness
+      val _ :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: _ :: OP_CHECKMULTISIG :: Nil = Script.parse(redeemScript)
+      require(pub1 == remoteFundingPubKey.value || pub2 == remoteFundingPubKey.value, "unrecognized funding pubkey")
+      if (pub1 == remoteFundingPubKey.value) {
+        Crypto.der2compact(sig1)
+      } else {
+        Crypto.der2compact(sig2)
+      }
+    }
+  }
 }

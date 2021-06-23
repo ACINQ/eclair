@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{DeterministicWallet, Satoshi, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.{ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Commitments._
@@ -473,7 +473,7 @@ object CommitmentsSpec {
       localParams,
       remoteParams,
       channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-      LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil)),
+      LocalCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil),
       RemoteCommit(0, CommitmentSpec(Set.empty, feeRatePerKw, toRemote, toLocal), randomBytes32(), randomKey().publicKey),
       LocalChanges(Nil, Nil, Nil),
       RemoteChanges(Nil, Nil, Nil),
@@ -495,7 +495,7 @@ object CommitmentsSpec {
       localParams,
       remoteParams,
       channelFlags = if (announceChannel) ChannelFlags.AnnounceChannel else ChannelFlags.Empty,
-      LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil)),
+      LocalCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toLocal, toRemote), CommitTxAndRemoteSig(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), ByteVector64.Zeroes), Nil),
       RemoteCommit(0, CommitmentSpec(Set.empty, FeeratePerKw(0 sat), toRemote, toLocal), randomBytes32(), randomKey().publicKey),
       LocalChanges(Nil, Nil, Nil),
       RemoteChanges(Nil, Nil, Nil),

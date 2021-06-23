@@ -479,7 +479,7 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
     addHtlc(18_000_000 msat, bob, alice, bob2alice, alice2bob)
     addHtlc(400_000 msat, bob, alice, bob2alice, alice2bob) // below dust
     crossSign(bob, alice, bob2alice, alice2bob)
-    val revokedCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val revokedCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
     crossSign(bob, alice, bob2alice, alice2bob)
 
