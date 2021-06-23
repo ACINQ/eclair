@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.wire.internal.channel.version2
 
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.MilliSatoshi
@@ -23,6 +24,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, PublishableTxs}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
@@ -159,10 +162,10 @@ private[channel] object ChannelCodecs2 {
       ("commitTx" | (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx]) ::
         ("htlcTxsAndSigs" | listOfN(uint16, htlcTxAndSigsCodec))).as[PublishableTxs]
 
-    val localCommitCodec: Codec[LocalCommit] = (
+    def localCommitCodec(remoteFundingPubKey: PublicKey): Codec[LocalCommit] = (
       ("index" | uint64overflow) ::
         ("spec" | commitmentSpecCodec) ::
-        ("publishableTxs" | publishableTxsCodec)).as[LocalCommit]
+        ("publishableTxs" | publishableTxsCodec)).as[ChannelTypes0.LocalCommit].map(_.migrate(remoteFundingPubKey)).decodeOnly
 
     val remoteCommitCodec: Codec[RemoteCommit] = (
       ("index" | uint64overflow) ::
@@ -218,19 +221,20 @@ private[channel] object ChannelCodecs2 {
     val commitmentsCodec: Codec[Commitments] = (
       ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
         ("localParams" | localParamsCodec(channelVersion)) ::
-          ("remoteParams" | remoteParamsCodec) ::
-          ("channelFlags" | byte) ::
-          ("localCommit" | localCommitCodec) ::
-          ("remoteCommit" | remoteCommitCodec) ::
-          ("localChanges" | localChangesCodec) ::
-          ("remoteChanges" | remoteChangesCodec) ::
-          ("localNextHtlcId" | uint64overflow) ::
-          ("remoteNextHtlcId" | uint64overflow) ::
-          ("originChannels" | originsMapCodec) ::
-          ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
-          ("commitInput" | inputInfoCodec) ::
-          ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
-          ("channelId" | bytes32)
+          (("remoteParams" | remoteParamsCodec) >>:~ { remoteParams =>
+            ("channelFlags" | byte) ::
+              ("localCommit" | localCommitCodec(remoteParams.fundingPubKey)) ::
+              ("remoteCommit" | remoteCommitCodec) ::
+              ("localChanges" | localChangesCodec) ::
+              ("remoteChanges" | remoteChangesCodec) ::
+              ("localNextHtlcId" | uint64overflow) ::
+              ("remoteNextHtlcId" | uint64overflow) ::
+              ("originChannels" | originsMapCodec) ::
+              ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
+              ("commitInput" | inputInfoCodec) ::
+              ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
+              ("channelId" | bytes32)
+          })
       }).as[Commitments]
 
     val closingTxProposedCodec: Codec[ClosingTxProposed] = (

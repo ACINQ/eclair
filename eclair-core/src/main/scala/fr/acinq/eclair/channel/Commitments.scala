@@ -39,9 +39,9 @@ case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessag
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
-case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
-case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
-case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
+case class HtlcTxAndRemoteSig(htlcTx: HtlcTx, remoteSig: ByteVector64)
+case class CommitTxAndRemoteSig(commitTx: CommitTx, remoteSig: ByteVector64)
+case class LocalCommit(index: Long, spec: CommitmentSpec, commitTxAndRemoteSig: CommitTxAndRemoteSig, htlcTxsAndRemoteSigs: List[HtlcTxAndRemoteSig])
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: ByteVector32, remotePerCommitmentPoint: PublicKey)
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, sentAfterLocalCommitIndex: Long, reSignAsap: Boolean = false)
 // @formatter:on
@@ -144,9 +144,18 @@ case class Commitments(channelVersion: ChannelVersion,
     localCommit.spec.htlcs.collect(incoming).filter(nearlyExpired)
   }
 
-  def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
-
-  def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
+  /**
+   * Return a fully signed commit tx, that can be published as-is.
+   */
+  def fullySignedLocalCommitTx(keyManager: ChannelKeyManager): CommitTx = {
+    val unsignedCommitTx = localCommit.commitTxAndRemoteSig.commitTx
+    val localSig = keyManager.sign(unsignedCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
+    val remoteSig = localCommit.commitTxAndRemoteSig.remoteSig
+    val commitTx = Transactions.addSigs(unsignedCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, localSig, remoteSig)
+    // We verify the remote signature when receiving their commit_sig, so this check should always pass.
+    require(Transactions.checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
+    commitTx
+  }
 
   val commitmentFormat: CommitmentFormat = channelVersion.commitmentFormat
 
@@ -598,36 +607,25 @@ object Commitments {
     val channelKeyPath = keyManager.keyPath(commitments.localParams, commitments.channelVersion)
     val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index + 1)
     val (localCommitTx, htlcTxs) = makeLocalTxs(keyManager, channelVersion, localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
-    val sig = keyManager.sign(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
 
     log.info(s"built local commit number=${localCommit.index + 1} toLocalMsat=${spec.toLocal.toLong} toRemoteMsat=${spec.toRemote.toLong} htlc_in={} htlc_out={} feeratePerKw=${spec.feeratePerKw} txid=${localCommitTx.tx.txid} tx={}", spec.htlcs.collect(incoming).map(_.id).mkString(","), spec.htlcs.collect(outgoing).map(_.id).mkString(","), localCommitTx.tx)
 
-    // no need to compute htlc sigs if commit sig doesn't check out
-    val signedCommitTx = Transactions.addSigs(localCommitTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, sig, commit.signature)
-    if (Transactions.checkSpendable(signedCommitTx).isFailure) {
-      return Left(InvalidCommitmentSignature(commitments.channelId, signedCommitTx.tx))
+    if (!Transactions.checkSig(localCommitTx, commit.signature, remoteParams.fundingPubKey, TxOwner.Remote, commitmentFormat)) {
+      return Left(InvalidCommitmentSignature(commitments.channelId, localCommitTx.tx))
     }
 
-    val sortedHtlcTxs: Seq[TransactionWithInputInfo] = htlcTxs.sortBy(_.input.outPoint.index)
+    val sortedHtlcTxs: Seq[HtlcTx] = htlcTxs.sortBy(_.input.outPoint.index)
     if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
       return Left(HtlcSigCountMismatch(commitments.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size))
     }
-    val htlcSigs = sortedHtlcTxs.map(keyManager.sign(_, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat))
+
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
-    // combine the sigs to make signed txes
-    val htlcTxsAndSigs = (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList.collect {
-      case (htlcTx: HtlcTimeoutTx, localSig, remoteSig) =>
-        if (Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig, commitmentFormat)).isFailure) {
-          return Left(InvalidHtlcSignature(commitments.channelId, htlcTx.tx))
-        }
-        HtlcTxAndSigs(htlcTx, localSig, remoteSig)
-      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) =>
-        // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-        // we verify the signature from their point of view, where it is a remote tx
+    val htlcTxsAndRemoteSigs = sortedHtlcTxs.zip(commit.htlcSignatures).toList.map {
+      case (htlcTx: HtlcTx, remoteSig) =>
         if (!Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey, TxOwner.Remote, commitmentFormat)) {
           return Left(InvalidHtlcSignature(commitments.channelId, htlcTx.tx))
         }
-        HtlcTxAndSigs(htlcTx, localSig, remoteSig)
+        HtlcTxAndRemoteSig(htlcTx, remoteSig)
     }
 
     // we will send our revocation preimage + our next revocation hash
@@ -643,7 +641,8 @@ object Commitments {
     val localCommit1 = LocalCommit(
       index = localCommit.index + 1,
       spec,
-      publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
+      commitTxAndRemoteSig = CommitTxAndRemoteSig(localCommitTx, commit.signature),
+      htlcTxsAndRemoteSigs = htlcTxsAndRemoteSigs)
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
     val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
