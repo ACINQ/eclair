@@ -112,6 +112,72 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
     }
   }
 
+  /**
+   * Create a child-pays-for-parent transaction to increase the effective feerate of a set of unconfirmed transactions.
+   * These unconfirmed transactions must:
+   *  - be in our mempool (evicted transactions cannot be used)
+   *  - have an output that can be spent by our bitcoin wallet (provided in the outpoints set)
+   *  - the total amount of the set of outpoints must be high enough to pay the target feerate
+   *
+   * @param outpoints     outpoints that should be spent by the CPFP transaction.
+   * @param targetFeerate feerate to apply to the package of unconfirmed transactions.
+   */
+  def cpfp(outpoints: Set[OutPoint], targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[Transaction] = {
+    getMempoolPackage(outpoints.map(_.txid), Set.empty).transformWith {
+      case Failure(ex) => Future.failed(new IllegalArgumentException("unable to analyze mempool package: some transactions could not be found in your mempool", ex))
+      case Success(mempoolPackage) =>
+        getTxOutputs(outpoints).transformWith {
+          case Failure(ex) => Future.failed(new IllegalArgumentException("some transactions could not be found", ex))
+          case Success(txOutputs) =>
+            getChangeAddress().transformWith {
+              case Failure(ex) => Future.failed(new IllegalArgumentException("change address generation failed", ex))
+              case Success(changeAddress) =>
+                val amountIn = txOutputs.values.map(_.amount).sum
+                // We build a transaction with one P2WPKH output and many P2WPKH inputs
+                val txWeight = 164 + 272 * outpoints.size
+                val totalWeight = mempoolPackage.values.map(_.weight).sum + txWeight
+                val targetFees = Transactions.weight2fee(targetFeerate, totalWeight.toInt)
+                val currentFees = mempoolPackage.values.map(_.fees).sum
+                val missingFees = targetFees - currentFees
+                if (amountIn <= missingFees + 546.sat) {
+                  Future.failed(new IllegalArgumentException("input amount is not sufficient to cover the target feerate"))
+                } else {
+                  // NB: we can leave the pubKeyScript empty since the inputs should belong to our wallet.
+                  val unsignedTx = Transaction(2, outpoints.toSeq.map(o => TxIn(o, Seq.empty, 0)), TxOut(amountIn - missingFees, Script.pay2wpkh(changeAddress)) :: Nil, 0)
+                  signTransaction(unsignedTx, Nil).transformWith {
+                    case Failure(ex) => Future.failed(new IllegalArgumentException("tx signing failed: some inputs don't belong to our wallet", ex))
+                    case Success(signedTx) => publishTransaction(signedTx.tx).map(_ => signedTx.tx)
+                  }
+                }
+            }
+        }
+    }
+  }
+
+  /** Recursively fetch unconfirmed parents and return the complete unconfirmed ancestors tree. */
+  private def getMempoolPackage(leaves: Set[ByteVector32], skip: Set[ByteVector32])(implicit ec: ExecutionContext): Future[Map[ByteVector32, MempoolTx]] = {
+    val skip2 = skip ++ leaves
+    Future.sequence(leaves.map(txid => getMempoolTx(txid))).flatMap(txs => {
+      val current = txs.map(tx => tx.txid -> tx).toMap
+      val remainingParents = txs.flatMap(_.unconfirmedParents) -- skip2
+      if (remainingParents.isEmpty) {
+        Future.successful(current)
+      } else {
+        getMempoolPackage(remainingParents, skip2).map(_.concat(current))
+      }
+    })
+  }
+
+  /** Fetch transaction output details for the given outpoints. */
+  private def getTxOutputs(outpoints: Set[OutPoint])(implicit ec: ExecutionContext): Future[Map[OutPoint, TxOut]] = {
+    Future.sequence(outpoints.map(_.txid).map(txid => getTransaction(txid))).map(txs => {
+      outpoints.flatMap(o => txs.find(tx => tx.txid == o.txid && o.index < tx.txOut.length) match {
+        case Some(tx) => Some(o -> tx.txOut(o.index.toInt))
+        case None => None
+      }).toMap
+    })
+  }
+
   def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
     rpcClient.invoke("signrawtransactionwithwallet", tx.toString(), previousTxs).map(json => {
       val JString(hex) = json \ "hex"
@@ -245,8 +311,9 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
       val JDecimal(ancestorFees) = json \ "fees" \ "ancestor"
       val JDecimal(descendantFees) = json \ "fees" \ "descendant"
       val JBool(replaceable) = json \ "bip125-replaceable"
+      val unconfirmedParents = (json \ "depends").extract[List[String]].map(ByteVector32.fromValidHex).toSet
       // NB: bitcoind counts the transaction itself as its own ancestor and descendant, which is confusing: we fix that by decrementing these counters.
-      MempoolTx(txid, vsize.toLong, weight.toLong, replaceable, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees))
+      MempoolTx(txid, vsize.toLong, weight.toLong, replaceable, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees), unconfirmedParents)
     })
   }
 
@@ -310,17 +377,18 @@ object ExtendedBitcoinClient {
   /**
    * Information about a transaction currently in the mempool.
    *
-   * @param txid            transaction id.
-   * @param vsize           virtual transaction size as defined in BIP 141.
-   * @param weight          transaction weight as defined in BIP 141.
-   * @param replaceable     Whether this transaction could be replaced with RBF (BIP125).
-   * @param fees            transaction fees.
-   * @param ancestorCount   number of unconfirmed parent transactions.
-   * @param ancestorFees    transactions fees for the package consisting of this transaction and its unconfirmed parents.
-   * @param descendantCount number of unconfirmed child transactions.
-   * @param descendantFees  transactions fees for the package consisting of this transaction and its unconfirmed children (without its unconfirmed parents).
+   * @param txid               transaction id.
+   * @param vsize              virtual transaction size as defined in BIP 141.
+   * @param weight             transaction weight as defined in BIP 141.
+   * @param replaceable        Whether this transaction could be replaced with RBF (BIP125).
+   * @param fees               transaction fees.
+   * @param ancestorCount      number of unconfirmed parent transactions.
+   * @param ancestorFees       transactions fees for the package consisting of this transaction and its unconfirmed parents.
+   * @param descendantCount    number of unconfirmed child transactions.
+   * @param descendantFees     transactions fees for the package consisting of this transaction and its unconfirmed children (without its unconfirmed parents).
+   * @param unconfirmedParents unconfirmed transactions used as inputs for this transaction.
    */
-  case class MempoolTx(txid: ByteVector32, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi)
+  case class MempoolTx(txid: ByteVector32, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi, unconfirmedParents: Set[ByteVector32])
 
   case class Utxo(txid: ByteVector32, vout: Long)
 

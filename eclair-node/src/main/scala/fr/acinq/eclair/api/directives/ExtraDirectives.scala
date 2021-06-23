@@ -21,7 +21,7 @@ import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.StatusCodes.NotFound
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, OutPoint}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
@@ -41,6 +41,7 @@ trait ExtraDirectives extends Directives {
   val channelIdsFormParam: NameUnmarshallerReceptacle[List[ByteVector32]] = "channelIds".as[List[ByteVector32]](sha256HashesUnmarshaller)
   val nodeIdFormParam: NameReceptacle[PublicKey] = "nodeId".as[PublicKey]
   val nodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "nodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
+  val outPointsFormParam: NameUnmarshallerReceptacle[List[OutPoint]] = "outpoints".as[List[OutPoint]](outPointListUnmarshaller)
   val paymentHashFormParam: NameUnmarshallerReceptacle[ByteVector32] = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
   val fromFormParam: NameReceptacle[Long] = "from".as[Long]
   val toFormParam: NameReceptacle[Long] = "to".as[Long]
