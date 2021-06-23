@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.db
 
+import akka.Done
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
@@ -27,6 +28,8 @@ import fr.acinq.eclair.db.Monitoring.Metrics
 
 import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
+import java.util.concurrent.Executors
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.FiniteDuration
 import scala.sys.process.Process
 import scala.util.{Failure, Success, Try}
@@ -52,11 +55,15 @@ object FileBackupHandler {
   sealed trait Command
   case class WrappedChannelPersisted(wrapped: ChannelPersisted) extends Command
   private case object TickBackup extends Command
+  private case class BackupResult(result: Try[Done]) extends Command
 
   sealed trait BackupEvent
   // this notification is sent when we have completed our backup process (our backup file is ready to be used)
   case object BackupCompleted extends BackupEvent
   // @formatter:on
+
+  // the backup task will run in this thread pool
+  private val ec = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
   def apply(databases: FileBackup, backupParams: FileBackupParams): Behavior[Command] =
     Behaviors.setup { context =>
@@ -64,7 +71,7 @@ object FileBackupHandler {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelPersisted](WrappedChannelPersisted))
       Behaviors.withTimers { timers =>
         timers.startTimerAtFixedRate(TickBackup, backupParams.interval)
-        new FileBackupHandler(databases, backupParams, context).normal(false)
+        new FileBackupHandler(databases, backupParams, context).waiting(willBackupAtNextTick = false)
       }
     }
 }
@@ -73,21 +80,34 @@ class FileBackupHandler private(databases: FileBackup,
                                 backupParams: FileBackupParams,
                                 context: ActorContext[Command]) {
 
-  def normal(willBackup: Boolean): Behavior[Command] =
+  def waiting(willBackupAtNextTick: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case _: WrappedChannelPersisted =>
-        context.log.debug("will perform backup")
-        normal(willBackup = true)
-      case TickBackup => if (willBackup) {
+        context.log.debug("will perform backup at next tick")
+        waiting(willBackupAtNextTick = true)
+      case TickBackup => if (willBackupAtNextTick) {
         context.log.debug("performing backup")
-        doBackup()
-        normal(willBackup = false)
+        context.pipeToSelf(doBackup())(BackupResult)
+        backuping(willBackupAtNextTick = false)
       } else {
         Behaviors.same
       }
     }
 
-  private def doBackup(): Unit = {
+  def backuping(willBackupAtNextTick: Boolean): Behavior[Command] =
+    Behaviors.receiveMessagePartial {
+      case _: WrappedChannelPersisted =>
+        context.log.debug("will perform backup at next tick")
+        backuping(willBackupAtNextTick = true)
+      case BackupResult(res) =>
+        res match {
+          case Success(Done) => context.log.debug("backup succeeded")
+          case Failure(cause) => context.log.warn(s"backup failed: $cause")
+        }
+        waiting(willBackupAtNextTick)
+    }
+
+  private def doBackup(): Future[Done] = Future {
     KamonExt.time(Metrics.FileBackupDuration.withoutTags()) {
       val tmpFile = new File(backupParams.targetFile.getAbsolutePath.concat(".tmp"))
       databases.backup(tmpFile)
@@ -101,15 +121,10 @@ class FileBackupHandler private(databases: FileBackup,
       Metrics.FileBackupCompleted.withoutTags().increment()
     }
 
-    backupParams.script_opt.foreach(backupScript => {
-      Try {
-        // run the script in the current thread and wait until it terminates
-        Process(backupScript).!
-      } match {
-        case Success(exitCode) => context.log.debug(s"backup notify script $backupScript returned $exitCode")
-        case Failure(cause) => context.log.warn(s"cannot start backup notify script $backupScript:  $cause")
-      }
-    })
-  }
+    // run the script in the current thread and wait until it terminates
+    backupParams.script_opt.foreach(backupScript => Process(backupScript).!)
+
+    Done
+  }(ec)
 
 }
