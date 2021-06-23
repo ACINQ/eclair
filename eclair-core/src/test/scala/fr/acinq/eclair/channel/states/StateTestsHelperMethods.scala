@@ -72,6 +72,8 @@ object StateTestsTags {
   val NoMaxHtlcValueInFlight = "no_max_htlc_value_in_flight"
   /** If set, max-htlc-value-in-flight will be set to a low value for Alice. */
   val AliceLowMaxHtlcValueInFlight = "alice_low_max_htlc_value_in_flight"
+  /** If set, channels will use option_upfront_shutdown_script. */
+  val OptionUpfrontShutdownScript = "option_upfront_shutdown_script"
 }
 
 trait StateTestsHelperMethods extends TestKitBase {
@@ -86,7 +88,9 @@ trait StateTestsHelperMethods extends TestKitBase {
                           relayerA: TestProbe,
                           relayerB: TestProbe,
                           channelUpdateListener: TestProbe,
-                          wallet: EclairWallet) {
+                          wallet: EclairWallet,
+                          alicePeer: TestProbe,
+                          bobPeer: TestProbe) {
     def currentBlockHeight: Long = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
@@ -107,7 +111,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     val router = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
-    SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
+    SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
   def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, ChannelFeatures, LocalParams, ChannelFeatures) = {
@@ -118,11 +122,13 @@ trait StateTestsHelperMethods extends TestKitBase {
       .modify(_.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(StateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.OptionUpfrontShutdownScript))(_.updated(Features.OptionUpfrontShutdownScript, FeatureSupport.Optional))
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(StateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.OptionUpfrontShutdownScript))(_.updated(Features.OptionUpfrontShutdownScript, FeatureSupport.Optional))
 
     val aliceChannelFeatures = ChannelFeatures.pickChannelFeatures(aliceInitFeatures, bobInitFeatures)
     val bobChannelFeatures = ChannelFeatures.pickChannelFeatures(bobInitFeatures, aliceInitFeatures)

@@ -69,6 +69,9 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
       TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Optional), Features(StaticRemoteKey -> Mandatory, Wumbo -> Mandatory), ChannelFeatures(StaticRemoteKey, Wumbo)),
       TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelFeatures(StaticRemoteKey)),
       TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelFeatures(StaticRemoteKey, AnchorOutputs)),
+      TestCase(Features(OptionUpfrontShutdownScript -> Optional), Features.empty, ChannelFeatures()),
+      TestCase(Features(OptionUpfrontShutdownScript -> Optional), Features(OptionUpfrontShutdownScript -> Optional), ChannelFeatures(OptionUpfrontShutdownScript)),
+      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, OptionUpfrontShutdownScript -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, OptionUpfrontShutdownScript -> Optional), ChannelFeatures(StaticRemoteKey, AnchorOutputs, OptionUpfrontShutdownScript)),
     )
 
     for (testCase <- testCases) {
