@@ -281,14 +281,22 @@ trait StateTestsHelperMethods extends TestKitBase {
 
   def localClose(s: TestFSMRef[State, Data, Channel], s2blockchain: TestProbe): LocalCommitPublished = {
     // an error occurs and s publishes its commit tx
-    val commitTx = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val localCommit = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit
+    // check that we store the local txs without sigs
+    localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
+    localCommit.htlcTxsAndRemoteSigs.foreach(_.htlcTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull)))
+
+    val commitTx = localCommit.commitTxAndRemoteSig.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(s.stateName == CLOSING)
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
 
-    assert(s2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx == commitTx)
+    val publishedLocalCommitTx = s2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx
+    assert(publishedLocalCommitTx.txid == commitTx.txid)
+    val commitInput = closingState.commitments.commitInput
+    Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     if (closingState.commitments.commitmentFormat == Transactions.AnchorOutputsCommitmentFormat) {
       assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     }

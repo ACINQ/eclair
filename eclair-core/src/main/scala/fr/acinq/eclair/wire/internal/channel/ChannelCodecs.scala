@@ -20,6 +20,7 @@ import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1
 import fr.acinq.eclair.wire.internal.channel.version2.ChannelCodecs2
+import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3
 import grizzled.slf4j.Logging
 import scodec.Codec
 import scodec.codecs.{byte, discriminated}
@@ -47,7 +48,7 @@ import scodec.codecs.{byte, discriminated}
        val stateDataCodec: Codec[HasCommitments] = ...
  * }}}
  *
- * Notice that the outer class has a visibility restricted to package [[channel]], while the inner class has a
+ * Notice that the outer class has a visibility restricted to package [[fr.acinq.eclair.wire.internal.channel]], while the inner class has a
  * visibility restricted to package [[version0]]. This guarantees that we strictly segregate each codec version,
  * while still allowing unitary testing.
  *
@@ -65,8 +66,9 @@ object ChannelCodecs extends Logging {
    * More info here: https://github.com/scodec/scodec/issues/122
    */
   val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(byte)
-    .typecase(2, ChannelCodecs2.stateDataCodec)
-    .typecase(1, ChannelCodecs1.stateDataCodec)
-    .typecase(0, ChannelCodecs0.stateDataCodec)
+    .typecase(3, ChannelCodecs3.stateDataCodec)
+    .typecase(2, ChannelCodecs2.stateDataCodec.decodeOnly)
+    .typecase(1, ChannelCodecs1.stateDataCodec.decodeOnly)
+    .typecase(0, ChannelCodecs0.stateDataCodec.decodeOnly)
 
 }

@@ -197,12 +197,4 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
   }
 
-  test("basic serialization test (NORMAL)") {
-    val data = normal
-    val bin = DATA_NORMAL_Codec.encode(data).require
-    val check = DATA_NORMAL_Codec.decodeValue(bin).require
-    assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
-    assert(data === check)
-  }
-
 }
