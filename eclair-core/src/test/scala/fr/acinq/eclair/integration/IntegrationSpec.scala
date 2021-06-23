@@ -68,7 +68,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
 
   val commonConfig = ConfigFactory.parseMap(Map(
     "eclair.chain" -> "regtest",
-    "eclair.enable-db-backup" -> false,
+    "eclair.file-backup.enabled" -> false,
     "eclair.server.public-ips.1" -> "127.0.0.1",
     "eclair.bitcoind.port" -> bitcoindPort,
     "eclair.bitcoind.rpcport" -> bitcoindRpcPort,
