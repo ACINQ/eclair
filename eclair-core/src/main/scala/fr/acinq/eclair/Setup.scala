@@ -257,7 +257,7 @@ class Setup(val datadir: File,
               targetFile = new File(chaindir, config.getString("file-backup.target-file")),
               script_opt = if (config.hasPath("file-backup.notify-script")) Some(config.getString("file-backup.notify-script")) else None
             )
-            system.spawn(FileBackupHandler(fileBackup, fileBackupParams), name = "backuphandler")
+            system.spawn(Behaviors.supervise(FileBackupHandler(fileBackup, fileBackupParams)).onFailure(typed.SupervisorStrategy.restart), name = "backuphandler")
           case _ =>
             system.deadLetters
         }
