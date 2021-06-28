@@ -361,7 +361,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     register.expectMsg(ForwardShortId(paymentFSM, channelId_ab, cmd1))
     val update_bc_disabled = update_bc.copy(channelFlags = Announcements.makeChannelFlags(isNode1 = true, enable = false))
-    sender.send(paymentFSM, addCompleted(HtlcResult.Disconnected(update_bc_disabled)))
+    sender.send(paymentFSM, addCompleted(HtlcResult.DisconnectedBeforeSigned(update_bc_disabled)))
 
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(defaultRouteRequest(a, d, cfg).copy(ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab, a, b)))))
