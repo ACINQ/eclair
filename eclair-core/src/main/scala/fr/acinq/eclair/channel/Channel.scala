@@ -1038,12 +1038,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(INPUT_DISCONNECTED, d: DATA_NORMAL) =>
       // we cancel the timer that would have made us send the enabled update after reconnection (flappy channel protection)
       cancelTimer(Reconnected.toString)
-      // if we have pending unsigned htlcs, then we cancel them and advertise the fact that the channel is now disabled
+      // if we have pending unsigned htlcs, then we cancel them and generate and update with the disabled flag set, that will be returned to the sender in a temporary channel failure
       val d1 = if (d.commitments.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.debug("updating channel_update announcement (reason=disabled)")
         val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
+        // NB: the htlcs stay in the commitments.localChange, they will be cleaned up after reconnection
         d.commitments.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.Disconnected(channelUpdate))
+          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate))
         }
         d.copy(channelUpdate = channelUpdate)
       } else {
@@ -1889,12 +1890,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
   }
 
+  /** Metrics */
   onTransition {
     case state -> nextState if state != nextState =>
       if (state != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, state.toString).decrement()
       if (nextState != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, nextState.toString).increment()
   }
 
+  /** Check pending settlement commands */
   onTransition {
     case _ -> CLOSING =>
       PendingCommandsDb.getSettlementCommands(nodeParams.db.pendingCommands, nextStateData.asInstanceOf[HasCommitments].channelId) match {
@@ -1912,6 +1915,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           log.info("replaying {} unacked fulfills/fails", cmds.size)
           cmds.foreach(self ! _) // they all have commit = false
           self ! CMD_SIGN() // so we can sign all of them at once
+      }
+  }
+
+  /** Fail outgoing unsigned htlcs right away when transitioning from NORMAL to OFFLINE or CLOSING */
+  onTransition {
+    case NORMAL -> CLOSING =>
+      nextStateData match {
+        case d: DATA_CLOSING =>
+          d.commitments.localChanges.proposed.collect {
+            case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeSigned)
+          }
       }
   }
 
@@ -2208,17 +2222,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     blockchain ! WatchTxConfirmed(self, closingTx.tx.txid, nodeParams.minDepthBlocks)
   }
 
-  /** We fail outgoing unsigned htlcs right away when transitioning from NORMAL to CLOSING */
-  private def failUnsignedProposedHtlcs(d: HasCommitments) = {
-    d match {
-      case dd: DATA_NORMAL =>
-        dd.commitments.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeCommitted)
-        }
-      case _ => ()
-    }
-  }
-
   private def spendLocalCurrent(d: HasCommitments) = {
     val outdatedCommitment = d match {
       case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
@@ -2229,7 +2232,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       log.warning("we have an outdated commitment: will not publish our local tx")
       stay
     } else {
-      failUnsignedProposedHtlcs(d)
       val commitTx = d.commitments.fullySignedLocalCommitTx(keyManager).tx
       val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(keyManager, d.commitments, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
       val nextData = d match {
@@ -2305,7 +2307,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     log.warning(s"they published their current commit in txid=${commitTx.txid}")
     require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
-    failUnsignedProposedHtlcs(d)
     val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, d.commitments.remoteCommit, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
@@ -2337,7 +2338,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     val remoteCommit = d.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit
     require(commitTx.txid == remoteCommit.txid, "txid mismatch")
 
-    failUnsignedProposedHtlcs(d)
     val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(keyManager, d.commitments, remoteCommit, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
@@ -2367,7 +2367,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   private def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
-    failUnsignedProposedHtlcs(d)
     Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.db.channels, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")

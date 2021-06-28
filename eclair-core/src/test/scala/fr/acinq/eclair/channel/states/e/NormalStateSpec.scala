@@ -1926,7 +1926,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     alice ! CMD_FORCECLOSE(sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type ]]
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type ]]
     assert(addSettled.htlc == htlc1)
   }
 
@@ -2422,7 +2422,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // bob publishes his current commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type ]]
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type ]]
     assert(addSettled.htlc == htlc1)
   }
 
@@ -2506,7 +2506,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // bob publishes his current commit tx
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type]]
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
     assert(addSettled.htlc == htlc2)
   }
 
@@ -2639,7 +2639,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // bob publishes his current commit tx
 
     alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type]]
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type]]
     assert(addSettled.htlc == htlc3)
   }
 
@@ -2741,7 +2741,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test starts here
     alice ! Error(ByteVector32.Zeroes, "oops")
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type ]]
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeSigned.type ]]
     assert(addSettled.htlc == htlc1)
   }
 
@@ -2899,8 +2899,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     Thread.sleep(1100)
     alice ! INPUT_DISCONNECTED
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Disconnected]].htlc.paymentHash === htlc1.paymentHash)
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Disconnected]].htlc.paymentHash === htlc2.paymentHash)
+    val addSettled1 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
+    assert(addSettled1.htlc == htlc1)
+    assert(addSettled1.result.isInstanceOf[HtlcResult.DisconnectedBeforeSigned])
+    val addSettled2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
+    assert(addSettled2.htlc == htlc2)
+    assert(addSettled2.result.isInstanceOf[HtlcResult.DisconnectedBeforeSigned])
     assert(!Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags))
     awaitCond(alice.stateName == OFFLINE)
   }
@@ -2942,8 +2946,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     Thread.sleep(1100)
     alice ! INPUT_DISCONNECTED
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Disconnected]].htlc.paymentHash === htlc1.paymentHash)
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.Disconnected]].htlc.paymentHash === htlc2.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc1.paymentHash)
+    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc2.paymentHash)
     val update2a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1a.channelUpdate.timestamp < update2a.channelUpdate.timestamp)
     assert(!Announcements.isEnabled(update2a.channelUpdate.channelFlags))

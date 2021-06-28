@@ -114,7 +114,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         case HtlcResult.OnChainFail(cause) =>
           // if the outgoing htlc is being resolved on chain, we treat it like a local error but we cannot retry
           handleLocalFail(d, cause, isFatal = true)
-        case HtlcResult.Disconnected(_) =>
+        case HtlcResult.ChannelFailureBeforeSigned =>
+          // if the outgoing htlc is being resolved on chain, we treat it like a local error but we cannot retry
+          handleLocalFail(d, ChannelFailureException, isFatal = true)
+        case HtlcResult.DisconnectedBeforeSigned(_) =>
           // a disconnection occured before the outgoing htlc got signed
           // again, we consider it a local error and treat is as such
           handleLocalFail(d, DisconnectedException, isFatal = false)
@@ -347,6 +350,7 @@ object PaymentLifecycle {
 
   /** custom exceptions to handle corner cases */
   case object UpdateMalformedException extends RuntimeException("first hop returned an UpdateFailMalformedHtlc message")
+  case object ChannelFailureException extends RuntimeException("a channel failure occured with the first hop")
   case object DisconnectedException extends RuntimeException("a disconnection occurred with the first hop")
   // @formatter:on
 
