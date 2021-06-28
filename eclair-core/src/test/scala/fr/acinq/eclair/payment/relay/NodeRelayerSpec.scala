@@ -353,6 +353,39 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     register.expectNoMessage(100 millis)
   }
 
+  test("fail to relay when amount is 0 (single-part)") { f =>
+    import f._
+
+    val p = createValidIncomingPacket(5000000 msat, 5000000 msat, CltvExpiry(500000), 0 msat, CltvExpiry(490000))
+    val (nodeRelayer, _) = f.createNodeRelay(p)
+    nodeRelayer ! NodeRelay.Relay(p)
+
+    val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fwd.channelId === p.add.channelId)
+    assert(fwd.message === CMD_FAIL_HTLC(p.add.id, Right(InvalidOnionPayload(UInt64(2), 0)), commit = true))
+
+    register.expectNoMessage(100 millis)
+  }
+
+  test("fail to relay when amount is 0 (multi-part)") { f =>
+    import f._
+
+    val p = Seq(
+      createValidIncomingPacket(4000000 msat, 5000000 msat, CltvExpiry(500000), 0 msat, CltvExpiry(490000)),
+      createValidIncomingPacket(1000000 msat, 5000000 msat, CltvExpiry(500000), 0 msat, CltvExpiry(490000))
+    )
+    val (nodeRelayer, _) = f.createNodeRelay(p.head)
+    p.foreach(p => nodeRelayer ! NodeRelay.Relay(p))
+
+    p.foreach { p =>
+      val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
+      assert(fwd.channelId === p.add.channelId)
+      assert(fwd.message === CMD_FAIL_HTLC(p.add.id, Right(InvalidOnionPayload(UInt64(2), 0)), commit = true))
+    }
+
+    register.expectNoMessage(100 millis)
+  }
+
   test("fail to relay because outgoing balance isn't sufficient (low fees)") { f =>
     import f._
 
