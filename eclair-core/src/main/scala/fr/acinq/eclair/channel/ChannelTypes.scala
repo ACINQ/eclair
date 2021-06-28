@@ -214,7 +214,8 @@ object HtlcResult {
   sealed trait Fail extends HtlcResult
   case class RemoteFail(fail: UpdateFailHtlc) extends Fail
   case class RemoteFailMalformed(fail: UpdateFailMalformedHtlc) extends Fail
-  case class OnChainFail(cause: ChannelException) extends Fail
+  case class OnChainFail(cause: Throwable) extends Fail
+  case object ChannelFailureBeforeCommitted extends Fail
   case class Disconnected(channelUpdate: ChannelUpdate) extends Fail { assert(!Announcements.isEnabled(channelUpdate.channelFlags), "channel update must have disabled flag set") }
 }
 final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]

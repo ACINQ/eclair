@@ -1918,9 +1918,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_FORCECLOSE (with pending unsigned htlcs)") { f =>
     import f._
     val sender = TestProbe()
-    alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
-    val update1a = alice2bob.expectMsgType[ChannelUpdate]
-    assert(Announcements.isEnabled(update1a.channelFlags))
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -1929,9 +1926,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test starts here
     alice ! CMD_FORCECLOSE(sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
-    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]]
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type ]]
     assert(addSettled.htlc == htlc1)
-    assert(addSettled.result.cause.isInstanceOf[ForcedLocalCommit])
   }
 
   def testShutdown(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
@@ -2414,6 +2410,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(claimFee == expectedFee)
   }
 
+  test("recv WatchFundingSpentTriggered (their commit w/ pending unsigned htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(aliceData.commitments.localChanges.proposed.size == 1)
+
+    // actual test starts here
+    // bob publishes his current commit tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    alice ! WatchFundingSpentTriggered(bobCommitTx)
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type ]]
+    assert(addSettled.htlc == htlc1)
+  }
+
   test("recv WatchFundingSpentTriggered (their *next* commit w/ htlc)") { f =>
     import f._
 
@@ -2473,6 +2485,29 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val rcp = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get
     assert(getClaimHtlcSuccessTxs(rcp).length === 0)
     assert(getClaimHtlcTimeoutTxs(rcp).length === 2)
+  }
+
+  test("recv WatchFundingSpentTriggered (their *next* commit w/ pending unsigned htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    // alice sign but we intercept bob's revocation
+    alice ! CMD_SIGN()
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[RevokeAndAck]
+    val (_, htlc2) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(aliceData.commitments.localChanges.proposed.size == 1)
+
+    // actual test starts here
+    // bob publishes his current commit tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    alice ! WatchFundingSpentTriggered(bobCommitTx)
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type]]
+    assert(addSettled.htlc == htlc2)
   }
 
   test("recv WatchFundingSpentTriggered (revoked commit)") { f =>
@@ -2585,6 +2620,29 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     htlcPenaltyTxs.foreach(htlcPenaltyTx => Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
   }
 
+  test("recv WatchFundingSpentTriggered (revoked commit w/ pending unsigned htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val bobRevokedCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val (_, htlc3) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(aliceData.commitments.localChanges.proposed.size == 1)
+
+    // actual test starts here
+    // bob publishes his current commit tx
+
+    alice ! WatchFundingSpentTriggered(bobRevokedCommitTx)
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type]]
+    assert(addSettled.htlc == htlc3)
+  }
+
   test("recv Error") { f =>
     import f._
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -2671,6 +2729,20 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
     val localCommitPublished = bob.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.get
     assert(localCommitPublished.commitTx.txid == bobCommitTx.txid)
+  }
+
+  test("recv Error (with pending unsigned htlcs)") { f =>
+    import f._
+    val sender = TestProbe()
+    val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    val aliceData = alice.stateData.asInstanceOf[DATA_NORMAL]
+    assert(aliceData.commitments.localChanges.proposed.size == 1)
+
+    // actual test starts here
+    alice ! Error(ByteVector32.Zeroes, "oops")
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.ChannelFailureBeforeCommitted.type ]]
+    assert(addSettled.htlc == htlc1)
   }
 
   test("recv WatchFundingDeeplyBuriedTriggered", Tag(StateTestsTags.ChannelsPublic)) { f =>
