@@ -111,6 +111,8 @@ object NodeRelay {
       Some(TrampolineExpiryTooSoon)
     } else if (payloadOut.invoiceFeatures.isDefined && payloadOut.paymentSecret.isEmpty) {
       Some(InvalidOnionPayload(UInt64(8), 0)) // payment secret field is missing
+    } else if (payloadOut.amountToForward <= MilliSatoshi(0)) {
+      Some(InvalidOnionPayload(UInt64(2), 0))
     } else {
       None
     }
