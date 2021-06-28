@@ -1927,10 +1927,11 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(aliceData.commitments.localChanges.proposed.size == 1)
 
     // actual test starts here
-    Thread.sleep(1100)
     alice ! CMD_FORCECLOSE(sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_FORCECLOSE]]
-    assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]].result.cause.isInstanceOf[ForcedLocalCommit])
+    val addSettled = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.OnChainFail]]
+    assert(addSettled.htlc == htlc1)
+    assert(addSettled.result.cause.isInstanceOf[ForcedLocalCommit])
   }
 
   def testShutdown(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
