@@ -19,7 +19,7 @@ package fr.acinq.eclair.crypto.keymanager
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{ByteVector64, Crypto, DeterministicWallet, Protocol}
-import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
+import fr.acinq.eclair.channel.{ChannelConfigOptions, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, TransactionWithInputInfo, TxOwner}
 import scodec.bits.ByteVector
 
@@ -41,12 +41,14 @@ trait ChannelKeyManager {
 
   def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.PublicKey
 
-  def keyPath(localParams: LocalParams, channelVersion: ChannelVersion): DeterministicWallet.KeyPath = if (channelVersion.hasPubkeyKeyPath) {
-    // deterministic mode: use the funding pubkey to compute the channel key path
-    ChannelKeyManager.keyPath(fundingPublicKey(localParams.fundingKeyPath))
-  } else {
-    // legacy mode:  we reuse the funding key path as our channel key path
-    localParams.fundingKeyPath
+  def keyPath(localParams: LocalParams, channelConfig: ChannelConfigOptions): DeterministicWallet.KeyPath = {
+    if (channelConfig.hasOption(ChannelConfigOptions.FundingPubKeyBasedChannelKeyPath)) {
+      // deterministic mode: use the funding pubkey to compute the channel key path
+      ChannelKeyManager.keyPath(fundingPublicKey(localParams.fundingKeyPath))
+    } else {
+      // legacy mode:  we reuse the funding key path as our channel key path
+      localParams.fundingKeyPath
+    }
   }
 
   /**
@@ -114,7 +116,7 @@ object ChannelKeyManager {
     val buffer = Crypto.sha256(fundingPubKey.value)
     val bis = new ByteArrayInputStream(buffer.toArray)
 
-    def next() = Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)
+    def next(): Long = Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)
 
     DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next()))
   }

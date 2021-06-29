@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{Features, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
@@ -56,13 +56,14 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val setup = init(aliceNodeParams, bobNodeParams)
 
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
+    val channelConfig = ChannelConfigOptions.standard
+    val channelFeatures = ChannelFeatures(Features.empty)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, channelFeatures)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelFeatures)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)

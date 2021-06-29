@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -61,13 +61,14 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val setup = init(aliceNodeParams, bobNodeParams, wallet = noopWallet)
 
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
+    val channelConfig = ChannelConfigOptions.standard
+    val channelFeatures = ChannelFeatures(Features.empty)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
     within(30 seconds) {
       val fundingAmount = if (test.tags.contains(StateTestsTags.Wumbo)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, channelFeatures)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelFeatures)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)

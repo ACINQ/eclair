@@ -123,19 +123,22 @@ trait StateTestsHelperMethods extends TestKitBase {
     import com.softwaremill.quicklens._
     import setup._
 
-    val channelVersion = List(
-      ChannelVersion.STANDARD,
-      if (tags.contains(StateTestsTags.AnchorOutputs)) ChannelVersion.ANCHOR_OUTPUTS else ChannelVersion.ZEROES,
-      if (tags.contains(StateTestsTags.StaticRemoteKey)) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.ZEROES,
-    ).reduce(_ | _)
+    val channelConfig = ChannelConfigOptions.standard
+    val channelFeatures = if (tags.contains(StateTestsTags.AnchorOutputs)) {
+      ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
+    } else if (tags.contains(StateTestsTags.StaticRemoteKey)) {
+      ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory))
+    } else {
+      ChannelFeatures(Features.empty)
+    }
 
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val aliceParams = setChannelFeatures(Alice.channelParams, tags)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
     val bobParams = setChannelFeatures(Bob.channelParams, tags)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
     val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(StateTestsTags.NoPushMsat)) {
@@ -146,9 +149,9 @@ trait StateTestsHelperMethods extends TestKitBase {
 
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelFeatures)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelFeatures)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
