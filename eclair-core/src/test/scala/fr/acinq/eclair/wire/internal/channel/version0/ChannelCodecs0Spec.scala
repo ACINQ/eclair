@@ -1,9 +1,9 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0.Codecs._
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.ChannelVersion
 import fr.acinq.eclair.wire.protocol.{OnionRoutingPacket, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong}
 import org.scalatest.funsuite.AnyFunSuite

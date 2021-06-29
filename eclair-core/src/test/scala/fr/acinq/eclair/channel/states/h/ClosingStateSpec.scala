@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, HtlcSuccessTx, HtlcTimeoutTx, TxOwner}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -64,12 +64,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     if (unconfirmedFundingTx) {
       within(30 seconds) {
-        val channelVersion = ChannelVersion.STANDARD
+        val channelConfig = ChannelConfigOptions.standard
+        val channelType = ChannelTypes.standard
         val aliceInit = Init(Alice.channelParams.features)
         val bobInit = Init(Bob.channelParams.features)
-        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
+        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, channelType)
         alice2blockchain.expectMsgType[SetChannelId]
-        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, channelVersion)
+        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, channelConfig, channelType)
         bob2blockchain.expectMsgType[SetChannelId]
         alice2bob.expectMsgType[OpenChannel]
         alice2bob.forward(bob)
@@ -284,10 +285,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // NB: nominal case is tested in IntegrationSpec
   }
 
-  def testMutualCloseBeforeConverge(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+  def testMutualCloseBeforeConverge(f: FixtureParam, channelType: ChannelType): Unit = {
     import f._
     val sender = TestProbe()
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelType === channelType)
     // alice initiates a closing
     alice ! CMD_CLOSE(sender.ref, None)
     alice2bob.expectMsgType[Shutdown]
@@ -316,11 +317,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchFundingSpentTriggered (mutual close before converging)") { f =>
-    testMutualCloseBeforeConverge(f, ChannelVersion.STANDARD)
+    testMutualCloseBeforeConverge(f, ChannelTypes.standard)
   }
 
   test("recv WatchFundingSpentTriggered (mutual close before converging, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testMutualCloseBeforeConverge(f, ChannelVersion.ANCHOR_OUTPUTS)
+    testMutualCloseBeforeConverge(f, ChannelTypes.anchorOutputs)
   }
 
   test("recv WatchTxConfirmedTriggered (mutual close)") { f =>
@@ -377,10 +378,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateData == initialState) // this was a no-op
   }
 
-  def testLocalCommitTxConfirmed(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+  def testLocalCommitTxConfirmed(f: FixtureParam, channelType: ChannelType): Unit = {
     import f._
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelType === channelType)
 
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[LocalCommitConfirmed])
@@ -423,11 +424,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchTxConfirmedTriggered (local commit)") { f =>
-    testLocalCommitTxConfirmed(f, ChannelVersion.STANDARD)
+    testLocalCommitTxConfirmed(f, ChannelTypes.standard)
   }
 
   test("recv WatchTxConfirmedTriggered (local commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testLocalCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
+    testLocalCommitTxConfirmed(f, ChannelTypes.anchorOutputs)
   }
 
   test("recv WatchTxConfirmedTriggered (local commit with multiple htlcs for the same payment)") { f =>
@@ -656,7 +657,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-    assert(initialState.commitments.channelVersion === ChannelVersion.STANDARD)
+    assert(initialState.commitments.channelType === ChannelTypes.standard)
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
     val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 2) // two main outputs
@@ -674,7 +675,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelVersion === ChannelVersion.STATIC_REMOTEKEY)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelType === ChannelTypes.staticRemoteKey)
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
     val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 2) // two main outputs
@@ -692,7 +693,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-    assert(initialState.commitments.channelVersion === ChannelVersion.ANCHOR_OUTPUTS)
+    assert(initialState.commitments.channelType === ChannelTypes.anchorOutputs)
     // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
     val bobCommitTx = bobCommitTxs.last.commitTx.tx
     assert(bobCommitTx.txOut.size == 4) // two main outputs + two anchors
@@ -707,10 +708,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == CLOSED)
   }
 
-  def testRemoteCommitTxWithHtlcsConfirmed(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+  def testRemoteCommitTxWithHtlcsConfirmed(f: FixtureParam, channelType: ChannelType): Unit = {
     import f._
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelType === channelType)
 
     // alice sends a first htlc to bob
     val (ra1, htlca1) = addHtlc(15000000 msat, alice, bob, alice2bob, bob2alice)
@@ -723,7 +724,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Bob publishes the latest commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    if (channelVersion.hasAnchorOutputs) {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
       assert(bobCommitTx.txOut.length === 7) // two main outputs + two anchors + 3 HTLCs
     } else {
       assert(bobCommitTx.txOut.length === 5) // two main outputs + 3 HTLCs
@@ -750,11 +751,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit with multiple htlcs for the same payment)") { f =>
-    testRemoteCommitTxWithHtlcsConfirmed(f, ChannelVersion.STANDARD)
+    testRemoteCommitTxWithHtlcsConfirmed(f, ChannelTypes.standard)
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit with multiple htlcs for the same payment, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testRemoteCommitTxWithHtlcsConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
+    testRemoteCommitTxWithHtlcsConfirmed(f, ChannelTypes.anchorOutputs)
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit) followed by CMD_FULFILL_HTLC") { f =>
@@ -829,10 +830,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === htlcTimeoutTx.input.outPoint.index)
   }
 
-  private def testNextRemoteCommitTxConfirmed(f: FixtureParam, channelVersion: ChannelVersion): (Transaction, RemoteCommitPublished, Set[UpdateAddHtlc]) = {
+  private def testNextRemoteCommitTxConfirmed(f: FixtureParam, channelType: ChannelType): (Transaction, RemoteCommitPublished, Set[UpdateAddHtlc]) = {
     import f._
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelType === channelType)
 
     // alice sends a first htlc to bob
     val (ra1, htlca1) = addHtlc(15000000 msat, alice, bob, alice2bob, bob2alice)
@@ -851,7 +852,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Bob publishes the next commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    if (channelVersion.hasAnchorOutputs) {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
       assert(bobCommitTx.txOut.length === 7) // two main outputs + two anchors + 3 HTLCs
     } else {
       assert(bobCommitTx.txOut.length === 5) // two main outputs + 3 HTLCs
@@ -863,7 +864,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (next remote commit)") { f =>
     import f._
-    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.STANDARD)
+    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelTypes.standard)
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(42, 0, bobCommitTx)
     alice ! WatchTxConfirmedTriggered(45, 0, closingState.claimMainOutputTx.get.tx)
@@ -883,7 +884,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (next remote commit, static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
-    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.STATIC_REMOTEKEY)
+    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelTypes.staticRemoteKey)
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(42, 0, bobCommitTx)
     assert(closingState.claimMainOutputTx.isEmpty) // with static_remotekey we don't claim out main output
@@ -903,7 +904,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (next remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
-    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
+    val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelTypes.anchorOutputs)
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(42, 0, bobCommitTx)
     alice ! WatchTxConfirmedTriggered(45, 0, closingState.claimMainOutputTx.get.tx)
@@ -974,7 +975,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv INPUT_RESTORED (next remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
 
-    val (bobCommitTx, closingState, _) = testNextRemoteCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
+    val (bobCommitTx, closingState, _) = testNextRemoteCommitTxConfirmed(f, ChannelTypes.anchorOutputs)
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState)
 
     // simulate a node restart
@@ -994,10 +995,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === claimHtlcTimeout.input.outPoint.index))
   }
 
-  private def testFutureRemoteCommitTxConfirmed(f: FixtureParam, channelVersion: ChannelVersion): Transaction = {
+  private def testFutureRemoteCommitTxConfirmed(f: FixtureParam, channelType: ChannelType): Transaction = {
     import f._
     val oldStateData = alice.stateData
-    assert(oldStateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
+    assert(oldStateData.asInstanceOf[DATA_NORMAL].commitments.channelType === channelType)
     // This HTLC will be fulfilled.
     val (ra1, htlca1) = addHtlc(25000000 msat, alice, bob, alice2bob, bob2alice)
     // These 2 HTLCs should timeout on-chain, but since alice lost data, she won't be able to claim them.
@@ -1031,7 +1032,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
     // bob is nice and publishes its commitment
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    if (channelVersion.hasAnchorOutputs) {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
       assert(bobCommitTx.txOut.length === 6) // two main outputs + two anchors + 2 HTLCs
     } else {
       assert(bobCommitTx.txOut.length === 4) // two main outputs + 2 HTLCs
@@ -1042,7 +1043,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (future remote commit)") { f =>
     import f._
-    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.STANDARD)
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelTypes.standard)
     // alice is able to claim its main output
     val claimMainTx = alice2blockchain.expectMsgType[PublishRawTx].tx
     Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1059,7 +1060,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (future remote commit, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
     import f._
-    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.STATIC_REMOTEKEY)
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelTypes.staticRemoteKey)
     // using option_static_remotekey alice doesn't need to sweep her output
     awaitCond(alice.stateName == CLOSING, 10 seconds)
     alice ! WatchTxConfirmedTriggered(0, 0, bobCommitTx)
@@ -1069,7 +1070,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("recv WatchTxConfirmedTriggered (future remote commit, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
-    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelTypes.anchorOutputs)
     // alice is able to claim its main output
     val claimMainTx = alice2blockchain.expectMsgType[PublishRawTx].tx
     Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1087,7 +1088,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv INPUT_RESTORED (future remote commit)") { f =>
     import f._
 
-    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelVersion.STANDARD)
+    val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelTypes.standard)
 
     // simulate a node restart
     val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -1104,12 +1105,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   case class RevokedCloseFixture(bobRevokedTxs: Seq[LocalCommit], htlcsAlice: Seq[(UpdateAddHtlc, ByteVector32)], htlcsBob: Seq[(UpdateAddHtlc, ByteVector32)])
 
-  private def prepareRevokedClose(f: FixtureParam, channelVersion: ChannelVersion): RevokedCloseFixture = {
+  private def prepareRevokedClose(f: FixtureParam, channelType: ChannelType): RevokedCloseFixture = {
     import f._
 
     // Bob's first commit tx doesn't contain any htlc
     val localCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit
-    if (channelVersion.hasAnchorOutputs) {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
       assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4) // 2 main outputs + 2 anchors
     } else {
       assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size === 2) // 2 main outputs
@@ -1126,7 +1127,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size)
-    if (channelVersion.hasAnchorOutputs) {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
       assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
     } else {
       assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4)
@@ -1143,7 +1144,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size)
-    if (channelVersion.hasAnchorOutputs) {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
       assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size === 8)
     } else {
       assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
@@ -1158,7 +1159,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size)
-    if (channelVersion.hasAnchorOutputs) {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
       assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4)
     } else {
       assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size === 2)
@@ -1167,11 +1168,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     RevokedCloseFixture(Seq(localCommit1, localCommit2, localCommit3, localCommit4), Seq(htlcAlice1, htlcAlice2), Seq(htlcBob1, htlcBob2))
   }
 
-  private def setupFundingSpentRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): (Transaction, RevokedCommitPublished) = {
+  private def setupFundingSpentRevokedTx(f: FixtureParam, channelType: ChannelType): (Transaction, RevokedCommitPublished) = {
     import f._
 
-    val revokedCloseFixture = prepareRevokedClose(f, channelVersion)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
+    val revokedCloseFixture = prepareRevokedClose(f, channelType)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelType === channelType)
 
     // bob publishes one of his revoked txs
     val bobRevokedTx = revokedCloseFixture.bobRevokedTxs(1).commitTxAndRemoteSig.commitTx.tx
@@ -1181,7 +1182,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.commitTx === bobRevokedTx)
-    if (!channelVersion.paysDirectlyToWallet) {
+    if (!channelType.paysDirectlyToWallet) {
       assert(rvk.claimMainOutputTx.nonEmpty)
     }
     assert(rvk.mainPenaltyTx.nonEmpty)
@@ -1190,7 +1191,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val penaltyTxs = rvk.claimMainOutputTx.toList ++ rvk.mainPenaltyTx.toList ++ rvk.htlcPenaltyTxs
 
     // alice publishes the penalty txs
-    if (!channelVersion.paysDirectlyToWallet) {
+    if (!channelType.paysDirectlyToWallet) {
       assert(alice2blockchain.expectMsgType[PublishRawTx].tx === rvk.claimMainOutputTx.get.tx)
     }
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === rvk.mainPenaltyTx.get.tx)
@@ -1202,10 +1203,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice spends all outpoints of the revoked tx, except her main output when it goes directly to our wallet
     val spentOutpoints = penaltyTxs.flatMap(_.tx.txIn.map(_.outPoint)).toSet
     assert(spentOutpoints.forall(_.txid === bobRevokedTx.txid))
-    if (channelVersion.hasAnchorOutputs) {
+    if (channelType.features.hasFeature(Features.AnchorOutputs)) {
       assert(spentOutpoints.size === bobRevokedTx.txOut.size - 2) // we don't claim the anchors
     }
-    else if (channelVersion.paysDirectlyToWallet) {
+    else if (channelType.paysDirectlyToWallet) {
       assert(spentOutpoints.size === bobRevokedTx.txOut.size - 1) // we don't claim our main output, it directly goes to our wallet
     } else {
       assert(spentOutpoints.size === bobRevokedTx.txOut.size)
@@ -1213,7 +1214,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice watches confirmation for the outputs only her can claim
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobRevokedTx.txid)
-    if (!channelVersion.paysDirectlyToWallet) {
+    if (!channelType.paysDirectlyToWallet) {
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.claimMainOutputTx.get.tx.txid)
     }
 
@@ -1225,15 +1226,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     (bobRevokedTx, rvk)
   }
 
-  private def testFundingSpentRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+  private def testFundingSpentRevokedTx(f: FixtureParam, channelType: ChannelType): Unit = {
     import f._
 
-    val (bobRevokedTx, rvk) = setupFundingSpentRevokedTx(f, channelVersion)
+    val (bobRevokedTx, rvk) = setupFundingSpentRevokedTx(f, channelType)
 
     // once all txs are confirmed, alice can move to the closed state
     alice ! WatchTxConfirmedTriggered(100, 3, bobRevokedTx)
     alice ! WatchTxConfirmedTriggered(110, 1, rvk.mainPenaltyTx.get.tx)
-    if (!channelVersion.paysDirectlyToWallet) {
+    if (!channelType.paysDirectlyToWallet) {
       alice ! WatchTxConfirmedTriggered(110, 2, rvk.claimMainOutputTx.get.tx)
     }
     alice ! WatchTxConfirmedTriggered(115, 0, rvk.htlcPenaltyTxs(0).tx)
@@ -1243,20 +1244,20 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchFundingSpentTriggered (one revoked tx)") { f =>
-    testFundingSpentRevokedTx(f, ChannelVersion.STANDARD)
+    testFundingSpentRevokedTx(f, ChannelTypes.standard)
   }
 
   test("recv WatchFundingSpentTriggered (one revoked tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
-    testFundingSpentRevokedTx(f, ChannelVersion.STATIC_REMOTEKEY)
+    testFundingSpentRevokedTx(f, ChannelTypes.staticRemoteKey)
   }
 
   test("recv WatchFundingSpentTriggered (one revoked tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testFundingSpentRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
+    testFundingSpentRevokedTx(f, ChannelTypes.anchorOutputs)
   }
 
   test("recv WatchFundingSpentTriggered (multiple revoked tx)") { f =>
     import f._
-    val revokedCloseFixture = prepareRevokedClose(f, ChannelVersion.STANDARD)
+    val revokedCloseFixture = prepareRevokedClose(f, ChannelTypes.standard)
     assert(revokedCloseFixture.bobRevokedTxs.map(_.commitTxAndRemoteSig.commitTx.tx.txid).toSet.size === revokedCloseFixture.bobRevokedTxs.size) // all commit txs are distinct
 
     def broadcastBobRevokedTx(revokedTx: Transaction, htlcCount: Int, revokedCount: Int): RevokedCommitPublished = {
@@ -1302,10 +1303,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName === CLOSED)
   }
 
-  def testInputRestoredRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+  def testInputRestoredRevokedTx(f: FixtureParam, channelType: ChannelType): Unit = {
     import f._
 
-    val (bobRevokedTx, rvk) = setupFundingSpentRevokedTx(f, channelVersion)
+    val (bobRevokedTx, rvk) = setupFundingSpentRevokedTx(f, channelType)
 
     // simulate a node restart
     val beforeRestart = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -1327,17 +1328,17 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv INPUT_RESTORED (one revoked tx)") { f =>
-    testInputRestoredRevokedTx(f, ChannelVersion.STANDARD)
+    testInputRestoredRevokedTx(f, ChannelTypes.standard)
   }
 
   test("recv INPUT_RESTORED (one revoked tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testInputRestoredRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
+    testInputRestoredRevokedTx(f, ChannelTypes.anchorOutputs)
   }
 
-  def testOutputSpentRevokedTx(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+  def testOutputSpentRevokedTx(f: FixtureParam, channelType: ChannelType): Unit = {
     import f._
-    val revokedCloseFixture = prepareRevokedClose(f, channelVersion)
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
+    val revokedCloseFixture = prepareRevokedClose(f, channelType)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelType === channelType)
     val commitmentFormat = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitmentFormat
 
     // bob publishes one of his revoked txs
@@ -1348,7 +1349,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.commitTx === bobRevokedCommit.commitTxAndRemoteSig.commitTx.tx)
-    if (channelVersion.paysDirectlyToWallet) {
+    if (channelType.paysDirectlyToWallet) {
       assert(rvk.claimMainOutputTx.isEmpty)
     } else {
       assert(rvk.claimMainOutputTx.nonEmpty)
@@ -1358,10 +1359,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(rvk.claimHtlcDelayedPenaltyTxs.isEmpty)
 
     // alice publishes the penalty txs and watches outputs
-    val claimTxsCount = if (channelVersion.paysDirectlyToWallet) 5 else 6 // 2 main outputs and 4 htlcs
+    val claimTxsCount = if (channelType.paysDirectlyToWallet) 5 else 6 // 2 main outputs and 4 htlcs
     (1 to claimTxsCount).foreach(_ => alice2blockchain.expectMsgType[PublishTx])
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.commitTx.txid)
-    if (!channelVersion.paysDirectlyToWallet) {
+    if (!channelType.paysDirectlyToWallet) {
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === rvk.claimMainOutputTx.get.tx.txid)
     }
     (1 to 5).foreach(_ => alice2blockchain.expectMsgType[WatchOutputSpent]) // main output penalty and 4 htlc penalties
@@ -1425,7 +1426,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(remainingHtlcPenaltyTxs.size === 2)
     alice ! WatchTxConfirmedTriggered(100, 3, rvk.commitTx)
     alice ! WatchTxConfirmedTriggered(110, 0, rvk.mainPenaltyTx.get.tx)
-    if (!channelVersion.paysDirectlyToWallet) {
+    if (!channelType.paysDirectlyToWallet) {
       alice ! WatchTxConfirmedTriggered(110, 1, rvk.claimMainOutputTx.get.tx)
     }
     alice ! WatchTxConfirmedTriggered(110, 2, remainingHtlcPenaltyTxs.head.tx)
@@ -1440,22 +1441,22 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx)") { f =>
-    testOutputSpentRevokedTx(f, ChannelVersion.STANDARD)
+    testOutputSpentRevokedTx(f, ChannelTypes.standard)
   }
 
   test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, option_static_remotekey)", Tag(StateTestsTags.StaticRemoteKey)) { f =>
-    testOutputSpentRevokedTx(f, ChannelVersion.STATIC_REMOTEKEY)
+    testOutputSpentRevokedTx(f, ChannelTypes.staticRemoteKey)
   }
 
   test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published htlc-success tx, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testOutputSpentRevokedTx(f, ChannelVersion.ANCHOR_OUTPUTS)
+    testOutputSpentRevokedTx(f, ChannelTypes.anchorOutputs)
   }
 
   test("recv WatchOutputSpentTriggered (one revoked tx, counterparty published aggregated htlc tx)", Tag(StateTestsTags.AnchorOutputs)) { f =>
     import f._
 
     // bob publishes one of his revoked txs
-    val revokedCloseFixture = prepareRevokedClose(f, ChannelVersion.ANCHOR_OUTPUTS)
+    val revokedCloseFixture = prepareRevokedClose(f, ChannelTypes.anchorOutputs)
     val bobRevokedCommit = revokedCloseFixture.bobRevokedTxs(2)
     val commitmentFormat = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitmentFormat
     alice ! WatchFundingSpentTriggered(bobRevokedCommit.commitTxAndRemoteSig.commitTx.tx)
@@ -1529,10 +1530,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectNoMsg(1 second)
   }
 
-  private def testRevokedTxConfirmed(f: FixtureParam, channelVersion: ChannelVersion): Unit = {
+  private def testRevokedTxConfirmed(f: FixtureParam, channelType: ChannelType): Unit = {
     import f._
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
-    val initOutputCount = if (channelVersion.hasAnchorOutputs) 4 else 2
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelType === channelType)
+    val initOutputCount = if (channelType.features.hasFeature(Features.AnchorOutputs)) 4 else 2
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size === initOutputCount)
 
     // bob's second commit tx contains 2 incoming htlcs
@@ -1575,11 +1576,11 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   }
 
   test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs)") { f =>
-    testRevokedTxConfirmed(f, ChannelVersion.STANDARD)
+    testRevokedTxConfirmed(f, ChannelTypes.standard)
   }
 
   test("recv WatchTxConfirmedTriggered (one revoked tx, pending htlcs, anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) { f =>
-    testRevokedTxConfirmed(f, ChannelVersion.ANCHOR_OUTPUTS)
+    testRevokedTxConfirmed(f, ChannelTypes.anchorOutputs)
   }
 
   test("recv ChannelReestablish") { f =>
@@ -1588,7 +1589,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
-      TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.localParams, bobCommitments.channelVersion),
+      TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.localParams, bobCommitments.channelConfig),
       bobCommitments.localCommit.index)
 
     alice ! ChannelReestablish(channelId(bob), 42, 42, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint)

@@ -147,6 +147,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
       val oldjson = Serialization.write(oldnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
         .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+        .replace(""""channelConfig":"",""", "")
+        .replace(""""channelType":{"features":{"activated":{},"unknown":[]}},""", "")
         .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
         .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
         .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
@@ -161,6 +163,8 @@ class ChannelCodecsSpec extends AnyFunSuite {
       val newjson = Serialization.write(newnormal)(JsonSupport.formats)
         .replace(""","unknownFields":""""", "")
         .replace(""""channelVersion":"00000000000000000000000000000000",""", "")
+        .replace(""""channelConfig":"",""", "")
+        .replace(""""channelType":{"features":{"activated":{},"unknown":[]}},""", "")
         .replace(""""dustLimit"""", """"dustLimitSatoshis"""")
         .replace(""""channelReserve"""", """"channelReserveSatoshis"""")
         .replace(""""htlcMinimum"""", """"htlcMinimumMsat"""")
@@ -337,7 +341,7 @@ object ChannelCodecsSpec {
     )
     val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, FeeratePerKw(1500 sat), 50000000 msat, 70000000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, commitTx), remoteSig), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, FeeratePerKw(1500 sat), 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
-    val commitments = Commitments(ChannelVersion.STANDARD, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+    val commitments = Commitments(ChannelConfigOptions.standard, ChannelTypes.standard, localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 32L,
       remoteNextHtlcId = 4L,
       originChannels = origins,
@@ -435,10 +439,10 @@ object ChannelCodecsSpec {
       case _: PrivateKey => JString("XXX")
     }))
 
-    class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](_ => ( {
+    class ChannelConfigSerializer extends CustomSerializer[ChannelConfigOptions](_ => ( {
       null
     }, {
-      case x: ChannelVersion => JString(x.bits.toBin)
+      case x: ChannelConfigOptions => JString(x.bytes.toBin)
     }))
 
     class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {
@@ -510,7 +514,7 @@ object ChannelCodecsSpec {
       new OutPointSerializer +
       new OutPointKeySerializer +
       new FeatureKeySerializer +
-      new ChannelVersionSerializer +
+      new ChannelConfigSerializer +
       new InputInfoSerializer
   }
 

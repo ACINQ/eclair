@@ -20,9 +20,11 @@ import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxOut}
 import fr.acinq.eclair.channel
-import fr.acinq.eclair.channel.{CommitTxAndRemoteSig, HtlcTxAndRemoteSig}
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
+import scodec.bits.BitVector
 
 private[channel] object ChannelTypes0 {
 
@@ -99,17 +101,20 @@ private[channel] object ChannelTypes0 {
     }
   }
 
-    /**
-     * Starting with version2, we store a complete ClosingTx object for mutual close scenarios instead of simply storing
-     * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
-     * put dummy values in the migration.
-     */
-    def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
+  /**
+   * Starting with version2, we store a complete ClosingTx object for mutual close scenarios instead of simply storing
+   * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
+   * put dummy values in the migration.
+   */
+  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
 
   case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
 
   case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
 
+  // Before version3, we stored fully signed local transactions (commit tx and htlc txs). It meant that someone gaining
+  // access to the database could publish revoked commit txs, so we changed that to only store unsigned txs and remote
+  // signatures.
   case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
     def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
@@ -138,4 +143,77 @@ private[channel] object ChannelTypes0 {
       }
     }
   }
+
+  // Before version3, we had a ChannelVersion field describing what channel features were activated. It was mixing
+  // official features (static_remotekey, anchor_outputs) and internal features (channel key derivation scheme).
+  // We separated this into two separate fields in version3:
+  //  - a channel type field containing the channel Bolt 9 features
+  //  - an internal channel configuration field
+  case class ChannelVersion(bits: BitVector) {
+    // @formatter:off
+    def isSet(bit: Int): Boolean = bits.reverse.get(bit)
+    def |(other: ChannelVersion): ChannelVersion = ChannelVersion(bits | other.bits)
+
+    def hasPubkeyKeyPath: Boolean = isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT)
+    def hasStaticRemotekey: Boolean = isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT)
+    def hasAnchorOutputs: Boolean = isSet(ChannelVersion.USE_ANCHOR_OUTPUTS_BIT)
+    def paysDirectlyToWallet: Boolean = hasStaticRemotekey && !hasAnchorOutputs
+    // @formatter:on
+  }
+
+  object ChannelVersion {
+
+    import scodec.bits._
+
+    val LENGTH_BITS: Int = 4 * 8
+
+    private val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+    private val USE_STATIC_REMOTEKEY_BIT = 1
+    private val USE_ANCHOR_OUTPUTS_BIT = 2
+
+    def fromBit(bit: Int): ChannelVersion = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
+
+    val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
+    val STANDARD = ZEROES | fromBit(USE_PUBKEY_KEYPATH_BIT)
+    val STATIC_REMOTEKEY = STANDARD | fromBit(USE_STATIC_REMOTEKEY_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY
+    val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | fromBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
+  }
+
+  case class Commitments(channelVersion: ChannelVersion,
+                         localParams: LocalParams, remoteParams: RemoteParams,
+                         channelFlags: Byte,
+                         localCommit: LocalCommit, remoteCommit: RemoteCommit,
+                         localChanges: LocalChanges, remoteChanges: RemoteChanges,
+                         localNextHtlcId: Long, remoteNextHtlcId: Long,
+                         originChannels: Map[Long, Origin],
+                         remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
+                         commitInput: InputInfo,
+                         remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
+    def migrate(): channel.Commitments = {
+      val channelConfig = if (channelVersion.hasPubkeyKeyPath) {
+        ChannelConfigOptions(ChannelConfigOptions.FundingPubKeyBasedChannelKeyPath)
+      } else {
+        ChannelConfigOptions()
+      }
+      val channelType = if (channelVersion.hasAnchorOutputs) {
+        ChannelTypes.anchorOutputs
+      } else if (channelVersion.hasStaticRemotekey) {
+        ChannelTypes.staticRemoteKey
+      } else {
+        ChannelTypes.standard
+      }
+      channel.Commitments(
+        channelConfig, channelType,
+        localParams, remoteParams,
+        channelFlags,
+        localCommit.migrate(remoteParams.fundingPubKey), remoteCommit,
+        localChanges, remoteChanges,
+        localNextHtlcId, remoteNextHtlcId,
+        originChannels,
+        remoteNextCommitInfo,
+        commitInput,
+        remotePerCommitmentSecrets, channelId)
+    }
+  }
+
 }

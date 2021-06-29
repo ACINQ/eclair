@@ -8,7 +8,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateAddHtlc}
-import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -16,43 +16,42 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  test("standard channel features include deterministic channel key path") {
-    assert(!ChannelVersion.ZEROES.hasPubkeyKeyPath)
-    assert(ChannelVersion.STANDARD.hasPubkeyKeyPath)
-    assert(ChannelVersion.STATIC_REMOTEKEY.hasStaticRemotekey)
-    assert(ChannelVersion.STATIC_REMOTEKEY.hasPubkeyKeyPath)
+  test("channel type determines commitment format") {
+    assert(!ChannelTypes.standard.features.hasFeature(Features.StaticRemoteKey))
+    assert(!ChannelTypes.standard.features.hasFeature(Features.AnchorOutputs))
+    assert(ChannelTypes.standard.commitmentFormat === Transactions.DefaultCommitmentFormat)
+    assert(!ChannelTypes.standard.paysDirectlyToWallet)
+
+    assert(ChannelTypes.staticRemoteKey.features.hasFeature(Features.StaticRemoteKey))
+    assert(!ChannelTypes.staticRemoteKey.features.hasFeature(Features.AnchorOutputs))
+    assert(ChannelTypes.staticRemoteKey.commitmentFormat === Transactions.DefaultCommitmentFormat)
+    assert(ChannelTypes.staticRemoteKey.paysDirectlyToWallet)
+
+    assert(ChannelTypes.anchorOutputs.features.hasFeature(Features.StaticRemoteKey))
+    assert(ChannelTypes.anchorOutputs.features.hasFeature(Features.AnchorOutputs))
+    assert(ChannelTypes.anchorOutputs.commitmentFormat === Transactions.AnchorOutputsCommitmentFormat)
+    assert(!ChannelTypes.anchorOutputs.paysDirectlyToWallet)
   }
 
-  test("anchor outputs includes static remote key") {
-    assert(ChannelVersion.ANCHOR_OUTPUTS.hasPubkeyKeyPath)
-    assert(ChannelVersion.ANCHOR_OUTPUTS.hasStaticRemotekey)
-  }
-
-  test("channel version determines commitment format") {
-    assert(ChannelVersion.ZEROES.commitmentFormat === Transactions.DefaultCommitmentFormat)
-    assert(ChannelVersion.STANDARD.commitmentFormat === Transactions.DefaultCommitmentFormat)
-    assert(ChannelVersion.STATIC_REMOTEKEY.commitmentFormat === Transactions.DefaultCommitmentFormat)
-    assert(ChannelVersion.ANCHOR_OUTPUTS.commitmentFormat === Transactions.AnchorOutputsCommitmentFormat)
-  }
-
-  test("pick channel version based on local and remote features") {
+  test("pick channel type based on local and remote features") {
     import fr.acinq.eclair.FeatureSupport._
     import fr.acinq.eclair.Features
     import fr.acinq.eclair.Features._
 
-    case class TestCase(localFeatures: Features, remoteFeatures: Features, expectedChannelVersion: ChannelVersion)
+    case class TestCase(localFeatures: Features, remoteFeatures: Features, expectedChannelType: ChannelType)
     val testCases = Seq(
-      TestCase(Features.empty, Features.empty, ChannelVersion.STANDARD),
-      TestCase(Features(StaticRemoteKey -> Optional), Features.empty, ChannelVersion.STANDARD),
-      TestCase(Features.empty, Features(StaticRemoteKey -> Optional), ChannelVersion.STANDARD),
-      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Optional), ChannelVersion.STATIC_REMOTEKEY),
-      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Mandatory), ChannelVersion.STATIC_REMOTEKEY),
-      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelVersion.STATIC_REMOTEKEY),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelVersion.ANCHOR_OUTPUTS)
+      TestCase(Features.empty, Features.empty, ChannelTypes.standard),
+      TestCase(Features(StaticRemoteKey -> Optional), Features.empty, ChannelTypes.standard),
+      TestCase(Features.empty, Features(StaticRemoteKey -> Optional), ChannelTypes.standard),
+      TestCase(Features.empty, Features(StaticRemoteKey -> Mandatory), ChannelTypes.standard),
+      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Optional), ChannelTypes.staticRemoteKey),
+      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Mandatory), ChannelTypes.staticRemoteKey),
+      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelTypes.staticRemoteKey),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelTypes.anchorOutputs)
     )
 
     for (testCase <- testCases) {
-      assert(ChannelVersion.pickChannelVersion(testCase.localFeatures, testCase.remoteFeatures) === testCase.expectedChannelVersion)
+      assert(ChannelTypes.pickChannelType(testCase.localFeatures, testCase.remoteFeatures) === testCase.expectedChannelType)
     }
   }
 
