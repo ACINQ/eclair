@@ -641,8 +641,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("generate and validate lots of channels") {
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
-    // we simulate fake channels by publishing a funding tx and sending announcement messages to a node at random
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)    // we simulate fake channels by publishing a funding tx and sending announcement messages to a node at random
     logger.info(s"generating fake channels")
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("getnewaddress"))

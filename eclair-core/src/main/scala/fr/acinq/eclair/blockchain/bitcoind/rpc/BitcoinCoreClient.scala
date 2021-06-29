@@ -41,7 +41,7 @@ import scala.util.{Failure, Success, Try}
 /**
  * The Bitcoin Core client provides some high-level utility methods to interact with Bitcoin Core.
  */
-class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWallet with Logging {
+class BitcoinCoreClient(val chainHash: ByteVector32, val rpcClient: BitcoinJsonRPCClient) extends OnChainWallet with Logging {
 
   import BitcoinCoreClient._
 
@@ -180,26 +180,99 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     })
   }
 
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
-    val partialFundingTx = Transaction(
-      version = 2,
-      txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, pubkeyScript) :: Nil,
-      lockTime = 0)
+  def fundPsbt(inputs: Seq[FundPsbtInput], outputs: Map[String, Satoshi], locktime: Int, options: FundPsbtOptions)(implicit ec: ExecutionContext): Future[FundPsbtResponse] = {
+    rpcClient.invoke("walletcreatefundedpsbt", inputs.toArray, outputs.map { case (a,b) => a -> b.toBtc.toBigDecimal }, locktime, options).map(json => {
+      val JString(base64) = json \ "psbt"
+      val JInt(changePos) = json \ "changepos"
+      val JDecimal(fee) = json \ "fee"
+      val psbt = Psbt.fromBase64(base64).get
+      val changePos_opt = if (changePos >= 0) Some(changePos.intValue) else None
+      FundPsbtResponse(psbt, toSatoshi(fee), changePos_opt)
+    })
+  }
+
+  def fundPsbt(outputs: Map[String, Satoshi], locktime: Int, options: FundPsbtOptions)(implicit ec: ExecutionContext): Future[FundPsbtResponse] =
+    fundPsbt(Seq(), outputs, locktime, options)
+
+  def processPsbt(psbt: Psbt, sign: Boolean = true, sighashType: Int = SIGHASH_ALL)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
+    val sighashStrings = Map(
+      SIGHASH_ALL -> "ALL",
+      SIGHASH_NONE -> "NONE",
+      SIGHASH_SINGLE -> "SINGLE",
+      (SIGHASH_ALL | SIGHASH_ANYONECANPAY) -> "ALL|ANYONECANPAY",
+      (SIGHASH_NONE | SIGHASH_ANYONECANPAY) -> "NONE|ANYONECANPAY",
+      (SIGHASH_SINGLE | SIGHASH_ANYONECANPAY) -> "SINGLE|ANYONECANPAY")
+    val sighash = sighashStrings.getOrElse(sighashType, throw new IllegalArgumentException(s"invalid sighash flag ${sighashType}"))
+    rpcClient.invoke("walletprocesspsbt", Psbt.toBase64(psbt), sign, sighash).map(json => {
+      val JString(base64) = json \ "psbt"
+      val JBool(complete) = json \ "complete"
+      val psbt = Psbt.fromBase64(base64).get
+      ProcessPsbtResponse(psbt, complete)
+    })
+  }
+
+  private def signPsbtOrUnlock(psbt: Psbt)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
+    val f = processPsbt(psbt).withFilter(_.complete == true)
+    // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
+    f.recoverWith { case _ =>
+      unlockOutpoints(psbt.global.tx.txIn.map(_.outPoint))
+        .recover { case t: Throwable => // no-op, just add a log in case of failure
+          logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${psbt.global.tx.txid}", t)
+          t
+        }
+        .flatMap(_ => f) // return signTransaction error
+        .recoverWith { case _ => f } // return signTransaction error
+    }
+  }
+
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+    val hrp = chainHash match {
+      case Block.RegtestGenesisBlock.hash => "bcrt"
+      case Block.TestnetGenesisBlock.hash => "tb"
+      case Block.LivenetGenesisBlock.hash => "bc"
+      case _ => return Future.failed(new IllegalArgumentException(s"invalid chain hash ${chainHash}"))
+    }
+    val fundingAddress = Script.parse(pubkeyScript) match {
+      case OP_0 :: OP_PUSHDATA(data, _) :: Nil if data.size == 20 || data.size == 32 =>  Bech32.encodeWitnessAddress(hrp, 0, data)
+      case _ => return Future.failed(new IllegalArgumentException("invalid pubkey script"))
+    }
+
     for {
+      // we ask bitcoin core to create and fund the funding tx
       feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
-      // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-      fundTxResponse <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate, lockUtxos = true))
+      FundPsbtResponse(psbt, fee, changePosition) <- fundPsbt(Map(fundingAddress -> amount), 0, FundPsbtOptions(feerate, lockUtxos = true))
       // now let's sign the funding tx
-      SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(fundTxResponse.tx)
+      ProcessPsbtResponse(signedPsbt, true) <- signPsbtOrUnlock(psbt)
+      Success(fundingTx) = signedPsbt.extract()
       // there will probably be a change output, so we need to find which output is ours
       outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript) match {
         case Right(outputIndex) => Future.successful(outputIndex)
         case Left(skipped) => Future.failed(new RuntimeException(skipped.toString))
       }
-      _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fundTxResponse.fee}")
-    } yield MakeFundingTxResponse(fundingTx, outputIndex, fundTxResponse.fee)
+      _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fee}")
+    } yield MakeFundingTxResponse(signedPsbt, outputIndex, fee)
   }
+
+//  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+//    val partialFundingTx = Transaction(
+//      version = 2,
+//      txIn = Seq.empty[TxIn],
+//      txOut = TxOut(amount, pubkeyScript) :: Nil,
+//      lockTime = 0)
+//    for {
+//      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
+//      // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
+//      fundTxResponse <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate, lockUtxos = true))
+//      // now let's sign the funding tx
+//      SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(fundTxResponse.tx)
+//      // there will probably be a change output, so we need to find which output is ours
+//      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript) match {
+//        case Right(outputIndex) => Future.successful(outputIndex)
+//        case Left(skipped) => Future.failed(new RuntimeException(skipped.toString))
+//      }
+//      _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fundTxResponse.fee}")
+//    } yield MakeFundingTxResponse(fundingTx, outputIndex, fundTxResponse.fee)
+//  }
 
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).transformWith {
     case Success(_) => Future.successful(true)
@@ -437,6 +510,20 @@ object BitcoinCoreClient {
     val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
   }
 
+  case class FundPsbtInput(txid: ByteVector32, vout: Int, sequence_opt: Option[Long] = None)
+
+  case class FundPsbtOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int], add_inputs: Boolean)
+
+  object FundPsbtOptions {
+    def apply(feerate: FeeratePerKw, replaceable: Boolean = true, lockUtxos: Boolean = false, changePosition: Option[Int] = None, add_inputs: Boolean = true): FundPsbtOptions = {
+      FundPsbtOptions(BigDecimal(FeeratePerKB(feerate).toLong).bigDecimal.scaleByPowerOfTen(-8), replaceable, lockUtxos, changePosition, add_inputs)
+    }
+  }
+
+  case class FundPsbtResponse(psbt: Psbt, fee: Satoshi, changePosition: Option[Int]) {
+    val amountIn: Satoshi = fee + psbt.computeFees().get
+  }
+
   case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
 
   object PreviousTx {
@@ -451,6 +538,8 @@ object BitcoinCoreClient {
   }
 
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
+
+  case class ProcessPsbtResponse(psbt: Psbt, complete: Boolean)
 
   /**
    * Information about a transaction currently in the mempool.

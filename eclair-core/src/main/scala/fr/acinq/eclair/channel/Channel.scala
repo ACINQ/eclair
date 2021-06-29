@@ -436,7 +436,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
-    case Event(MakeFundingTxResponse(fundingTx, fundingTxOutputIndex, fundingTxFee), d@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingAmount, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, channelConfig, channelFeatures, open)) =>
+    case Event(MakeFundingTxResponse(psbt, fundingTxOutputIndex, fundingTxFee), d@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingAmount, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, channelConfig, channelFeatures, open)) =>
+      val fundingTx = psbt.extract().get
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       Funding.makeFirstCommitTxs(keyManager, channelConfig, channelFeatures, temporaryChannelId, localParams, remoteParams, fundingAmount, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint) match {
         case Left(ex) => handleLocalError(ex, d, None)
@@ -1574,10 +1575,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       log.info("shutting down")
       stop(FSM.Normal)
 
-    case Event(MakeFundingTxResponse(fundingTx, _, _), _) =>
+    case Event(MakeFundingTxResponse(psbt, _, _), _) =>
       // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
       // in that case we rollback the tx
-      wallet.rollback(fundingTx)
+      wallet.rollback(psbt.extract().get)
       stay()
 
     case Event(INPUT_DISCONNECTED, _) => stay() // we are disconnected, but it doesn't matter anymore

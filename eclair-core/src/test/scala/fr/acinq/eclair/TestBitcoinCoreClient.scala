@@ -17,7 +17,7 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient}
 
@@ -27,7 +27,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
  * Created by PM on 26/04/2016.
  */
-class TestBitcoinCoreClient()(implicit system: ActorSystem) extends BitcoinCoreClient(new BasicBitcoinJsonRPCClient("", "", "", 0)(http = null)) {
+class TestBitcoinCoreClient()(implicit system: ActorSystem) extends BitcoinCoreClient(Block.RegtestGenesisBlock.hash, new BasicBitcoinJsonRPCClient("", "", "", 0)(http = null)) {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 

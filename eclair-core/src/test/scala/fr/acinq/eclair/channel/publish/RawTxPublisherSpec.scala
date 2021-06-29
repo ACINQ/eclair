@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -53,7 +53,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
   def createFixture(): Fixture = {
     val probe = TestProbe()
     val watcher = TestProbe()
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     val publisher = system.spawnAnonymous(RawTxPublisher(TestConstants.Alice.nodeParams, bitcoinClient, watcher.ref, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
     Fixture(bitcoinClient, publisher, watcher, probe)
   }

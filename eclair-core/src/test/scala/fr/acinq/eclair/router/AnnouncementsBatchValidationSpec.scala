@@ -48,7 +48,7 @@ class AnnouncementsBatchValidationSpec extends AnyFunSuite {
     implicit val system = ActorSystem("test")
     implicit val sttpBackend = OkHttpFutureBackend()
 
-    val bitcoinClient = new BitcoinCoreClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {
       // let's generate a block every 10 txs so that we can compute short ids
@@ -94,8 +94,8 @@ object AnnouncementsBatchValidationSpec {
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey)))
     val fundingTxFuture = bitcoinClient.makeFundingTx(fundingPubkeyScript, amount, FeeratePerKw(10000 sat))
     val res = Await.result(fundingTxFuture, 10 seconds)
-    Await.result(bitcoinClient.publishTransaction(res.fundingTx), 10 seconds)
-    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.fundingTx, res.fundingTxOutputIndex)
+    Await.result(bitcoinClient.publishTransaction(res.psbt.extract().get), 10 seconds)
+    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.psbt.extract().get, res.fundingTxOutputIndex)
   }
 
   def makeChannelAnnouncement(c: SimulatedChannel, bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): ChannelAnnouncement = {
