@@ -92,12 +92,12 @@ object AnnouncementsBatchValidationSpec {
     val node2BitcoinKey = randomKey()
     val amount = 1000000 sat
     // first we publish the funding tx
-    val wallet = new BitcoinCoreWallet(extendedBitcoinClient.rpcClient)
+    val wallet = new BitcoinCoreWallet(Block.RegtestGenesisBlock.hash, extendedBitcoinClient.rpcClient)
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey)))
     val fundingTxFuture = wallet.makeFundingTx(fundingPubkeyScript, amount, FeeratePerKw(10000 sat))
     val res = Await.result(fundingTxFuture, 10 seconds)
-    Await.result(extendedBitcoinClient.publishTransaction(res.fundingTx), 10 seconds)
-    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.fundingTx, res.fundingTxOutputIndex)
+    Await.result(extendedBitcoinClient.publishTransaction(res.psbt.extract().get), 10 seconds)
+    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.psbt.extract().get, res.fundingTxOutputIndex)
   }
 
   def makeChannelAnnouncement(c: SimulatedChannel)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): ChannelAnnouncement = {

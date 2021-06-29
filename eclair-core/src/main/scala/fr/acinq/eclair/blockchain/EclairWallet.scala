@@ -17,7 +17,7 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Satoshi, Transaction}
+import fr.acinq.bitcoin.{Psbt, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
@@ -36,7 +36,7 @@ trait EclairWallet {
   def getReceiveAddress(label: String = ""): Future[String]
 
   def getReceivePubkey(receiveAddress: Option[String] = None): Future[PublicKey]
-
+  
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse]
 
   /**
@@ -67,4 +67,4 @@ trait EclairWallet {
 
 final case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi)
 
-final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
+final case class MakeFundingTxResponse(psbt: Psbt, fundingTxOutputIndex: Int, fee: Satoshi)

@@ -248,7 +248,7 @@ class Setup(val datadir: File,
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
-      wallet = new BitcoinCoreWallet(bitcoin)
+      wallet = new BitcoinCoreWallet(Block.RegtestGenesisBlock.hash, bitcoin)
       _ = wallet.getReceiveAddress().map(address => logger.info(s"initial wallet address=$address"))
 
       channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")

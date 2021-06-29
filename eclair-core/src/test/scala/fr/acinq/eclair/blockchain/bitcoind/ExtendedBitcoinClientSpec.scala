@@ -19,8 +19,9 @@ package fr.acinq.eclair.blockchain.bitcoind
 import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
-import fr.acinq.bitcoin.{BtcDouble, OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Bech32, BtcDouble, ByteVector32, Crypto, OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{ExtendedBitcoinClient, JsonRPCError}
 import fr.acinq.eclair.transactions.Transactions
@@ -33,6 +34,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration.DurationInt
 
 class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll with Logging {
 
@@ -45,6 +47,22 @@ class ExtendedBitcoinClientSpec extends TestKitBaseClass with BitcoindService wi
 
   override def afterAll(): Unit = {
     stopBitcoind()
+  }
+
+  test ("fund and sign psbt") {
+    val sender = TestProbe()
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    val priv1 = PrivateKey(ByteVector32.fromValidHex("01" * 32))
+    val priv2 = PrivateKey(ByteVector32.fromValidHex("02" * 32))
+    val script = Script.createMultiSigMofN(2, Seq(priv1.publicKey, priv2.publicKey))
+    val address = Bech32.encodeWitnessAddress("bcrt", 0, Crypto.sha256(Script.write(script)))
+
+    bitcoinClient.fundPsbt(Map(address -> 10000.sat), 0, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+    val FundPsbtResponse(psbt, _, _) = sender.expectMsgType[FundPsbtResponse]
+
+    bitcoinClient.processPsbt(psbt).pipeTo(sender.ref)
+    val ProcessPsbtResponse(psbt1, true) = sender.expectMsgType[ProcessPsbtResponse]
+    assert(psbt1.extract().isSuccess)
   }
 
   test("fund transactions") {

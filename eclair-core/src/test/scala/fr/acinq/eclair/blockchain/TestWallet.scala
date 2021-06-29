@@ -17,11 +17,13 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, Satoshi, SatoshiLong, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, Psbt, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.randomKey
 import scodec.bits._
 
 import scala.concurrent.Future
+import scala.util.Success
 
 /**
  * Created by PM on 06/07/2017.
@@ -52,11 +54,17 @@ class TestWallet extends EclairWallet {
 object TestWallet {
 
   def makeDummyFundingTx(pubkeyScript: ByteVector, amount: Satoshi): MakeFundingTxResponse = {
+    val key = randomKey()
+    val baseTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2wpkh(key.publicKey)) :: Nil, lockTime = 0)
     val fundingTx = Transaction(version = 2,
-      txIn = TxIn(OutPoint(ByteVector32(ByteVector.fill(32)(1)), 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+      txIn = TxIn(OutPoint(baseTx, 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0)
-    MakeFundingTxResponse(fundingTx, 0, 420 sat)
+    val Success(psbt) = Psbt(fundingTx)
+      .update(baseTx, 0, witnessScript = Some(Script.pay2pkh(key.publicKey)))
+      .flatMap(p => p.sign(key, 0))
+      .flatMap(p => p.finalize(0, Script.witnessPay2wpkh(key.publicKey, p.inputs(0).partialSigs(key.publicKey))))
+    MakeFundingTxResponse(psbt, 0, 420 sat)
   }
 
 }
