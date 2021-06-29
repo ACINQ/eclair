@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOp
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn}
+import fr.acinq.bitcoin.{Block, ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -52,7 +52,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
   def createFixture(): Fixture = {
     val probe = TestProbe()
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     val monitor = system.spawnAnonymous(MempoolTxMonitor(TestConstants.Alice.nodeParams, bitcoinClient, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
 
     val address = getNewAddress(probe)

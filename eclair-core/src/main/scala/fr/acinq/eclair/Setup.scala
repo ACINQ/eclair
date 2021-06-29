@@ -240,7 +240,7 @@ class Setup(val datadir: File,
       })
       _ <- feeratesRetrieved.future
 
-      bitcoinClient = new BitcoinCoreClient(new BatchingBitcoinJsonRPCClient(bitcoin))
+      bitcoinClient = new BitcoinCoreClient(nodeParams.chainHash, new BatchingBitcoinJsonRPCClient(bitcoin))
       watcher = {
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))

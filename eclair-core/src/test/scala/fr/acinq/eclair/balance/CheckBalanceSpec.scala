@@ -2,7 +2,7 @@ package fr.acinq.eclair.balance
 
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, MainAndHtlcBalance, OffChainBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{apply => _, _}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -230,7 +230,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val txids = (for (_ <- 0 until 20) yield randomBytes32()).toList
     val knownTxids = Set(txids(1), txids(3), txids(4), txids(6), txids(9), txids(12), txids(13))
 
-    val bitcoinClient = new BitcoinCoreClient(null) {
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, null) {
       /** Get the number of confirmations of a given transaction. */
       override def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] =
         Future.successful(if (knownTxids.contains(txid)) Some(42) else None)

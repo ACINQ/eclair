@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Block, BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchParentTxConfirmed, WatchParentTxConfirmedTriggered, WatchTxConfirmed}
@@ -90,7 +90,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     // Create a unique wallet for this test and ensure it has some btc.
     val testId = UUID.randomUUID()
     val walletRpcClient = createWallet(s"lightning-$testId")
-    val walletClient = new BitcoinCoreClient(walletRpcClient)
+    val walletClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     val probe = TestProbe()
 
     // Ensure our wallet has some funds.

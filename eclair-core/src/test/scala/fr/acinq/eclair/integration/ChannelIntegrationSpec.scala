@@ -255,7 +255,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
     val Some(localCommit) = sender.expectMsgType[RES_GETSTATEDATA[DATA_CLOSING]].data.localCommitPublished
     // we wait until the commit tx has been broadcast
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     waitForTxBroadcastOrConfirmed(localCommit.commitTx.txid, bitcoinClient, sender)
     // we generate a few blocks to get the commit tx confirmed
     generateBlocks(3, Some(minerAddress))
@@ -311,7 +311,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we generate enough blocks to make the htlc timeout
     generateBlocks((htlc.cltvExpiry.toLong - getBlockCount).toInt, Some(minerAddress))
     // we wait until the claim-htlc-timeout has been broadcast
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     assert(remoteCommit.claimHtlcTxs.size === 1)
     waitForOutputSpent(remoteCommit.claimHtlcTxs.keys.head, bitcoinClient, sender)
     // and we generate blocks for the claim-htlc-timeout to reach enough confirmations
@@ -570,7 +570,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     // we then wait for C and F to negotiate the closing fee
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
     // and close the channel
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     awaitCond({
       bitcoinClient.getMempool().pipeTo(sender.ref)
       sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint.txid === fundingOutpoint.txid)
@@ -605,7 +605,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     val revokedCommitFixture = testRevokedCommit(Transactions.DefaultCommitmentFormat)
     import revokedCommitFixture._
 
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
     // F publishes the revoked commitment, one HTLC-success, one HTLC-timeout and leaves the other HTLC outputs unclaimed
@@ -725,7 +725,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     // we then wait for C to detect the unilateral close and go to CLOSING state
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
 
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     awaitCond({
       bitcoinClient.getTransaction(commitTx.txid).map(tx => Some(tx)).recover(_ => None).pipeTo(sender.ref)
       val tx = sender.expectMsgType[Option[Transaction]]
@@ -751,7 +751,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val revokedCommitFixture = testRevokedCommit(commitmentFormat)
     import revokedCommitFixture._
 
-    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
     // we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val previouslyReceivedByC = listReceivedByAddress(finalAddressC, sender)
     // F publishes the revoked commitment: it can't publish the HTLC txs because of the CSV 1
