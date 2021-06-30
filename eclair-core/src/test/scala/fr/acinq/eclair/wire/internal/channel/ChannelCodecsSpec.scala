@@ -302,7 +302,8 @@ object ChannelCodecsSpec {
     paymentBasepoint = PrivateKey(ByteVector.fill(32)(3)).publicKey,
     delayedPaymentBasepoint = PrivateKey(ByteVector.fill(32)(4)).publicKey,
     htlcBasepoint = PrivateKey(ByteVector.fill(32)(6)).publicKey,
-    features = Features.empty)
+    features = Features.empty,
+    shutdownScript = None)
 
   val paymentPreimages = Seq(
     ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"),

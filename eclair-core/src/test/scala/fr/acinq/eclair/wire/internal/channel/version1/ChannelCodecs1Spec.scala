@@ -92,7 +92,8 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       paymentBasepoint = randomKey().publicKey,
       delayedPaymentBasepoint = randomKey().publicKey,
       htlcBasepoint = randomKey().publicKey,
-      features = TestConstants.Alice.nodeParams.features)
+      features = TestConstants.Alice.nodeParams.features,
+      shutdownScript = None)
     val encoded = remoteParamsCodec.encode(o).require
     val decoded = remoteParamsCodec.decodeValue(encoded).require
     assert(o === decoded)

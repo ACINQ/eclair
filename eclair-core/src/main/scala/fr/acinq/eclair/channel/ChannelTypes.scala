@@ -485,7 +485,8 @@ final case class RemoteParams(nodeId: PublicKey,
                               paymentBasepoint: PublicKey,
                               delayedPaymentBasepoint: PublicKey,
                               htlcBasepoint: PublicKey,
-                              features: Features)
+                              features: Features,
+                              shutdownScript: Option[ByteVector])
 
 object ChannelFlags {
   val AnnounceChannel = 0x01.toByte

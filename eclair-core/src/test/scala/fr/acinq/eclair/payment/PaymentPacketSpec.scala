@@ -365,7 +365,7 @@ object PaymentPacketSpec {
 
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat): Commitments = {
     val params = LocalParams(null, null, null, null, null, null, null, 0, isFunder = true, null, None, null)
-    val remoteParams = RemoteParams(randomKey().publicKey, null, null, null, null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null)
+    val remoteParams = RemoteParams(randomKey().publicKey, null, null, null, null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null, None)
     val commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(testCapacity, Nil), Nil)
     new Commitments(ChannelConfigOptions.standard, ChannelFeatures(Features.empty), params, remoteParams, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, commitInput, null, channelId) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
