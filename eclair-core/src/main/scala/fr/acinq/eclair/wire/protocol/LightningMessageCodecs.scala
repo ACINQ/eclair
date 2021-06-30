@@ -49,6 +49,10 @@ object LightningMessageCodecs {
     ("channelId" | bytes32) ::
       ("data" | varsizebinarydata)).as[Error]
 
+  val warningCodec: Codec[Warning] = (
+    ("channelId" | bytes32) ::
+      ("data" | varsizebinarydata)).as[Warning]
+
   val pingCodec: Codec[Ping] = (
     ("pongLength" | uint16) ::
       ("data" | varsizebinarydata)).as[Ping]
@@ -302,6 +306,7 @@ object LightningMessageCodecs {
     ).as[UnknownMessage]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
+    .typecase(1, warningCodec)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
     .typecase(18, pingCodec)

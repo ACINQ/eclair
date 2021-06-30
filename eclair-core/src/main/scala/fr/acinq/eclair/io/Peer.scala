@@ -34,7 +34,7 @@ import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, RoutingMessage, UnknownMessage}
+import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -103,6 +103,12 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
       case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
         logMessage(msg, "OUT")
         d.peerConnection forward msg
+        stay
+
+      case Event(warning: Warning, _: ConnectedData) =>
+        log.warning("peer sent warning: channelId={} message={}", warning.channelId, warning.toAscii)
+        // NB: we don't forward warnings to the channel actors, they shouldn't take any automatic action.
+        // It's up to the node operator to decide what to do to address the warning.
         stay
 
       case Event(err@Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>

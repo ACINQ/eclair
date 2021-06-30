@@ -59,6 +59,20 @@ object Error {
   def apply(channelId: ByteVector32, msg: String): Error = Error(channelId, ByteVector.view(msg.getBytes(Charsets.US_ASCII)))
 }
 
+case class Warning(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId {
+  // @formatter:off
+  val isGlobal: Boolean = channelId == ByteVector32.Zeroes
+  def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
+  // @formatter:on
+}
+
+object Warning {
+  // @formatter:off
+  def apply(channelId: ByteVector32, msg: String): Warning = Warning(channelId, ByteVector.view(msg.getBytes(Charsets.US_ASCII)))
+  def apply(msg: String): Warning = Warning(ByteVector32.Zeroes, ByteVector.view(msg.getBytes(Charsets.US_ASCII)))
+  // @formatter:on
+}
+
 case class Ping(pongLength: Int, data: ByteVector) extends SetupMessage
 
 case class Pong(data: ByteVector) extends SetupMessage
