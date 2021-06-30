@@ -562,7 +562,7 @@ object MultiPartPaymentLifecycleSpec {
   val expiry = CltvExpiry(1105)
   val finalAmount = 1000000 msat
   val finalRecipient = randomKey().publicKey
-  val routeParams = RouteParams(randomize = false, 15000 msat, 0.01, 6, CltvExpiryDelta(1008), None, MultiPartParams(1000 msat, 5))
+  val routeParams = RouteParams(randomize = false, 15000 msat, 0.01, 6, CltvExpiryDelta(1008), None, MultiPartParams(1000 msat, 5), false)
   val maxFee = 15000 msat // max fee for the defaultAmount
 
   /**

@@ -84,6 +84,7 @@ object Graph {
    * @param wr                 ratios used to 'weight' edges when searching for the shortest path
    * @param currentBlockHeight the height of the chain tip (latest block)
    * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
+   * @param isRelay            if the path is for relaying
    */
   def yenKshortestPaths(graph: DirectedGraph,
                         sourceNode: PublicKey,
@@ -95,10 +96,11 @@ object Graph {
                         pathsToFind: Int,
                         wr: Option[WeightRatios],
                         currentBlockHeight: Long,
-                        boundaries: RichWeight => Boolean): Seq[WeightedPath] = {
+                        boundaries: RichWeight => Boolean,
+                        isRelay: Boolean): Seq[WeightedPath] = {
     // find the shortest path (k = 0)
     val targetWeight = RichWeight(amount, 0, CltvExpiryDelta(0), 0)
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, isRelay)
     if (shortestPath.isEmpty) {
       return Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
     }
@@ -110,7 +112,7 @@ object Graph {
 
     var allSpurPathsFound = false
     val shortestPaths = new mutable.Queue[PathWithSpur]
-    shortestPaths.enqueue(PathWithSpur(WeightedPath(shortestPath, pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr)), 0))
+    shortestPaths.enqueue(PathWithSpur(WeightedPath(shortestPath, pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr, isRelay)), 0))
     // stores the candidates for the k-th shortest path, sorted by path cost
     val candidates = new mutable.PriorityQueue[PathWithSpur]
 
@@ -135,12 +137,12 @@ object Graph {
           val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i) == rootPathEdges => p.p.path(p.p.path.length - 1 - i).desc }.toSet
           // we also want to ignore any vertex on the root path to prevent loops
           val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
-          val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr)
+          val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, isRelay)
           // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr)
+          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, isRelay)
           if (spurPath.nonEmpty) {
             val completePath = spurPath ++ rootPathEdges
-            val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr))
+            val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, isRelay))
             candidates.enqueue(PathWithSpur(candidatePath, i))
           }
         }
@@ -173,6 +175,7 @@ object Graph {
    * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
    * @param currentBlockHeight the height of the chain tip (latest block)
    * @param wr                 ratios used to 'weight' edges when searching for the shortest path
+   * @param isRelay            if the path is for relaying
    */
   private def dijkstraShortestPath(g: DirectedGraph,
                                    sourceNode: PublicKey,
@@ -183,7 +186,8 @@ object Graph {
                                    initialWeight: RichWeight,
                                    boundaries: RichWeight => Boolean,
                                    currentBlockHeight: Long,
-                                   wr: Option[WeightRatios]): Seq[GraphEdge] = {
+                                   wr: Option[WeightRatios],
+                                   isRelay: Boolean): Seq[GraphEdge] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -221,7 +225,7 @@ object Graph {
           val neighbor = edge.desc.a
           // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
           // will be relayed through that edge is the one in `currentWeight`.
-          val neighborWeight = addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr)
+          val neighborWeight = addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, isRelay)
           val canRelayAmount = current.weight.cost <= edge.capacity &&
             edge.balance_opt.forall(current.weight.cost <= _) &&
             edge.update.htlcMaximumMsat.forall(current.weight.cost <= _) &&
@@ -263,11 +267,12 @@ object Graph {
    * @param prev               weight of the rest of the path
    * @param currentBlockHeight the height of the chain tip (latest block).
    * @param weightRatios       ratios used to 'weight' edges when searching for the shortest path
+   * @param isRelay            if the path is for relaying
    */
-  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: Option[WeightRatios]): RichWeight = {
-    val totalCost = if (edge.desc.a == sender) prev.cost else addEdgeFees(edge, prev.cost)
+  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: Option[WeightRatios], isRelay: Boolean): RichWeight = {
+    val totalCost = if (edge.desc.a == sender && !isRelay) prev.cost else addEdgeFees(edge, prev.cost)
     val fee = totalCost - prev.cost
-    val totalCltv = if (edge.desc.a == sender) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
+    val totalCltv = if (edge.desc.a == sender && !isRelay) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
     val factor = weightRatios match {
       case None =>
         1.0
@@ -327,10 +332,11 @@ object Graph {
    * @param amount             amount to send to the last node.
    * @param currentBlockHeight the height of the chain tip (latest block).
    * @param wr                 ratios used to 'weight' edges when searching for the shortest path
+   * @param isRelay            if the path is for relaying
    */
-  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: Long, wr: Option[WeightRatios]): RichWeight = {
+  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: Long, wr: Option[WeightRatios], isRelay: Boolean): RichWeight = {
     path.foldRight(RichWeight(amount, 0, CltvExpiryDelta(0), 0)) { (edge, prev) =>
-      addEdgeWeight(sender, edge, prev, currentBlockHeight, wr)
+      addEdgeWeight(sender, edge, prev, currentBlockHeight, wr, isRelay)
     }
   }
 
