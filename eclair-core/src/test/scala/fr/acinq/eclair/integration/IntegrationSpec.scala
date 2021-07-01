@@ -60,7 +60,8 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       ageFactor = 0,
       capacityFactor = 0
     )),
-    mpp = MultiPartParams(15000000 msat, 6)
+    mpp = MultiPartParams(15000000 msat, 6),
+    includeLocalChannelCost = false,
   ))
 
   // we need to provide a value higher than every node's fulfill-safety-before-timeout
