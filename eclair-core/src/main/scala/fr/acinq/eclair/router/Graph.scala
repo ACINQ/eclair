@@ -73,18 +73,18 @@ object Graph {
    * Yen's algorithm to find the k-shortest (loop-less) paths in a graph, uses dijkstra as search algo. Is guaranteed to
    * terminate finding at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
    *
-   * @param graph              the graph on which will be performed the search
-   * @param sourceNode         the starting node of the path we're looking for (payer)
-   * @param targetNode         the destination node of the path (recipient)
-   * @param amount             amount to send to the last node
-   * @param ignoredEdges       channels that should be avoided
-   * @param ignoredVertices    nodes that should be avoided
-   * @param extraEdges         additional edges that can be used (e.g. private channels from invoices)
-   * @param pathsToFind        number of distinct paths to be returned
-   * @param wr                 ratios used to 'weight' edges when searching for the shortest path
-   * @param currentBlockHeight the height of the chain tip (latest block)
-   * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
-   * @param isRelay            if the path is for relaying
+   * @param graph                   the graph on which will be performed the search
+   * @param sourceNode              the starting node of the path we're looking for (payer)
+   * @param targetNode              the destination node of the path (recipient)
+   * @param amount                  amount to send to the last node
+   * @param ignoredEdges            channels that should be avoided
+   * @param ignoredVertices         nodes that should be avoided
+   * @param extraEdges              additional edges that can be used (e.g. private channels from invoices)
+   * @param pathsToFind             number of distinct paths to be returned
+   * @param wr                      ratios used to 'weight' edges when searching for the shortest path
+   * @param currentBlockHeight      the height of the chain tip (latest block)
+   * @param boundaries              a predicate function that can be used to impose limits on the outcome of the search
+   * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
   def yenKshortestPaths(graph: DirectedGraph,
                         sourceNode: PublicKey,
@@ -97,10 +97,10 @@ object Graph {
                         wr: Option[WeightRatios],
                         currentBlockHeight: Long,
                         boundaries: RichWeight => Boolean,
-                        isRelay: Boolean): Seq[WeightedPath] = {
+                        includeLocalChannelCost: Boolean): Seq[WeightedPath] = {
     // find the shortest path (k = 0)
     val targetWeight = RichWeight(amount, 0, CltvExpiryDelta(0), 0)
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, isRelay)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
     if (shortestPath.isEmpty) {
       return Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
     }
@@ -112,7 +112,7 @@ object Graph {
 
     var allSpurPathsFound = false
     val shortestPaths = new mutable.Queue[PathWithSpur]
-    shortestPaths.enqueue(PathWithSpur(WeightedPath(shortestPath, pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr, isRelay)), 0))
+    shortestPaths.enqueue(PathWithSpur(WeightedPath(shortestPath, pathWeight(sourceNode, shortestPath, amount, currentBlockHeight, wr, includeLocalChannelCost)), 0))
     // stores the candidates for the k-th shortest path, sorted by path cost
     val candidates = new mutable.PriorityQueue[PathWithSpur]
 
@@ -137,12 +137,12 @@ object Graph {
           val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i) == rootPathEdges => p.p.path(p.p.path.length - 1 - i).desc }.toSet
           // we also want to ignore any vertex on the root path to prevent loops
           val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
-          val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, isRelay)
+          val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
           // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, isRelay)
+          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
           if (spurPath.nonEmpty) {
             val completePath = spurPath ++ rootPathEdges
-            val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, isRelay))
+            val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
             candidates.enqueue(PathWithSpur(candidatePath, i))
           }
         }
@@ -165,17 +165,17 @@ object Graph {
    * path from the target to the source (this is because we want to calculate the weight of the edges correctly). The
    * graph @param g is optimized for querying the incoming edges given a vertex.
    *
-   * @param g                  the graph on which will be performed the search
-   * @param sourceNode         the starting node of the path we're looking for (payer)
-   * @param targetNode         the destination node of the path
-   * @param ignoredEdges       channels that should be avoided
-   * @param ignoredVertices    nodes that should be avoided
-   * @param extraEdges         additional edges that can be used (e.g. private channels from invoices)
-   * @param initialWeight      weight that will be applied to the target node
-   * @param boundaries         a predicate function that can be used to impose limits on the outcome of the search
-   * @param currentBlockHeight the height of the chain tip (latest block)
-   * @param wr                 ratios used to 'weight' edges when searching for the shortest path
-   * @param isRelay            if the path is for relaying
+   * @param g                       the graph on which will be performed the search
+   * @param sourceNode              the starting node of the path we're looking for (payer)
+   * @param targetNode              the destination node of the path
+   * @param ignoredEdges            channels that should be avoided
+   * @param ignoredVertices         nodes that should be avoided
+   * @param extraEdges              additional edges that can be used (e.g. private channels from invoices)
+   * @param initialWeight           weight that will be applied to the target node
+   * @param boundaries              a predicate function that can be used to impose limits on the outcome of the search
+   * @param currentBlockHeight      the height of the chain tip (latest block)
+   * @param wr                      ratios used to 'weight' edges when searching for the shortest path
+   * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
   private def dijkstraShortestPath(g: DirectedGraph,
                                    sourceNode: PublicKey,
@@ -187,7 +187,7 @@ object Graph {
                                    boundaries: RichWeight => Boolean,
                                    currentBlockHeight: Long,
                                    wr: Option[WeightRatios],
-                                   isRelay: Boolean): Seq[GraphEdge] = {
+                                   includeLocalChannelCost: Boolean): Seq[GraphEdge] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -225,7 +225,7 @@ object Graph {
           val neighbor = edge.desc.a
           // NB: this contains the amount (including fees) that will need to be sent to `neighbor`, but the amount that
           // will be relayed through that edge is the one in `currentWeight`.
-          val neighborWeight = addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, isRelay)
+          val neighborWeight = addEdgeWeight(sourceNode, edge, current.weight, currentBlockHeight, wr, includeLocalChannelCost)
           val canRelayAmount = current.weight.cost <= edge.capacity &&
             edge.balance_opt.forall(current.weight.cost <= _) &&
             edge.update.htlcMaximumMsat.forall(current.weight.cost <= _) &&
@@ -262,17 +262,17 @@ object Graph {
   /**
    * Add the given edge to the path and compute the new weight.
    *
-   * @param sender             node sending the payment
-   * @param edge               the edge we want to cross
-   * @param prev               weight of the rest of the path
-   * @param currentBlockHeight the height of the chain tip (latest block).
-   * @param weightRatios       ratios used to 'weight' edges when searching for the shortest path
-   * @param isRelay            if the path is for relaying
+   * @param sender                  node sending the payment
+   * @param edge                    the edge we want to cross
+   * @param prev                    weight of the rest of the path
+   * @param currentBlockHeight      the height of the chain tip (latest block).
+   * @param weightRatios            ratios used to 'weight' edges when searching for the shortest path
+   * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
-  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: Option[WeightRatios], isRelay: Boolean): RichWeight = {
-    val totalCost = if (edge.desc.a == sender && !isRelay) prev.cost else addEdgeFees(edge, prev.cost)
+  private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: Option[WeightRatios], includeLocalChannelCost: Boolean): RichWeight = {
+    val totalCost = if (edge.desc.a == sender && !includeLocalChannelCost) prev.cost else addEdgeFees(edge, prev.cost)
     val fee = totalCost - prev.cost
-    val totalCltv = if (edge.desc.a == sender && !isRelay) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
+    val totalCltv = if (edge.desc.a == sender && !includeLocalChannelCost) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
     val factor = weightRatios match {
       case None =>
         1.0
@@ -327,16 +327,16 @@ object Graph {
    * Calculates the total weighted cost of a path.
    * Note that the first hop from the sender is ignored: we don't pay a routing fee to ourselves.
    *
-   * @param sender             node sending the payment
-   * @param path               candidate path.
-   * @param amount             amount to send to the last node.
-   * @param currentBlockHeight the height of the chain tip (latest block).
-   * @param wr                 ratios used to 'weight' edges when searching for the shortest path
-   * @param isRelay            if the path is for relaying
+   * @param sender                  node sending the payment
+   * @param path                    candidate path.
+   * @param amount                  amount to send to the last node.
+   * @param currentBlockHeight      the height of the chain tip (latest block).
+   * @param wr                      ratios used to 'weight' edges when searching for the shortest path
+   * @param includeLocalChannelCost if the path is for relaying and we need to include the cost of the local channel
    */
-  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: Long, wr: Option[WeightRatios], isRelay: Boolean): RichWeight = {
+  def pathWeight(sender: PublicKey, path: Seq[GraphEdge], amount: MilliSatoshi, currentBlockHeight: Long, wr: Option[WeightRatios], includeLocalChannelCost: Boolean): RichWeight = {
     path.foldRight(RichWeight(amount, 0, CltvExpiryDelta(0), 0)) { (edge, prev) =>
-      addEdgeWeight(sender, edge, prev, currentBlockHeight, wr, isRelay)
+      addEdgeWeight(sender, edge, prev, currentBlockHeight, wr, includeLocalChannelCost)
     }
   }
 

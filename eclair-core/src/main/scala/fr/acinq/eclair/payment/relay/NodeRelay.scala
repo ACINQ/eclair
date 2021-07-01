@@ -126,7 +126,7 @@ object NodeRelay {
       maxFeeBase = routeMaxFee,
       routeMaxCltv = routeMaxCltv,
       maxFeePct = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
-      isRelay = true,
+      includeLocalChannelCost = true,
     )
   }
 

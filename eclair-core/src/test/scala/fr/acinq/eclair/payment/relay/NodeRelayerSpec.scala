@@ -490,7 +490,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(routeParams.maxFeePct === 0) // should be disabled
     assert(routeParams.maxFeeBase === incomingAmount - outgoingAmount)
     assert(routeParams.routeMaxCltv === incomingSinglePart.add.cltvExpiry - outgoingExpiry)
-    assert(routeParams.isRelay)
+    assert(routeParams.includeLocalChannelCost)
   }
 
   test("relay incoming multi-part payment") { f =>

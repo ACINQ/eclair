@@ -1668,7 +1668,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(1L, a, b, 1000 msat, 7000),
     ))
 
-    val Failure(_) = findRoute(g, a, b, 10000000 msat, 10000 msat, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS.copy(isRelay = true), currentBlockHeight = 400000)
+    assert(findRoute(g, a, b, 10000000 msat, 10000 msat, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS.copy(includeLocalChannelCost = true), currentBlockHeight = 400000) === Failure(RouteNotFound))
+    assert(findRoute(g, a, b, 10000000 msat, 100000 msat, numRoutes = 3, routeParams = DEFAULT_ROUTE_PARAMS.copy(includeLocalChannelCost = true), currentBlockHeight = 400000).isSuccess)
   }
 }
 
