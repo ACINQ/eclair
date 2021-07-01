@@ -79,6 +79,20 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode warning") {
+    val testCases = Seq(
+      Warning("") -> hex"000100000000000000000000000000000000000000000000000000000000000000000000",
+      Warning("connection-level issue") -> hex"0x000100000000000000000000000000000000000000000000000000000000000000000016636f6e6e656374696f6e2d6c6576656c206973737565",
+      Warning(ByteVector32.One, "") -> hex"000101000000000000000000000000000000000000000000000000000000000000000000",
+      Warning(ByteVector32.One, "channel-specific issue") -> hex"0x0001010000000000000000000000000000000000000000000000000000000000000000166368616e6e656c2d7370656369666963206973737565"
+    )
+
+    for ((warning, expected) <- testCases) {
+      assert(lightningMessageCodec.encode(warning).require.bytes === expected)
+      assert(lightningMessageCodec.decode(expected.bits).require.value === warning)
+    }
+  }
+
   test("encode/decode live node_announcements") {
     val ann = hex"a58338c9660d135fd7d087eb62afd24a33562c54507a9334e79f0dc4f17d407e6d7c61f0e2f3d0d38599502f61704cf1ae93608df027014ade7ff592f27ce2690001025acdf50702d2eabbbacc7c25bbd73b39e65d28237705f7bde76f557e94fb41cb18a9ec00841122116c6e302e646563656e7465722e776f726c64000000000000000000000000000000130200000000000000000000ffffae8a0b082607"
     val bin = ann.bits
@@ -212,7 +226,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     }
   }
 
-  test("Unknown messages") {
+  test("unknown messages") {
     // Non-standard tag number so this message can only be handled by a codec with a fallback
     val unknown = UnknownMessage(tag = 47282, data = ByteVector32.Zeroes.bytes)
     assert(lightningMessageCodec.encode(unknown).isFailure)
