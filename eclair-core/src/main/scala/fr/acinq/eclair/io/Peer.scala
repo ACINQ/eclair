@@ -106,7 +106,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         stay
 
       case Event(warning: Warning, _: ConnectedData) =>
-        log.warning("peer sent warning: channelId={} message={}", warning.channelId, warning.toAscii)
+        log.warning("peer sent warning: {}", warning.channelId, warning.toAscii)
         // NB: we don't forward warnings to the channel actors, they shouldn't take any automatic action.
         // It's up to the node operator to decide what to do to address the warning.
         stay
