@@ -295,20 +295,24 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_FORCECLOSE(ActorRef.noSender))
     )
 
-    eclair.close(Left(ByteVector32.Zeroes) :: Nil, None)
-    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None)))
+    eclair.close(Left(ByteVector32.Zeroes) :: Nil, None, None)
+    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None, None)))
 
-    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, None)
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, None)))
+    val customClosingFees = ClosingFeerates(FeeratePerKw(500 sat), FeeratePerKw(200 sat), FeeratePerKw(1000 sat))
+    eclair.close(Left(ByteVector32.Zeroes) :: Nil, None, Some(customClosingFees))
+    register.expectMsg(Register.Forward(ActorRef.noSender, ByteVector32.Zeroes, CMD_CLOSE(ActorRef.noSender, None, Some(customClosingFees))))
 
-    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, Some(ByteVector.empty))
-    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, Some(ByteVector.empty))))
+    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, None, None)
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, None, None)))
 
-    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Left(ByteVector32.One) :: Right(ShortChannelId("568749x2597x1")) :: Nil, None)
+    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Nil, Some(ByteVector.empty), Some(customClosingFees))
+    register.expectMsg(Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, Some(ByteVector.empty), Some(customClosingFees))))
+
+    eclair.close(Right(ShortChannelId("568749x2597x0")) :: Left(ByteVector32.One) :: Right(ShortChannelId("568749x2597x1")) :: Nil, None, None)
     register.expectMsgAllOf(
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, None)),
-      Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_CLOSE(ActorRef.noSender, None)),
-      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x1"), CMD_CLOSE(ActorRef.noSender, None))
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x0"), CMD_CLOSE(ActorRef.noSender, None, None)),
+      Register.Forward(ActorRef.noSender, ByteVector32.One, CMD_CLOSE(ActorRef.noSender, None, None)),
+      Register.ForwardShortId(ActorRef.noSender, ShortChannelId("568749x2597x1"), CMD_CLOSE(ActorRef.noSender, None, None))
     )
   }
 

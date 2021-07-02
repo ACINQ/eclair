@@ -165,9 +165,16 @@ final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessa
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand
 final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand
+
+final case class ClosingFees(preferred: Satoshi, min: Satoshi, max: Satoshi)
+final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max: FeeratePerKw) {
+  def computeFees(closingTxWeight: Int): ClosingFees = ClosingFees(weight2fee(preferred, closingTxWeight), weight2fee(min, closingTxWeight), weight2fee(max, closingTxWeight))
+}
+
 sealed trait CloseCommand extends HasReplyToCommand
-final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector]) extends CloseCommand
+final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand
 final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
+
 final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends HasReplyToCommand
 final case class CMD_GETSTATE(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GETSTATEDATA(replyTo: ActorRef) extends HasReplyToCommand
@@ -417,9 +424,9 @@ final case class DATA_NORMAL(commitments: Commitments,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
-                             remoteShutdown: Option[Shutdown]) extends Data with HasCommitments
-final case class DATA_SHUTDOWN(commitments: Commitments,
-                               localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
+                             remoteShutdown: Option[Shutdown],
+                             closingFeerates: Option[ClosingFeerates]) extends Data with HasCommitments
+final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)

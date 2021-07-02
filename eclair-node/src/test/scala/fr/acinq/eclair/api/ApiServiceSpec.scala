@@ -292,13 +292,13 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
     val channelIdSerialized = channelId.toHex
     val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
-      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None), channelId)),
+      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), channelId)),
       Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
-      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
+      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
     )
 
     val eclair = mock[Eclair]
-    eclair.close(any, any)(any[Timeout]) returns Future.successful(response)
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
     val mockService = new MockService(eclair)
 
     Post("/close", FormData("shortChannelId" -> shortChannelIdSerialized).toEntity) ~>
@@ -309,7 +309,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Right(ShortChannelId(shortChannelIdSerialized)) :: Nil, None)(any[Timeout]).wasCalled(once)
+        eclair.close(Right(ShortChannelId(shortChannelIdSerialized)) :: Nil, None, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
 
@@ -321,7 +321,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Left(channelId) :: Nil, None)(any[Timeout]).wasCalled(once)
+        eclair.close(Left(channelId) :: Nil, None, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
 
@@ -333,8 +333,63 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Left(channelId) :: Right(ShortChannelId("42000x27x3")) :: Right(ShortChannelId("42000x561x1")) :: Nil, None)(any[Timeout]).wasCalled(once)
+        eclair.close(Left(channelId) :: Right(ShortChannelId("42000x27x3")) :: Right(ShortChannelId("42000x561x1")) :: Nil, None, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
+      }
+  }
+
+  test("'close' accepts custom closing feerates") {
+    val shortChannelId = "1701x42x3"
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+      Right(ShortChannelId(shortChannelId)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32))
+    )
+
+    val eclair = mock[Eclair]
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
+    val mockService = new MockService(eclair)
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "preferredFeerateSatByte" -> "10", "minFeerateSatByte" -> "2", "maxFeerateSatByte" -> "50").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val expectedFeerates = ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(500 sat), FeeratePerKw(12500 sat))
+        eclair.close(Right(ShortChannelId(shortChannelId)) :: Nil, None, Some(expectedFeerates))(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "preferredFeerateSatByte" -> "10").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val expectedFeerates = ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(1250 sat), FeeratePerKw(5000 sat))
+        eclair.close(Right(ShortChannelId(shortChannelId)) :: Nil, None, Some(expectedFeerates))(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "preferredFeerateSatByte" -> "10", "minFeerateSatByte" -> "2").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val expectedFeerates = ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(500 sat), FeeratePerKw(5000 sat))
+        eclair.close(Right(ShortChannelId(shortChannelId)) :: Nil, None, Some(expectedFeerates))(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "preferredFeerateSatByte" -> "10", "maxFeerateSatByte" -> "50").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val expectedFeerates = ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(1250 sat), FeeratePerKw(12500 sat))
+        eclair.close(Right(ShortChannelId(shortChannelId)) :: Nil, None, Some(expectedFeerates))(any[Timeout]).wasCalled(once)
       }
   }
 

@@ -122,7 +122,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
       // and we encode with new codec
       val newbin = stateDataCodec.encode(oldnormal).require.bytes
       // make sure that encoding used the new codec
-      assert(newbin.startsWith(hex"020002"))
+      assert(newbin.startsWith(hex"020007"))
       // make sure that round-trip yields the same data
       val newnormal = stateDataCodec.decode(newbin.bits).require.value
       assert(newnormal === oldnormal)
@@ -304,7 +304,7 @@ object ChannelCodecsSpec {
       remotePerCommitmentSecrets = ShaChain.init,
       channelId = htlcs.headOption.map(_.add.channelId).getOrElse(ByteVector32.Zeroes))
 
-    DATA_NORMAL(commitments, ShortChannelId(42), buried = true, None, channelUpdate, None, None)
+    DATA_NORMAL(commitments, ShortChannelId(42), buried = true, None, channelUpdate, None, None, None)
   }
 
   object JsonSupport {

@@ -187,7 +187,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     awaitCond(latch.getCount == 0, interval = 1 second, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
-      val c = CMD_CLOSE(sender.ref, None)
+      val c = CMD_CLOSE(sender.ref, None, None)
       alice ! c
       sender.expectMsgType[CommandResponse[CMD_CLOSE]].isInstanceOf[RES_SUCCESS[CMD_CLOSE]]
     }, interval = 1 second, max = 30 seconds)
@@ -205,7 +205,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     awaitCond(latch.getCount == 0, interval = 1 second, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
-      val c = CMD_CLOSE(sender.ref, None)
+      val c = CMD_CLOSE(sender.ref, None, None)
       alice ! c
       val resa = sender.expectMsgType[CommandResponse[CMD_CLOSE]]
       sender.send(bob, c)

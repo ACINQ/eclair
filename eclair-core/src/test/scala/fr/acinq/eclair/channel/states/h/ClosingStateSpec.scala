@@ -114,26 +114,6 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
   }
 
-  test("start fee negotiation from configured block target") { f =>
-    import f._
-
-    alice.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(50 sat), FeeratePerKw(100 sat), FeeratePerKw(250 sat), FeeratePerKw(350 sat), FeeratePerKw(450 sat), FeeratePerKw(600 sat), FeeratePerKw(800 sat), FeeratePerKw(900 sat), FeeratePerKw(1000 sat)))
-
-    val sender = TestProbe()
-    // alice initiates a closing
-    alice ! CMD_CLOSE(sender.ref, None)
-    alice2bob.expectMsgType[Shutdown]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[Shutdown]
-    bob2alice.forward(alice)
-    val closing = alice2bob.expectMsgType[ClosingSigned]
-    val aliceData = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
-    val mutualClosingFeeRate = alice.feeEstimator.getFeeratePerKw(alice.feeTargets.mutualCloseBlockTarget)
-    val expectedFirstProposedFee = Closing.firstClosingFee(aliceData.commitments, aliceData.localShutdown.scriptPubKey, aliceData.remoteShutdown.scriptPubKey, mutualClosingFeeRate)(akka.event.NoLogging)
-    assert(alice.feeTargets.mutualCloseBlockTarget == 2 && mutualClosingFeeRate == FeeratePerKw(250 sat))
-    assert(closing.feeSatoshis == expectedFirstProposedFee)
-  }
-
   test("recv BITCOIN_FUNDING_PUBLISH_FAILED", Tag("funding_unconfirmed")) { f =>
     import f._
     val sender = TestProbe()
@@ -288,31 +268,29 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     val sender = TestProbe()
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelVersion === channelVersion)
-    // alice initiates a closing
-    alice ! CMD_CLOSE(sender.ref, None)
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(2500 sat)).copy(mempoolMinFee = FeeratePerKw(250 sat), blocks_1008 = FeeratePerKw(250 sat)))
+    // alice initiates a closing with a low fee
+    alice ! CMD_CLOSE(sender.ref, None, Some(ClosingFeerates(FeeratePerKw(500 sat), FeeratePerKw(250 sat), FeeratePerKw(1000 sat))))
     alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice)
-    // agreeing on a closing fee
     val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
-    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(100 sat)))
     alice2bob.forward(bob)
     val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
-    bob2alice.forward(alice)
-    // they don't converge yet, but alice has a publishable commit tx now
+    // they don't converge yet, but bob has a publishable commit tx now
     assert(aliceCloseFee != bobCloseFee)
-    val Some(mutualCloseTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
-    // let's make alice publish this closing tx
-    alice ! Error(ByteVector32.Zeroes, "")
-    awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[PublishRawTx].tx === mutualCloseTx.tx)
-    assert(mutualCloseTx === alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.last)
+    val Some(mutualCloseTx) = bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
+    // let's make bob publish this closing tx
+    bob ! Error(ByteVector32.Zeroes, "")
+    awaitCond(bob.stateName == CLOSING)
+    assert(bob2blockchain.expectMsgType[PublishRawTx].tx === mutualCloseTx.tx)
+    assert(mutualCloseTx === bob.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.last)
 
     // actual test starts here
-    alice ! WatchFundingSpentTriggered(mutualCloseTx.tx)
-    alice ! WatchTxConfirmedTriggered(0, 0, mutualCloseTx.tx)
-    awaitCond(alice.stateName == CLOSED)
+    bob ! WatchFundingSpentTriggered(mutualCloseTx.tx)
+    bob ! WatchTxConfirmedTriggered(0, 0, mutualCloseTx.tx)
+    awaitCond(bob.stateName == CLOSED)
   }
 
   test("recv WatchFundingSpentTriggered (mutual close before converging)") { f =>
@@ -1600,7 +1578,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
     mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
     val sender = TestProbe()
-    val c = CMD_CLOSE(sender.ref, None)
+    val c = CMD_CLOSE(sender.ref, None, None)
     alice ! c
     sender.expectMsg(RES_FAILURE(c, ClosingAlreadyInProgress(channelId(alice))))
   }

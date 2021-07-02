@@ -23,7 +23,8 @@ import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
-import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
+import fr.acinq.eclair.channel.ClosingFeerates
 import scodec.bits.ByteVector
 
 trait Channel {
@@ -53,8 +54,15 @@ trait Channel {
 
   val close: Route = postRequest("close") { implicit t =>
     withChannelsIdentifier { channels =>
-      formFields("scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?) { scriptPubKey_opt =>
-        complete(eclairApi.close(channels, scriptPubKey_opt))
+      formFields("scriptPubKey".as[ByteVector](binaryDataUnmarshaller).?, "preferredFeerateSatByte".as[FeeratePerByte].?, "minFeerateSatByte".as[FeeratePerByte].?, "maxFeerateSatByte".as[FeeratePerByte].?) {
+        (scriptPubKey_opt, preferredFeerate_opt, minFeerate_opt, maxFeerate_opt) =>
+          val closingFeerates = preferredFeerate_opt.map(preferredPerByte => {
+            val preferredFeerate = FeeratePerKw(preferredPerByte)
+            val minFeerate = minFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate / 2)
+            val maxFeerate = maxFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate * 2)
+            ClosingFeerates(preferredFeerate, minFeerate, maxFeerate)
+          })
+          complete(eclairApi.close(channels, scriptPubKey_opt, closingFeerates))
       }
     }
   }

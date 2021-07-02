@@ -431,7 +431,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
     // We initiate a mutual close
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[Shutdown]
@@ -618,7 +618,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice initiates a shutdown
     val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     alice2bob.expectMsgType[Shutdown]
 
     testUpdateFeeOnReconnect(f, shouldUpdateFee = false)

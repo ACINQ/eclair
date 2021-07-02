@@ -422,7 +422,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     alice2bob.expectMsgType[Shutdown]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined && alice.stateData.asInstanceOf[DATA_NORMAL].remoteShutdown.isEmpty)
@@ -444,7 +444,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice ! add1
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     // at the same time bob initiates a closing
-    bob ! CMD_CLOSE(sender.ref, None)
+    bob ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     // this command will be received by alice right after having received the shutdown
     val add2 = CMD_ADD_HTLC(sender.ref, 10000000 msat, randomBytes32(), CltvExpiry(300000), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
@@ -1795,7 +1795,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
-    alice ! CMD_CLOSE(sender.ref, script_opt)
+    alice ! CMD_CLOSE(sender.ref, script_opt, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val shutdown = alice2bob.expectMsgType[Shutdown]
     script_opt.foreach(script => assert(script === shutdown.scriptPubKey))
@@ -1817,7 +1817,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
     // this makes sure that our backward-compatibility hack for the ask pattern (which uses context.sender as reply-to)
     // works before we fully transition to akka typed
-    val c = CMD_CLOSE(ActorRef.noSender, None)
+    val c = CMD_CLOSE(ActorRef.noSender, None, None)
     sender.send(alice, c)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     alice2bob.expectMsgType[Shutdown]
@@ -1829,7 +1829,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, CannotCloseWithUnsignedOutgoingHtlcs]]
   }
 
@@ -1837,7 +1837,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
-    bob ! CMD_CLOSE(sender.ref, None)
+    bob ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     bob2alice.expectMsgType[Shutdown]
   }
@@ -1845,14 +1845,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_CLOSE (with invalid final script)") { f =>
     import f._
     val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, Some(hex"00112233445566778899"))
+    alice ! CMD_CLOSE(sender.ref, Some(hex"00112233445566778899"), None)
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, InvalidFinalScript]]
   }
 
   test("recv CMD_CLOSE (with unsupported native segwit script)") { f =>
     import f._
     val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, Some(hex"51050102030405"))
+    alice ! CMD_CLOSE(sender.ref, Some(hex"51050102030405"), None)
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, InvalidFinalScript]]
   }
 
@@ -1865,7 +1865,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     alice2bob.expectMsgType[Shutdown]
     awaitCond(alice.stateName == NORMAL)
@@ -1876,12 +1876,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     alice2bob.expectMsgType[Shutdown]
     awaitCond(alice.stateName == NORMAL)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
   }
 
@@ -1892,7 +1892,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
     // actual test begins
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     alice2bob.expectMsgType[Shutdown]
     awaitCond(alice.stateName == NORMAL)
@@ -1903,13 +1903,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), commit = false)
     alice2bob.expectMsgType[UpdateFee]
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, CannotCloseWithUnsignedOutgoingUpdateFee]]
     alice2bob.expectNoMsg(100 millis)
     // once alice signs, the channel can be closed
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     alice2bob.expectMsgType[Shutdown]
     awaitCond(alice.stateName == NORMAL)
@@ -1937,7 +1937,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
-    bob ! CMD_CLOSE(sender.ref, None)
+    bob ! CMD_CLOSE(sender.ref, None, None)
     bob2alice.expectMsgType[Shutdown]
     // actual test begins
     bob2alice.forward(alice)
@@ -1974,7 +1974,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.forward(bob)
     val sig = alice2bob.expectMsgType[CommitSig]
     // Bob initiates a close before receiving the signature.
-    bob ! CMD_CLOSE(sender.ref, None)
+    bob ! CMD_CLOSE(sender.ref, None, None)
     bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice)
     alice2bob.forward(bob, sig)
@@ -2021,7 +2021,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    bob ! CMD_CLOSE(sender.ref, None)
+    bob ! CMD_CLOSE(sender.ref, None, None)
     bob2alice.expectMsgType[Shutdown]
     // actual test begins
     bob ! Shutdown(ByteVector32.Zeroes, hex"00112233445566778899")
@@ -2057,7 +2057,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     alice ! CMD_SIGN()
     alice2bob.expectMsgType[CommitSig]
-    bob ! CMD_CLOSE(sender.ref, None)
+    bob ! CMD_CLOSE(sender.ref, None, None)
     bob2alice.expectMsgType[Shutdown]
     // actual test begins
     bob2alice.forward(alice)
@@ -2069,7 +2069,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     // let's make bob send a Shutdown message
-    bob ! CMD_CLOSE(sender.ref, None)
+    bob ! CMD_CLOSE(sender.ref, None, None)
     bob2alice.expectMsgType[Shutdown]
     // this is just so we have something to sign
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)

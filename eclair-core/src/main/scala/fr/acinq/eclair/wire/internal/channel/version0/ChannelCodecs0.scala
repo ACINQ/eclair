@@ -311,7 +311,8 @@ private[channel] object ChannelCodecs0 {
         ("channelAnnouncement" | optional(bool, variableSizeBytes(noUnknownFieldsChannelAnnouncementSizeCodec, channelAnnouncementCodec))) ::
         ("channelUpdate" | variableSizeBytes(noUnknownFieldsChannelUpdateSizeCodec, channelUpdateCodec)) ::
         ("localShutdown" | optional(bool, shutdownCodec)) ::
-        ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
+        ("remoteShutdown" | optional(bool, shutdownCodec)) ::
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_NORMAL].decodeOnly
 
     val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
@@ -320,12 +321,14 @@ private[channel] object ChannelCodecs0 {
         ("channelAnnouncement" | optional(bool, variableSizeBytes(uint16, channelAnnouncementCodec))) ::
         ("channelUpdate" | variableSizeBytes(uint16, channelUpdateCodec)) ::
         ("localShutdown" | optional(bool, shutdownCodec)) ::
-        ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
+        ("remoteShutdown" | optional(bool, shutdownCodec)) ::
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_NORMAL].decodeOnly
 
     val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | shutdownCodec) ::
-        ("remoteShutdown" | shutdownCodec)).as[DATA_SHUTDOWN].decodeOnly
+        ("remoteShutdown" | shutdownCodec) ::
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_SHUTDOWN].decodeOnly
 
     val DATA_NEGOTIATING_Codec: Codec[DATA_NEGOTIATING] = (
       ("commitments" | commitmentsCodec) ::

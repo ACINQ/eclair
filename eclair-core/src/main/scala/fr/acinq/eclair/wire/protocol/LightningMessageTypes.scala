@@ -135,7 +135,10 @@ case class Shutdown(channelId: ByteVector32,
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
-                         signature: ByteVector64) extends ChannelMessage with HasChannelId
+                         signature: ByteVector64,
+                         tlvStream: TlvStream[ClosingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val feeRange_opt = tlvStream.get[ClosingSignedTlv.FeeRange]
+}
 
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,

@@ -233,6 +233,11 @@ private[channel] object ChannelCodecs2 {
           ("channelId" | bytes32)
       }).as[Commitments]
 
+    val closingFeeratesCodec: Codec[ClosingFeerates] = (
+      ("preferred" | feeratePerKw) ::
+        ("min" | feeratePerKw) ::
+        ("max" | feeratePerKw)).as[ClosingFeerates]
+
     val closingTxProposedCodec: Codec[ClosingTxProposed] = (
       ("unsignedTx" | closingTxCodec) ::
         ("localClosingSigned" | lengthDelimited(closingSignedCodec))).as[ClosingTxProposed]
@@ -274,6 +279,16 @@ private[channel] object ChannelCodecs2 {
         ("lastSent" | lengthDelimited(fundingLockedCodec)) ::
         ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)]))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
+    val DATA_NORMAL_COMPAT_02_Codec: Codec[DATA_NORMAL] = (
+      ("commitments" | commitmentsCodec) ::
+        ("shortChannelId" | shortchannelid) ::
+        ("buried" | bool8) ::
+        ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
+        ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_NORMAL]
+
     val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
@@ -281,12 +296,20 @@ private[channel] object ChannelCodecs2 {
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
-        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec)))).as[DATA_NORMAL]
+        ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_NORMAL]
+
+    val DATA_SHUTDOWN_COMPAT_03_Codec: Codec[DATA_SHUTDOWN] = (
+      ("commitments" | commitmentsCodec) ::
+        ("localShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("closingFeerates" | provide(Option.empty[ClosingFeerates]))).as[DATA_SHUTDOWN]
 
     val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
       ("commitments" | commitmentsCodec) ::
         ("localShutdown" | lengthDelimited(shutdownCodec)) ::
-        ("remoteShutdown" | lengthDelimited(shutdownCodec))).as[DATA_SHUTDOWN]
+        ("remoteShutdown" | lengthDelimited(shutdownCodec)) ::
+        ("closingFeerates" | optional(bool8, closingFeeratesCodec))).as[DATA_SHUTDOWN]
 
     val DATA_NEGOTIATING_Codec: Codec[DATA_NEGOTIATING] = (
       ("commitments" | commitmentsCodec) ::
@@ -312,13 +335,16 @@ private[channel] object ChannelCodecs2 {
         ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
   }
 
+  // Order matters!
   val stateDataCodec: Codec[HasCommitments] = discriminated[HasCommitments].by(uint16)
-    .typecase(0x00, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
-    .typecase(0x01, Codecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
-    .typecase(0x02, Codecs.DATA_NORMAL_Codec)
-    .typecase(0x03, Codecs.DATA_SHUTDOWN_Codec)
-    .typecase(0x04, Codecs.DATA_NEGOTIATING_Codec)
-    .typecase(0x05, Codecs.DATA_CLOSING_Codec)
+    .typecase(0x08, Codecs.DATA_SHUTDOWN_Codec)
+    .typecase(0x07, Codecs.DATA_NORMAL_Codec)
     .typecase(0x06, Codecs.DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
+    .typecase(0x05, Codecs.DATA_CLOSING_Codec)
+    .typecase(0x04, Codecs.DATA_NEGOTIATING_Codec)
+    .typecase(0x03, Codecs.DATA_SHUTDOWN_COMPAT_03_Codec)
+    .typecase(0x02, Codecs.DATA_NORMAL_COMPAT_02_Codec)
+    .typecase(0x01, Codecs.DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
+    .typecase(0x00, Codecs.DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
 
 }
