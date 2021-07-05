@@ -405,7 +405,6 @@ class PaymentRequestSpec extends AnyFunSuite {
     )
 
     for ((features, res) <- featureBits) {
-      println(features.features)
       val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = features)
       assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.areSupported(nodeParams)) === res)
       assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
