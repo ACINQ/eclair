@@ -191,9 +191,9 @@ private[channel] object ChannelTypes0 {
                          remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
     def migrate(): channel.Commitments = {
       val channelConfig = if (channelVersion.hasPubkeyKeyPath) {
-        ChannelConfigOptions(ChannelConfigOptions.FundingPubKeyBasedChannelKeyPath)
+        ChannelConfig(ChannelConfig.FundingPubKeyBasedChannelKeyPath)
       } else {
-        ChannelConfigOptions()
+        ChannelConfig()
       }
       val isWumboChannel = commitInput.txOut.amount > Satoshi(16777215)
       val baseFeatures: Seq[Feature] = if (isWumboChannel) Seq(Features.Wumbo) else Nil

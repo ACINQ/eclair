@@ -87,13 +87,13 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              remote: ActorRef,
                              remoteInit: Init,
                              channelFlags: Byte,
-                             channelConfig: ChannelConfigOptions,
+                             channelConfig: ChannelConfig,
                              channelFeatures: ChannelFeatures)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
                              localParams: LocalParams,
                              remote: ActorRef,
                              remoteInit: Init,
-                             channelConfig: ChannelConfigOptions,
+                             channelConfig: ChannelConfig,
                              channelFeatures: ChannelFeatures)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
@@ -381,7 +381,7 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32
                                                 initialFeeratePerKw: FeeratePerKw,
                                                 initialRelayFees_opt: Option[(MilliSatoshi, Int)],
                                                 remoteFirstPerCommitmentPoint: PublicKey,
-                                                channelConfig: ChannelConfigOptions,
+                                                channelConfig: ChannelConfig,
                                                 channelFeatures: ChannelFeatures,
                                                 lastSent: OpenChannel) extends Data {
   val channelId: ByteVector32 = temporaryChannelId
@@ -395,7 +395,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
                                                initialRelayFees_opt: Option[(MilliSatoshi, Int)],
                                                remoteFirstPerCommitmentPoint: PublicKey,
                                                channelFlags: Byte,
-                                               channelConfig: ChannelConfigOptions,
+                                               channelConfig: ChannelConfig,
                                                channelFeatures: ChannelFeatures,
                                                lastSent: AcceptChannel) extends Data {
   val channelId: ByteVector32 = temporaryChannelId
@@ -410,7 +410,7 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
                                               localCommitTx: CommitTx,
                                               remoteCommit: RemoteCommit,
                                               channelFlags: Byte,
-                                              channelConfig: ChannelConfigOptions,
+                                              channelConfig: ChannelConfig,
                                               channelFeatures: ChannelFeatures,
                                               lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,

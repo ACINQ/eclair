@@ -342,7 +342,7 @@ object ChannelCodecsSpec {
     )
     val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, FeeratePerKw(1500 sat), 50000000 msat, 70000000 msat), CommitTxAndRemoteSig(CommitTx(commitmentInput, commitTx), remoteSig), Nil)
     val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.map(_.opposite).toSet, FeeratePerKw(1500 sat), 50000 msat, 700000 msat), ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"), PrivateKey(ByteVector.fill(32)(4)).publicKey)
-    val commitments = Commitments(ChannelConfigOptions.standard, ChannelFeatures(Features.empty), localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+    val commitments = Commitments(ChannelConfig.standard, ChannelFeatures(Features.empty), localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
       localNextHtlcId = 32L,
       remoteNextHtlcId = 4L,
       originChannels = origins,
@@ -440,10 +440,10 @@ object ChannelCodecsSpec {
       case _: PrivateKey => JString("XXX")
     }))
 
-    class ChannelConfigSerializer extends CustomSerializer[ChannelConfigOptions](_ => ( {
+    class ChannelConfigSerializer extends CustomSerializer[ChannelConfig](_ => ( {
       null
     }, {
-      case x: ChannelConfigOptions => JArray(x.activated.toList.map(o => JString(o.name)))
+      case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
     }))
 
     class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](_ => ( {

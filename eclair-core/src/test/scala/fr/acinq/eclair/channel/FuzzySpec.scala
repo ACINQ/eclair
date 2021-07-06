@@ -79,9 +79,9 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
       registerA ! alice
       registerB ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte, ChannelConfigOptions.standard, ChannelFeatures(Features.empty))
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte, ChannelConfig.standard, ChannelFeatures(Features.empty))
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelConfigOptions.standard, ChannelFeatures(Features.empty))
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelFeatures(Features.empty))
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]

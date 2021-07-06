@@ -123,7 +123,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     import com.softwaremill.quicklens._
     import setup._
 
-    val channelConfig = ChannelConfigOptions.standard
+    val channelConfig = ChannelConfig.standard
     val channelFeatures = if (tags.contains(StateTestsTags.AnchorOutputs)) {
       ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
     } else if (tags.contains(StateTestsTags.StaticRemoteKey)) {

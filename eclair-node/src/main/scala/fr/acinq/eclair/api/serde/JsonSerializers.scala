@@ -135,10 +135,10 @@ class PrivateKeySerializer extends CustomSerializer[PrivateKey](_ => ( {
   case _: PrivateKey => JString("XXX")
 }))
 
-class ChannelConfigSerializer extends CustomSerializer[ChannelConfigOptions](_ => ( {
+class ChannelConfigSerializer extends CustomSerializer[ChannelConfig](_ => ( {
   null
 }, {
-  case x: ChannelConfigOptions => JArray(x.activated.toList.map(o => JString(o.name)))
+  case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
 }))
 
 class ChannelOpenResponseSerializer extends CustomSerializer[ChannelOpenResponse](_ => ( {

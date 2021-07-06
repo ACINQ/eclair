@@ -46,7 +46,7 @@ class WaitForFundingCreatedInternalStateSpec extends TestKitBaseClass with Fixtu
     }
     val setup = init(wallet = noopWallet)
     import setup._
-    val channelConfig = ChannelConfigOptions.standard
+    val channelConfig = ChannelConfig.standard
     val channelFeatures = ChannelFeatures(Features.empty)
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)

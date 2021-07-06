@@ -61,7 +61,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val setup = init(aliceNodeParams, bobNodeParams, wallet = noopWallet)
 
     import setup._
-    val channelConfig = ChannelConfigOptions.standard
+    val channelConfig = ChannelConfig.standard
     val channelFeatures = ChannelFeatures(Features.empty)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)

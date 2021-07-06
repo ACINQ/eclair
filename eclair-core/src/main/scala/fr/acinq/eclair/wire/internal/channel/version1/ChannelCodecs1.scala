@@ -187,19 +187,19 @@ private[channel] object ChannelCodecs1 {
     val commitmentsCodec: Codec[Commitments] = (
       ("channelVersion" | channelVersionCodec) >>:~ { channelVersion =>
         ("localParams" | localParamsCodec(channelVersion)) ::
-          (("remoteParams" | remoteParamsCodec) ::
-            ("channelFlags" | byte) ::
-            ("localCommit" | localCommitCodec) ::
-            ("remoteCommit" | remoteCommitCodec) ::
-            ("localChanges" | localChangesCodec) ::
-            ("remoteChanges" | remoteChangesCodec) ::
-            ("localNextHtlcId" | uint64overflow) ::
-            ("remoteNextHtlcId" | uint64overflow) ::
-            ("originChannels" | originsMapCodec) ::
-            ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
-            ("commitInput" | inputInfoCodec) ::
-            ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
-            ("channelId" | bytes32))
+          ("remoteParams" | remoteParamsCodec) ::
+          ("channelFlags" | byte) ::
+          ("localCommit" | localCommitCodec) ::
+          ("remoteCommit" | remoteCommitCodec) ::
+          ("localChanges" | localChangesCodec) ::
+          ("remoteChanges" | remoteChangesCodec) ::
+          ("localNextHtlcId" | uint64overflow) ::
+          ("remoteNextHtlcId" | uint64overflow) ::
+          ("originChannels" | originsMapCodec) ::
+          ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
+          ("commitInput" | inputInfoCodec) ::
+          ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
+          ("channelId" | bytes32)
       }).as[ChannelTypes0.Commitments].decodeOnly.map[Commitments](_.migrate()).decodeOnly
 
     val closingTxProposedCodec: Codec[ClosingTxProposed] = (

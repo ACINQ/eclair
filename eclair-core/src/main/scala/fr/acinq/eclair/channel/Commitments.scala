@@ -69,7 +69,7 @@ trait AbstractCommitments {
  * So, when we've signed and sent a commit message and are waiting for their revocation message,
  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
  */
-case class Commitments(channelConfig: ChannelConfigOptions,
+case class Commitments(channelConfig: ChannelConfig,
                        channelFeatures: ChannelFeatures,
                        localParams: LocalParams, remoteParams: RemoteParams,
                        channelFlags: Byte,
@@ -693,7 +693,7 @@ object Commitments {
   }
 
   def makeLocalTxs(keyManager: ChannelKeyManager,
-                   channelConfig: ChannelConfigOptions,
+                   channelConfig: ChannelConfig,
                    channelFeatures: ChannelFeatures,
                    commitTxNumber: Long,
                    localParams: LocalParams,
@@ -720,7 +720,7 @@ object Commitments {
   }
 
   def makeRemoteTxs(keyManager: ChannelKeyManager,
-                    channelConfig: ChannelConfigOptions,
+                    channelConfig: ChannelConfig,
                     channelFeatures: ChannelFeatures,
                     commitTxNumber: Long,
                     localParams: LocalParams,

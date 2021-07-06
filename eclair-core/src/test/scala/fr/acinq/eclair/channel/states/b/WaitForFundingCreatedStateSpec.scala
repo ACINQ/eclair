@@ -58,7 +58,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     val setup = init(aliceNodeParams, bobNodeParams)
 
     import setup._
-    val channelConfig = ChannelConfigOptions.standard
+    val channelConfig = ChannelConfig.standard
     val channelFeatures = ChannelFeatures(Features.empty)
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)

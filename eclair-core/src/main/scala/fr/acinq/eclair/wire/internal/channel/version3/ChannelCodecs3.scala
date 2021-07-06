@@ -43,13 +43,13 @@ private[channel] object ChannelCodecs3 {
         ("path" | keyPathCodec) ::
         ("parent" | int64)).as[ExtendedPrivateKey]
 
-    val channelConfigCodec: Codec[ChannelConfigOptions] = lengthDelimited(bytes).xmap(b => {
+    val channelConfigCodec: Codec[ChannelConfig] = lengthDelimited(bytes).xmap(b => {
       val activated: Set[ChannelConfigOption] = b.bits.toIndexedSeq.reverse.zipWithIndex.collect {
-        case (true, 0) => ChannelConfigOptions.FundingPubKeyBasedChannelKeyPath
+        case (true, 0) => ChannelConfig.FundingPubKeyBasedChannelKeyPath
       }.toSet
-      ChannelConfigOptions(activated)
+      ChannelConfig(activated)
     }, cfg => {
-      val indices = cfg.activated.map(_.supportBit)
+      val indices = cfg.options.map(_.supportBit)
       if (indices.isEmpty) {
         ByteVector.empty
       } else {

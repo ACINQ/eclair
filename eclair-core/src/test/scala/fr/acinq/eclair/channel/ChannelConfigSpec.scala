@@ -16,15 +16,15 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.eclair.channel.ChannelConfigOptions._
+import fr.acinq.eclair.channel.ChannelConfig._
 import org.scalatest.funsuite.AnyFunSuiteLike
 
-class ChannelConfigOptionsSpec extends AnyFunSuiteLike {
+class ChannelConfigSpec extends AnyFunSuiteLike {
 
   test("channel key path based on funding public key") {
-    assert(!ChannelConfigOptions(Set.empty[ChannelConfigOption]).hasOption(FundingPubKeyBasedChannelKeyPath))
-    assert(ChannelConfigOptions.standard.hasOption(FundingPubKeyBasedChannelKeyPath))
-    assert(ChannelConfigOptions(FundingPubKeyBasedChannelKeyPath).hasOption(FundingPubKeyBasedChannelKeyPath))
+    assert(!ChannelConfig(Set.empty[ChannelConfigOption]).hasOption(FundingPubKeyBasedChannelKeyPath))
+    assert(ChannelConfig.standard.hasOption(FundingPubKeyBasedChannelKeyPath))
+    assert(ChannelConfig(FundingPubKeyBasedChannelKeyPath).hasOption(FundingPubKeyBasedChannelKeyPath))
   }
 
 }

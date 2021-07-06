@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
 import fr.acinq.eclair.Setup.Seeds
-import fr.acinq.eclair.channel.ChannelConfigOptions
+import fr.acinq.eclair.channel.ChannelConfig
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.{NodeParams, TestConstants, TestUtils}
 import org.scalatest.funsuite.AnyFunSuite
@@ -68,7 +68,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath)
 
     val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
-    val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfigOptions.standard)
+    val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfig.standard)
 
     assert(fundingPub.publicKey == PrivateKey(hex"216414970b4216b197a1040367419ad6922f80e8b73ced083e9afe5e6ddd8e4c").publicKey)
     assert(channelKeyManager.revocationPoint(channelKeyPath).publicKey == PrivateKey(hex"a4e7ab3c54752a3487b3c474467843843f28d3bb9113e65e92056ad45d1e318e").publicKey)
@@ -85,7 +85,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath)
 
     val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
-    val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfigOptions.standard)
+    val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfig.standard)
 
     assert(fundingPub.publicKey == PrivateKey(hex"7bb8019c99fcba1c6bd0cc7f3c635c14c658d26751232d6a6350d8b6127d53c3").publicKey)
     assert(channelKeyManager.revocationPoint(channelKeyPath).publicKey == PrivateKey(hex"26510db99546c9b08418fe9df2da710a92afa6cc4e5681141610dfb8019052e6").publicKey)
@@ -102,7 +102,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath)
 
     val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
-    val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfigOptions.standard)
+    val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfig.standard)
 
     assert(fundingPub.publicKey == PrivateKey(hex"b97c04796850e9d74a06c9d7230d85e2ecca3598b162ddf902895ece820c8f09").publicKey)
     assert(channelKeyManager.revocationPoint(channelKeyPath).publicKey == PrivateKey(hex"ee13db7f2d7e672f21395111ee169af8462c6e8d1a6a78d808f7447b27155ffb").publicKey)
@@ -119,7 +119,7 @@ class LocalChannelKeyManagerSpec extends AnyFunSuite {
     val fundingPub = channelKeyManager.fundingPublicKey(fundingKeyPath)
 
     val localParams = TestConstants.Alice.channelParams.copy(fundingKeyPath = fundingKeyPath)
-    val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfigOptions.standard)
+    val channelKeyPath = channelKeyManager.keyPath(localParams, ChannelConfig.standard)
 
     assert(fundingPub.publicKey == PrivateKey(hex"46a4e818615a48a99ce9f6bd73eea07d5822dcfcdff18081ea781d4e5e6c036c").publicKey)
     assert(channelKeyManager.revocationPoint(channelKeyPath).publicKey == PrivateKey(hex"c2cd9e2f9f8203f16b1751bd252285bb2e7fc4688857d620467b99645ebdfbe6").publicKey)

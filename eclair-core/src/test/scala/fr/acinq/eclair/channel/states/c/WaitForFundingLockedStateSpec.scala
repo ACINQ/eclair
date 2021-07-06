@@ -43,7 +43,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
     import setup._
-    val channelConfig = ChannelConfigOptions.standard
+    val channelConfig = ChannelConfig.standard
     val channelFeatures = ChannelFeatures(Features.empty)
     val aliceInit = Init(Alice.channelParams.features)
     val bobInit = Init(Bob.channelParams.features)

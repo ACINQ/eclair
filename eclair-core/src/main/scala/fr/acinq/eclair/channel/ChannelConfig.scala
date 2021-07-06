@@ -31,17 +31,17 @@ trait ChannelConfigOption {
   // @formatter:on
 }
 
-case class ChannelConfigOptions(activated: Set[ChannelConfigOption]) {
+case class ChannelConfig(options: Set[ChannelConfigOption]) {
 
-  def hasOption(option: ChannelConfigOption): Boolean = activated.contains(option)
+  def hasOption(option: ChannelConfigOption): Boolean = options.contains(option)
 
 }
 
-object ChannelConfigOptions {
+object ChannelConfig {
 
-  def standard: ChannelConfigOptions = ChannelConfigOptions(activated = Set(FundingPubKeyBasedChannelKeyPath))
+  val standard: ChannelConfig = ChannelConfig(options = Set(FundingPubKeyBasedChannelKeyPath))
 
-  def apply(options: ChannelConfigOption*): ChannelConfigOptions = ChannelConfigOptions(Set.from(options))
+  def apply(opts: ChannelConfigOption*): ChannelConfig = ChannelConfig(Set.from(opts))
 
   /**
    * If set, the channel's BIP32 key path will be deterministically derived from the funding public key.

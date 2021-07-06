@@ -130,7 +130,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
           sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
           stay
         } else {
-          val channelConfig = ChannelConfigOptions.standard
+          val channelConfig = ChannelConfig.standard
           val channelFeatures = ChannelFeatures.pickChannelFeatures(d.localFeatures, d.remoteFeatures)
           val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, funder = true, c.fundingSatoshis, origin_opt = Some(sender), channelFeatures)
           c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
@@ -145,7 +145,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
       case Event(msg: protocol.OpenChannel, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case None =>
-            val channelConfig = ChannelConfigOptions.standard
+            val channelConfig = ChannelConfig.standard
             val channelFeatures = ChannelFeatures.pickChannelFeatures(d.localFeatures, d.remoteFeatures)
             val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None, channelFeatures)
             val temporaryChannelId = msg.temporaryChannelId

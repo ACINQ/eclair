@@ -313,7 +313,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val relayFees = Some(100 msat, 1000)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, relayFees, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
-    assert(init.channelConfig === ChannelConfigOptions.standard)
+    assert(init.channelConfig === ChannelConfig.standard)
     assert(init.channelFeatures === ChannelFeatures(Features.empty))
     assert(init.fundingAmount === 12300.sat)
     assert(init.initialRelayFees_opt === relayFees)
