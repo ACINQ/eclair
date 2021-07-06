@@ -24,7 +24,6 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.io.Peer.CHANNELID_ZERO
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
@@ -195,18 +194,24 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           d.transport ! Pong(ByteVector.fill(pongLength)(0.toByte))
         } else {
           log.warning(s"ignoring invalid ping with pongLength=${ping.pongLength}")
+          d.transport ! Warning(s"invalid pong length (${ping.pongLength})")
         }
         stay
 
       case Event(pong@Pong(data), d: ConnectedData) =>
         d.transport ! TransportHandler.ReadAck(pong)
         d.expectedPong_opt match {
-          case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
-            // we use the pong size to correlate between pings and pongs
-            val latency = System.currentTimeMillis - timestamp
-            log.debug(s"received pong with latency=$latency")
-            cancelTimer(PingTimeout.toString())
-          // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
+          case Some(ExpectedPong(ping, timestamp)) =>
+            if (ping.pongLength == data.length) {
+              // we use the pong size to correlate between pings and pongs
+              val latency = System.currentTimeMillis - timestamp
+              log.debug(s"received pong with latency=$latency")
+              cancelTimer(PingTimeout.toString())
+              // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
+            } else {
+              log.warning(s"ignoring invalid pong with length=${data.length}")
+              d.transport ! Warning(s"invalid pong length (${data.length})")
+            }
           case None =>
             log.debug(s"received unexpected pong with size=${data.length}")
         }
@@ -264,6 +269,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         d.transport ! TransportHandler.ReadAck(msg)
         if (msg.chainHash != d.chainHash) {
           log.warning("received gossip_timestamp_range message for chain {}, we're on {}", msg.chainHash, d.chainHash)
+          d.transport ! Warning(s"invalid gossip_timestamp_range chain (${msg.chainHash})")
           stay
         } else {
           log.info(s"setting up gossipTimestampFilter=$msg")
@@ -306,16 +312,16 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
               case _ => "unknown"
             }
             log.error(s"peer sent us a routing message with invalid sig: r=$r bin=$bin")
-            // for now we just return an error, maybe ban the peer in the future?
+            // for now we just send a warning, maybe ban the peer in the future?
             // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
-            d.transport ! Error(CHANNELID_ZERO, ByteVector.view(s"bad announcement sig! bin=$bin".getBytes()))
+            d.transport ! Warning(s"invalid announcement sig (bin=$bin)")
             d.behavior
           case GossipDecision.InvalidAnnouncement(c) =>
             // they seem to be sending us fake announcements?
             log.error(s"couldn't find funding tx with valid scripts for shortChannelId=${c.shortChannelId}")
-            // for now we just return an error, maybe ban the peer in the future?
+            // for now we just send a warning, maybe ban the peer in the future?
             // TODO: this doesn't actually disconnect the peer, once we introduce peer banning we should actively disconnect
-            d.transport ! Error(CHANNELID_ZERO, ByteVector.view(s"couldn't verify channel! shortChannelId=${c.shortChannelId}".getBytes()))
+            d.transport ! Warning(s"invalid announcement, couldn't verify channel (shortChannelId=${c.shortChannelId})")
             d.behavior
           case GossipDecision.ChannelClosed(_) =>
             if (d.behavior.ignoreNetworkAnnouncement) {
@@ -325,6 +331,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1)
             } else {
               log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
+              d.transport ! Warning("too many channel announcements with funding tx already spent, please check your bitcoin node")
               setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
             }
