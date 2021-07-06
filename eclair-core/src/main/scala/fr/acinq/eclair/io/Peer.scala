@@ -106,7 +106,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         stay
 
       case Event(warning: Warning, _: ConnectedData) =>
-        log.warning("peer sent warning: {}", warning.channelId, warning.toAscii)
+        log.warning("peer sent warning: {}", warning.toAscii)
         // NB: we don't forward warnings to the channel actors, they shouldn't take any automatic action.
         // It's up to the node operator to decide what to do to address the warning.
         stay
@@ -318,7 +318,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
   }
 
   def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
-    val msg = Error(unknownChannelId, UNKNOWN_CHANNEL_MESSAGE)
+    val msg = Warning(unknownChannelId, "unknown channel")
     logMessage(msg, "OUT")
     peerConnection ! msg
   }
@@ -361,10 +361,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
 
 object Peer {
 
-  // @formatter:off
   val CHANNELID_ZERO: ByteVector32 = ByteVector32.Zeroes
-  val UNKNOWN_CHANNEL_MESSAGE: ByteVector = ByteVector.view("unknown channel".getBytes())
-  // @formatter:on
 
   trait ChannelFactory {
     def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef

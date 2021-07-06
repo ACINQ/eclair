@@ -231,6 +231,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val ping = Ping(Int.MaxValue, randomBytes(127))
     transport.send(peerConnection, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
+    assert(transport.expectMsgType[Warning].channelId === Peer.CHANNELID_ZERO)
     transport.expectNoMsg()
   }
 
@@ -332,8 +333,13 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       router.send(peerConnection, GossipDecision.ChannelClosed(c))
     }
     // peer will temporary ignore announcements coming from bob
+    var warningSent = false
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
+      if (!warningSent) {
+        transport.expectMsgType[Warning]
+        warningSent = true
+      }
       transport.expectMsg(TransportHandler.ReadAck(ann))
     }
     router.expectNoMsg(1 second)
@@ -354,16 +360,16 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // now let's assume that the router isn't happy with those channels because the announcement is invalid
     router.send(peerConnection, GossipDecision.InvalidAnnouncement(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
-    val error1 = transport.expectMsgType[Error]
-    assert(error1.channelId === Peer.CHANNELID_ZERO)
-    assert(new String(error1.data.toArray).startsWith("couldn't verify channel! shortChannelId="))
+    val warn1 = transport.expectMsgType[Warning]
+    assert(warn1.channelId === Peer.CHANNELID_ZERO)
+    assert(new String(warn1.data.toArray).startsWith("invalid announcement, couldn't verify channel"))
 
     // let's assume that one of the sigs were invalid
     router.send(peerConnection, GossipDecision.InvalidSignature(channels(0)))
     // peer will return a connection-wide error, including the hex-encoded representation of the bad message
-    val error2 = transport.expectMsgType[Error]
-    assert(error2.channelId === Peer.CHANNELID_ZERO)
-    assert(new String(error2.data.toArray).startsWith("bad announcement sig! bin=0100"))
+    val warn2 = transport.expectMsgType[Warning]
+    assert(warn2.channelId === Peer.CHANNELID_ZERO)
+    assert(new String(warn2.data.toArray).startsWith("invalid announcement sig"))
   }
 
 }

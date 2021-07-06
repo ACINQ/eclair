@@ -1701,18 +1701,19 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // a channel_reestablish when reconnecting a channel that recently got confirmed, and instead send a funding_locked
     // first and then go silent. This is due to a race condition on their side, so we trigger a reconnection, hoping that
     // we will eventually receive their channel_reestablish.
-    case Event(_: FundingLocked, _) =>
+    case Event(_: FundingLocked, d) =>
       log.warning("received funding_locked before channel_reestablish (known lnd bug): disconnecting...")
-      peer ! Peer.Disconnect(remoteNodeId)
-      stay
+      // NB: we use a small delay to ensure we've sent our warning before disconnecting.
+      context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+      stay sending Warning(d.channelId, "spec violation: you sent funding_locked before channel_reestablish")
 
     // This handler is a workaround for an issue in lnd similar to the one above: they sometimes send announcement_signatures
     // before channel_reestablish, which is a minor spec violation. It doesn't halt the channel, we can simply postpone
     // that message.
-    case Event(remoteAnnSigs: AnnouncementSignatures, _) =>
+    case Event(remoteAnnSigs: AnnouncementSignatures, d) =>
       log.warning("received announcement_signatures before channel_reestablish (known lnd bug): delaying...")
       context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
-      stay
+      stay sending Warning(d.channelId, "spec violation: you sent announcement_signatures before channel_reestablish")
 
     case Event(ProcessCurrentBlockCount(c), d: HasCommitments) => handleNewBlock(c, d)
 
