@@ -220,7 +220,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     // The anchor outputs commitment format costs more fees for the funder (bigger commit tx + cost of anchor outputs)
-    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.copy(channelVersion = ChannelVersion.STANDARD).availableBalanceForSend)
+    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.copy(channelFeatures = ChannelFeatures(Features.empty)).availableBalanceForSend)
     val add = CMD_ADD_HTLC(sender.ref, initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add
 

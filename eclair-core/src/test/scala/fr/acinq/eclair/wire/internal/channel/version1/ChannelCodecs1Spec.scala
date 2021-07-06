@@ -6,9 +6,9 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelVersion, LocalParams, Origin, RemoteParams}
+import fr.acinq.eclair.channel.{LocalParams, Origin, RemoteParams}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.ChannelVersion
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1.Codecs._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
@@ -78,7 +78,6 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     roundtrip(o, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
   }
 
-
   test("encode/decode remoteparams") {
     val o = RemoteParams(
       nodeId = randomKey().publicKey,
@@ -93,7 +92,8 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       paymentBasepoint = randomKey().publicKey,
       delayedPaymentBasepoint = randomKey().publicKey,
       htlcBasepoint = randomKey().publicKey,
-      features = TestConstants.Alice.nodeParams.features)
+      features = TestConstants.Alice.nodeParams.features,
+      shutdownScript = None)
     val encoded = remoteParamsCodec.encode(o).require
     val decoded = remoteParamsCodec.decodeValue(encoded).require
     assert(o === decoded)

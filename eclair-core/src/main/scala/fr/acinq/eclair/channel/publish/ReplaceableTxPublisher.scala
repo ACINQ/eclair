@@ -243,7 +243,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     // been confirmed (we don't need to check again here).
     HtlcTxAndWitnessData(htlcTx, cmd.commitments) match {
       case Some(txWithWitnessData) if targetFeerate <= commitFeerate =>
-        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelVersion)
+        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitments.localCommit.index)
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
         val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
@@ -296,7 +296,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         // NB: we've already checked witness data in the precondition phase. Witness data extraction should be done
         // earlier by the channel to remove this duplication.
         val txWithWitnessData = HtlcTxAndWitnessData(htlcTx, cmd.commitments).get
-        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelVersion)
+        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitments.localCommit.index)
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
         val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
