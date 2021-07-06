@@ -431,7 +431,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey)
     // we prepare the revoked transactions F will publish
     val keyManagerF = nodes("F").nodeParams.channelKeyManager
-    val channelKeyPathF = keyManagerF.keyPath(commitmentsF.localParams, commitmentsF.channelVersion)
+    val channelKeyPathF = keyManagerF.keyPath(commitmentsF.localParams, commitmentsF.channelConfig)
     val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.localCommit.index.toInt)
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
