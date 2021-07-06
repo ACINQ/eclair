@@ -208,8 +208,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             cancelTimer(PingTimeout.toString())
           // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
           case _ =>
-            log.debug(s"received unexpected pong with size=${data.length}")
-            d.transport ! Warning(s"invalid pong length (${data.length})")
+            log.debug(s"received unexpected pong with length=${data.length}")
+            d.transport ! Warning(s"invalid pong with length=${data.length}")
         }
         stay using d.copy(expectedPong_opt = None)
 
