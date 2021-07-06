@@ -201,19 +201,15 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       case Event(pong@Pong(data), d: ConnectedData) =>
         d.transport ! TransportHandler.ReadAck(pong)
         d.expectedPong_opt match {
-          case Some(ExpectedPong(ping, timestamp)) =>
-            if (ping.pongLength == data.length) {
-              // we use the pong size to correlate between pings and pongs
-              val latency = System.currentTimeMillis - timestamp
-              log.debug(s"received pong with latency=$latency")
-              cancelTimer(PingTimeout.toString())
-              // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
-            } else {
-              log.warning(s"ignoring invalid pong with length=${data.length}")
-              d.transport ! Warning(s"invalid pong length (${data.length})")
-            }
-          case None =>
+          case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
+            // we use the pong size to correlate between pings and pongs
+            val latency = System.currentTimeMillis - timestamp
+            log.debug(s"received pong with latency=$latency")
+            cancelTimer(PingTimeout.toString())
+          // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
+          case _ =>
             log.debug(s"received unexpected pong with size=${data.length}")
+            d.transport ! Warning(s"invalid pong length (${data.length})")
         }
         stay using d.copy(expectedPong_opt = None)
 
