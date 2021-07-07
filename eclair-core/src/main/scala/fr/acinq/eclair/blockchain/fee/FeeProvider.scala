@@ -27,7 +27,7 @@ trait FeeProvider {
   def getFeerates: Future[FeeratesPerKB]
 }
 
-case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve feerates: channels may be at risk")
+case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve feerates, channels may be at risk: ensure bitcoind estimatesmartfee correctly returns feerates and restart eclair")
 
 /** Fee rate in satoshi-per-bytes. */
 case class FeeratePerByte(feerate: Satoshi)
@@ -160,4 +160,3 @@ object FeeratesPerKw {
     blocks_144 = feeratePerKw,
     blocks_1008 = feeratePerKw)
 }
-
