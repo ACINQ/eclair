@@ -109,7 +109,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
   }
 
-  def setChannelFeatures(defaultChannelParams: LocalParams, tags: Set[String]): LocalParams = {
+  // NB: the features stored in LocalParams contain the node's features, which may be different from the channel features.
+  def setLocalFeatures(defaultChannelParams: LocalParams, tags: Set[String]): LocalParams = {
     import com.softwaremill.quicklens._
 
     defaultChannelParams
@@ -123,21 +124,21 @@ trait StateTestsHelperMethods extends TestKitBase {
     import com.softwaremill.quicklens._
     import setup._
 
-    val channelVersion = List(
-      ChannelVersion.STANDARD,
-      if (tags.contains(StateTestsTags.AnchorOutputs)) ChannelVersion.ANCHOR_OUTPUTS else ChannelVersion.ZEROES,
-      if (tags.contains(StateTestsTags.StaticRemoteKey)) ChannelVersion.STATIC_REMOTEKEY else ChannelVersion.ZEROES,
-    ).reduce(_ | _)
+    val channelConfig = ChannelConfig.standard
+    val channelFeatures = ChannelFeatures(Features.empty)
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Mandatory))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory))
+      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory).updated(Features.AnchorOutputs, FeatureSupport.Mandatory))
 
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val aliceParams = setChannelFeatures(Alice.channelParams, tags)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+    val aliceParams = setLocalFeatures(Alice.channelParams, tags)
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
-    val bobParams = setChannelFeatures(Bob.channelParams, tags)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelVersion.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+    val bobParams = setLocalFeatures(Bob.channelParams, tags)
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
-    val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val initialFeeratePerKw = if (channelFeatures.hasFeature(Features.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(StateTestsTags.NoPushMsat)) {
       (TestConstants.fundingSatoshis, 0.msat)
     } else {
@@ -146,9 +147,9 @@ trait StateTestsHelperMethods extends TestKitBase {
 
     val aliceInit = Init(aliceParams.features)
     val bobInit = Init(bobParams.features)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelVersion)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelFeatures)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelFeatures)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
@@ -281,14 +282,22 @@ trait StateTestsHelperMethods extends TestKitBase {
 
   def localClose(s: TestFSMRef[State, Data, Channel], s2blockchain: TestProbe): LocalCommitPublished = {
     // an error occurs and s publishes its commit tx
-    val commitTx = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val localCommit = s.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit
+    // check that we store the local txs without sigs
+    localCommit.commitTxAndRemoteSig.commitTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull))
+    localCommit.htlcTxsAndRemoteSigs.foreach(_.htlcTx.tx.txIn.foreach(txIn => assert(txIn.witness.isNull)))
+
+    val commitTx = localCommit.commitTxAndRemoteSig.commitTx.tx
     s ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(s.stateName == CLOSING)
     val closingState = s.stateData.asInstanceOf[DATA_CLOSING]
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
 
-    assert(s2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx == commitTx)
+    val publishedLocalCommitTx = s2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx
+    assert(publishedLocalCommitTx.txid == commitTx.txid)
+    val commitInput = closingState.commitments.commitInput
+    Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     if (closingState.commitments.commitmentFormat == Transactions.AnchorOutputsCommitmentFormat) {
       assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     }

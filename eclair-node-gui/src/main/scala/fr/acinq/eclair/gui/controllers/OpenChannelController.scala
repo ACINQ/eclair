@@ -116,7 +116,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
           feerateError.setText("Fee rate must be greater than 0")
         case (Success(capacitySat), Success(pushMsat), Success(feeratePerByte_opt)) =>
           val channelFlags = if (publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-          handlers.open(nodeUri, Some(Peer.OpenChannel(nodeUri.nodeId, capacitySat, MilliSatoshi(pushMsat), feeratePerByte_opt.map(f => FeeratePerKw(FeeratePerByte(f.sat))), None, Some(channelFlags), Some(30 seconds))))
+          handlers.open(nodeUri, Some(Peer.OpenChannel(nodeUri.nodeId, capacitySat, MilliSatoshi(pushMsat), None, feeratePerByte_opt.map(f => FeeratePerKw(FeeratePerByte(f.sat))), None, Some(channelFlags), Some(30 seconds))))
           stage.close()
         case (Failure(t), _, _) =>
           logger.error(s"could not parse capacity with cause=${t.getLocalizedMessage}")

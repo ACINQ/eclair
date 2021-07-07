@@ -152,6 +152,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       remoteNodeId = node2.nodeParams.nodeId,
       fundingSatoshis = fundingSatoshis,
       pushMsat = pushMsat,
+      channelType_opt = None,
       fundingTxFeeratePerKw_opt = None,
       initialRelayFees_opt = None,
       channelFlags = None,

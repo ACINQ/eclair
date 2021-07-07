@@ -135,10 +135,10 @@ class PrivateKeySerializer extends CustomSerializer[PrivateKey](_ => ( {
   case _: PrivateKey => JString("XXX")
 }))
 
-class ChannelVersionSerializer extends CustomSerializer[ChannelVersion](_ => ( {
+class ChannelConfigSerializer extends CustomSerializer[ChannelConfig](_ => ( {
   null
 }, {
-  case x: ChannelVersion => JString(x.bits.toBin)
+  case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
 }))
 
 class ChannelOpenResponseSerializer extends CustomSerializer[ChannelOpenResponse](_ => ( {
@@ -448,7 +448,7 @@ object JsonSupport extends Json4sSupport {
     new InetSocketAddressSerializer +
     new OutPointSerializer +
     new OutPointKeySerializer +
-    new ChannelVersionSerializer +
+    new ChannelConfigSerializer +
     new ChannelOpenResponseSerializer +
     new CommandResponseSerializer +
     new InputInfoSerializer +
