@@ -17,11 +17,15 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.AskPattern.Askable
+import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
 import akka.pattern._
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
+import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
+import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
@@ -39,12 +43,13 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPayment, SendPaymentTo
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{NetworkStats, RouteCalculation, Router}
 import fr.acinq.eclair.wire.protocol._
+import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 import scala.reflect.ClassTag
 
 case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, network: String, blockHeight: Int, publicAddresses: Seq[NodeAddress], instanceId: String)
@@ -59,9 +64,9 @@ case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
 object TimestampQueryFilters {
   /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
-  val MaxEpochMilliseconds = Duration.fromNanos(Long.MaxValue).toMillis
+  val MaxEpochMilliseconds: Long = Duration.fromNanos(Long.MaxValue).toMillis
 
-  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]) = {
+  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]): TimestampQueryFilters = {
     // NB: we expect callers to use seconds, but internally we use milli-seconds everywhere.
     val from = from_opt.getOrElse(0L).seconds.toMillis
     val to = to_opt.map(_.seconds.toMillis).getOrElse(MaxEpochMilliseconds)
@@ -149,12 +154,14 @@ trait Eclair {
 
   def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
 
+  def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance]
+
   def signMessage(message: ByteVector): SignedMessage
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 }
 
-class EclairImpl(appKit: Kit) extends Eclair {
+class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   implicit val ec: ExecutionContext = appKit.system.dispatcher
 
@@ -427,6 +434,14 @@ class EclairImpl(appKit: Kit) extends Eclair {
 
   override def usableBalances()(implicit timeout: Timeout): Future[Iterable[UsableBalance]] =
     (appKit.relayer ? GetOutgoingChannels()).mapTo[OutgoingChannels].map(_.channels.map(_.toUsableBalance))
+
+  override def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance] = {
+    for {
+      ChannelsListener.GetChannelsResponse(channels) <- appKit.channelsListener.ask(ref => ChannelsListener.GetChannels(ref))(timeout, appKit.system.scheduler.toTyped)
+      globalBalance_try <- appKit.balanceActor.ask(res => BalanceActor.GetGlobalBalance(res, channels))(timeout, appKit.system.scheduler.toTyped)
+      globalBalance <- Promise[GlobalBalance]().complete(globalBalance_try).future
+    } yield globalBalance
+  }
 
   override def signMessage(message: ByteVector): SignedMessage = {
     val bytesToSign = SignedMessage.signedBytes(message)

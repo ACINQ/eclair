@@ -252,6 +252,11 @@
             <artifactId>guava</artifactId>
             <version>${guava.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.softwaremill.quicklens</groupId>
+            <artifactId>quicklens_${scala.version.short}</artifactId>
+            <version>1.5.0</version>
+        </dependency>
         <!-- MONITORING -->
         <dependency>
             <groupId>io.kamon</groupId>
@@ -264,12 +269,6 @@
             <version>${kamon.version}</version>
         </dependency>
         <!-- TESTS -->
-        <dependency>
-            <groupId>com.softwaremill.quicklens</groupId>
-            <artifactId>quicklens_${scala.version.short}</artifactId>
-            <version>1.5.0</version>
-            <scope>test</scope>
-        </dependency>
         <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-testkit_${scala.version.short}</artifactId>

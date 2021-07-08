@@ -19,8 +19,9 @@ package fr.acinq.eclair.api.serde
 import com.google.common.net.HostAndPort
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
+import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
@@ -29,11 +30,11 @@ import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcTx, ClosingTx, HtlcSuccessTx, HtlcTimeoutTx, InputInfo, TransactionWithInputInfo}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import org.json4s.JsonAST._
-import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, JsonAST, ShortTypeHints, TypeHints, jackson}
+import org.json4s.{CustomKeySerializer, CustomSerializer, DefaultFormats, Extraction, ShortTypeHints, TypeHints, jackson}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -56,6 +57,12 @@ class ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {
   case x: ByteVector32 => JString(x.toHex)
 }))
 
+class ByteVector32KeySerializer extends CustomKeySerializer[ByteVector32](_ => ( {
+  null
+}, {
+  case x: ByteVector32 => x.toHex
+}))
+
 class ByteVector64Serializer extends CustomSerializer[ByteVector64](_ => ( {
   null
 }, {
@@ -66,6 +73,12 @@ class UInt64Serializer extends CustomSerializer[UInt64](_ => ( {
   null
 }, {
   case x: UInt64 => JInt(x.toBigInt)
+}))
+
+class BtcSerializer extends CustomSerializer[Btc](_ => ( {
+  null
+}, {
+  case x: Btc => JDecimal(x.toDouble)
 }))
 
 class SatoshiSerializer extends CustomSerializer[Satoshi](_ => ( {
@@ -370,6 +383,14 @@ class OriginSerializer extends CustomSerializer[Origin](_ => ( {
   })
 }))
 
+class GlobalBalanceSerializer extends CustomSerializer[GlobalBalance](_ => ( {
+  null
+}, {
+  case o: GlobalBalance =>
+    val formats = DefaultFormats + new ByteVector32KeySerializer + new BtcSerializer + new SatoshiSerializer
+    JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
+}))
+
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
@@ -432,6 +453,7 @@ object JsonSupport extends Json4sSupport {
     new ByteVector64Serializer +
     new ChannelEventSerializer +
     new UInt64Serializer +
+    new BtcSerializer +
     new SatoshiSerializer +
     new MilliSatoshiSerializer +
     new CltvExpirySerializer +
@@ -463,6 +485,7 @@ object JsonSupport extends Json4sSupport {
     new JavaUUIDSerializer +
     new FeaturesSerializer +
     new OriginSerializer +
+    new GlobalBalanceSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +

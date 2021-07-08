@@ -89,7 +89,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       routerConf: RouterConf,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
-                      enableTrampolinePayment: Boolean) {
+                      enableTrampolinePayment: Boolean,
+                      balanceCheckInterval: FiniteDuration) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -394,7 +395,8 @@ object NodeParams extends Logging {
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
-      enableTrampolinePayment = config.getBoolean("trampoline-payments-enable")
+      enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
+      balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS)
     )
   }
 }

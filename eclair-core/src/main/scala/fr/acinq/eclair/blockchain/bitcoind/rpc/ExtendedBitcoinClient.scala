@@ -159,7 +159,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
   def unlockOutpoints(outPoints: Seq[OutPoint])(implicit ec: ExecutionContext): Future[Boolean] = {
     // we unlock utxos one by one and not as a list as it would fail at the first utxo that is not actually locked and the rest would not be processed
     val futures = outPoints
-      .map(outPoint => Utxo(outPoint.txid, outPoint.index))
+      .map(outPoint => UnlockOutpoint(outPoint.txid, outPoint.index))
       .map(utxo => rpcClient
         .invoke("lockunspent", true, List(utxo))
         .mapTo[JBool]
@@ -276,6 +276,20 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
     case t: Throwable => ValidateResult(c, Left(t))
   }
 
+  def listUnspent()(implicit ec: ExecutionContext): Future[Seq[Utxo]] = rpcClient.invoke("listunspent", /* minconf */ 0).collect {
+    case JArray(values) => values.map(utxo => {
+      val JInt(confirmations) = utxo \ "confirmations"
+      val JBool(safe) = utxo \ "safe"
+      val JDecimal(amount) = utxo \ "amount"
+      val JString(txid) = utxo \ "txid"
+      val label =  utxo \ "label" match {
+        case JString(label) => Some(label)
+        case _ => None
+      }
+      Utxo(ByteVector32.fromValidHex(txid), (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe, label)
+    })
+  }
+
 }
 
 object ExtendedBitcoinClient {
@@ -322,7 +336,9 @@ object ExtendedBitcoinClient {
    */
   case class MempoolTx(txid: ByteVector32, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi)
 
-  case class Utxo(txid: ByteVector32, vout: Long)
+  case class UnlockOutpoint(txid: ByteVector32, vout: Long)
+
+  case class Utxo(txid: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
 
   def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 

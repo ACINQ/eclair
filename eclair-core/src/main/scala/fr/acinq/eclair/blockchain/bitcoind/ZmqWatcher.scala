@@ -23,6 +23,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.Utxo
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import fr.acinq.eclair.{KamonExt, ShortChannelId}
@@ -244,7 +245,6 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
             blockCount.set(count)
             context.system.eventStream ! EventStream.Publish(CurrentBlockCount(count))
         }
-        checkUtxos()
         // TODO: beware of the herd effect
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {
           Future.sequence(watches.collect { case w: WatchConfirmed[_] => checkConfirmed(w) })
@@ -381,55 +381,6 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
             }
           }
         }
-    }
-  }
-
-  def checkUtxos(): Future[Unit] = {
-    case class Utxo(txId: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean)
-
-    def listUnspent(): Future[Seq[Utxo]] = client.rpcClient.invoke("listunspent", /* minconf */ 0).collect {
-      case JArray(values) => values.map(utxo => {
-        val JInt(confirmations) = utxo \ "confirmations"
-        val JBool(safe) = utxo \ "safe"
-        val JDecimal(amount) = utxo \ "amount"
-        val JString(txid) = utxo \ "txid"
-        Utxo(ByteVector32.fromValidHex(txid), (amount.doubleValue * 1000).millibtc, confirmations.toLong, safe)
-      })
-    }
-
-    def getUnconfirmedAncestorCount(utxo: Utxo): Future[(ByteVector32, Long)] = client.rpcClient.invoke("getmempoolentry", utxo.txId).map(json => {
-      val JInt(ancestorCount) = json \ "ancestorcount"
-      (utxo.txId, ancestorCount.toLong)
-    }).recover {
-      case ex: Throwable =>
-        log.warn(s"could not retrieve unconfirmed ancestor count for txId=${utxo.txId} amount=${utxo.amount}:", ex)
-        (utxo.txId, 0)
-    }
-
-    def getUnconfirmedAncestorCountMap(utxos: Seq[Utxo]): Future[Map[ByteVector32, Long]] = Future.sequence(utxos.filter(_.confirmations == 0).map(getUnconfirmedAncestorCount)).map(_.toMap)
-
-    def recordUtxos(utxos: Seq[Utxo], ancestorCount: Map[ByteVector32, Long]): Unit = {
-      val filteredByStatus = Seq(
-        (Monitoring.Tags.UtxoStatuses.Confirmed, utxos.filter(utxo => utxo.confirmations > 0)),
-        // We cannot create chains of unconfirmed transactions with more than 25 elements, so we ignore such utxos.
-        (Monitoring.Tags.UtxoStatuses.Unconfirmed, utxos.filter(utxo => utxo.confirmations == 0 && ancestorCount.getOrElse(utxo.txId, 1L) < 25)),
-        (Monitoring.Tags.UtxoStatuses.Safe, utxos.filter(utxo => utxo.safe)),
-        (Monitoring.Tags.UtxoStatuses.Unsafe, utxos.filter(utxo => !utxo.safe)),
-      )
-      filteredByStatus.foreach {
-        case (status, filteredUtxos) =>
-          val amount = filteredUtxos.map(_.amount.toDouble).sum
-          log.info(s"we have ${filteredUtxos.length} $status utxos ($amount mBTC)")
-          Monitoring.Metrics.UtxoCount.withTag(Monitoring.Tags.UtxoStatus, status).update(filteredUtxos.length)
-          Monitoring.Metrics.BitcoinBalance.withTag(Monitoring.Tags.UtxoStatus, status).update(amount)
-      }
-    }
-
-    (for {
-      utxos <- listUnspent()
-      ancestorCount <- getUnconfirmedAncestorCountMap(utxos)
-    } yield recordUtxos(utxos, ancestorCount)).recover {
-      case ex => log.warn(s"could not check utxos: $ex")
     }
   }
 
