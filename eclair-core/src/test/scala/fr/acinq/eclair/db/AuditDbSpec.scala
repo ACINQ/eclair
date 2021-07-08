@@ -386,7 +386,7 @@ class AuditDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migrate audit database v4 -> v5/v6") {
+  test("migrate audit database v4 -> v5/v7") {
 
     val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 105)
     val relayed2 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(300 msat, randomBytes32()), PaymentRelayed.Part(350 msat, randomBytes32())), Seq(PaymentRelayed.Part(600 msat, randomBytes32())), PlaceHolderPubKey, 0 msat, 110)
@@ -458,17 +458,15 @@ class AuditDbSpec extends AnyFunSuite {
             }
           },
           dbName = "audit",
-          targetVersion = 6,
+          targetVersion = 7,
           postCheck = connection => {
             val migratedDb = dbs.audit
-            using(connection.createStatement()) { statement =>
-              assert(getVersion(statement, "audit").contains(6))
-            }
+
             assert(migratedDb.listRelayed(100, 120) === Seq(relayed1, relayed2))
 
             val postMigrationDb = new PgAuditDb()(dbs.datasource)
             using(connection.createStatement()) { statement =>
-              assert(getVersion(statement, "audit").contains(6))
+              assert(getVersion(statement, "audit").contains(7))
             }
             val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150)
             postMigrationDb.add(relayed3)
@@ -566,8 +564,9 @@ class AuditDbSpec extends AnyFunSuite {
       val db = dbs.audit
       val sqlite = dbs.connection
       val isPg = dbs.isInstanceOf[TestPgDatabases]
+      val table = if (isPg) "audit.relayed" else "relayed"
 
-      using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         if (isPg) statement.setString(1, randomBytes32().toHex) else statement.setBytes(1, randomBytes32().toArray)
         statement.setLong(2, 42)
         if (isPg) statement.setString(3, randomBytes32().toHex) else statement.setBytes(3, randomBytes32().toArray)
@@ -577,7 +576,7 @@ class AuditDbSpec extends AnyFunSuite {
         statement.executeUpdate()
       }
 
-      using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         if (isPg) statement.setString(1, randomBytes32().toHex) else statement.setBytes(1, randomBytes32().toArray)
         statement.setLong(2, 51)
         if (isPg) statement.setString(3, randomBytes32().toHex) else statement.setBytes(3, randomBytes32().toArray)
@@ -590,7 +589,7 @@ class AuditDbSpec extends AnyFunSuite {
       val paymentHash = randomBytes32()
       val channelId = randomBytes32()
 
-      using(sqlite.prepareStatement("INSERT INTO relayed (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      using(sqlite.prepareStatement(s"INSERT INTO $table (payment_hash, amount_msat, channel_id, direction, relay_type, timestamp) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         if (isPg) statement.setString(1, paymentHash.toHex) else statement.setBytes(1, paymentHash.toArray)
         statement.setLong(2, 65)
         if (isPg) statement.setString(3, channelId.toHex) else statement.setBytes(3, channelId.toArray)

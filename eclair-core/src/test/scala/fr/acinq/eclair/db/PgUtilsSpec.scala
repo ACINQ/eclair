@@ -5,6 +5,9 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.db.pg.PgUtils.{JdbcUrlChanged, migrateTable, using}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LockFailure, LockFailureHandler}
 import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
+import grizzled.slf4j.Logging
+import org.postgresql.PGConnection
+import org.postgresql.jdbc.PgConnection
 import grizzled.slf4j.{Logger, Logging}
 import org.scalatest.concurrent.Eventually
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -83,6 +86,16 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     }
 
     pg.close()
+  }
+
+  test("grant rights to read-only user") {
+    val pg = EmbeddedPostgres.start()
+    pg.getPostgresDatabase.getConnection.asInstanceOf[PgConnection].execSQLUpdate("CREATE ROLE readonly NOLOGIN")
+    val config = ConfigFactory.parseString("postgres.readonly-user = readonly")
+      .withFallback(PgUtilsSpec.testConfig(pg.getPort))
+    val datadir = new File(TestUtils.BUILD_DIRECTORY, s"pg_test_${UUID.randomUUID()}")
+    datadir.mkdirs()
+    Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
   }
 
   test("migration test") {

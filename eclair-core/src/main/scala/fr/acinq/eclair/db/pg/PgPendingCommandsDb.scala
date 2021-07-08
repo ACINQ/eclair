@@ -36,7 +36,7 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
   import lock._
 
   val DB_NAME = "pending_relay"
-  val CURRENT_VERSION = 2
+  val CURRENT_VERSION = 3
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
@@ -45,13 +45,23 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
         statement.executeUpdate("ALTER TABLE pending_relay RENAME TO pending_settlement_commands")
       }
 
+      def migration23(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
+        statement.executeUpdate("ALTER TABLE pending_settlement_commands SET SCHEMA local")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
+          statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
           // note: should we use a foreign key to local_channels table here?
-          statement.executeUpdate("CREATE TABLE pending_settlement_commands (channel_id TEXT NOT NULL, htlc_id BIGINT NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
+          statement.executeUpdate("CREATE TABLE local.pending_settlement_commands (channel_id TEXT NOT NULL, htlc_id BIGINT NOT NULL, data BYTEA NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
         case Some(v@1) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration12(statement)
+          migration23(statement)
+        case Some(v@2) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+          migration23(statement)
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -61,7 +71,7 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
 
   override def addSettlementCommand(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("INSERT INTO pending_settlement_commands VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+      using(pg.prepareStatement("INSERT INTO local.pending_settlement_commands VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, cmd.id)
         statement.setBytes(3, cmdCodec.encode(cmd).require.toByteArray)
@@ -72,7 +82,7 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
 
   override def removeSettlementCommand(channelId: ByteVector32, htlcId: Long): Unit = withMetrics("pending-relay/remove", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("DELETE FROM pending_settlement_commands WHERE channel_id=? AND htlc_id=?")) { statement =>
+      using(pg.prepareStatement("DELETE FROM local.pending_settlement_commands WHERE channel_id=? AND htlc_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.setLong(2, htlcId)
         statement.executeUpdate()
@@ -82,7 +92,7 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
 
   override def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT htlc_id, data FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
+      using(pg.prepareStatement("SELECT htlc_id, data FROM local.pending_settlement_commands WHERE channel_id=?")) { statement =>
         statement.setString(1, channelId.toHex)
         statement.executeQuery()
           .mapCodec(cmdCodec).toSeq
@@ -92,7 +102,7 @@ class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends Pending
 
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = withMetrics("pending-relay/list", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT channel_id, data FROM pending_settlement_commands")) { statement =>
+      using(pg.prepareStatement("SELECT channel_id, data FROM local.pending_settlement_commands")) { statement =>
         statement.executeQuery()
           .map(rs => (rs.getByteVector32FromHex("channel_id"), cmdCodec.decode(rs.getByteVector("data").bits).require.value))
           .toSeq
