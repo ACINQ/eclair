@@ -16,28 +16,29 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.TestDatabases._
+import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.PublicChannel
-import fr.acinq.eclair.wire.protocol.{Color, NodeAddress, Tor2}
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
+import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
-import scala.collection.{SortedMap, SortedSet, mutable}
+import scala.collection.{SortedMap, mutable}
 import scala.util.Random
 
 class NetworkDbSpec extends AnyFunSuite {
 
+  import NetworkDbSpec._
   import fr.acinq.eclair.TestDatabases.forAllDbs
-
-  val shortChannelIds: Seq[ShortChannelId] = (42 to (5000 + 42)).map(i => ShortChannelId(i))
 
   test("init database two times in a row") {
     forAllDbs {
@@ -47,46 +48,6 @@ class NetworkDbSpec extends AnyFunSuite {
       case pg: TestPgDatabases =>
         new PgNetworkDb()(pg.datasource)
         new PgNetworkDb()(pg.datasource)
-    }
-  }
-
-  test("migration test 1->2") {
-    forAllDbs {
-      case _: TestPgDatabases => // no migration
-      case dbs: TestSqliteDatabases =>
-
-        using(dbs.connection.createStatement()) { statement =>
-          statement.execute("PRAGMA foreign_keys = ON")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
-          statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
-          statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
-          setVersion(statement, "network", 1)
-        }
-
-        using(dbs.connection.createStatement()) { statement =>
-          assert(getVersion(statement, "network").contains(1))
-        }
-
-        // first round: this will trigger a migration
-        simpleTest(dbs)
-
-        using(dbs.connection.createStatement()) { statement =>
-          assert(getVersion(statement, "network").contains(2))
-        }
-
-        using(dbs.connection.createStatement()) { statement =>
-          statement.executeUpdate("DELETE FROM nodes")
-          statement.executeUpdate("DELETE FROM channels")
-        }
-
-        // second round: no migration
-        simpleTest(dbs)
-
-        using(dbs.connection.createStatement()) { statement =>
-          assert(getVersion(statement, "network").contains(2))
-        }
     }
   }
 
@@ -233,6 +194,8 @@ class NetworkDbSpec extends AnyFunSuite {
     }
   }
 
+  val shortChannelIds: Seq[ShortChannelId] = (42 to (5000 + 42)).map(i => ShortChannelId(i))
+
   test("remove many channels") {
     forAllDbs { dbs =>
       val db = dbs.network
@@ -260,9 +223,193 @@ class NetworkDbSpec extends AnyFunSuite {
       val db = dbs.network
 
       db.addToPruned(shortChannelIds)
-      shortChannelIds.foreach { id => assert(db.isPruned((id))) }
+      shortChannelIds.foreach { id => assert(db.isPruned(id)) }
       db.removeFromPruned(ShortChannelId(5))
       assert(!db.isPruned(ShortChannelId(5)))
     }
   }
+
+  test("migration test 1->2 (sqlite)") {
+    val dbs = TestSqliteDatabases()
+    migrationCheck(
+      dbs = dbs,
+      initializeTables = connection => {
+        using(connection.createStatement()) { statement =>
+          statement.execute("PRAGMA foreign_keys = ON")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
+          statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+          statement.executeUpdate("CREATE TABLE IF NOT EXISTS pruned (short_channel_id INTEGER NOT NULL PRIMARY KEY)")
+          setVersion(statement, "network", 1)
+        }
+        nodeTestCases.foreach { testCase =>
+          using(connection.prepareStatement("INSERT INTO nodes (node_id, data) VALUES (?, ?)")) { statement =>
+            statement.setString(1, testCase.nodeId.toString())
+            statement.setBytes(2, testCase.data)
+            statement.executeUpdate()
+          }
+        }
+        channelTestCases.foreach { testCase =>
+          using(connection.prepareStatement("INSERT INTO channels (short_channel_id, txid, data, capacity_sat) VALUES (?, ?, ?, ?)")) { statement =>
+            statement.setLong(1, testCase.shortChannelId.toLong)
+            statement.setString(2, testCase.txid.toString())
+            statement.setBytes(3, testCase.channel_data)
+            statement.setLong(4, testCase.capacity.toLong)
+            statement.executeUpdate()
+          }
+          testCase.update_1_data_opt.foreach { update =>
+            using(connection.prepareStatement("INSERT INTO channel_updates (short_channel_id, node_flag, data) VALUES (?, ?, ?)")) { statement =>
+              statement.setLong(1, testCase.shortChannelId.toLong)
+              statement.setLong(2, 0)
+              statement.setBytes(3, update)
+              statement.executeUpdate()
+            }
+          }
+          testCase.update_2_data_opt.foreach { update =>
+            using(connection.prepareStatement("INSERT INTO channel_updates (short_channel_id, node_flag, data) VALUES (?, ?, ?)")) { statement =>
+              statement.setLong(1, testCase.shortChannelId.toLong)
+              statement.setLong(2, 1)
+              statement.setBytes(3, update)
+              statement.executeUpdate()
+            }
+          }
+        }
+      },
+      dbName = "network",
+      targetVersion = 2,
+      postCheck = _ => {
+        assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
+        // NB: channel updates are not migrated
+        assert(dbs.network.listChannels().values.toSet === channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, None, None, None)).toSet)
+      }
+    )
+  }
+
+  test("migration test 2->3 (postgres)") {
+    val dbs = TestPgDatabases()
+    migrationCheck(
+      dbs = dbs,
+      initializeTables = connection => {
+        using(connection.createStatement()) { statement =>
+          statement.executeUpdate("CREATE TABLE nodes (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
+          statement.executeUpdate("CREATE TABLE channels (short_channel_id BIGINT NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BYTEA NOT NULL, capacity_sat BIGINT NOT NULL, channel_update_1 BYTEA NULL, channel_update_2 BYTEA NULL)")
+          statement.executeUpdate("CREATE TABLE pruned (short_channel_id BIGINT NOT NULL PRIMARY KEY)")
+          setVersion(statement, "network", 2)
+        }
+        nodeTestCases.foreach { testCase =>
+          using(connection.prepareStatement("INSERT INTO nodes (node_id, data) VALUES (?, ?)")) { statement =>
+            statement.setString(1, testCase.nodeId.toString())
+            statement.setBytes(2, testCase.data)
+            statement.executeUpdate()
+          }
+        }
+        channelTestCases.foreach { testCase =>
+          using(connection.prepareStatement("INSERT INTO channels (short_channel_id, txid, channel_announcement, capacity_sat, channel_update_1, channel_update_2) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+            statement.setLong(1, testCase.shortChannelId.toLong)
+            statement.setString(2, testCase.txid.toString())
+            statement.setBytes(3, testCase.channel_data)
+            statement.setLong(4, testCase.capacity.toLong)
+            statement.setBytes(5, testCase.update_1_data_opt.orNull)
+            statement.setBytes(6, testCase.update_2_data_opt.orNull)
+            statement.executeUpdate()
+          }
+        }
+      },
+      dbName = "network",
+      targetVersion = 3,
+      postCheck = _ => {
+        assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
+        // NB: channel updates are not migrated
+        assert(dbs.network.listChannels().values.toSet === channelTestCases.map(tc => PublicChannel(tc.channel, tc.txid, tc.capacity, tc.update_1_opt, tc.update_2_opt, None)).toSet)
+      }
+    )
+  }
+
+  test("json column reset (postgres)") {
+    val dbs = TestPgDatabases()
+    val db = dbs.network
+    nodeTestCases.foreach(t => db.addNode(t.node))
+    channelTestCases.foreach { t =>
+      db.addChannel(t.channel, t.txid, t.capacity)
+      t.update_1_opt.foreach(db.updateChannel)
+      t.update_2_opt.foreach(db.updateChannel)
+    }
+    dbs.connection.execSQLUpdate("UPDATE nodes SET json='{}'")
+    dbs.connection.execSQLUpdate("UPDATE channels SET channel_announcement_json='{}',channel_update_1_json=NULL,channel_update_2_json=NULL")
+    db.asInstanceOf[PgNetworkDb].resetJsonColumns(dbs.connection)
+    assert({
+      val res = dbs.connection.execSQLQuery("SELECT * FROM nodes")
+      res.next()
+      res.getString("json").length > 100
+    })
+    assert({
+      val res = dbs.connection.execSQLQuery("SELECT * FROM channels WHERE channel_update_1_json IS NOT NULL")
+      res.next()
+      res.getString("channel_announcement_json").length > 100
+      res.getString("channel_update_1_json").length > 100
+    })
+  }
+}
+
+object NetworkDbSpec {
+
+  case class NodeTestCase(nodeId: PublicKey,
+                          node: NodeAnnouncement,
+                          data: Array[Byte])
+
+  case class ChannelTestCase(shortChannelId: ShortChannelId,
+                             txid: ByteVector32,
+                             channel: ChannelAnnouncement,
+                             channel_data: Array[Byte],
+                             capacity: Satoshi,
+                             update_1_opt: Option[ChannelUpdate],
+                             update_2_opt: Option[ChannelUpdate],
+                             update_1_data_opt: Option[Array[Byte]],
+                             update_2_data_opt: Option[Array[Byte]])
+
+  val nodeTestCases: Seq[NodeTestCase] = for (_ <- 0 until 10) yield {
+    val node = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+    val data = nodeAnnouncementCodec.encode(node).require.toByteArray
+    NodeTestCase(
+      nodeId = node.nodeId,
+      node = node,
+      data = data
+    )
+  }
+
+  val channelTestCases: Seq[ChannelTestCase] = for (_ <- 0 until 10) yield {
+    val a = randomKey
+    val b = generatePubkeyHigherThan(a)
+    val channel = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(Random.nextInt(1_000_000)), a.publicKey, a.publicKey, randomKey.publicKey, randomKey.publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val channel_update_1_opt = if (Random.nextBoolean()) {
+      Some(Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, channel.shortChannelId, CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, Random.nextBoolean()))
+    } else None
+    val channel_update_2_opt = if (Random.nextBoolean()) {
+      Some(Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, b, a.publicKey, channel.shortChannelId, CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, Random.nextBoolean()))
+    } else None
+    val channel_data = channelAnnouncementCodec.encode(channel).require.toByteArray
+    val channel_update_1_data = channel_update_1_opt.map(channelUpdateCodec.encode(_).require.toByteArray)
+    val channel_update_2_data = channel_update_2_opt.map(channelUpdateCodec.encode(_).require.toByteArray)
+    ChannelTestCase(
+      shortChannelId = channel.shortChannelId,
+      txid = randomBytes32,
+      channel = channel,
+      channel_data = channel_data,
+      capacity = Random.nextInt(100_000).sat,
+      update_1_opt = channel_update_1_opt,
+      update_2_opt = channel_update_2_opt,
+      update_1_data_opt = channel_update_1_data,
+      update_2_data_opt = channel_update_2_data
+    )
+  }
+
+  val sig: ByteVector64 = Crypto.sign(randomBytes32, randomKey)
+
+  def generatePubkeyHigherThan(priv: PrivateKey): PrivateKey = {
+    var res = priv
+    while (!Announcements.isNode1(priv.publicKey, res.publicKey)) res = randomKey
+    res
+  }
+
 }

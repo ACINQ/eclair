@@ -65,7 +65,7 @@ object TestDatabases {
     // @formatter:off
     override val connection: PgConnection = pg.getPostgresDatabase.getConnection.asInstanceOf[PgConnection]
     // NB: we use a lazy val here: databases won't be initialized until we reference that variable
-    override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile), readOnlyUser_opt = None)
+    override lazy val db: Databases = Databases.PostgresDatabases(hikariConfig, UUID.randomUUID(), lock, jdbcUrlFile_opt = Some(jdbcUrlFile), readOnlyUser_opt = None, resetJsonColumns = false)
     override def close(): Unit = pg.close()
     // @formatter:on
   }

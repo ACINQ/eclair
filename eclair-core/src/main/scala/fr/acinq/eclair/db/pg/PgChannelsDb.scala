@@ -27,8 +27,9 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
+import scodec.bits.BitVector
 
-import java.sql.{Statement, Timestamp}
+import java.sql.{Connection, Statement, Timestamp}
 import java.time.Instant
 import javax.sql.DataSource
 
@@ -36,10 +37,11 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
 
   import PgUtils.ExtendedResultSet._
   import PgUtils._
+  import fr.acinq.eclair.json.JsonSerializers.{formats, serialization}
   import lock._
 
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 4
+  val CURRENT_VERSION = 5
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
@@ -62,18 +64,34 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.executeUpdate("ALTER TABLE htlc_infos ALTER COLUMN commitment_number  SET DATA TYPE BIGINT USING commitment_number::BIGINT")
       }
 
+      def migration45(statement: Statement): Unit = {
+        statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN json JSONB")
+        resetJsonColumns(pg)
+        statement.executeUpdate("ALTER TABLE local_channels ALTER COLUMN json SET NOT NULL")
+        statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local_channels ((json->>'type'))")
+        statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local_channels ((json->'commitments'->'remoteParams'->>'nodeId'))")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
-          statement.executeUpdate("CREATE TABLE local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE, closed_timestamp TIMESTAMP WITH TIME ZONE)")
+          statement.executeUpdate("CREATE TABLE local_channels (channel_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, json JSONB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT FALSE, created_timestamp TIMESTAMP WITH TIME ZONE, last_payment_sent_timestamp TIMESTAMP WITH TIME ZONE, last_payment_received_timestamp TIMESTAMP WITH TIME ZONE, last_connected_timestamp TIMESTAMP WITH TIME ZONE, closed_timestamp TIMESTAMP WITH TIME ZONE)")
           statement.executeUpdate("CREATE TABLE htlc_infos (channel_id TEXT NOT NULL, commitment_number BIGINT NOT NULL, payment_hash TEXT NOT NULL, cltv_expiry BIGINT NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+
+          statement.executeUpdate("CREATE INDEX local_channels_type_idx ON local_channels ((json->>'type'))")
+          statement.executeUpdate("CREATE INDEX local_channels_remote_node_id_idx ON local_channels ((json->'commitments'->'remoteParams'->>'nodeId'))")
           statement.executeUpdate("CREATE INDEX htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
         case Some(v@2) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration23(statement)
           migration34(statement)
+          migration45(statement)
         case Some(v@3) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration34(statement)
+          migration45(statement)
+        case Some(v@4) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+          migration45(statement)
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -81,18 +99,33 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
+  /** Sometimes we may want to do a full reset when we update the json format */
+  def resetJsonColumns(connection: Connection): Unit = {
+    migrateTable(connection, connection,
+      "local_channels",
+      "UPDATE local_channels SET json=?::JSONB WHERE channel_id=?",
+      (rs, statement) => {
+        val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+        val json = serialization.writePretty(state)
+        statement.setString(1, json)
+        statement.setString(2, state.channelId.toHex)
+      }
+    )(logger)
+  }
+
   override def addOrUpdateChannel(state: HasCommitments): Unit = withMetrics("channels/add-or-update-channel", DbBackends.Postgres) {
     withLock { pg =>
       val data = stateDataCodec.encode(state).require.toByteArray
       using(pg.prepareStatement(
         """
-          | INSERT INTO local_channels (channel_id, data, is_closed)
-          | VALUES (?, ?, FALSE)
+          | INSERT INTO local_channels (channel_id, data, json, is_closed)
+          | VALUES (?, ?, ?::JSONB, FALSE)
           | ON CONFLICT (channel_id)
-          | DO UPDATE SET data = EXCLUDED.data ;
+          | DO UPDATE SET data = EXCLUDED.data, json = EXCLUDED.json ;
           | """.stripMargin)) { statement =>
         statement.setString(1, state.channelId.toHex)
         statement.setBytes(2, data)
+        statement.setString(3, serialization.writePretty(state))
         statement.executeUpdate()
       }
     }

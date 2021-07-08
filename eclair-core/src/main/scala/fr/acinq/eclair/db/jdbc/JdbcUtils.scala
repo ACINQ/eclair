@@ -18,11 +18,12 @@ package fr.acinq.eclair.db.jdbc
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
+import grizzled.slf4j.Logger
 import org.sqlite.SQLiteConnection
 import scodec.Decoder
 import scodec.bits.{BitVector, ByteVector}
 
-import java.sql.{Connection, ResultSet, Statement, Timestamp}
+import java.sql.{Connection, PreparedStatement, ResultSet, Statement, Timestamp}
 import java.util.UUID
 import javax.sql.DataSource
 
@@ -95,6 +96,35 @@ trait JdbcUtils {
       case _ => // if it isn't an sqlite connection, we assume it's postgres
         // insert or update the version
         statement.executeUpdate(s"INSERT INTO versions VALUES ('$db_name', $newVersion) ON CONFLICT (db_name) DO UPDATE SET version = EXCLUDED.version ;")
+    }
+  }
+
+  /**
+   * A utility method that efficiently migrate a table using a provided migration method
+   */
+  def migrateTable(source: Connection,
+                   destination: Connection,
+                   sourceTable: String,
+                   migrateSql: String,
+                   migrate: (ResultSet, PreparedStatement) => Unit)(implicit logger: Logger): Int = {
+    val insertStatement = destination.prepareStatement(migrateSql)
+    val batchSize = 50
+    JdbcUtils.using(source.prepareStatement(s"SELECT * FROM $sourceTable")) { queryStatement =>
+      val rs = queryStatement.executeQuery()
+      var inserted = 0
+      var batchCount = 0
+      while (rs.next()) {
+        migrate(rs, insertStatement)
+        insertStatement.addBatch()
+        batchCount = batchCount + 1
+        if (batchCount % batchSize == 0) {
+          inserted = inserted + insertStatement.executeBatch().sum
+          batchCount = 0
+        }
+      }
+      inserted = inserted + insertStatement.executeBatch().sum
+      logger.info(s"migrated $inserted rows from table $sourceTable")
+      inserted
     }
   }
 

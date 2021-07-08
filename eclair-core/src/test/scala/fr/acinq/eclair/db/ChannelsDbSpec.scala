@@ -151,7 +151,7 @@ class ChannelsDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate channel database v1 -> v3") {
+  test("migrate channel database v1 -> v3 (sqlite)") {
     forAllDbs {
       case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
@@ -199,7 +199,7 @@ class ChannelsDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate channel database v2 -> v3/v4") {
+  test("migrate channel database v2 -> v3/v5") {
     def postCheck(channelsDb: ChannelsDb): Unit = {
       assert(channelsDb.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
       for (testCase <- testCases.filterNot(_.isClosed)) {
@@ -242,7 +242,7 @@ class ChannelsDbSpec extends AnyFunSuite {
             }
           },
           dbName = "channels",
-          targetVersion = 4,
+          targetVersion = 5,
           postCheck = _ => postCheck(dbs.channels)
         )
       case dbs: TestSqliteDatabases =>
@@ -283,7 +283,7 @@ class ChannelsDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate pg channel database v3->v4") {
+  test("migrate pg channel database v3->v5") {
     val dbs = TestPgDatabases()
 
     migrationCheck(
@@ -312,7 +312,7 @@ class ChannelsDbSpec extends AnyFunSuite {
         }
       },
       dbName = "channels",
-      targetVersion = 4,
+      targetVersion = 5,
       postCheck = connection => {
         assert(dbs.channels.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
         testCases.foreach { testCase =>
@@ -324,7 +324,20 @@ class ChannelsDbSpec extends AnyFunSuite {
         }
       }
     )
+  }
 
+  test("json column reset (postgres)") {
+    val dbs = TestPgDatabases()
+    val db = dbs.channels
+    val channel = ChannelCodecsSpec.normal
+    db.addOrUpdateChannel(channel)
+    dbs.connection.execSQLUpdate("UPDATE local_channels SET json='{}'")
+    db.asInstanceOf[PgChannelsDb].resetJsonColumns(dbs.connection)
+    assert({
+      val res = dbs.connection.execSQLQuery("SELECT * FROM local_channels")
+      res.next()
+      res.getString("json").length > 100
+    })
   }
 }
 
@@ -341,18 +354,21 @@ object ChannelsDbSpec {
                       commitmentNumbers: Seq[Int]
                      )
 
-  private val data = stateDataCodec.encode(ChannelCodecsSpec.normal).require.bytes
-  val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield TestCase(
-    channelId = randomBytes32(),
-    data = data,
-    isClosed = Random.nextBoolean(),
-    createdTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-    lastPaymentSentTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-    lastPaymentReceivedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-    lastConnectedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-    closedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
-    commitmentNumbers = for (_ <- 0 until Random.nextInt(10)) yield Random.nextInt(5) // there will be repetitions, on purpose
-  )
+  val testCases: Seq[TestCase] = for (_ <- 0 until 10) yield {
+    val channelId = randomBytes32()
+    val data = stateDataCodec.encode(ChannelCodecsSpec.normal.modify(_.commitments.channelId).setTo(channelId)).require.bytes
+    TestCase(
+      channelId = channelId,
+      data = data,
+      isClosed = Random.nextBoolean(),
+      createdTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+      lastPaymentSentTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+      lastPaymentReceivedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+      lastConnectedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+      closedTimestamp = if (Random.nextBoolean()) Some(Random.nextInt(Int.MaxValue)) else None,
+      commitmentNumbers = for (_ <- 0 until Random.nextInt(10)) yield Random.nextInt(5) // there will be repetitions, on purpose
+    )
+  }
 
   def getTimestamp(dbs: TestDatabases, channelId: ByteVector32, columnName: String): Option[Long] = {
     dbs match {
