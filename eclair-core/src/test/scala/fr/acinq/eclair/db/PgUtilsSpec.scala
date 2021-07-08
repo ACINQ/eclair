@@ -2,19 +2,19 @@ package fr.acinq.eclair.db
 
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.eclair.db.pg.PgUtils.{JdbcUrlChanged, migrateTable, using}
+import fr.acinq.eclair.db.pg.PgUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LockFailure, LockFailureHandler}
+import fr.acinq.eclair.db.pg.PgUtils.{JdbcUrlChanged, migrateTable, using}
 import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
-import grizzled.slf4j.Logging
-import org.postgresql.PGConnection
-import org.postgresql.jdbc.PgConnection
 import grizzled.slf4j.{Logger, Logging}
+import org.postgresql.jdbc.PgConnection
+import org.postgresql.util.PGInterval
 import org.scalatest.concurrent.Eventually
 import org.scalatest.funsuite.AnyFunSuiteLike
-import fr.acinq.eclair.db.pg.PgUtils.ExtendedResultSet._
 
 import java.io.File
 import java.util.UUID
+import javax.sql.DataSource
 
 class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually {
 
@@ -63,6 +63,38 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
       // this will fail because even if we have acquired the table lock, the previous lease still hasn't expired
       Databases.postgres(config, UUID.randomUUID(), datadir, LockFailureHandler.logAndThrow)
     }.lockFailure === LockFailure.AlreadyLocked(instanceId2))
+
+    pg.close()
+  }
+
+  test("withLock utility method") {
+    val pg = EmbeddedPostgres.start()
+    val config = PgUtilsSpec.testConfig(pg.getPort)
+    val datadir = new File(TestUtils.BUILD_DIRECTORY, s"pg_test_${UUID.randomUUID()}")
+    datadir.mkdirs()
+    val instanceId1 = UUID.randomUUID()
+    // this will lock the database for this instance id
+    val db = Databases.postgres(config, instanceId1, datadir, LockFailureHandler.logAndThrow)
+    implicit val ds: DataSource = db.dataSource
+
+    // dummy query works
+    db.lock.withLock { conn =>
+      conn.createStatement().executeQuery("SELECT 1")
+    }
+
+    intercept[LockFailureHandler.LockException] {
+      db.lock.withLock { conn =>
+        // we start with a dummy query
+        conn.createStatement().executeQuery("SELECT 1")
+        // but before we complete the query, a separate connection takes the lock
+        using(pg.getPostgresDatabase.getConnection.prepareStatement(s"UPDATE lease SET expires_at = now() + ?, instance = ? WHERE id = 1")) {
+          statement =>
+            statement.setObject(1, new PGInterval("60 seconds"))
+            statement.setString(2, UUID.randomUUID().toString)
+            statement.executeUpdate()
+        }
+      }
+    }
 
     pg.close()
   }

@@ -268,7 +268,7 @@ object PgUtils extends JdbcUtils {
 
   def inTransaction[T](f: Connection => T)(implicit dataSource: DataSource): T = {
     withConnection { connection =>
-      inTransactionInternal(IsolationLevel.TRANSACTION_SERIALIZABLE)(connection)(f)
+      inTransactionInternal(IsolationLevel.TRANSACTION_READ_COMMITTED)(connection)(f)
     }
   }
 
