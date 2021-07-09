@@ -196,16 +196,17 @@ private[channel] object ChannelTypes0 {
         ChannelConfig()
       }
       val isWumboChannel = commitInput.txOut.amount > Satoshi(16777215)
-      val baseFeatures: Seq[Feature] = if (isWumboChannel) Seq(Features.Wumbo) else Nil
-      val commitmentFeatures: Seq[Feature] = if (channelVersion.hasAnchorOutputs) {
-        Seq(Features.StaticRemoteKey, Features.AnchorOutputs)
+      val baseChannelFeatures: Set[Feature] = if (isWumboChannel) Set(Features.Wumbo) else Set.empty
+      val commitmentFeatures: Set[Feature] = if (channelVersion.hasAnchorOutputs) {
+        Set(Features.StaticRemoteKey, Features.AnchorOutputs)
       } else if (channelVersion.hasStaticRemotekey) {
-        Seq(Features.StaticRemoteKey)
+        Set(Features.StaticRemoteKey)
       } else {
-        Nil
+        Set.empty
       }
-      val channelFeatures = ChannelFeatures(Features((baseFeatures ++ commitmentFeatures).map(f => f -> FeatureSupport.Mandatory).toMap))
+      val channelFeatures = ChannelFeatures(baseChannelFeatures ++ commitmentFeatures)
       channel.Commitments(
+        channelId,
         channelConfig, channelFeatures,
         localParams, remoteParams,
         channelFlags,
@@ -215,7 +216,7 @@ private[channel] object ChannelTypes0 {
         originChannels,
         remoteNextCommitInfo,
         commitInput,
-        remotePerCommitmentSecrets, channelId)
+        remotePerCommitmentSecrets)
     }
   }
 
