@@ -314,7 +314,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 12300 sat, 0 msat, None, relayFees, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.channelConfig === ChannelConfig.standard)
-    assert(init.channelFeatures === ChannelFeatures(Features.empty))
+    assert(init.channelFeatures === ChannelFeatures())
     assert(init.fundingAmount === 12300.sat)
     assert(init.initialRelayFees_opt === relayFees)
     awaitCond(peer.stateData.channels.nonEmpty)
@@ -332,7 +332,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
-    assert(init.channelFeatures === ChannelFeatures(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory)))
+    assert(init.channelFeatures === ChannelFeatures(StaticRemoteKey, AnchorOutputs))
     assert(init.fundingAmount === 15000.sat)
     assert(init.initialRelayFees_opt === None)
     assert(init.initialFeeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
@@ -346,7 +346,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
-    assert(init.channelFeatures === ChannelFeatures(Features(StaticRemoteKey -> Mandatory)))
+    assert(init.channelFeatures === ChannelFeatures(StaticRemoteKey))
     assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
     assert(init.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get)))
   }

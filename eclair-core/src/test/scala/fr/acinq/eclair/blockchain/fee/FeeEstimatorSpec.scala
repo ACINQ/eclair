@@ -36,7 +36,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("get commitment feerate") {
     val feeEstimator = new TestFeeEstimator()
-    val channelFeatures = ChannelFeatures(Features.empty)
+    val channelFeatures = ChannelFeatures()
     val feeConf = OnChainFeeConf(FeeTargets(1, 2, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat)), Map.empty)
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(5000 sat)))
@@ -48,7 +48,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("get commitment feerate (anchor outputs)") {
     val feeEstimator = new TestFeeEstimator()
-    val channelFeatures = ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
+    val channelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
     val defaultNodeId = randomKey().publicKey
     val defaultMaxCommitFeerate = FeeratePerKw(2500 sat)
     val overrideNodeId = randomKey().publicKey
@@ -72,7 +72,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("fee difference too high") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat))
-    val channelFeatures = ChannelFeatures(Features.empty)
+    val channelFeatures = ChannelFeatures()
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(250 sat), false),
@@ -91,7 +91,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("fee difference too high (anchor outputs)") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat))
-    val channelFeatures = ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
+    val channelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(2500 sat), false),

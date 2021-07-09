@@ -453,7 +453,7 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 /**
- * @param features current connection features, or last features used if the channel is disconnected. Note that these
+ * @param initFeatures current connection features, or last features used if the channel is disconnected. Note that these
  *                 features are updated at each reconnection and may be different from the channel permanent features
  *                 (see [[ChannelFeatures]]).
  */
@@ -468,10 +468,10 @@ final case class LocalParams(nodeId: PublicKey,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
                              walletStaticPaymentBasepoint: Option[PublicKey],
-                             features: Features)
+                             initFeatures: Features)
 
 /**
- * @param features see [[LocalParams.features]]
+ * @param initFeatures see [[LocalParams.initFeatures]]
  */
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
@@ -485,7 +485,7 @@ final case class RemoteParams(nodeId: PublicKey,
                               paymentBasepoint: PublicKey,
                               delayedPaymentBasepoint: PublicKey,
                               htlcBasepoint: PublicKey,
-                              features: Features,
+                              initFeatures: Features,
                               shutdownScript: Option[ByteVector])
 
 object ChannelFlags {

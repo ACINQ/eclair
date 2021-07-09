@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -39,22 +39,22 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
   case class FixtureParam(bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    import com.softwaremill.quicklens._
-    val aliceParams = Alice.channelParams
 
-    val bobNodeParams = Bob.nodeParams.modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(1))
-    val bobParams = setChannelFeatures(Bob.channelParams, test.tags)
+    import com.softwaremill.quicklens._
+
+    val bobNodeParams = Bob.nodeParams
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("max-funding-satoshis"))(Btc(1))
 
     val setup = init(nodeParamsB = bobNodeParams)
 
     import setup._
     val channelConfig = ChannelConfig.standard
-    val channelFeatures = ChannelFeatures(Features.empty)
-    val aliceInit = Init(aliceParams.features)
-    val bobInit = Init(bobParams.features)
+    val (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures) = computeFeatures(setup, test.tags)
+    val aliceInit = Init(aliceParams.initFeatures)
+    val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, channelFeatures)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelFeatures)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, aliceChannelFeatures)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, bobChannelFeatures)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(bob, alice2bob, bob2alice, bob2blockchain)))
     }

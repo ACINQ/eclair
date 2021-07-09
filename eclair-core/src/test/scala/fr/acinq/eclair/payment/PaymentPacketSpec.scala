@@ -28,10 +28,10 @@ import fr.acinq.eclair.payment.OutgoingPacket._
 import fr.acinq.eclair.payment.PaymentRequest.PaymentRequestFeatures
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.transactions.Transactions.InputInfo
-import fr.acinq.eclair.wire.protocol.Onion.{ChannelRelayTlvPayload, FinalTlvPayload, RelayLegacyPayload}
+import fr.acinq.eclair.wire.protocol.Onion.{ChannelRelayTlvPayload, FinalTlvPayload}
 import fr.acinq.eclair.wire.protocol.OnionTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, nodeFee, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Attempt
@@ -367,7 +367,7 @@ object PaymentPacketSpec {
     val params = LocalParams(null, null, null, null, null, null, null, 0, isFunder = true, null, None, null)
     val remoteParams = RemoteParams(randomKey().publicKey, null, null, null, null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null, None)
     val commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(testCapacity, Nil), Nil)
-    new Commitments(ChannelConfig.standard, ChannelFeatures(Features.empty), params, remoteParams, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, commitInput, null, channelId) {
+    new Commitments(channelId, ChannelConfig.standard, ChannelFeatures(), params, remoteParams, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, commitInput, null) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
     }

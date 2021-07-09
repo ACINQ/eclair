@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.Features.{AnchorOutputs, StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
-import fr.acinq.eclair.{Feature, FeatureSupport, Features}
+import fr.acinq.eclair.{Feature, Features}
 
 /**
  * Created by t-bast on 24/06/2021.
@@ -29,38 +29,43 @@ import fr.acinq.eclair.{Feature, FeatureSupport, Features}
  * Even if one of these features is later disabled at the connection level, it will still apply to the channel until the
  * channel is upgraded or closed.
  */
-case class ChannelFeatures(features: Features) {
+case class ChannelFeatures(activated: Set[Feature]) {
 
   /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
   val paysDirectlyToWallet: Boolean = {
-    features.hasFeature(Features.StaticRemoteKey) && !features.hasFeature(Features.AnchorOutputs)
+    hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs)
   }
 
   /** Format of the channel transactions. */
   val commitmentFormat: CommitmentFormat = {
-    if (features.hasFeature(AnchorOutputs)) {
+    if (hasFeature(AnchorOutputs)) {
       AnchorOutputsCommitmentFormat
     } else {
       DefaultCommitmentFormat
     }
   }
 
-  def hasFeature(feature: Feature): Boolean = features.hasFeature(feature)
+  def hasFeature(feature: Feature): Boolean = activated.contains(feature)
+
+  override def toString: String = activated.mkString(",")
 
 }
 
 object ChannelFeatures {
 
+  def apply(features: Feature*): ChannelFeatures = ChannelFeatures(Set.from(features))
+
   /** Pick the channel features that should be used based on local and remote feature bits. */
   def pickChannelFeatures(localFeatures: Features, remoteFeatures: Features): ChannelFeatures = {
     // NB: we don't include features that can be safely activated/deactivated without impacting the channel's operation,
     // such as option_dataloss_protect or option_shutdown_anysegwit.
-    val availableFeatures: Seq[Feature] = Seq(
+    val availableFeatures = Set[Feature](
       StaticRemoteKey,
       Wumbo,
       AnchorOutputs,
     ).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
-    ChannelFeatures(Features(availableFeatures.map(f => f -> FeatureSupport.Mandatory).toMap))
+
+    ChannelFeatures(availableFeatures)
   }
 
 }

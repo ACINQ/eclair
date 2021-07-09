@@ -20,13 +20,12 @@ import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, ScriptFlags, Transaction}
-import fr.acinq.eclair.balance.CheckBalance.PossiblyPublishedMainAndHtlcBalance
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
+import fr.acinq.eclair.balance.CheckBalance.PossiblyPublishedMainAndHtlcBalance
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
@@ -220,7 +219,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
     // The anchor outputs commitment format costs more fees for the funder (bigger commit tx + cost of anchor outputs)
-    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.copy(channelFeatures = ChannelFeatures(Features.empty)).availableBalanceForSend)
+    assert(initialState.commitments.availableBalanceForSend < initialState.commitments.copy(channelFeatures = ChannelFeatures()).availableBalanceForSend)
     val add = CMD_ADD_HTLC(sender.ref, initialState.commitments.availableBalanceForSend + 1.msat, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! add
 
@@ -1146,8 +1145,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   def testRevokeAndAckHtlcStaticRemoteKey(f: FixtureParam): Unit = {
     import f._
 
-    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features.hasFeature(StaticRemoteKey))
-    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.features.hasFeature(StaticRemoteKey))
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.initFeatures.hasFeature(StaticRemoteKey))
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.initFeatures.hasFeature(StaticRemoteKey))
 
     def aliceToRemoteScript(): ByteVector = {
       val toRemoteAmount = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toRemote
@@ -1921,7 +1920,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   def testShutdown(f: FixtureParam, script_opt: Option[ByteVector]): Unit = {
     import f._
-    alice ! Shutdown(ByteVector32.Zeroes, script_opt.getOrElse(Bob.channelParams.defaultFinalScriptPubKey))
+    val bobParams = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams
+    alice ! Shutdown(ByteVector32.Zeroes, script_opt.getOrElse(bobParams.defaultFinalScriptPubKey))
     alice2bob.expectMsgType[Shutdown]
     alice2bob.expectMsgType[ClosingSigned]
     awaitCond(alice.stateName == NEGOTIATING)
@@ -1962,7 +1962,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     // actual test begins
-    bob ! Shutdown(ByteVector32.Zeroes, TestConstants.Alice.channelParams.defaultFinalScriptPubKey)
+    val aliceParams = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams
+    bob ! Shutdown(ByteVector32.Zeroes, aliceParams.defaultFinalScriptPubKey)
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectMsgType[PublishTx]
     bob2blockchain.expectMsgType[PublishTx]
@@ -2042,7 +2043,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
 
     // actual test begins
-    bob ! Shutdown(ByteVector32.Zeroes, TestConstants.Alice.channelParams.defaultFinalScriptPubKey)
+    val bobParams = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams
+    bob ! Shutdown(ByteVector32.Zeroes, bobParams.defaultFinalScriptPubKey)
     bob2alice.expectMsgType[Shutdown]
     awaitCond(bob.stateName == SHUTDOWN)
   }

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2019 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.channel
 
 import akka.testkit.{TestFSMRef, TestProbe}
@@ -8,7 +24,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateAddHtlc}
-import fr.acinq.eclair.{FeatureSupport, Features, MilliSatoshiLong, TestKitBaseClass}
+import fr.acinq.eclair.{Features, MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -17,9 +33,9 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
   test("channel features determines commitment format") {
-    val standardChannel = ChannelFeatures(Features.empty)
-    val staticRemoteKeyChannel = ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory))
-    val anchorOutputsChannel = ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
+    val standardChannel = ChannelFeatures()
+    val staticRemoteKeyChannel = ChannelFeatures(Features.StaticRemoteKey)
+    val anchorOutputsChannel = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
     assert(!standardChannel.hasFeature(Features.StaticRemoteKey))
     assert(!standardChannel.hasFeature(Features.AnchorOutputs))
     assert(standardChannel.commitmentFormat === Transactions.DefaultCommitmentFormat)
@@ -43,16 +59,16 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
 
     case class TestCase(localFeatures: Features, remoteFeatures: Features, expectedChannelFeatures: ChannelFeatures)
     val testCases = Seq(
-      TestCase(Features.empty, Features.empty, ChannelFeatures(Features.empty)),
-      TestCase(Features(StaticRemoteKey -> Optional), Features.empty, ChannelFeatures(Features.empty)),
-      TestCase(Features.empty, Features(StaticRemoteKey -> Optional), ChannelFeatures(Features.empty)),
-      TestCase(Features.empty, Features(StaticRemoteKey -> Mandatory), ChannelFeatures(Features.empty)),
-      TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Mandatory), Features(Wumbo -> Mandatory), ChannelFeatures(Features(Wumbo -> Mandatory))),
-      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Optional), ChannelFeatures(Features(StaticRemoteKey -> Mandatory))),
-      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Mandatory), ChannelFeatures(Features(StaticRemoteKey -> Mandatory))),
-      TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Optional), Features(StaticRemoteKey -> Mandatory, Wumbo -> Mandatory), ChannelFeatures(Features(StaticRemoteKey -> Mandatory, Wumbo -> Mandatory))),
-      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelFeatures(Features(StaticRemoteKey -> Mandatory))),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelFeatures(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory)))
+      TestCase(Features.empty, Features.empty, ChannelFeatures()),
+      TestCase(Features(StaticRemoteKey -> Optional), Features.empty, ChannelFeatures()),
+      TestCase(Features.empty, Features(StaticRemoteKey -> Optional), ChannelFeatures()),
+      TestCase(Features.empty, Features(StaticRemoteKey -> Mandatory), ChannelFeatures()),
+      TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Mandatory), Features(Wumbo -> Mandatory), ChannelFeatures(Wumbo)),
+      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Optional), ChannelFeatures(StaticRemoteKey)),
+      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Mandatory), ChannelFeatures(StaticRemoteKey)),
+      TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Optional), Features(StaticRemoteKey -> Mandatory, Wumbo -> Mandatory), ChannelFeatures(StaticRemoteKey, Wumbo)),
+      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelFeatures(StaticRemoteKey)),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelFeatures(StaticRemoteKey, AnchorOutputs)),
     )
 
     for (testCase <- testCases) {

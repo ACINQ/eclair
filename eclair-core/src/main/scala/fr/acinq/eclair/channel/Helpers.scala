@@ -49,8 +49,8 @@ object Helpers {
    */
   def updateFeatures(data: HasCommitments, localInit: Init, remoteInit: Init): HasCommitments = {
     val commitments1 = data.commitments.copy(
-      localParams = data.commitments.localParams.copy(features = localInit.features),
-      remoteParams = data.commitments.remoteParams.copy(features = remoteInit.features))
+      localParams = data.commitments.localParams.copy(initFeatures = localInit.features),
+      remoteParams = data.commitments.remoteParams.copy(initFeatures = remoteInit.features))
     data match {
       case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = commitments1)
       case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = commitments1)
@@ -81,7 +81,7 @@ object Helpers {
   /**
    * Called by the fundee
    */
-  def validateParamsFundee(nodeParams: NodeParams, features: Features, channelFeatures: ChannelFeatures, open: OpenChannel, remoteNodeId: PublicKey): Either[ChannelException, Unit] = {
+  def validateParamsFundee(nodeParams: NodeParams, initFeatures: Features, channelFeatures: ChannelFeatures, open: OpenChannel, remoteNodeId: PublicKey): Either[ChannelException, Unit] = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
@@ -89,7 +89,7 @@ object Helpers {
     if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis > nodeParams.maxFundingSatoshis) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis))
 
     // BOLT #2: Channel funding limits
-    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !features.hasFeature(Features.Wumbo)) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING))
+    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !initFeatures.hasFeature(Features.Wumbo)) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > open.fundingSatoshis) return Left(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi))
@@ -450,7 +450,7 @@ object Helpers {
 
     def makeClosingTx(keyManager: ChannelKeyManager, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingFee: Satoshi)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
       import commitments._
-      val allowAnySegwit = Features.canUseFeature(commitments.localParams.features, commitments.remoteParams.features, Features.ShutdownAnySegwit)
+      val allowAnySegwit = Features.canUseFeature(commitments.localParams.initFeatures, commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
       require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit), "invalid localScriptPubkey")
       require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit), "invalid remoteScriptPubkey")
       log.debug("making closing tx with closingFee={} and commitments:\n{}", closingFee, Commitments.specs2String(commitments))
@@ -752,7 +752,7 @@ object Helpers {
             case ct if ct.paysDirectlyToWallet =>
               log.info(s"channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
               None
-            case ct if ct.features.hasFeature(Features.AnchorOutputs) => generateTx("remote-main-delayed") {
+            case ct if ct.hasFeature(Features.AnchorOutputs) => generateTx("remote-main-delayed") {
               Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
                 val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(claimMain, sig)

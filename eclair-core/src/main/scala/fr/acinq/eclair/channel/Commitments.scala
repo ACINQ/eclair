@@ -69,7 +69,8 @@ trait AbstractCommitments {
  * So, when we've signed and sent a commit message and are waiting for their revocation message,
  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
  */
-case class Commitments(channelConfig: ChannelConfig,
+case class Commitments(channelId: ByteVector32,
+                       channelConfig: ChannelConfig,
                        channelFeatures: ChannelFeatures,
                        localParams: LocalParams, remoteParams: RemoteParams,
                        channelFlags: Byte,
@@ -79,9 +80,9 @@ case class Commitments(channelConfig: ChannelConfig,
                        originChannels: Map[Long, Origin], // for outgoing htlcs relayed through us, details about the corresponding incoming htlcs
                        remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) extends AbstractCommitments {
+                       remotePerCommitmentSecrets: ShaChain) extends AbstractCommitments {
 
-  require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: ${channelFeatures.features})")
+  require(channelFeatures.paysDirectlyToWallet == localParams.walletStaticPaymentBasepoint.isDefined, s"localParams.walletStaticPaymentBasepoint must be defined only for commitments that pay directly to our wallet (channel features: $channelFeatures")
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 

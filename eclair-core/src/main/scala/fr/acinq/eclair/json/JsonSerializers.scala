@@ -143,6 +143,10 @@ class ChannelConfigSerializer extends CustomSerializerOnly[ChannelConfig](_ => {
   case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
 })
 
+class ChannelFeaturesSerializer extends CustomSerializerOnly[ChannelFeatures](_ => {
+  case channelFeatures: ChannelFeatures => JArray(channelFeatures.activated.map(f => JString(f.rfcName)).toList)
+})
+
 class ChannelOpenResponseSerializer extends CustomSerializerOnly[ChannelOpenResponse](_ => {
   case x: ChannelOpenResponse => JString(x.toString)
 })
@@ -418,6 +422,7 @@ object JsonSerializers {
     new OutPointSerializer +
     new OutPointKeySerializer +
     new ChannelConfigSerializer +
+    new ChannelFeaturesSerializer +
     new ChannelOpenResponseSerializer +
     new CommandResponseSerializer +
     new InputInfoSerializer +

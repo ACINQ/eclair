@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel.states
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
@@ -109,37 +110,43 @@ trait StateTestsHelperMethods extends TestKitBase {
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet)
   }
 
-  def setChannelFeatures(defaultChannelParams: LocalParams, tags: Set[String]): LocalParams = {
-    import com.softwaremill.quicklens._
+  def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, ChannelFeatures, LocalParams, ChannelFeatures) = {
+    import setup._
 
-    defaultChannelParams
-      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
-      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
-      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Mandatory).updated(Features.AnchorOutputs, FeatureSupport.Optional))
-      .modify(_.features.activated).usingIf(tags.contains(StateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
+    val aliceInitFeatures = Alice.nodeParams.features
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
+    val bobInitFeatures = Bob.nodeParams.features
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(StateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
+
+    val aliceChannelFeatures = ChannelFeatures.pickChannelFeatures(aliceInitFeatures, bobInitFeatures)
+    val bobChannelFeatures = ChannelFeatures.pickChannelFeatures(bobInitFeatures, aliceInitFeatures)
+
+    val aliceParams = Alice.channelParams
+      .modify(_.initFeatures).setTo(aliceInitFeatures)
+      .modify(_.walletStaticPaymentBasepoint).setToIf(aliceChannelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
+    val bobParams = Bob.channelParams
+      .modify(_.initFeatures).setTo(bobInitFeatures)
+      .modify(_.walletStaticPaymentBasepoint).setToIf(bobChannelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
+
+    (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures)
   }
 
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
-    import com.softwaremill.quicklens._
+
     import setup._
 
     val channelConfig = ChannelConfig.standard
-    val channelFeatures = if (tags.contains(StateTestsTags.AnchorOutputs)) {
-      ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory))
-    } else if (tags.contains(StateTestsTags.StaticRemoteKey)) {
-      ChannelFeatures(Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory))
-    } else {
-      ChannelFeatures(Features.empty)
-    }
-
+    val (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures) = computeFeatures(setup, tags)
     val channelFlags = if (tags.contains(StateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val aliceParams = setChannelFeatures(Alice.channelParams, tags)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
-      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
-    val bobParams = setChannelFeatures(Bob.channelParams, tags)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(channelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
-      .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(StateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
     val initialFeeratePerKw = if (tags.contains(StateTestsTags.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(StateTestsTags.NoPushMsat)) {
       (TestConstants.fundingSatoshis, 0.msat)
@@ -147,11 +154,11 @@ trait StateTestsHelperMethods extends TestKitBase {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
 
-    val aliceInit = Init(aliceParams.features)
-    val bobInit = Init(bobParams.features)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelFeatures)
+    val aliceInit = Init(aliceParams.initFeatures)
+    val bobInit = Init(bobParams.initFeatures)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, aliceChannelFeatures)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelFeatures)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, bobChannelFeatures)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)

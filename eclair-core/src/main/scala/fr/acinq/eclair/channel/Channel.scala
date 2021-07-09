@@ -339,7 +339,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit, channelConfig, channelFeatures))) =>
       log.info("received OpenChannel={}", open)
-      Helpers.validateParamsFundee(nodeParams, localParams.features, channelFeatures, open, remoteNodeId) match {
+      Helpers.validateParamsFundee(nodeParams, localParams.initFeatures, channelFeatures, open, remoteNodeId) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case _ =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
@@ -376,7 +376,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             paymentBasepoint = open.paymentBasepoint,
             delayedPaymentBasepoint = open.delayedPaymentBasepoint,
             htlcBasepoint = open.htlcBasepoint,
-            features = remoteInit.features,
+            initFeatures = remoteInit.features,
             shutdownScript = None)
           log.debug("remote params: {}", remoteParams)
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, None, open.firstPerCommitmentPoint, open.channelFlags, channelConfig, channelFeatures, accept) sending accept
@@ -408,7 +408,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             paymentBasepoint = accept.paymentBasepoint,
             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
             htlcBasepoint = accept.htlcBasepoint,
-            features = remoteInit.features,
+            initFeatures = remoteInit.features,
             shutdownScript = None)
           log.debug("remote params: {}", remoteParams)
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
@@ -500,21 +500,21 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 channelId = channelId,
                 signature = localSigOfRemoteTx
               )
-              val commitments = Commitments(channelConfig, channelFeatures, localParams, remoteParams, channelFlags,
+              val commitments = Commitments(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags,
                 LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteSig), htlcTxsAndRemoteSigs = Nil), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
                 LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
                 localNextHtlcId = 0L, remoteNextHtlcId = 0L,
                 originChannels = Map.empty,
                 remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
-                commitInput, ShaChain.init, channelId = channelId)
+                commitInput, ShaChain.init)
               peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
               txPublisher ! SetChannelId(remoteNodeId, channelId)
               context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
               context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
               // NB: we don't send a ChannelSignatureSent for the first commit
               log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
-              val fundingMinDepth = Helpers.minDepthForFunding(nodeParams, fundingAmount)
               watchFundingTx(commitments)
+              val fundingMinDepth = Helpers.minDepthForFunding(nodeParams, fundingAmount)
               blockchain ! WatchFundingConfirmed(self, commitInput.outPoint.txid, fundingMinDepth)
               goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, initialRelayFees_opt, nodeParams.currentBlockHeight, None, Right(fundingSigned)) storing() sending fundingSigned
           }
@@ -543,13 +543,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           handleLocalError(InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx), d, Some(msg))
         case Success(_) =>
           val commitInput = localCommitTx.input
-          val commitments = Commitments(channelConfig, channelFeatures, localParams, remoteParams, channelFlags,
+          val commitments = Commitments(channelId, channelConfig, channelFeatures, localParams, remoteParams, channelFlags,
             LocalCommit(0, localSpec, CommitTxAndRemoteSig(localCommitTx, remoteSig), htlcTxsAndRemoteSigs = Nil), remoteCommit,
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             originChannels = Map.empty,
             remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
-            commitInput, ShaChain.init, channelId = channelId)
+            commitInput, ShaChain.init)
           val now = System.currentTimeMillis.milliseconds.toSeconds
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
@@ -870,7 +870,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CMD_CLOSE, d: DATA_NORMAL) =>
       val localScriptPubKey = c.scriptPubKey.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
-      val allowAnySegwit = Features.canUseFeature(d.commitments.localParams.features, d.commitments.remoteParams.features, Features.ShutdownAnySegwit)
+      val allowAnySegwit = Features.canUseFeature(d.commitments.localParams.initFeatures, d.commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
       if (d.localShutdown.isDefined) {
         handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
       } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) {
@@ -900,7 +900,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       //      we did not send a shutdown message
       //        there are pending signed changes  => go to SHUTDOWN
       //        there are no htlcs                => go to NEGOTIATING
-      val allowAnySegwit = Features.canUseFeature(d.commitments.localParams.features, d.commitments.remoteParams.features, Features.ShutdownAnySegwit)
+      val allowAnySegwit = Features.canUseFeature(d.commitments.localParams.initFeatures, d.commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
       if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit)) {
         handleLocalError(InvalidFinalScript(d.channelId), d, Some(remoteShutdown))
       } else if (Commitments.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {

@@ -25,7 +25,7 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc,
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
-import fr.acinq.eclair.{Features, MilliSatoshi}
+import fr.acinq.eclair.{FeatureSupport, Features, MilliSatoshi}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -60,7 +60,11 @@ private[channel] object ChannelCodecs3 {
       }
     })
 
-    val channelFeaturesCodec: Codec[ChannelFeatures] = lengthDelimited(bytes).xmap(b => ChannelFeatures(Features(b)), cf => cf.features.toByteVector)
+    /** We use the same encoding as init features, even if we don't need the distinction between mandatory and optional */
+    val channelFeaturesCodec: Codec[ChannelFeatures] = lengthDelimited(bytes).xmap(
+      (b: ByteVector) => ChannelFeatures(Features(b).activated.keySet), // we make no difference between mandatory/optional, both are considered activated
+      (cf: ChannelFeatures) => Features(cf.activated.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector // we encode features as mandatory, by convention
+    )
 
     def localParamsCodec(channelFeatures: ChannelFeatures): Codec[LocalParams] = (
       ("nodeId" | publicKey) ::
@@ -235,7 +239,8 @@ private[channel] object ChannelCodecs3 {
     val spentMapCodec: Codec[Map[OutPoint, Transaction]] = mapCodec(outPointCodec, txCodec)
 
     val commitmentsCodec: Codec[Commitments] = (
-      ("channelConfig" | channelConfigCodec) ::
+      ("channelId" | bytes32) ::
+        ("channelConfig" | channelConfigCodec) ::
         (("channelFeatures" | channelFeaturesCodec) >>:~ { channelFeatures =>
           ("localParams" | localParamsCodec(channelFeatures)) ::
             ("remoteParams" | remoteParamsCodec) ::
@@ -249,8 +254,7 @@ private[channel] object ChannelCodecs3 {
             ("originChannels" | originsMapCodec) ::
             ("remoteNextCommitInfo" | either(bool8, waitingForRevocationCodec, publicKey)) ::
             ("commitInput" | inputInfoCodec) ::
-            ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec)) ::
-            ("channelId" | bytes32)
+            ("remotePerCommitmentSecrets" | byteAligned(ShaChain.shaChainCodec))
         })).as[Commitments]
 
     val closingTxProposedCodec: Codec[ClosingTxProposed] = (

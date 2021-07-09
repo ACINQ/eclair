@@ -67,11 +67,11 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     val aliceNodeParams = Alice.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
     val bobNodeParams = Bob.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
     val channelConfig = ChannelConfig.standard
-    val channelFeatures = ChannelFeatures(Features.empty)
+    val channelFeatures = ChannelFeatures()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(aliceNodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayer, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bobNodeParams, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayer, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
-    val aliceInit = Init(Alice.channelParams.features)
-    val bobInit = Init(Bob.channelParams.features)
+    val aliceInit = Init(Alice.channelParams.initFeatures)
+    val bobInit = Init(Bob.channelParams.initFeatures)
     // alice and bob will both have 1 000 000 sat
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
     alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, 2000000 sat, 1000000000 msat, feeEstimator.getFeeratePerKw(target = 2), feeEstimator.getFeeratePerKw(target = 6), None, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty, channelConfig, channelFeatures)

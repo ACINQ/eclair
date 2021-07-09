@@ -18,13 +18,12 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsBase
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{Features, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -47,12 +46,12 @@ class WaitForFundingCreatedInternalStateSpec extends TestKitBaseClass with Fixtu
     val setup = init(wallet = noopWallet)
     import setup._
     val channelConfig = ChannelConfig.standard
-    val channelFeatures = ChannelFeatures(Features.empty)
-    val aliceInit = Init(Alice.channelParams.features)
-    val bobInit = Init(Bob.channelParams.features)
+    val (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures) = computeFeatures(setup, test.tags)
+    val aliceInit = Init(aliceParams.initFeatures)
+    val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, channelFeatures)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, bob2alice.ref, aliceInit, channelConfig, channelFeatures)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, aliceChannelFeatures)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, bobChannelFeatures)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
