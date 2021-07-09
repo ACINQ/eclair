@@ -148,7 +148,7 @@ class ChannelCodecsSpec extends AnyFunSuite {
 
       val newjson = Serialization.write(newnormal)(JsonSerializers.formats)
       //.replace(""","unknownFields":""""", "") // if we update the json serializers, we may need to filter out some fields
-      
+
       assert(oldjson === refjson)
       assert(newjson === refjson)
     }
