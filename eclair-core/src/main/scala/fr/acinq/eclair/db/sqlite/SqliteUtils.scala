@@ -29,11 +29,24 @@ object SqliteUtils extends JdbcUtils {
    * The lock will be kept until the database is closed, or if the locking mode is explicitly reset.
    */
   def obtainExclusiveLock(sqlite: Connection): Unit = synchronized {
-    val statement = sqlite.createStatement()
-    statement.execute("PRAGMA locking_mode = EXCLUSIVE")
-    // we have to make a write to actually obtain the lock
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS dummy_table_for_locking (a INTEGER NOT NULL)")
-    statement.executeUpdate("INSERT INTO dummy_table_for_locking VALUES (42)")
+    using(sqlite.createStatement()) { statement =>
+      statement.execute("PRAGMA locking_mode = EXCLUSIVE")
+      // we have to make a write to actually obtain the lock
+      statement.executeUpdate("CREATE TABLE IF NOT EXISTS dummy_table_for_locking (a INTEGER NOT NULL)")
+      statement.executeUpdate("INSERT INTO dummy_table_for_locking VALUES (42)")
+    }
+  }
+
+  /**
+   * See https://www.sqlite.org/pragma.html#pragma_journal_mode
+   */
+  def setJournalMode(sqlite: Connection, mode: String): Unit = {
+    using(sqlite.createStatement()) { statement =>
+      val res = statement.executeQuery(s"PRAGMA journal_mode=$mode")
+      res.next()
+      val currentMode = res.getString(1)
+      assert(currentMode == mode, s"couldn't activate mode=$mode")
+    }
   }
 
 }

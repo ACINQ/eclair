@@ -45,6 +45,8 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val commonPerfTestConfig = ConfigFactory.parseMap(Map(
       "eclair.max-funding-satoshis" -> 100_000_000,
       "eclair.max-accepted-htlcs" -> Channel.MAX_ACCEPTED_HTLCS,
+      "eclair.file-backup.enabled" -> false,
+      "eclair.db.sqlite.mode" -> "wal"
     ).asJava)
 
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 29730).asJava).withFallback(commonPerfTestConfig).withFallback(commonFeatures).withFallback(commonConfig)) // A's channels are private
