@@ -196,6 +196,9 @@ object Databases extends Logging {
       SqliteUtils.setJournalMode(sqliteEclair, dbConfig.getString("sqlite.mode"))
       SqliteUtils.setJournalMode(sqliteNetwork, dbConfig.getString("sqlite.mode"))
       SqliteUtils.setJournalMode(sqliteAudit, dbConfig.getString("sqlite.mode"))
+      SqliteUtils.setSynchronousFlag(sqliteEclair, dbConfig.getString("sqlite.sync"))
+      SqliteUtils.setSynchronousFlag(sqliteNetwork, dbConfig.getString("sqlite.sync"))
+      SqliteUtils.setSynchronousFlag(sqliteAudit, dbConfig.getString("sqlite.sync"))
       SqliteDatabases(sqliteAudit, sqliteNetwork, sqliteEclair)
     } catch {
       case t: Throwable =>

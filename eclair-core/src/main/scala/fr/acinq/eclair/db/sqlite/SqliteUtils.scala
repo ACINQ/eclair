@@ -49,4 +49,13 @@ object SqliteUtils extends JdbcUtils {
     }
   }
 
+  /**
+   * See https://www.sqlite.org/pragma.html#pragma_synchronous
+   */
+  def setSynchronousFlag(sqlite: Connection, flag: String): Unit = {
+    using(sqlite.createStatement()) { statement =>
+      statement.executeUpdate(s"PRAGMA synchronous=$flag")
+    }
+  }
+
 }
