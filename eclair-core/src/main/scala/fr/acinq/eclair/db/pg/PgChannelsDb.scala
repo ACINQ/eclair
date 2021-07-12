@@ -41,7 +41,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
   import lock._
 
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 6
+  val CURRENT_VERSION = 7
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
@@ -79,6 +79,23 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.executeUpdate("ALTER TABLE htlc_infos SET SCHEMA local")
       }
 
+      def migration67(): Unit = {
+        migrateTable(pg, pg,
+          "local.channels",
+          s"UPDATE local.channels SET data=?, json=?::JSONB WHERE channel_id=?",
+          (rs, statement) => {
+            // This forces a re-serialization of the channel data with latest codecs, because as of codecs v3 we don't
+            // store local commitment signatures anymore, and we want to clean up existing data
+            val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+            val data = stateDataCodec.encode(state).require.toByteArray
+            val json = serialization.writePretty(state)
+            statement.setBytes(1, data)
+            statement.setString(2, json)
+            statement.setString(3, state.channelId.toHex)
+          }
+        )(logger)
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
@@ -95,18 +112,25 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
           migration34(statement)
           migration45(statement)
           migration56(statement)
+          migration67()
         case Some(v@3) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration34(statement)
           migration45(statement)
           migration56(statement)
+          migration67()
         case Some(v@4) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration45(statement)
           migration56(statement)
+          migration67()
         case Some(v@5) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration56(statement)
+          migration67()
+        case Some(v@6) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+          migration67()
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
