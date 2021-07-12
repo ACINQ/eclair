@@ -70,7 +70,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
           val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
           val data = stateDataCodec.encode(state).require.toByteArray
           statement.setBytes(1, data)
-          statement.setString(2, state.channelId.toHex)
+          statement.setBytes(2, state.channelId.toArray)
         }
       )(logger)
     }
