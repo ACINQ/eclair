@@ -51,23 +51,22 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
       .modify(_.maxRemoteDustLimit).setToIf(test.tags.contains("high-remote-dust-limit"))(15000 sat)
-    val aliceParams = setChannelFeatures(Alice.channelParams, test.tags)
 
     val bobNodeParams = Bob.nodeParams
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
-    val bobParams = setChannelFeatures(Bob.channelParams, test.tags)
 
     val setup = init(aliceNodeParams, bobNodeParams, wallet = noopWallet)
 
     import setup._
-    val channelVersion = ChannelVersion.STANDARD
-    val aliceInit = Init(aliceParams.features)
-    val bobInit = Init(bobParams.features)
+    val channelConfig = ChannelConfig.standard
+    val (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures) = computeFeatures(setup, test.tags)
+    val aliceInit = Init(aliceParams.initFeatures)
+    val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
       val fundingAmount = if (test.tags.contains(StateTestsTags.Wumbo)) Btc(5).toSatoshi else TestConstants.fundingSatoshis
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelVersion)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelVersion)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingAmount, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, None, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, aliceChannelFeatures)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, bobChannelFeatures)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
@@ -175,6 +174,32 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.minimumDepth == 13) // with wumbo tag we use fundingSatoshis=5BTC
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+  }
+
+  test("recv AcceptChannel (upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    accept.tlvStream.get[ChannelTlv.UpfrontShutdownScript].contains(ChannelTlv.UpfrontShutdownScript(Bob.channelParams.defaultFinalScriptPubKey))
+    bob2alice.forward(alice, accept)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+  }
+
+  test("recv AcceptChannel (empty upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    accept.tlvStream.get[ChannelTlv.UpfrontShutdownScript].contains(ChannelTlv.UpfrontShutdownScript(Bob.channelParams.defaultFinalScriptPubKey))
+    val accept1 = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+    bob2alice.forward(alice, accept1)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+  }
+
+  test("recv AcceptChannel (invalid upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    accept.tlvStream.get[ChannelTlv.UpfrontShutdownScript].contains(ChannelTlv.UpfrontShutdownScript(Bob.channelParams.defaultFinalScriptPubKey))
+    val accept1 = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.fromValidHex("deadbeef"))))
+    bob2alice.forward(alice, accept1)
+    awaitCond(alice.stateName == CLOSED)
   }
 
   test("recv Error") { f =>

@@ -20,7 +20,6 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.eclair.Features
 import fr.acinq.eclair.channel.Commitments.msg2String
 import fr.acinq.eclair.wire.protocol.{Init, LightningMessage}
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
 import scala.util.Random

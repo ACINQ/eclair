@@ -34,6 +34,7 @@ import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPayment
 import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.transactions.Transactions.TxOwner
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, PermanentChannelFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
@@ -393,13 +394,13 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sigListener.expectNoMsg(1 second)
     assert(commitmentsF.commitmentFormat === commitmentFormat)
     // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
-    val localCommitF = commitmentsF.localCommit.publishableTxs
+    val localCommitF = commitmentsF.localCommit
     commitmentFormat match {
-      case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTx.tx.txOut.size === 6)
-      case Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTx.tx.txOut.size === 8)
+      case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
+      case Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size === 8)
     }
-    val htlcTimeoutTxs = localCommitF.htlcTxsAndSigs.collect { case h@HtlcTxAndSigs(_: Transactions.HtlcTimeoutTx, _, _) => h }
-    val htlcSuccessTxs = localCommitF.htlcTxsAndSigs.collect { case h@HtlcTxAndSigs(_: Transactions.HtlcSuccessTx, _, _) => h }
+    val htlcTimeoutTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcTimeoutTx, _) => h }
+    val htlcSuccessTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcSuccessTx, _) => h }
     assert(htlcTimeoutTxs.size === 2)
     assert(htlcSuccessTxs.size === 2)
     // we fulfill htlcs to get the preimages
@@ -429,9 +430,23 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("C").register, Register.Forward(sender.ref, commitmentsF.channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data.commitments.localParams.defaultFinalScriptPubKey)
     // we prepare the revoked transactions F will publish
-    val revokedCommitTx = localCommitF.commitTx.tx
-    val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map { case (htlcTxAndSigs, preimage) => Transactions.addSigs(htlcTxAndSigs.txinfo.asInstanceOf[Transactions.HtlcSuccessTx], htlcTxAndSigs.localSig, htlcTxAndSigs.remoteSig, preimage, commitmentsF.commitmentFormat).tx }
-    val htlcTimeout = htlcTimeoutTxs.map(htlcTxAndSigs => Transactions.addSigs(htlcTxAndSigs.txinfo.asInstanceOf[Transactions.HtlcTimeoutTx], htlcTxAndSigs.localSig, htlcTxAndSigs.remoteSig, commitmentsF.commitmentFormat).tx)
+    val keyManagerF = nodes("F").nodeParams.channelKeyManager
+    val channelKeyPathF = keyManagerF.keyPath(commitmentsF.localParams, commitmentsF.channelConfig)
+    val localPerCommitmentPointF = keyManagerF.commitmentPoint(channelKeyPathF, commitmentsF.localCommit.index.toInt)
+    val revokedCommitTx = {
+      val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
+      val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
+      Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.localParams.fundingKeyPath).publicKey, commitmentsF.remoteParams.fundingPubKey, localSig, localCommitF.commitTxAndRemoteSig.remoteSig).tx
+    }
+    val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
+      case (htlcTxAndSigs, preimage) =>
+        val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat)
+        Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcSuccessTx], localSig, htlcTxAndSigs.remoteSig, preimage, commitmentsF.commitmentFormat).tx
+    }
+    val htlcTimeout = htlcTimeoutTxs.map { htlcTxAndSigs =>
+      val localSig = keyManagerF.sign(htlcTxAndSigs.htlcTx, keyManagerF.htlcPoint(channelKeyPathF), localPerCommitmentPointF, TxOwner.Local, commitmentFormat)
+      Transactions.addSigs(htlcTxAndSigs.htlcTx.asInstanceOf[Transactions.HtlcTimeoutTx], localSig, htlcTxAndSigs.remoteSig, commitmentsF.commitmentFormat).tx
+    }
     htlcSuccess.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     htlcTimeout.foreach(tx => Transaction.correctlySpends(tx, Seq(revokedCommitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
     RevokedCommitFixture(sender, stateListenerC, revokedCommitTx, htlcSuccess, htlcTimeout, finalAddressC)
@@ -658,7 +673,7 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     val toRemoteAddress = Script.pay2wsh(Scripts.toRemoteDelayed(initialStateDataF.commitments.remoteParams.paymentBasepoint))
 
     // toRemote output of C as seen by F
-    val Some(toRemoteOutC) = initialStateDataF.commitments.localCommit.publishableTxs.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+    val Some(toRemoteOutC) = initialStateDataF.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
 
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
@@ -683,7 +698,7 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
     val stateDataF = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
     val commitmentIndex = stateDataF.commitments.localCommit.index
-    val commitTx = stateDataF.commitments.localCommit.publishableTxs.commitTx.tx
+    val commitTx = stateDataF.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
 
     // there is a new commitment index in the channel state

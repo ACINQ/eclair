@@ -127,7 +127,7 @@ object CheckBalance {
 
   def computeRemoteCloseBalance(c: Commitments, r: RemoteClose, knownPreimages: Set[(ByteVector32, Long)]): PossiblyPublishedMainAndHtlcBalance = {
     import r._
-    val toLocal = if (c.channelVersion.paysDirectlyToWallet) {
+    val toLocal = if (c.channelFeatures.paysDirectlyToWallet) {
       // If static remote key is enabled, the commit tx directly pays to our wallet
       // We use the pubkeyscript to retrieve our output
       Transactions.findPubKeyScriptIndex(remoteCommitPublished.commitTx, c.localParams.defaultFinalScriptPubKey) match {
