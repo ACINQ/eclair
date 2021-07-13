@@ -447,9 +447,7 @@ object JsonSerializers {
     JField("activated", JObject(features.activated.map { case (feature, support) =>
       feature.rfcName -> JString(support.toString)
     }.toList)),
-    JField("unknown", JArray(features.unknown.map { i =>
-      JObject(JField("featureBit", JInt(i.bitIndex)))
-    }.toList))
+    JField("unknown", JArray(features.unknown.map(u => JInt(u.bitIndex)).toList))
   )
 
 }
