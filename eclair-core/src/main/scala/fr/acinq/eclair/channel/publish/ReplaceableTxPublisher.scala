@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransac
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
-import fr.acinq.eclair.channel.{Commitments, HtlcTxAndSigs}
+import fr.acinq.eclair.channel.{Commitments, HtlcTxAndRemoteSig}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateFulfillHtlc
@@ -145,13 +145,13 @@ object ReplaceableTxPublisher {
           commitments.localChanges.all.collectFirst {
             case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == tx.paymentHash => u.paymentPreimage
           }.flatMap(preimage => {
-            commitments.localCommit.publishableTxs.htlcTxsAndSigs.collectFirst {
-              case HtlcTxAndSigs(HtlcSuccessTx(input, _, _, _), _, remoteSig) if input.outPoint == tx.input.outPoint => HtlcSuccess(tx, remoteSig, preimage)
+            commitments.localCommit.htlcTxsAndRemoteSigs.collectFirst {
+              case HtlcTxAndRemoteSig(HtlcSuccessTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => HtlcSuccess(tx, remoteSig, preimage)
             }
           })
         case tx: HtlcTimeoutTx =>
-          commitments.localCommit.publishableTxs.htlcTxsAndSigs.collectFirst {
-            case HtlcTxAndSigs(HtlcTimeoutTx(input, _, _), _, remoteSig) if input.outPoint == tx.input.outPoint => HtlcTimeout(tx, remoteSig)
+          commitments.localCommit.htlcTxsAndRemoteSigs.collectFirst {
+            case HtlcTxAndRemoteSig(HtlcTimeoutTx(input, _, _), remoteSig) if input.outPoint == tx.input.outPoint => HtlcTimeout(tx, remoteSig)
           }
       }
     }
@@ -206,7 +206,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       //  - our commit is not confirmed (if it is, no need to claim our anchor)
       //  - their commit is not confirmed (if it is, no need to claim our anchor either)
       //  - our commit tx is in the mempool (otherwise we can't claim our anchor)
-      val commitTx = cmd.commitments.localCommit.publishableTxs.commitTx.tx
+      val commitTx = cmd.commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
       val fundingOutpoint = cmd.commitments.commitInput.outPoint
       context.pipeToSelf(bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
         case false => Future.failed(CommitTxAlreadyConfirmed)
@@ -243,7 +243,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     // been confirmed (we don't need to check again here).
     HtlcTxAndWitnessData(htlcTx, cmd.commitments) match {
       case Some(txWithWitnessData) if targetFeerate <= commitFeerate =>
-        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelVersion)
+        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitments.localCommit.index)
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
         val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
@@ -296,7 +296,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         // NB: we've already checked witness data in the precondition phase. Witness data extraction should be done
         // earlier by the channel to remove this duplication.
         val txWithWitnessData = HtlcTxAndWitnessData(htlcTx, cmd.commitments).get
-        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelVersion)
+        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitments.localCommit.index)
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
         val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
@@ -368,7 +368,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   private def addInputs(txInfo: ClaimLocalAnchorOutputTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[ClaimLocalAnchorOutputTx] = {
     val dustLimit = commitments.localParams.dustLimit
     val commitFeerate = commitments.localCommit.spec.feeratePerKw
-    val commitTx = commitments.localCommit.publishableTxs.commitTx.tx
+    val commitTx = commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
     // We want the feerate of the package (commit tx + tx spending anchor) to equal targetFeerate.
     // Thus we have: anchorFeerate = targetFeerate + (weight-commit-tx / weight-anchor-tx) * (targetFeerate - commitTxFeerate)
     // If we use the smallest weight possible for the anchor tx, the feerate we use will thus be greater than what we want,

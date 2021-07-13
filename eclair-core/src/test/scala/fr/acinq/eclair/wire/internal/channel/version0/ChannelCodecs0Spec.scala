@@ -1,9 +1,9 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.channel.ChannelVersion
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelCodecs0.Codecs._
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.ChannelVersion
 import fr.acinq.eclair.wire.protocol.{OnionRoutingPacket, UpdateAddHtlc}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong}
 import org.scalatest.funsuite.AnyFunSuite
@@ -36,7 +36,7 @@ class ChannelCodecs0Spec extends AnyFunSuite {
     // Backwards-compatibility: decode localparams with global features.
     val withGlobalFeatures = hex"033b1d42aa7c6a1a3502cbcfe4d2787e9f96237465cd1ba675f50cadf0be17092500010000002a0000000026cb536b00000000568a2768000000004f182e8d0000000040dd1d3d10e3040d00422f82d368b09056d1dcb2d67c4e8cae516abbbc8932f2b7d8f93b3be8e8cc6b64bb164563d567189bad0e07e24e821795aaef2dcbb9e5c1ad579961680202b38de5dd5426c524c7523b1fcdcf8c600d47f4b96a6dd48516b8e0006e81c83464b2800db0f3f63ceeb23a81511d159bae9ad07d10c0d144ba2da6f0cff30e7154eb48c908e9000101000001044500"
     val withGlobalFeaturesDecoded = localParamsCodec(ChannelVersion.STANDARD).decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"0a8a")
+    assert(withGlobalFeaturesDecoded.initFeatures.toByteVector === hex"0a8a")
   }
 
   test("backward compatibility of htlc codec") {

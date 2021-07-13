@@ -19,8 +19,8 @@ package fr.acinq.eclair.blockchain.fee
 import fr.acinq.bitcoin.SatoshiLong
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentFeerates
-import fr.acinq.eclair.channel.ChannelVersion
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.channel.ChannelFeatures
+import fr.acinq.eclair.{FeatureSupport, Features, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 class FeeEstimatorSpec extends AnyFunSuite {
@@ -36,19 +36,19 @@ class FeeEstimatorSpec extends AnyFunSuite {
 
   test("get commitment feerate") {
     val feeEstimator = new TestFeeEstimator()
-    val channelVersion = ChannelVersion.STANDARD
+    val channelFeatures = ChannelFeatures()
     val feeConf = OnChainFeeConf(FeeTargets(1, 2, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat)), Map.empty)
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(5000 sat)))
-    assert(feeConf.getCommitmentFeerate(randomKey().publicKey, channelVersion, 100000 sat, None) === FeeratePerKw(5000 sat))
+    assert(feeConf.getCommitmentFeerate(randomKey().publicKey, channelFeatures, 100000 sat, None) === FeeratePerKw(5000 sat))
 
     val currentFeerates = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = FeeratePerKw(4000 sat)))
-    assert(feeConf.getCommitmentFeerate(randomKey().publicKey, channelVersion, 100000 sat, Some(currentFeerates)) === FeeratePerKw(4000 sat))
+    assert(feeConf.getCommitmentFeerate(randomKey().publicKey, channelFeatures, 100000 sat, Some(currentFeerates)) === FeeratePerKw(4000 sat))
   }
 
   test("get commitment feerate (anchor outputs)") {
     val feeEstimator = new TestFeeEstimator()
-    val channelVersion = ChannelVersion.ANCHOR_OUTPUTS
+    val channelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
     val defaultNodeId = randomKey().publicKey
     val defaultMaxCommitFeerate = FeeratePerKw(2500 sat)
     val overrideNodeId = randomKey().publicKey
@@ -56,23 +56,23 @@ class FeeEstimatorSpec extends AnyFunSuite {
     val feeConf = OnChainFeeConf(FeeTargets(1, 2, 1, 1), feeEstimator, closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, FeerateTolerance(0.5, 2.0, defaultMaxCommitFeerate), Map(overrideNodeId -> FeerateTolerance(0.5, 2.0, overrideMaxCommitFeerate)))
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, channelVersion, 100000 sat, None) === defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, channelFeatures, 100000 sat, None) === defaultMaxCommitFeerate / 2)
 
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate * 2))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, channelVersion, 100000 sat, None) === defaultMaxCommitFeerate)
-    assert(feeConf.getCommitmentFeerate(overrideNodeId, channelVersion, 100000 sat, None) === overrideMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, channelFeatures, 100000 sat, None) === defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(overrideNodeId, channelFeatures, 100000 sat, None) === overrideMaxCommitFeerate)
 
     val currentFeerates1 = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, channelVersion, 100000 sat, Some(currentFeerates1)) === defaultMaxCommitFeerate / 2)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, channelFeatures, 100000 sat, Some(currentFeerates1)) === defaultMaxCommitFeerate / 2)
 
     val currentFeerates2 = CurrentFeerates(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate * 1.5))
     feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)).copy(blocks_2 = defaultMaxCommitFeerate / 2))
-    assert(feeConf.getCommitmentFeerate(defaultNodeId, channelVersion, 100000 sat, Some(currentFeerates2)) === defaultMaxCommitFeerate)
+    assert(feeConf.getCommitmentFeerate(defaultNodeId, channelFeatures, 100000 sat, Some(currentFeerates2)) === defaultMaxCommitFeerate)
   }
 
   test("fee difference too high") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat))
-    val channelVersion = ChannelVersion.STANDARD
+    val channelFeatures = ChannelFeatures()
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(250 sat), false),
@@ -85,13 +85,13 @@ class FeeEstimatorSpec extends AnyFunSuite {
       (FeeratePerKw(250 sat), FeeratePerKw(1500 sat), true),
     )
     testCases.foreach { case (networkFeerate, proposedFeerate, expected) =>
-      assert(tolerance.isFeeDiffTooHigh(channelVersion, networkFeerate, proposedFeerate) === expected)
+      assert(tolerance.isFeeDiffTooHigh(channelFeatures, networkFeerate, proposedFeerate) === expected)
     }
   }
 
   test("fee difference too high (anchor outputs)") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat))
-    val channelVersion = ChannelVersion.ANCHOR_OUTPUTS
+    val channelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
       (FeeratePerKw(500 sat), FeeratePerKw(2500 sat), false),
@@ -106,7 +106,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
       (FeeratePerKw(1000 sat), FeeratePerKw(499 sat), true),
     )
     testCases.foreach { case (networkFeerate, proposedFeerate, expected) =>
-      assert(tolerance.isFeeDiffTooHigh(channelVersion, networkFeerate, proposedFeerate) === expected)
+      assert(tolerance.isFeeDiffTooHigh(channelFeatures, networkFeerate, proposedFeerate) === expected)
     }
   }
 

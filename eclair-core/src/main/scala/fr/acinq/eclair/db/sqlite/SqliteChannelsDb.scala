@@ -25,6 +25,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import grizzled.slf4j.Logging
+import scodec.bits.BitVector
 
 import java.sql.{Connection, Statement}
 
@@ -34,7 +35,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
   import SqliteUtils._
 
   val DB_NAME = "channels"
-  val CURRENT_VERSION = 3
+  val CURRENT_VERSION = 4
 
   /**
    * The SQLite documentation states that "It is not possible to enable or disable foreign key constraints in the middle
@@ -59,6 +60,21 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
       statement.executeUpdate("ALTER TABLE local_channels ADD COLUMN closed_timestamp INTEGER")
     }
 
+    def migration34(): Unit = {
+      migrateTable(sqlite, sqlite,
+        "local_channels",
+        s"UPDATE local_channels SET data=? WHERE channel_id=?",
+        (rs, statement) => {
+          // This forces a re-serialization of the channel data with latest codecs, because as of codecs v3 we don't
+          // store local commitment signatures anymore, and we want to clean up existing data
+          val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
+          val data = stateDataCodec.encode(state).require.toByteArray
+          statement.setBytes(1, data)
+          statement.setBytes(2, state.channelId.toArray)
+        }
+      )(logger)
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL, is_closed BOOLEAN NOT NULL DEFAULT 0, created_timestamp INTEGER, last_payment_sent_timestamp INTEGER, last_payment_received_timestamp INTEGER, last_connected_timestamp INTEGER, closed_timestamp INTEGER)")
@@ -68,9 +84,14 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)
         migration23(statement)
+        migration34()
       case Some(v@2) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration23(statement)
+        migration34()
+      case Some(v@3) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+        migration34()
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
