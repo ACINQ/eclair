@@ -28,7 +28,6 @@ import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
-import scala.concurrent.{ExecutionContextExecutor, Future}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -52,13 +51,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   /** Can be overridden to do custom post-processing on successfully received payments. */
   def postFulfill(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
 
-  case class PaymentRequestResult(replyTo: ActorRef, res: Try[PaymentRequest])
-
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType) =>
-      implicit val ec: ExecutionContextExecutor = ctx.dispatcher
-      val replyTo = ctx.sender()
-      Future {
+      Try {
         val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
         val paymentHash = Crypto.sha256(paymentPreimage)
         val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
@@ -73,12 +68,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
         db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
         paymentRequest
-      }.onComplete(res => ctx.self ! PaymentRequestResult(replyTo, res))
-
-    case PaymentRequestResult(replyTo, res) =>
-      res match {
-        case Success(paymentRequest) => replyTo ! paymentRequest
-        case Failure(exception) => replyTo ! Status.Failure(exception)
+      } match {
+        case Success(paymentRequest) => ctx.sender ! paymentRequest
+        case Failure(exception) => ctx.sender ! Status.Failure(exception)
       }
 
     case p: IncomingPacket.FinalPacket if doHandle(p.add.paymentHash) =>
