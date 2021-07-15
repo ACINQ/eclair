@@ -27,7 +27,7 @@ import grizzled.slf4j.Logging
 
 import java.io.File
 import java.nio.file._
-import java.sql.{Connection, DriverManager}
+import java.sql.Connection
 import java.util.UUID
 import scala.concurrent.duration._
 
@@ -183,28 +183,16 @@ object Databases extends Logging {
    * Given a parent folder it creates or loads all the databases from a JDBC connection
    */
   def sqlite(dbdir: File): SqliteDatabases = {
-    dbdir.mkdir()
-    var sqliteEclair: Connection = null
-    var sqliteNetwork: Connection = null
-    var sqliteAudit: Connection = null
-    try {
-      sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
-      sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
-      sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
-      SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
-      logger.info("successful lock on eclair.sqlite")
-      SqliteDatabases(sqliteAudit, sqliteNetwork, sqliteEclair)
-    } catch {
-      case t: Throwable =>
-        logger.error("could not create connection to sqlite databases: ", t)
-        if (sqliteEclair != null) sqliteEclair.close()
-        if (sqliteNetwork != null) sqliteNetwork.close()
-        if (sqliteAudit != null) sqliteAudit.close()
-        throw t
-    }
+    dbdir.mkdirs()
+    SqliteDatabases(
+      eclairJdbc = SqliteUtils.openSqliteFile(dbdir, "eclair.sqlite", exclusiveLock = true, journalMode = "wal", syncFlag = "full"), // there should only be one process writing to this file
+      networkJdbc = SqliteUtils.openSqliteFile(dbdir, "network.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "normal"), // we don't need strong durability guarantees on the network db
+      auditJdbc = SqliteUtils.openSqliteFile(dbdir, "audit.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "full")
+    )
   }
 
   def postgres(dbConfig: Config, instanceId: UUID, dbdir: File, lockExceptionHandler: LockFailureHandler = LockFailureHandler.logAndStop)(implicit system: ActorSystem): PostgresDatabases = {
+    dbdir.mkdirs()
     val database = dbConfig.getString("postgres.database")
     val host = dbConfig.getString("postgres.host")
     val port = dbConfig.getInt("postgres.port")
