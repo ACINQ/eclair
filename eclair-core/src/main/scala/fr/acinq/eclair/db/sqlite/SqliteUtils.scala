@@ -17,10 +17,32 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.eclair.db.jdbc.JdbcUtils
+import grizzled.slf4j.Logging
 
-import java.sql.Connection
+import java.io.File
+import java.sql.{Connection, DriverManager}
 
-object SqliteUtils extends JdbcUtils {
+object SqliteUtils extends JdbcUtils with Logging {
+
+  def openSqliteFile(directory: File, filename: String, exclusiveLock: Boolean, journalMode: String, syncFlag: String): Connection = {
+    var sqlite: Connection = null
+    try {
+      sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(directory, filename)}")
+      if (exclusiveLock) {
+        obtainExclusiveLock(sqlite)
+      }
+      setJournalMode(sqlite, journalMode)
+      setSynchronousFlag(sqlite, syncFlag)
+      sqlite
+    } catch {
+      case t: Throwable =>
+        logger.error("could not create connection to sqlite databases: ", t)
+        if (sqlite != null) {
+          sqlite.close()
+        }
+        throw t
+    }
+  }
 
   /**
    * Obtain an exclusive lock on a sqlite database. This is useful when we want to make sure that only one process
