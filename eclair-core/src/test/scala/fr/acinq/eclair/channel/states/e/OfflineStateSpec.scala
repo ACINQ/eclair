@@ -231,6 +231,53 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(bob.stateName == NORMAL)
   }
 
+  test("resume htlc settlement") { f =>
+    import f._
+
+    // Successfully send a first payment.
+    val (r1, htlc1) = addHtlc(15_000_000 msat, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlc1.id, r1, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // Send a second payment and disconnect right after the fulfill was signed.
+    val (r2, htlc2) = addHtlc(25_000_000 msat, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlc2.id, r2, alice, bob, alice2bob, bob2alice)
+    val sender = TestProbe()
+    alice ! CMD_SIGN(Some(sender.ref))
+    sender.expectMsgType[RES_SUCCESS[CMD_SIGN]]
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.forward(bob)
+    val revB = bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.expectMsgType[CommitSig]
+    disconnect(alice, bob)
+
+    reconnect(alice, bob, alice2bob, bob2alice)
+    val reestablishA = alice2bob.expectMsgType[ChannelReestablish]
+    assert(reestablishA.nextLocalCommitmentNumber === 4)
+    assert(reestablishA.nextRemoteRevocationNumber === 3)
+    val reestablishB = bob2alice.expectMsgType[ChannelReestablish]
+    assert(reestablishB.nextLocalCommitmentNumber === 5)
+    assert(reestablishB.nextRemoteRevocationNumber === 3)
+
+    bob2alice.forward(alice, reestablishB)
+    // alice does not re-send messages bob already received
+    alice2bob.expectNoMessage(100 millis)
+
+    alice2bob.forward(bob, reestablishA)
+    // bob re-sends its revocation and signature, alice then completes the update
+    bob2alice.expectMsg(revB)
+    bob2alice.forward(alice)
+    bob2alice.expectMsgType[CommitSig]
+    bob2alice.forward(alice)
+    alice2bob.expectMsgType[RevokeAndAck]
+    alice2bob.forward(bob)
+
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 4)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 4)
+  }
+
   test("discover that we have a revoked commitment") { f =>
     import f._
 
