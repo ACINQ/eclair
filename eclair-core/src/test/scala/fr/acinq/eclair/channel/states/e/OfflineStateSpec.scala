@@ -305,11 +305,11 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     reconnect(alice, bob, alice2bob, bob2alice)
 
     // peers exchange channel_reestablish messages
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
+    val reestablishA = alice2bob.expectMsgType[ChannelReestablish]
+    val reestablishB = bob2alice.expectMsgType[ChannelReestablish]
 
     // alice then realizes it has an old state...
-    bob2alice.forward(alice)
+    bob2alice.forward(alice, reestablishB)
     // ... and ask bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
@@ -317,8 +317,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice now waits for bob to publish its commitment
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
-    // bob is nice and publishes its commitment
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    // bob publishes its commitment when it detects that alice has an outdated commitment
+    alice2bob.forward(bob, reestablishA)
+    val bobCommitTx = bob2blockchain.expectMsgType[PublishRawTx].tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim its main output
