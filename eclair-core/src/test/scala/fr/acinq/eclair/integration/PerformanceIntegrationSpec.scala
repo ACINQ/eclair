@@ -69,7 +69,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
   }
 
   test("wait for channels") {
-    // Channels balance should now be available in the router
+    // Channels should now be available in the router
     val sender = TestProbe()
     awaitCond({
       sender.send(nodes("A").router, Router.GetRoutingState)
