@@ -168,10 +168,10 @@ object Databases extends Logging {
       case Some(d) => d
       case None =>
         dbConfig.getString("driver") match {
-          case "sqlite" => Databases.sqlite(dbConfig, chaindir)
+          case "sqlite" => Databases.sqlite(chaindir)
           case "postgres" => Databases.postgres(dbConfig, instanceId, chaindir)
           case "dual" =>
-            val sqlite = Databases.sqlite(dbConfig, chaindir)
+            val sqlite = Databases.sqlite(chaindir)
             val postgres = Databases.postgres(dbConfig, instanceId, chaindir)
             DualDatabases(sqlite, postgres)
           case driver => throw new RuntimeException(s"unknown database driver `$driver`")
@@ -182,7 +182,7 @@ object Databases extends Logging {
   /**
    * Given a parent folder it creates or loads all the databases from a JDBC connection
    */
-  def sqlite(dbConfig: Config, dbdir: File): SqliteDatabases = {
+  def sqlite(dbdir: File): SqliteDatabases = {
     dbdir.mkdir()
     var sqliteEclair: Connection = null
     var sqliteNetwork: Connection = null
@@ -193,12 +193,10 @@ object Databases extends Logging {
       sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
       SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
       logger.info("successful lock on eclair.sqlite")
-      SqliteUtils.setJournalMode(sqliteEclair, dbConfig.getString("sqlite.mode"))
-      SqliteUtils.setJournalMode(sqliteNetwork, dbConfig.getString("sqlite.mode"))
-      SqliteUtils.setJournalMode(sqliteAudit, dbConfig.getString("sqlite.mode"))
-      SqliteUtils.setSynchronousFlag(sqliteEclair, dbConfig.getString("sqlite.sync"))
-      SqliteUtils.setSynchronousFlag(sqliteNetwork, dbConfig.getString("sqlite.sync"))
-      SqliteUtils.setSynchronousFlag(sqliteAudit, dbConfig.getString("sqlite.sync"))
+      Seq(sqliteEclair, sqliteNetwork, sqliteAudit).foreach(SqliteUtils.setJournalMode(_, "wal"))
+      SqliteUtils.setSynchronousFlag(sqliteEclair, "full")
+      SqliteUtils.setSynchronousFlag(sqliteNetwork, "normal") // we don't need strong durability guarantees on the network db
+      SqliteUtils.setSynchronousFlag(sqliteAudit, "full")
       SqliteDatabases(sqliteAudit, sqliteNetwork, sqliteEclair)
     } catch {
       case t: Throwable =>
