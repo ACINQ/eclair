@@ -105,7 +105,7 @@ class ChannelsDbSpec extends AnyFunSuite {
         Future(db.updateChannelMeta(channelId, ChannelEvent.EventType.PaymentSent))
       }
       val res = Future.sequence(futures)
-      Await.result(res, 60 seconds)
+      Await.result(res, 5 minutes)
     }
   }
 
