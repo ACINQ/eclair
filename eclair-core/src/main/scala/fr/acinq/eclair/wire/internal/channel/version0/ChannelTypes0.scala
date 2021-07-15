@@ -16,9 +16,15 @@
 
 package fr.acinq.eclair.wire.internal.channel.version0
 
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction, TxOut}
-import fr.acinq.eclair.channel
+import com.softwaremill.quicklens._
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxOut}
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.{Feature, FeatureSupport, Features, channel}
+import scodec.bits.BitVector
 
 private[channel] object ChannelTypes0 {
 
@@ -101,5 +107,117 @@ private[channel] object ChannelTypes0 {
    * put dummy values in the migration.
    */
   def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
+
+  case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
+
+  case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
+
+  // Before version3, we stored fully signed local transactions (commit tx and htlc txs). It meant that someone gaining
+  // access to the database could publish revoked commit txs, so we changed that to only store unsigned txs and remote
+  // signatures.
+  case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
+    def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
+      val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
+      val unsignedCommitTx = publishableTxs.commitTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+      val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
+      val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
+        case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
+          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
+        case HtlcTxAndSigs(htlcTx: HtlcTimeoutTx, _, remoteSig) =>
+          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+          HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
+      }
+      channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
+    }
+
+    private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ByteVector64 = {
+      require(commitTx.tx.txIn.size == 1, s"commit tx must have exactly one input, found ${commitTx.tx.txIn.size}")
+      val ScriptWitness(Seq(_, sig1, sig2, redeemScript)) = commitTx.tx.txIn.head.witness
+      val _ :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: _ :: OP_CHECKMULTISIG :: Nil = Script.parse(redeemScript)
+      require(pub1 == remoteFundingPubKey.value || pub2 == remoteFundingPubKey.value, "unrecognized funding pubkey")
+      if (pub1 == remoteFundingPubKey.value) {
+        Crypto.der2compact(sig1)
+      } else {
+        Crypto.der2compact(sig2)
+      }
+    }
+  }
+
+  // Before version3, we had a ChannelVersion field describing what channel features were activated. It was mixing
+  // official features (static_remotekey, anchor_outputs) and internal features (channel key derivation scheme).
+  // We separated this into two separate fields in version3:
+  //  - a channel type field containing the channel Bolt 9 features
+  //  - an internal channel configuration field
+  case class ChannelVersion(bits: BitVector) {
+    // @formatter:off
+    def isSet(bit: Int): Boolean = bits.reverse.get(bit)
+    def |(other: ChannelVersion): ChannelVersion = ChannelVersion(bits | other.bits)
+
+    def hasPubkeyKeyPath: Boolean = isSet(ChannelVersion.USE_PUBKEY_KEYPATH_BIT)
+    def hasStaticRemotekey: Boolean = isSet(ChannelVersion.USE_STATIC_REMOTEKEY_BIT)
+    def hasAnchorOutputs: Boolean = isSet(ChannelVersion.USE_ANCHOR_OUTPUTS_BIT)
+    def paysDirectlyToWallet: Boolean = hasStaticRemotekey && !hasAnchorOutputs
+    // @formatter:on
+  }
+
+  object ChannelVersion {
+
+    import scodec.bits._
+
+    val LENGTH_BITS: Int = 4 * 8
+
+    private val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
+    private val USE_STATIC_REMOTEKEY_BIT = 1
+    private val USE_ANCHOR_OUTPUTS_BIT = 2
+
+    def fromBit(bit: Int): ChannelVersion = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
+
+    val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
+    val STANDARD = ZEROES | fromBit(USE_PUBKEY_KEYPATH_BIT)
+    val STATIC_REMOTEKEY = STANDARD | fromBit(USE_STATIC_REMOTEKEY_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY
+    val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | fromBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
+  }
+
+  case class Commitments(channelVersion: ChannelVersion,
+                         localParams: LocalParams, remoteParams: RemoteParams,
+                         channelFlags: Byte,
+                         localCommit: LocalCommit, remoteCommit: RemoteCommit,
+                         localChanges: LocalChanges, remoteChanges: RemoteChanges,
+                         localNextHtlcId: Long, remoteNextHtlcId: Long,
+                         originChannels: Map[Long, Origin],
+                         remoteNextCommitInfo: Either[WaitingForRevocation, PublicKey],
+                         commitInput: InputInfo,
+                         remotePerCommitmentSecrets: ShaChain, channelId: ByteVector32) {
+    def migrate(): channel.Commitments = {
+      val channelConfig = if (channelVersion.hasPubkeyKeyPath) {
+        ChannelConfig(ChannelConfig.FundingPubKeyBasedChannelKeyPath)
+      } else {
+        ChannelConfig()
+      }
+      val isWumboChannel = commitInput.txOut.amount > Satoshi(16777215)
+      val baseChannelFeatures: Set[Feature] = if (isWumboChannel) Set(Features.Wumbo) else Set.empty
+      val commitmentFeatures: Set[Feature] = if (channelVersion.hasAnchorOutputs) {
+        Set(Features.StaticRemoteKey, Features.AnchorOutputs)
+      } else if (channelVersion.hasStaticRemotekey) {
+        Set(Features.StaticRemoteKey)
+      } else {
+        Set.empty
+      }
+      val channelFeatures = ChannelFeatures(baseChannelFeatures ++ commitmentFeatures)
+      channel.Commitments(
+        channelId,
+        channelConfig, channelFeatures,
+        localParams, remoteParams,
+        channelFlags,
+        localCommit.migrate(remoteParams.fundingPubKey), remoteCommit,
+        localChanges, remoteChanges,
+        localNextHtlcId, remoteNextHtlcId,
+        originChannels,
+        remoteNextCommitInfo,
+        commitInput,
+        remotePerCommitmentSecrets)
+    }
+  }
 
 }

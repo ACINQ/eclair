@@ -139,8 +139,12 @@ class PrivateKeySerializer extends CustomSerializerOnly[PrivateKey](_ => {
   case _: PrivateKey => JString("XXX")
 })
 
-class ChannelVersionSerializer extends CustomSerializerOnly[ChannelVersion](_ => {
-  case x: ChannelVersion => JString(x.bits.toBin)
+class ChannelConfigSerializer extends CustomSerializerOnly[ChannelConfig](_ => {
+  case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
+})
+
+class ChannelFeaturesSerializer extends CustomSerializerOnly[ChannelFeatures](_ => {
+  case channelFeatures: ChannelFeatures => JArray(channelFeatures.activated.map(f => JString(f.rfcName)).toList)
 })
 
 class ChannelOpenResponseSerializer extends CustomSerializerOnly[ChannelOpenResponse](_ => {
@@ -417,7 +421,8 @@ object JsonSerializers {
     new InetSocketAddressSerializer +
     new OutPointSerializer +
     new OutPointKeySerializer +
-    new ChannelVersionSerializer +
+    new ChannelConfigSerializer +
+    new ChannelFeaturesSerializer +
     new ChannelOpenResponseSerializer +
     new CommandResponseSerializer +
     new InputInfoSerializer +
@@ -442,9 +447,7 @@ object JsonSerializers {
     JField("activated", JObject(features.activated.map { case (feature, support) =>
       feature.rfcName -> JString(support.toString)
     }.toList)),
-    JField("unknown", JArray(features.unknown.map { i =>
-      JObject(JField("featureBit", JInt(i.bitIndex)))
-    }.toList))
+    JField("unknown", JArray(features.unknown.map(u => JInt(u.bitIndex)).toList))
   )
 
 }

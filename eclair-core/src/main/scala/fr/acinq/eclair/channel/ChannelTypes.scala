@@ -26,7 +26,7 @@ import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OnionRoutingPacket, OpenChannel, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
-import scodec.bits.{BitVector, ByteVector}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 
@@ -87,8 +87,14 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              remote: ActorRef,
                              remoteInit: Init,
                              channelFlags: Byte,
-                             channelVersion: ChannelVersion)
-case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelVersion: ChannelVersion)
+                             channelConfig: ChannelConfig,
+                             channelFeatures: ChannelFeatures)
+case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
+                             localParams: LocalParams,
+                             remote: ActorRef,
+                             remoteInit: Init,
+                             channelConfig: ChannelConfig,
+                             channelFeatures: ChannelFeatures)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
@@ -375,7 +381,8 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: ByteVector32
                                                 initialFeeratePerKw: FeeratePerKw,
                                                 initialRelayFees_opt: Option[(MilliSatoshi, Int)],
                                                 remoteFirstPerCommitmentPoint: PublicKey,
-                                                channelVersion: ChannelVersion,
+                                                channelConfig: ChannelConfig,
+                                                channelFeatures: ChannelFeatures,
                                                 lastSent: OpenChannel) extends Data {
   val channelId: ByteVector32 = temporaryChannelId
 }
@@ -388,7 +395,8 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: ByteVector32,
                                                initialRelayFees_opt: Option[(MilliSatoshi, Int)],
                                                remoteFirstPerCommitmentPoint: PublicKey,
                                                channelFlags: Byte,
-                                               channelVersion: ChannelVersion,
+                                               channelConfig: ChannelConfig,
+                                               channelFeatures: ChannelFeatures,
                                                lastSent: AcceptChannel) extends Data {
   val channelId: ByteVector32 = temporaryChannelId
 }
@@ -402,7 +410,8 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: ByteVector32,
                                               localCommitTx: CommitTx,
                                               remoteCommit: RemoteCommit,
                                               channelFlags: Byte,
-                                              channelVersion: ChannelVersion,
+                                              channelConfig: ChannelConfig,
+                                              channelFeatures: ChannelFeatures,
                                               lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments,
                                                  fundingTx: Option[Transaction],
@@ -444,9 +453,9 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 /**
- * @param features current connection features, or last features used if the channel is disconnected. Note that these
- *                 features are updated at each reconnection and may be different from the ones that were used when the
- *                 channel was created. See [[ChannelVersion]] for permanent features associated to a channel.
+ * @param initFeatures current connection features, or last features used if the channel is disconnected. Note that these
+ *                 features are updated at each reconnection and may be different from the channel permanent features
+ *                 (see [[ChannelFeatures]]).
  */
 final case class LocalParams(nodeId: PublicKey,
                              fundingKeyPath: DeterministicWallet.KeyPath,
@@ -459,10 +468,10 @@ final case class LocalParams(nodeId: PublicKey,
                              isFunder: Boolean,
                              defaultFinalScriptPubKey: ByteVector,
                              walletStaticPaymentBasepoint: Option[PublicKey],
-                             features: Features)
+                             initFeatures: Features)
 
 /**
- * @param features see [[LocalParams.features]]
+ * @param initFeatures see [[LocalParams.initFeatures]]
  */
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimit: Satoshi,
@@ -476,61 +485,11 @@ final case class RemoteParams(nodeId: PublicKey,
                               paymentBasepoint: PublicKey,
                               delayedPaymentBasepoint: PublicKey,
                               htlcBasepoint: PublicKey,
-                              features: Features)
+                              initFeatures: Features,
+                              shutdownScript: Option[ByteVector])
 
 object ChannelFlags {
   val AnnounceChannel = 0x01.toByte
   val Empty = 0x00.toByte
-}
-
-case class ChannelVersion(bits: BitVector) {
-  import ChannelVersion._
-
-  require(bits.size == ChannelVersion.LENGTH_BITS, "channel version takes 4 bytes")
-
-  val commitmentFormat: CommitmentFormat = if (hasAnchorOutputs) {
-    AnchorOutputsCommitmentFormat
-  } else {
-    DefaultCommitmentFormat
-  }
-
-  def |(other: ChannelVersion) = ChannelVersion(bits | other.bits)
-  def &(other: ChannelVersion) = ChannelVersion(bits & other.bits)
-  def ^(other: ChannelVersion) = ChannelVersion(bits ^ other.bits)
-
-  def isSet(bit: Int): Boolean = bits.reverse.get(bit)
-
-  def hasPubkeyKeyPath: Boolean = isSet(USE_PUBKEY_KEYPATH_BIT)
-  def hasStaticRemotekey: Boolean = isSet(USE_STATIC_REMOTEKEY_BIT)
-  def hasAnchorOutputs: Boolean = isSet(USE_ANCHOR_OUTPUTS_BIT)
-  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  def paysDirectlyToWallet: Boolean = hasStaticRemotekey && !hasAnchorOutputs
-}
-
-object ChannelVersion {
-  import scodec.bits._
-
-  val LENGTH_BITS: Int = 4 * 8
-
-  private val USE_PUBKEY_KEYPATH_BIT = 0 // bit numbers start at 0
-  private val USE_STATIC_REMOTEKEY_BIT = 1
-  private val USE_ANCHOR_OUTPUTS_BIT = 2
-
-  def fromBit(bit: Int): ChannelVersion = ChannelVersion(BitVector.low(LENGTH_BITS).set(bit).reverse)
-
-  def pickChannelVersion(localFeatures: Features, remoteFeatures: Features): ChannelVersion = {
-    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
-      ANCHOR_OUTPUTS
-    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.StaticRemoteKey)) {
-      STATIC_REMOTEKEY
-    } else {
-      STANDARD
-    }
-  }
-
-  val ZEROES = ChannelVersion(bin"00000000000000000000000000000000")
-  val STANDARD = ZEROES | fromBit(USE_PUBKEY_KEYPATH_BIT)
-  val STATIC_REMOTEKEY = STANDARD | fromBit(USE_STATIC_REMOTEKEY_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY
-  val ANCHOR_OUTPUTS = STATIC_REMOTEKEY | fromBit(USE_ANCHOR_OUTPUTS_BIT) // PUBKEY_KEYPATH + STATIC_REMOTEKEY + ANCHOR_OUTPUTS
 }
 // @formatter:on

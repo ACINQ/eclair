@@ -159,11 +159,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
     val sender = TestProbe()
-    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     sender.send(bob, aliceCloseSig.copy(feeSatoshis = 99000 sat)) // sig doesn't matter, it is checked later
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid close fee: fee_satoshis=99000 sat"))
-    assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx)
+    assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid)
     bob2blockchain.expectMsgType[PublishTx]
     bob2blockchain.expectMsgType[WatchTxConfirmed]
   }
@@ -171,11 +171,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
   test("recv ClosingSigned (invalid sig)") { f =>
     import f._
     val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
-    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
+    val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     bob ! aliceCloseSig.copy(signature = ByteVector64.Zeroes)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid close signature"))
-    assert(bob2blockchain.expectMsgType[PublishRawTx].tx === tx)
+    assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid)
     bob2blockchain.expectMsgType[PublishTx]
     bob2blockchain.expectMsgType[WatchTxConfirmed]
   }
@@ -235,10 +235,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
   test("recv Error") { f =>
     import f._
-    val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
+    val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSING)
-    assert(alice2blockchain.expectMsgType[PublishRawTx].tx === tx)
+    assert(alice2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid)
     alice2blockchain.expectMsgType[PublishTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === tx.txid)
   }

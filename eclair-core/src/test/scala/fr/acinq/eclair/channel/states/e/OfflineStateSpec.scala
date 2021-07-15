@@ -271,7 +271,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
     // bob is nice and publishes its commitment
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim its main output
@@ -316,7 +316,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
     // bob is nice and publishes its commitment
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim its main output
@@ -326,7 +326,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
   test("counterparty lies about having a more recent commitment") { f =>
     import f._
-    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // we simulate a disconnection followed by a reconnection
     disconnect(alice, bob)
@@ -340,7 +340,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice then finds out bob is lying
     bob2alice.send(alice, invalidReestablish)
     val error = alice2bob.expectMsgType[Error]
-    assert(alice2blockchain.expectMsgType[PublishRawTx].tx === aliceCommitTx)
+    assert(alice2blockchain.expectMsgType[PublishRawTx].tx.txid === aliceCommitTx.txid)
     val claimMainOutput = alice2blockchain.expectMsgType[PublishRawTx].tx
     Transaction.correctlySpends(claimMainOutput, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     assert(error === Error(channelId(alice), InvalidRevokedCommitProof(channelId(alice), 0, 42, invalidReestablish.yourLastPerCommitmentSecret).getMessage))
@@ -470,8 +470,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     system.eventStream.subscribe(listener.ref, classOf[ChannelErrorOccurred])
 
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val initialCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.publishableTxs.htlcTxsAndSigs.head.txinfo
+    val initialCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     disconnect(alice, bob)
 
@@ -484,13 +484,13 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(isFatal)
     assert(err.isInstanceOf[HtlcsWillTimeoutUpstream])
 
-    assert(bob2blockchain.expectMsgType[PublishRawTx].tx === initialCommitTx)
+    assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === initialCommitTx.txid)
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === initialCommitTx.txid)
     bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
     bob2blockchain.expectMsgType[WatchOutputSpent] // htlc
 
-    assert(bob2blockchain.expectMsgType[PublishRawTx].tx === initialCommitTx)
+    assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === initialCommitTx.txid)
     bob2blockchain.expectMsgType[PublishTx] // main delayed
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txOut === htlcSuccessTx.txOut)
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === initialCommitTx.txid)
@@ -536,7 +536,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val aliceCommitTx = aliceStateData.commitments.localCommit.publishableTxs.commitTx.tx
+    val aliceCommitTx = aliceStateData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
@@ -547,7 +547,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice is funder
     alice ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      assert(alice2blockchain.expectMsgType[PublishRawTx].tx === aliceCommitTx)
+      assert(alice2blockchain.expectMsgType[PublishRawTx].tx.txid === aliceCommitTx.txid)
     } else {
       alice2blockchain.expectNoMsg()
     }
@@ -645,7 +645,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     val bobStateData = bob.stateData.asInstanceOf[DATA_NORMAL]
-    val bobCommitTx = bobStateData.commitments.localCommit.publishableTxs.commitTx.tx
+    val bobCommitTx = bobStateData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     val currentFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
@@ -656,7 +656,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob is fundee
     bob ! CurrentFeerates(networkFeerate)
     if (shouldClose) {
-      assert(bob2blockchain.expectMsgType[PublishRawTx].tx === bobCommitTx)
+      assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === bobCommitTx.txid)
     } else {
       bob2blockchain.expectNoMsg()
     }
@@ -729,12 +729,12 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCurrentPerCommitmentPoint = TestConstants.Alice.channelKeyManager.commitmentPoint(
-      TestConstants.Alice.channelKeyManager.keyPath(aliceCommitments.localParams, aliceCommitments.channelVersion),
+      TestConstants.Alice.channelKeyManager.keyPath(aliceCommitments.localParams, aliceCommitments.channelConfig),
       aliceCommitments.localCommit.index)
 
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val bobCurrentPerCommitmentPoint = TestConstants.Bob.channelKeyManager.commitmentPoint(
-      TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.localParams, bobCommitments.channelVersion),
+      TestConstants.Bob.channelKeyManager.keyPath(bobCommitments.localParams, bobCommitments.channelConfig),
       bobCommitments.localCommit.index)
 
     (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint)

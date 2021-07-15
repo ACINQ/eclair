@@ -6,9 +6,9 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.KeyPath
 import fr.acinq.bitcoin.{DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.{ChannelVersion, LocalParams, Origin, RemoteParams}
+import fr.acinq.eclair.channel.{LocalParams, Origin, RemoteParams}
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
+import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.ChannelVersion
 import fr.acinq.eclair.wire.internal.channel.version1.ChannelCodecs1.Codecs._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
@@ -70,14 +70,13 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey)),
       walletStaticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
-      features = Features(randomBytes(256)))
+      initFeatures = Features(randomBytes(256)))
     val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32()).publicKey))
 
     roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
     roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
     roundtrip(o, localParamsCodec(ChannelVersion.ANCHOR_OUTPUTS))
   }
-
 
   test("encode/decode remoteparams") {
     val o = RemoteParams(
@@ -93,7 +92,8 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       paymentBasepoint = randomKey().publicKey,
       delayedPaymentBasepoint = randomKey().publicKey,
       htlcBasepoint = randomKey().publicKey,
-      features = TestConstants.Alice.nodeParams.features)
+      initFeatures = TestConstants.Alice.nodeParams.features,
+      shutdownScript = None)
     val encoded = remoteParamsCodec.encode(o).require
     val decoded = remoteParamsCodec.decodeValue(encoded).require
     assert(o === decoded)
@@ -101,7 +101,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     // Backwards-compatibility: decode remoteparams with global features.
     val withGlobalFeatures = hex"03c70c3b813815a8b79f41622b6f2c343fa24d94fb35fa7110bbb3d4d59cd9612e0000000059844cbc000000001b1524ea000000001503cbac000000006b75d3272e38777e029fa4e94066163024177311de7ba1befec2e48b473c387bbcee1484bf276a54460215e3dfb8e6f262222c5f343f5e38c5c9a43d2594c7f06dd7ac1a4326c665dd050347aba4d56d7007a7dcf03594423dccba9ed700d11e665d261594e1154203df31020d457ee336ba6eeb328d00f1b8bd8bfefb8a4dcd5af6db4c438b7ec5106c7edc0380df17e1beb0f238e51a39122ac4c6fb57f3c4f5b7bc9432f991b1ef4a8af3570002020000018a"
     val withGlobalFeaturesDecoded = remoteParamsCodec.decode(withGlobalFeatures.bits).require.value
-    assert(withGlobalFeaturesDecoded.features.toByteVector === hex"028a")
+    assert(withGlobalFeaturesDecoded.initFeatures.toByteVector === hex"028a")
   }
 
   test("encode/decode htlc") {
@@ -195,14 +195,6 @@ class ChannelCodecs1Spec extends AnyFunSuite {
       OutPoint(randomBytes32(), 454513) -> randomBytes32()
     )
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
-  }
-
-  test("basic serialization test (NORMAL)") {
-    val data = normal
-    val bin = DATA_NORMAL_Codec.encode(data).require
-    val check = DATA_NORMAL_Codec.decodeValue(bin).require
-    assert(data.commitments.localCommit.spec === check.commitments.localCommit.spec)
-    assert(data === check)
   }
 
 }
