@@ -733,9 +733,10 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     // bury the unilateral close in a block, C should claim its main output
     generateBlocks(2)
+    val mainOutputC = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == toRemoteOutC.publicKeyScript))
     awaitCond({
       bitcoinClient.getMempool().pipeTo(sender.ref)
-      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint.txid === commitTx.txid)
+      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint === mainOutputC)
     }, max = 20 seconds, interval = 1 second)
 
     // get the claim-remote-output confirmed, then the channel can go to the CLOSED state
