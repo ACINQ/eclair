@@ -115,8 +115,8 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           // if the outgoing htlc is being resolved on chain, we treat it like a local error but we cannot retry
           handleLocalFail(d, cause, isFatal = true)
         case HtlcResult.ChannelFailureBeforeSigned =>
-          // if the outgoing htlc is being resolved on chain, we treat it like a local error but we cannot retry
-          handleLocalFail(d, ChannelFailureException, isFatal = true)
+          // if the outgoing htlc is being resolved on chain, we treat it like a local error and we may retry with another channel
+          handleLocalFail(d, ChannelFailureException, isFatal = false)
         case HtlcResult.DisconnectedBeforeSigned(_) =>
           // a disconnection occured before the outgoing htlc got signed
           // again, we consider it a local error and treat is as such
