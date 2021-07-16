@@ -326,7 +326,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     assert(receive.amount_opt === Some(123 msat))
     assert(receive.expirySeconds_opt === Some(456))
-    assert(receive.fallbackAddress === Some(fallBackAddressRaw))
+    assert(receive.fallbackAddress_opt === Some(fallBackAddressRaw))
 
     // try with wrong address format
     assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None))

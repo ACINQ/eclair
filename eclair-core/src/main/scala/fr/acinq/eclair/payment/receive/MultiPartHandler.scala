@@ -17,6 +17,9 @@
 package fr.acinq.eclair.payment.receive
 
 import akka.actor.Actor.Receive
+import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
@@ -28,6 +31,7 @@ import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
+import java.util.UUID
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -52,26 +56,9 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
   def postFulfill(paymentReceived: PaymentReceived)(implicit log: LoggingAdapter): Unit = ()
 
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
-    case ReceivePayment(amount_opt, desc, expirySeconds_opt, extraHops, fallbackAddress_opt, paymentPreimage_opt, paymentType) =>
-      Try {
-        val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
-        val paymentHash = Crypto.sha256(paymentPreimage)
-        val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
-        val features = {
-          val f1 = Seq(Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
-          val allowMultiPart = nodeParams.features.hasFeature(Features.BasicMultiPartPayment)
-          val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
-          val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
-          PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*)
-        }
-        val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
-        log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
-        db.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
-        paymentRequest
-      } match {
-        case Success(paymentRequest) => ctx.sender ! paymentRequest
-        case Failure(exception) => ctx.sender ! Status.Failure(exception)
-      }
+    case receivePayment: ReceivePayment =>
+      val child = ctx.spawn(CreateInvoiceActor(nodeParams), name = UUID.randomUUID().toString)
+      child ! CreateInvoiceActor.CreatePaymentRequest(ctx.sender(), receivePayment)
 
     case p: IncomingPacket.FinalPacket if doHandle(p.add.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(p.add.paymentHash))) {
@@ -188,20 +175,58 @@ object MultiPartHandler {
   /**
    * Use this message to create a Bolt 11 invoice to receive a payment.
    *
-   * @param amount_opt        amount to receive in milli-satoshis.
-   * @param description       payment description.
-   * @param expirySeconds_opt number of seconds before the invoice expires (relative to the invoice creation time).
-   * @param extraHops         routing hints to help the payer.
-   * @param fallbackAddress   fallback Bitcoin address.
-   * @param paymentPreimage   payment preimage.
+   * @param amount_opt          amount to receive in milli-satoshis.
+   * @param description         payment description.
+   * @param expirySeconds_opt   number of seconds before the invoice expires (relative to the invoice creation time).
+   * @param extraHops           routing hints to help the payer.
+   * @param fallbackAddress_opt fallback Bitcoin address.
+   * @param paymentPreimage_opt payment preimage.
    */
   case class ReceivePayment(amount_opt: Option[MilliSatoshi],
                             description: String,
                             expirySeconds_opt: Option[Long] = None,
                             extraHops: List[List[ExtraHop]] = Nil,
-                            fallbackAddress: Option[String] = None,
-                            paymentPreimage: Option[ByteVector32] = None,
+                            fallbackAddress_opt: Option[String] = None,
+                            paymentPreimage_opt: Option[ByteVector32] = None,
                             paymentType: String = PaymentType.Standard)
+
+
+  object CreateInvoiceActor {
+
+    // @formatter:off
+    sealed trait Command
+    case class CreatePaymentRequest(replyTo: ActorRef, receivePayment: ReceivePayment) extends Command
+    // @formatter:on
+
+    def apply(nodeParams: NodeParams): Behavior[Command] = {
+      Behaviors.setup { context =>
+        Behaviors.receiveMessage {
+          case CreatePaymentRequest(replyTo, receivePayment) =>
+            Try {
+              import receivePayment._
+              val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
+              val paymentHash = Crypto.sha256(paymentPreimage)
+              val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
+              val features = {
+                val f1 = Seq(Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
+                val allowMultiPart = nodeParams.features.hasFeature(Features.BasicMultiPartPayment)
+                val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
+                val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
+                PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*)
+              }
+              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, description, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
+              context.log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
+              nodeParams.db.payments.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
+              paymentRequest
+            } match {
+              case Success(paymentRequest) => replyTo ! paymentRequest
+              case Failure(exception) => replyTo ! Status.Failure(exception)
+            }
+            Behaviors.stopped
+        }
+      }
+    }
+  }
 
   private def validatePaymentStatus(payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
