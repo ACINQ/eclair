@@ -1368,6 +1368,9 @@ Returns a list of attempts to send an outgoing payment, the status field contain
 attempt. If the attempt was unsuccessful the `status` field contains a non empty array of detailed failures descriptions.
 The API can be queried by `paymentHash` OR by `uuid`.
 
+Note that when you provide the `id` instead of the `payment_hash`, eclair will only return results for this particular attempt.
+For multi-part payments, the `id` provided must be the `parentId`, not the `paymentId` of a partial payment.
+
 ### HTTP Request
 
 `POST http://localhost:8080/getsentinfo`
