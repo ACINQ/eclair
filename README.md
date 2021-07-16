@@ -14,14 +14,14 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
   * [JSON API](#json-api)
   * [Documentation](#documentation)
   * [Installation](#installation)
-    * [Configuring Bitcoin Core](#configuring-bitcoin-core)
+    * [Prerequisite: Bitcoin Core](#prerequisite-bitcoin-core)
     * [Installing Eclair](#installing-eclair)
-    * [Configuring Eclair](#configuring-eclair)
-      * [Configuration file](#configuration-file)
-      * [Configure Bitcoin Core wallet](#configure-bitcoin-core-wallet)
-      * [Java Environment Variables](#java-environment-variables)
-      * [Logging](#logging)
-      * [Backup](#backup)
+  * [Configuration](#configuration)
+    * [Configuration file](#configuration-file)
+    * [Configure Bitcoin Core wallet](#configure-bitcoin-core-wallet)
+    * [Java Environment Variables](#java-environment-variables)
+    * [Logging](#logging)
+    * [Backup](#backup)
   * [Docker](#docker)
   * [Plugins](#plugins)
   * [Testnet usage](#testnet-usage)
@@ -49,7 +49,7 @@ You will find detailed guides and frequently asked questions there.
 
 ## Installation
 
-### Configuring Bitcoin Core
+### Prerequisite: Bitcoin Core
 
 :warning: Eclair requires Bitcoin Core 0.20.1 or 0.21.1. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
@@ -83,9 +83,9 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 
 You can then control your node via the [eclair-cli](https://github.com/ACINQ/eclair/wiki/Usage) or the [API](https://github.com/ACINQ/eclair/wiki/API).
 
-### Configuring Eclair
+## Configuration
 
-#### Configuration file
+### Configuration file
 
 Eclair reads its configuration file, and write its logs, to `~/.eclair` by default.
 
@@ -115,7 +115,7 @@ Quotes are not required unless the value contains special characters. Full synta
 
 &rarr; see [here](./docs/Configure.md) for more configuration options.
 
-#### Configure Bitcoin Core wallet
+### Configure Bitcoin Core wallet
 
 Eclair will use the default loaded Bitcoin Core wallet to fund any channels you choose to open.
 If you want to use a different wallet from the default one, you must set `eclair.bitcoind.wallet` accordingly in your `eclair.conf`.
@@ -125,7 +125,7 @@ If you want to use a different wallet from the default one, you must set `eclair
 Eclair will return BTC from closed channels to the wallet configured.
 Any BTC found in the wallet can be used to fund the channels you choose to open.
 
-#### Java Environment Variables
+### Java Environment Variables
 
 Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section.
 
@@ -142,7 +142,7 @@ For example, to specify a different data directory you would run the following c
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Declair.datadir=/tmp/node1
 ```
 
-#### Logging
+### Logging
 
 Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different configuration, and override the internal logback.xml, run:
 
@@ -150,7 +150,7 @@ Eclair uses [`logback`](https://logback.qos.ch) for logging. To use a different 
 eclair-node-<version>-<commit_id>/bin/eclair-node.sh -Dlogback.configurationFile=/path/to/logback-custom.xml
 ```
 
-#### Backup
+### Backup
 
 The files that you need to backup are located in your data directory. You must backup:
 
