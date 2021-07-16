@@ -570,10 +570,14 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
     // we then wait for C and F to negotiate the closing fee
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSING, max = 60 seconds)
     // and close the channel
-    generateBlocks(2)
+    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    awaitCond({
+      bitcoinClient.getMempool().pipeTo(sender.ref)
+      sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint.txid === fundingOutpoint.txid)
+    }, max = 20 seconds, interval = 1 second)
+    generateBlocks(3)
     awaitCond(stateListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
 
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     bitcoinClient.lookForSpendingTx(None, fundingOutpoint.txid, fundingOutpoint.index.toInt).pipeTo(sender.ref)
     val closingTx = sender.expectMsgType[Transaction]
     assert(closingTx.txOut.map(_.publicKeyScript).toSet === Set(finalPubKeyScriptC, finalPubKeyScriptF))
