@@ -31,7 +31,6 @@ import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
-import java.util.UUID
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -57,12 +56,16 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
 
   override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
     case receivePayment: ReceivePayment =>
-      val child = ctx.spawn(CreateInvoiceActor(nodeParams), name = UUID.randomUUID().toString)
+      val child = ctx.spawnAnonymous(CreateInvoiceActor(nodeParams))
       child ! CreateInvoiceActor.CreatePaymentRequest(ctx.sender(), receivePayment)
 
     case p: IncomingPacket.FinalPacket if doHandle(p.add.paymentHash) =>
+      val child = ctx.spawnAnonymous(GetIncomingPaymentActor(nodeParams))
+      child ! GetIncomingPaymentActor.GetIncomingPayment(ctx.self, p)
+
+    case ProcessPacket(p, payment_opt) if doHandle(p.add.paymentHash) =>
       Logs.withMdc(log)(Logs.mdc(paymentHash_opt = Some(p.add.paymentHash))) {
-        db.getIncomingPayment(p.add.paymentHash) match {
+        payment_opt match {
           case Some(record) => validatePayment(nodeParams, p, record) match {
             case Some(cmdFail) =>
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
@@ -166,6 +169,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
 object MultiPartHandler {
 
   // @formatter:off
+  case class ProcessPacket(packet: IncomingPacket.FinalPacket, payment_opt: Option[IncomingPayment])
   case class DoFulfill(preimage: ByteVector32, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)
 
   case object GetPendingPayments
@@ -224,6 +228,22 @@ object MultiPartHandler {
             }
             Behaviors.stopped
         }
+      }
+    }
+  }
+
+  object GetIncomingPaymentActor {
+
+    // @formatter:off
+    sealed trait Command
+    case class GetIncomingPayment(replyTo: ActorRef, packet: IncomingPacket.FinalPacket) extends Command
+    // @formatter:on
+
+    def apply(nodeParams: NodeParams): Behavior[Command] = {
+      Behaviors.receiveMessage {
+        case GetIncomingPayment(replyTo, packet) =>
+          replyTo ! ProcessPacket(packet, nodeParams.db.payments.getIncomingPayment(packet.add.paymentHash))
+          Behaviors.stopped
       }
     }
   }
