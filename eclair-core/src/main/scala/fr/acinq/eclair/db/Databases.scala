@@ -69,16 +69,14 @@ object Databases extends Logging {
    * @return
    */
   def sqliteJDBC(dbdir: File): Databases = {
-    dbdir.mkdir()
+    dbdir.mkdirs()
     var sqliteEclair: Connection = null
     var sqliteNetwork: Connection = null
     var sqliteAudit: Connection = null
     try {
-      sqliteEclair = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "eclair.sqlite")}")
-      sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "network.sqlite")}")
-      sqliteAudit = DriverManager.getConnection(s"jdbc:sqlite:${new File(dbdir, "audit.sqlite")}")
-      SqliteUtils.obtainExclusiveLock(sqliteEclair) // there should only be one process writing to this file
-      logger.info("successful lock on eclair.sqlite")
+      sqliteEclair = SqliteUtils.openSqliteFile(dbdir, "eclair.sqlite", exclusiveLock = true, journalMode = "wal", syncFlag = "full") // there should only be one process writing to this file
+      sqliteNetwork = SqliteUtils.openSqliteFile(dbdir, "network.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "normal") // we don't need strong durability guarantees on the network db
+      sqliteAudit = SqliteUtils.openSqliteFile(dbdir, "audit.sqlite", exclusiveLock = false, journalMode = "wal", syncFlag = "normal")
       sqliteDatabaseByConnections(sqliteAudit, sqliteNetwork, sqliteEclair)
     } catch {
       case t: Throwable => {
