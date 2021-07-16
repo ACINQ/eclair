@@ -243,6 +243,11 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.expectMsg(tx2.txid)
       listener.expectNoMessage(1 second)
 
+      // We must unsubscribe the watcher from ZMQ tx subscriptions, otherwise this test has a race condition because
+      // bitcoind sends us a NewTransaction event for each transaction inside a new block. If these are delayed and are
+      // received after we registered our watch, we will receive the watch-triggered event twice.
+      system.eventStream.unsubscribe(watcher.ref.toClassic, classOf[NewTransaction])
+
       system.eventStream.subscribe(probe.ref, classOf[CurrentBlockCount])
       generateBlocks(1)
       awaitCond(probe.expectMsgType[CurrentBlockCount].blockCount >= initialBlockCount + 2)
