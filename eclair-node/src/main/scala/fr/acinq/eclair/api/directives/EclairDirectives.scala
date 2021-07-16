@@ -29,7 +29,7 @@ trait EclairDirectives extends Directives with TimeoutDirective with ErrorDirect
    * Prepares inner routes to be exposed as public API with default headers, basic authentication and error handling.
    * Must be applied *after* aggregating all the inner routes.
    */
-  def securedHandler: Directive0 = eclairHeaders & handled & authenticated
+  def securedHandler: Directive0 = toStrictEntity(5 seconds) & eclairHeaders & handled & authenticated
 
   /**
    * Provides a Timeout to the inner route either from request param or the default.
