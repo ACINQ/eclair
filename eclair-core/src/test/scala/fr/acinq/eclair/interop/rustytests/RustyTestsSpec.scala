@@ -102,7 +102,7 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     }
   }
 
-  override def afterAll() {
+  override def afterAll(): Unit = {
     TestKit.shutdownActorSystem(system)
   }
 

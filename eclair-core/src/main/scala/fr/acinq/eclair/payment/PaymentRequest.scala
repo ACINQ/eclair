@@ -476,7 +476,7 @@ object PaymentRequest {
       }
 
     def encode(amount: Option[MilliSatoshi]): String = {
-      amount match {
+      (amount: @unchecked) match {
         case None => ""
         case Some(amt) if unit(amt) == 'p' => s"${amt.toLong * 10L}p" // 1 pico-bitcoin == 0.1 milli-satoshis
         case Some(amt) if unit(amt) == 'n' => s"${amt.toLong / 100L}n"

@@ -369,7 +369,7 @@ object NetworkDbSpec {
                              update_2_data_opt: Option[Array[Byte]])
 
   val nodeTestCases: Seq[NodeTestCase] = for (_ <- 0 until 10) yield {
-    val node = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
+    val node = Announcements.makeNodeAnnouncement(randomKey(), "node-alice", Color(100.toByte, 200.toByte, 300.toByte), NodeAddress.fromParts("192.168.1.42", 42000).get :: Nil, Features.empty)
     val data = nodeAnnouncementCodec.encode(node).require.toByteArray
     NodeTestCase(
       nodeId = node.nodeId,
@@ -379,9 +379,9 @@ object NetworkDbSpec {
   }
 
   val channelTestCases: Seq[ChannelTestCase] = for (_ <- 0 until 10) yield {
-    val a = randomKey
+    val a = randomKey()
     val b = generatePubkeyHigherThan(a)
-    val channel = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(Random.nextInt(1_000_000)), a.publicKey, a.publicKey, randomKey.publicKey, randomKey.publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
+    val channel = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(Random.nextInt(1_000_000)), a.publicKey, a.publicKey, randomKey().publicKey, randomKey().publicKey, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes, ByteVector64.Zeroes)
     val channel_update_1_opt = if (Random.nextBoolean()) {
       Some(Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, a, b.publicKey, channel.shortChannelId, CltvExpiryDelta(5), 7000000 msat, 50000 msat, 100, 500000000L msat, Random.nextBoolean()))
     } else None
@@ -393,7 +393,7 @@ object NetworkDbSpec {
     val channel_update_2_data = channel_update_2_opt.map(channelUpdateCodec.encode(_).require.toByteArray)
     ChannelTestCase(
       shortChannelId = channel.shortChannelId,
-      txid = randomBytes32,
+      txid = randomBytes32(),
       channel = channel,
       channel_data = channel_data,
       capacity = Random.nextInt(100_000).sat,
@@ -404,11 +404,11 @@ object NetworkDbSpec {
     )
   }
 
-  val sig: ByteVector64 = Crypto.sign(randomBytes32, randomKey)
+  val sig: ByteVector64 = Crypto.sign(randomBytes32(), randomKey())
 
   def generatePubkeyHigherThan(priv: PrivateKey): PrivateKey = {
     var res = priv
-    while (!Announcements.isNode1(priv.publicKey, res.publicKey)) res = randomKey
+    while (!Announcements.isNode1(priv.publicKey, res.publicKey)) res = randomKey()
     res
   }
 

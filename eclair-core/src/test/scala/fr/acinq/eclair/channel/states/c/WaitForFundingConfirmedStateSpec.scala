@@ -133,14 +133,14 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
     alice ! CurrentBlockCount(initialState.waitingSinceBlock + Channel.FUNDING_TIMEOUT_FUNDEE + 1)
-    alice2bob.expectNoMsg(100 millis)
+    alice2bob.expectNoMessage(100 millis)
   }
 
   test("recv CurrentBlockCount (funding timeout not reached)") { f =>
     import f._
     val initialState = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED]
     bob ! CurrentBlockCount(initialState.waitingSinceBlock + Channel.FUNDING_TIMEOUT_FUNDEE - 1)
-    bob2alice.expectNoMsg(100 millis)
+    bob2alice.expectNoMessage(100 millis)
   }
 
   test("recv CurrentBlockCount (funding timeout reached)") { f =>

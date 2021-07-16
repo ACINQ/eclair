@@ -44,7 +44,7 @@ object Monitoring {
         HtlcsInFlightGlobal.withTag(Tags.Direction, direction).increment(htlcs.length - previousHtlcs.length)
         val (value, previousValue) = (htlcs.sum.truncateToSatoshi.toLong, previousHtlcs.sum.truncateToSatoshi.toLong)
         HtlcValueInFlight.withTag(Tags.Direction, direction).record(value)
-        HtlcValueInFlightGlobal.withTag(Tags.Direction, direction).increment(value - previousValue)
+        HtlcValueInFlightGlobal.withTag(Tags.Direction, direction).increment((value - previousValue).toDouble)
       }
     }
   }

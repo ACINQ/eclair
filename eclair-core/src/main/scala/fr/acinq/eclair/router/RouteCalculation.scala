@@ -60,10 +60,10 @@ object RouteCalculation {
               // select the largest edge (using balance when available, otherwise capacity).
               val selectedEdges = edges.map(es => es.maxBy(e => e.balance_opt.getOrElse(e.capacity.toMilliSatoshi)))
               val hops = selectedEdges.map(d => ChannelHop(d.desc.a, d.desc.b, d.update))
-              ctx.sender ! RouteResponse(Route(fr.amount, hops) :: Nil)
+              ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
             case _ =>
               // some nodes in the supplied route aren't connected in our graph
-              ctx.sender ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
+              ctx.sender() ! Status.Failure(new IllegalArgumentException("Not all the nodes in the supplied route are connected with public channels"))
           }
         case PredefinedChannelRoute(targetNodeId, channels) =>
           val (end, hops) = channels.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
@@ -78,9 +78,9 @@ object RouteCalculation {
               }
           }
           if (end != targetNodeId || hops.length != channels.length) {
-            ctx.sender ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
+            ctx.sender() ! Status.Failure(new IllegalArgumentException("The sequence of channels provided cannot be used to build a route to the target node"))
           } else {
-            ctx.sender ! RouteResponse(Route(fr.amount, hops) :: Nil)
+            ctx.sender() ! RouteResponse(Route(fr.amount, hops) :: Nil)
           }
       }
 
@@ -121,11 +121,11 @@ object RouteCalculation {
           case Success(routes) =>
             Metrics.RouteResults.withTags(tags).record(routes.length)
             routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
-            ctx.sender ! RouteResponse(routes)
+            ctx.sender() ! RouteResponse(routes)
           case Failure(t) =>
             val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
-            ctx.sender ! Status.Failure(failure)
+            ctx.sender() ! Status.Failure(failure)
         }
       }
       d

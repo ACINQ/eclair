@@ -340,7 +340,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
     spentWatches.foreach(ws => assert(ws.txId == commitTx.txid))
     assert(spentWatches.map(_.outputIndex) == htlcOutputIndexes)
-    s2blockchain.expectNoMsg(1 second)
+    s2blockchain.expectNoMessage(1 second)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
     closingState.localCommitPublished.get
@@ -375,7 +375,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     val spentWatches = htlcOutputIndexes.map(_ => s2blockchain.expectMsgType[WatchOutputSpent])
     spentWatches.foreach(ws => assert(ws.txId == rCommitTx.txid))
     assert(spentWatches.map(_.outputIndex) == htlcOutputIndexes)
-    s2blockchain.expectNoMsg(1 second)
+    s2blockchain.expectNoMessage(1 second)
 
     // s is now in CLOSING state with txs pending for confirmation before going in CLOSED state
     remoteCommitPublished

@@ -43,7 +43,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
 
   override def withFixture(test: OneArgTest): Outcome = {
     val noopWallet = new TestWallet {
-      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse].future // will never be completed
+      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse]().future // will never be completed
     }
 
     import com.softwaremill.quicklens._

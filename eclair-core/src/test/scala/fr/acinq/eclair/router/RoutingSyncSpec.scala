@@ -35,8 +35,8 @@ import fr.acinq.eclair.wire.protocol._
 import org.scalatest.ParallelTestExecution
 import org.scalatest.funsuite.AnyFunSuiteLike
 
-import scala.collection.immutable.TreeMap
-import scala.collection.{SortedSet, mutable}
+import scala.collection.immutable.{TreeMap, SortedSet}
+import scala.collection.mutable
 import scala.concurrent.duration._
 
 class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with ParallelTestExecution {
@@ -267,7 +267,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
 
     // ask router to send another channel range query
     sender.send(router, SendChannelQuery(params.chainHash, remoteNodeId, sender.ref, replacePrevious = false, None))
-    sender.expectNoMsg(100 millis) // it's a duplicate and should be ignored
+    sender.expectNoMessage(100 millis) // it's a duplicate and should be ignored
     assert(router.stateData.sync.get(remoteNodeId) === Some(Syncing(Nil, 0)))
 
     val block1 = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, fakeRoutingInfo.take(params.routerConf.channelQueryChunkSize).keys.toList), None, None)
@@ -304,7 +304,7 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, unsolicitedBlocks))
 
     // it will be simply ignored
-    peerConnection.expectNoMsg(100 millis)
+    peerConnection.expectNoMessage(100 millis)
     assert(!router.stateData.sync.contains(remoteNodeId))
   }
 

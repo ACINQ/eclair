@@ -37,7 +37,7 @@ object TlvCodecs {
    */
   val tu64: Codec[UInt64] = Codec(
     (u: UInt64) => {
-      val b = u match {
+      val b = (u: @unchecked) match {
         case u if u < 0x01 => ByteVector.empty
         case u if u < 0x0100 => u.toByteVector.takeRight(1)
         case u if u < 0x010000 => u.toByteVector.takeRight(2)

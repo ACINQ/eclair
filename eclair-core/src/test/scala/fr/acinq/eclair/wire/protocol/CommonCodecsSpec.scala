@@ -42,7 +42,7 @@ class CommonCodecsSpec extends AnyFunSuite {
       UInt64(42) -> hex"00 00 00 00 00 00 00 2a",
       UInt64(6211610197754262546L) -> hex"56 34 12 90 78 56 34 12",
       UInt64(hex"ff ff ff ff ff ff ff ff") -> hex"ff ff ff ff ff ff ff ff"
-    ).mapValues(_.toBitVector)
+    ).view.mapValues(_.toBitVector)
 
     for ((uint, ref) <- expected) {
       val encoded = uint64.encode(uint).require
@@ -73,7 +73,7 @@ class CommonCodecsSpec extends AnyFunSuite {
       UInt64(998000L) -> hex"fe 00 0f 3a 70",
       UInt64(1311768467284833366L) -> hex"ff 12 34 56 78 90 12 34 56",
       UInt64.MaxValue -> hex"ff ff ff ff ff ff ff ff ff"
-    ).mapValues(_.toBitVector)
+    ).view.mapValues(_.toBitVector)
 
     for ((uint, ref) <- expected) {
       val encoded = varint.encode(uint).require
@@ -116,7 +116,7 @@ class CommonCodecsSpec extends AnyFunSuite {
       998000L -> hex"fe 00 0f 3a 70",
       1311768467284833366L -> hex"ff 12 34 56 78 90 12 34 56",
       Long.MaxValue -> hex"ff 7f ff ff ff ff ff ff ff"
-    ).mapValues(_.toBitVector)
+    ).view.mapValues(_.toBitVector)
 
     for ((long, ref) <- expected) {
       val encoded = varintoverflow.encode(long).require

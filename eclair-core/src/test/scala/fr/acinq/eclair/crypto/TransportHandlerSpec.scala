@@ -47,7 +47,7 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
   }
 
   test("succesfull handshake") {
-    val pipe = system.actorOf(Props[MyPipe])
+    val pipe = system.actorOf(Props[MyPipe]())
     val probe1 = TestProbe()
     val probe2 = TestProbe()
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, CommonCodecs.varsizebinarydata))
@@ -79,7 +79,7 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
   test("succesfull handshake with custom serializer") {
     case class MyMessage(payload: String)
     val mycodec: Codec[MyMessage] = ("payload" | scodec.codecs.string32L(Charset.defaultCharset())).as[MyMessage]
-    val pipe = system.actorOf(Props[MyPipe])
+    val pipe = system.actorOf(Props[MyPipe]())
     val probe1 = TestProbe()
     val probe2 = TestProbe()
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, mycodec))
@@ -109,7 +109,7 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
   }
 
   test("handle messages split in chunks") {
-    val pipe = system.actorOf(Props[MyPipeSplitter])
+    val pipe = system.actorOf(Props[MyPipeSplitter]())
     val probe1 = TestProbe()
     val probe2 = TestProbe()
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, CommonCodecs.varsizebinarydata))
@@ -139,7 +139,7 @@ class TransportHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike with Be
   }
 
   test("failed handshake") {
-    val pipe = system.actorOf(Props[MyPipe])
+    val pipe = system.actorOf(Props[MyPipe]())
     val probe1 = TestProbe()
     val supervisor = TestActorRef(Props(new MySupervisor()))
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, CommonCodecs.varsizebinarydata), supervisor, "ini")
@@ -213,10 +213,10 @@ object TransportHandlerSpec {
     def ready(a: ActorRef, b: ActorRef): Receive = {
       case Tcp.Write(data, ack) if sender().path == a.path =>
         b forward Tcp.Received(data)
-        if (ack != Tcp.NoAck) sender ! ack
+        if (ack != Tcp.NoAck) sender() ! ack
       case Tcp.Write(data, ack) if sender().path == b.path =>
         a forward Tcp.Received(data)
-        if (ack != Tcp.NoAck) sender ! ack
+        if (ack != Tcp.NoAck) sender() ! ack
       case Terminated(actor) if actor == a || actor == b => context stop self
     }
   }
@@ -237,15 +237,15 @@ object TransportHandlerSpec {
       case Tcp.Write(data, ack) if sender().path == a.path =>
         val (chunk1, chunk2) = data.splitAt(data.length / 2)
         b forward Tcp.Received(chunk1)
-        if (ack != Tcp.NoAck) sender ! ack
+        if (ack != Tcp.NoAck) sender() ! ack
         b forward Tcp.Received(chunk2)
-        if (ack != Tcp.NoAck) sender ! ack
+        if (ack != Tcp.NoAck) sender() ! ack
       case Tcp.Write(data, ack) if sender().path == b.path =>
         val (chunk1, chunk2) = data.splitAt(data.length / 2)
         a forward Tcp.Received(chunk1)
-        if (ack != Tcp.NoAck) sender ! ack
+        if (ack != Tcp.NoAck) sender() ! ack
         a forward Tcp.Received(chunk2)
-        if (ack != Tcp.NoAck) sender ! ack
+        if (ack != Tcp.NoAck) sender() ! ack
       case Terminated(actor) if actor == a || actor == b => context stop self
     }
   }

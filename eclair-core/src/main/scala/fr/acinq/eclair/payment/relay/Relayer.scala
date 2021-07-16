@@ -89,7 +89,7 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
       case o: Origin.Hot => o.replyTo ! r
     }
 
-    case g: GetOutgoingChannels => channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender, g)
+    case g: GetOutgoingChannels => channelRelayer ! ChannelRelayer.GetOutgoingChannels(sender(), g)
 
     case GetChildActors(replyTo) => replyTo ! ChildActors(postRestartCleaner, channelRelayer, nodeRelayer)
   }

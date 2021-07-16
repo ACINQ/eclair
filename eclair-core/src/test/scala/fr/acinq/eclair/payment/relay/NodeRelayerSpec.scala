@@ -90,7 +90,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
   test("create child handlers for new payments") { f =>
     import f._
-    val probe = TestProbe[Any]
+    val probe = TestProbe[Any]()
     val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, FakeOutgoingPaymentFactory(f)))
     parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
     probe.expectMessage(Map.empty)
@@ -126,7 +126,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
   test("stop child handlers when relay is complete") { f =>
     import f._
-    val probe = TestProbe[Any]
+    val probe = TestProbe[Any]()
     val outgoingPaymentFactory = FakeOutgoingPaymentFactory(f)
 
     {
@@ -135,8 +135,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
       probe.expectMessage(Map.empty)
     }
     {
-      val (paymentHash1, paymentSecret1, child1) = (randomBytes32(), randomBytes32(), TestProbe[NodeRelay.Command])
-      val (paymentHash2, paymentSecret2, child2) = (randomBytes32(), randomBytes32(), TestProbe[NodeRelay.Command])
+      val (paymentHash1, paymentSecret1, child1) = (randomBytes32(), randomBytes32(), TestProbe[NodeRelay.Command]())
+      val (paymentHash2, paymentSecret2, child2) = (randomBytes32(), randomBytes32(), TestProbe[NodeRelay.Command]())
       val children = Map(PaymentKey(paymentHash1, paymentSecret1) -> child1.ref, PaymentKey(paymentHash2, paymentSecret2) -> child2.ref)
       val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, children))
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)
@@ -151,8 +151,8 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     }
     {
       val paymentHash = randomBytes32()
-      val (paymentSecret1, child1) = (randomBytes32(), TestProbe[NodeRelay.Command])
-      val (paymentSecret2, child2) = (randomBytes32(), TestProbe[NodeRelay.Command])
+      val (paymentSecret1, child1) = (randomBytes32(), TestProbe[NodeRelay.Command]())
+      val (paymentSecret2, child2) = (randomBytes32(), TestProbe[NodeRelay.Command]())
       val children = Map(PaymentKey(paymentHash, paymentSecret1) -> child1.ref, PaymentKey(paymentHash, paymentSecret2) -> child2.ref)
       val parentRelayer = testKit.spawn(NodeRelayer(nodeParams, register.ref.toClassic, outgoingPaymentFactory, children))
       parentRelayer ! NodeRelayer.GetPendingPayments(probe.ref.toClassic)

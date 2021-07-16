@@ -59,7 +59,7 @@ object IncomingPacket {
   private[payment] def decryptOnion[T <: Onion.PacketType : ClassTag](paymentHash: ByteVector32, privateKey: PrivateKey)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
     packetType.peel(privateKey, paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
-        OnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits) match {
+        (OnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits): @unchecked) match {
           case Attempt.Successful(DecodeResult(perHopPayload: T, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
           case Attempt.Failure(e: OnionCodecs.MissingRequiredTlv) => Left(e.failureMessage)
           // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.

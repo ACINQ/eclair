@@ -256,8 +256,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     // open_channel messages with the same temporary channel id should simply be ignored
     peerConnection.send(peer, open.copy(fundingSatoshis = 100000 sat, fundingPubkey = randomKey().publicKey))
-    channel.expectNoMsg(100 millis)
-    peerConnection.expectNoMsg(100 millis)
+    channel.expectNoMessage(100 millis)
+    peerConnection.expectNoMessage(100 millis)
     assert(peer.stateData.channels.size === 1)
   }
 

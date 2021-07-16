@@ -83,7 +83,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         log.info("discarding routes, another child payment failed so we need to recompute them (amount = {}, maximum fee = {})", toSend, maxFee)
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d, cfg)
-        stay
+        stay()
       }
 
     case Event(Status.Failure(t), d: PaymentProgress) =>
@@ -98,7 +98,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d, cfg).copy(ignore = d.ignore.emptyChannels())
         retriedFailedChannels = true
-        stay using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels())
+        stay() using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels())
       } else {
         val failure = LocalFailure(Nil, t)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
@@ -118,7 +118,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       } else {
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         val assistedRoutes1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.assistedRoutes)
-        stay using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
+        stay() using d.copy(pending = d.pending - pf.id, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
       }
 
     // The recipient released the preimage without receiving the full payment amount.
@@ -163,7 +163,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       if (pending.isEmpty) {
         myStop(d.request.replyTo, Left(PaymentFailed(id, paymentHash, failures)))
       } else {
-        stay using d.copy(failures = failures, pending = pending)
+        stay() using d.copy(failures = failures, pending = pending)
       }
 
     // The recipient released the preimage without receiving the full payment amount.
@@ -173,8 +173,8 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment recipient fulfilled incomplete multi-part payment (id=${ps.parts.head.id})")
       gotoSucceededOrStop(PaymentSucceeded(d.request, ps.paymentPreimage, ps.parts, d.pending - ps.parts.head.id))
 
-    case Event(_: RouteResponse, _) => stay
-    case Event(_: Status.Failure, _) => stay
+    case Event(_: RouteResponse, _) => stay()
+    case Event(_: Status.Failure, _) => stay()
   }
 
   when(PAYMENT_SUCCEEDED) {
@@ -185,7 +185,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       if (pending.isEmpty) {
         myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, parts)))
       } else {
-        stay using d.copy(parts = parts, pending = pending)
+        stay() using d.copy(parts = parts, pending = pending)
       }
 
     // The recipient released the preimage without receiving the full payment amount.
@@ -196,11 +196,11 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       if (pending.isEmpty) {
         myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, d.parts)))
       } else {
-        stay using d.copy(pending = pending)
+        stay() using d.copy(pending = pending)
       }
 
-    case Event(_: RouteResponse, _) => stay
-    case Event(_: Status.Failure, _) => stay
+    case Event(_: RouteResponse, _) => stay()
+    case Event(_: Status.Failure, _) => stay()
   }
 
   private def spawnChildPaymentFsm(childId: UUID): ActorRef = {

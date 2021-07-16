@@ -58,7 +58,7 @@ class StartupSpec extends AnyFunSuite {
     assert(baseUkraineAlias.getBytes.length === 27)
 
     // we add 2 UTF-8 chars, each is 3-bytes long -> total new length 33 bytes!
-    val goUkraineGo = threeBytesUTFChar + "BitcoinLightningNodeUkraine" + threeBytesUTFChar
+    val goUkraineGo = s"${threeBytesUTFChar}BitcoinLightningNodeUkraine${threeBytesUTFChar}"
 
     assert(goUkraineGo.length === 29)
     assert(goUkraineGo.getBytes.length === 33) // too long for the alias, should be truncated

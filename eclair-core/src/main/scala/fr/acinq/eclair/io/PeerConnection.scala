@@ -77,7 +77,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             name = "transport")
       }
       context.watch(transport)
-      setTimer(AUTH_TIMER, AuthTimeout, conf.authTimeout)
+      startSingleTimer(AUTH_TIMER, AuthTimeout, conf.authTimeout)
       goto(AUTHENTICATING) using AuthenticatingData(p, transport)
   }
 
@@ -103,7 +103,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       log.info(s"using features=$localFeatures")
       val localInit = protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
       d.transport ! localInit
-      setTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
+      startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync)
   }
 
@@ -120,18 +120,18 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           log.warning(s"incompatible networks (${remoteInit.networks}), disconnecting")
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible networks"))
           d.transport ! PoisonPill
-          stay
+          stay()
         } else if (featureGraphErr_opt.nonEmpty) {
           val featureGraphErr = featureGraphErr_opt.get
           log.warning(featureGraphErr.message)
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed(featureGraphErr.message))
           d.transport ! PoisonPill
-          stay
+          stay()
         } else if (!Features.areCompatible(d.localInit.features, remoteInit.features)) {
           log.warning("incompatible features, disconnecting")
           d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.InitializationFailed("incompatible features"))
           d.transport ! PoisonPill
-          stay
+          stay()
         } else {
           Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
@@ -160,9 +160,9 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   when(CONNECTED) {
     heartbeat {
-      case Event(msg: LightningMessage, d: ConnectedData) if sender != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
+      case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
         d.transport forward msg
-        stay
+        stay()
 
       case Event(SendPing, d: ConnectedData) =>
         if (d.expectedPong_opt.isEmpty) {
@@ -170,12 +170,12 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           val pingSize = Random.nextInt(1000)
           val pongSize = Random.nextInt(1000)
           val ping = Ping(pongSize, ByteVector.fill(pingSize)(0))
-          setTimer(PingTimeout.toString, PingTimeout(ping), conf.pingTimeout, repeat = false)
+          startSingleTimer(PingTimeout.toString, PingTimeout(ping), conf.pingTimeout)
           d.transport ! ping
-          stay using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
+          stay() using d.copy(expectedPong_opt = Some(ExpectedPong(ping)))
         } else {
           log.warning(s"can't send ping, already have one in flight")
-          stay
+          stay()
         }
 
       case Event(PingTimeout(ping), d: ConnectedData) =>
@@ -185,7 +185,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         } else {
           log.warning(s"no response to ping=$ping (ignored)")
         }
-        stay
+        stay()
 
       case Event(ping@Ping(pongLength, _), d: ConnectedData) =>
         d.transport ! TransportHandler.ReadAck(ping)
@@ -196,7 +196,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           log.warning(s"ignoring invalid ping with pongLength=${ping.pongLength}")
           d.transport ! Warning(s"invalid pong length (${ping.pongLength})")
         }
-        stay
+        stay()
 
       case Event(pong@Pong(data), d: ConnectedData) =>
         d.transport ! TransportHandler.ReadAck(pong)
@@ -211,7 +211,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             log.debug(s"received unexpected pong with length=${data.length}")
             d.transport ! Warning(s"invalid pong with length=${data.length}")
         }
-        stay using d.copy(expectedPong_opt = None)
+        stay() using d.copy(expectedPong_opt = None)
 
       case Event(RoutingState(channels, nodes), d: ConnectedData) =>
         // let's send the messages
@@ -226,11 +226,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         val nodesSent = send(nodes)
         val updatesSent = send(channels.flatMap(c => c.update_1_opt.toSeq ++ c.update_2_opt.toSeq))
         log.info("sent the full routing table: channels={} updates={} nodes={}", channelsSent, updatesSent, nodesSent)
-        stay
+        stay()
 
       case Event(rebroadcast: Rebroadcast, d: ConnectedData) =>
         context.system.scheduler.scheduleOnce(d.rebroadcastDelay, self, DelayedRebroadcast(rebroadcast))(context.dispatcher)
-        stay
+        stay()
 
       case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
@@ -258,7 +258,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
           log.debug("sent announcements: channels={} updates={} nodes={}", channelsSent, updatesSent, nodesSent)
         }
-        stay
+        stay()
 
       case Event(msg: GossipTimestampFilter, d: ConnectedData) =>
         // special case: time range filters are peer specific and must not be sent to the router
@@ -266,11 +266,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         if (msg.chainHash != d.chainHash) {
           log.warning("received gossip_timestamp_range message for chain {}, we're on {}", msg.chainHash, d.chainHash)
           d.transport ! Warning(s"invalid gossip_timestamp_range chain (${msg.chainHash})")
-          stay
+          stay()
         } else {
           log.info(s"setting up gossipTimestampFilter=$msg")
           // update their timestamp filter
-          stay using d.copy(gossipTimestampFilter = Some(msg))
+          stay() using d.copy(gossipTimestampFilter = Some(msg))
         }
 
       case Event(msg: RoutingMessage, d: ConnectedData) =>
@@ -279,7 +279,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             // this is actually for the channel
             d.transport ! TransportHandler.ReadAck(msg)
             d.peer ! msg
-            stay
+            stay()
           case _: ChannelAnnouncement | _: ChannelUpdate | _: NodeAnnouncement if d.behavior.ignoreNetworkAnnouncement =>
             // this peer is currently under embargo!
             d.transport ! TransportHandler.ReadAck(msg)
@@ -287,18 +287,18 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
             router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
         }
-        stay
+        stay()
 
       case Event(msg: LightningMessage, d: ConnectedData) =>
         // we acknowledge and pass all other messages to the peer
         d.transport ! TransportHandler.ReadAck(msg)
         d.peer ! msg
-        stay
+        stay()
 
       case Event(readAck: TransportHandler.ReadAck, d: ConnectedData) =>
         // we just forward acks to the transport (e.g. from the router)
         d.transport forward readAck
-        stay
+        stay()
 
       case Event(rejectedGossip: GossipDecision.Rejected, d: ConnectedData) =>
         val behavior1 = rejectedGossip match {
@@ -328,7 +328,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             } else {
               log.warning(s"peer sent us too many channel announcements with funding tx already spent (count=${d.behavior.fundingTxAlreadySpentCount + 1}), ignoring network announcements for $IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD")
               d.transport ! Warning("too many channel announcements with funding tx already spent, please check your bitcoin node")
-              setTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD, repeat = false)
+              startSingleTimer(ResumeAnnouncements.toString, ResumeAnnouncements, IGNORE_NETWORK_ANNOUNCEMENTS_PERIOD)
               d.behavior.copy(fundingTxAlreadySpentCount = d.behavior.fundingTxAlreadySpentCount + 1, ignoreNetworkAnnouncement = true)
             }
           // other rejections are not considered punishable offenses
@@ -342,7 +342,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           case _: GossipDecision.NoRelatedChannel => d.behavior
           case _: GossipDecision.RelatedChannelPruned => d.behavior
         }
-        stay using d.copy(behavior = behavior1)
+        stay() using d.copy(behavior = behavior1)
 
       case Event(DoSync(replacePrevious), d: ConnectedData) =>
         val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueries)
@@ -352,11 +352,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           log.info(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
           router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)
         }
-        stay
+        stay()
 
       case Event(ResumeAnnouncements, d: ConnectedData) =>
         log.info(s"resuming processing of network announcements for peer")
-        stay using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
+        stay() using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
     }
   }
 
@@ -364,8 +364,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
     case Event(unhandledMsg: LightningMessage, d: HasTransport) =>
       // we ack unhandled messages because we don't want to block further reads on the connection
       d.transport ! TransportHandler.ReadAck(unhandledMsg)
-      log.warning(s"acking unhandled message $unhandledMsg in state $stateName from sender=$sender")
-      stay
+      log.warning(s"acking unhandled message $unhandledMsg in state $stateName from sender=${sender()}")
+      stay()
 
     case Event(Terminated(actor), d: HasTransport) if actor == d.transport =>
       Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
@@ -385,23 +385,23 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         stop(FSM.Normal)
       }
 
-    case Event(_: GossipDecision.Accepted, _) => stay // for now we don't do anything with those events
+    case Event(_: GossipDecision.Accepted, _) => stay() // for now we don't do anything with those events
 
-    case Event(_: GossipDecision.Rejected, _) => stay // we got disconnected while syncing
+    case Event(_: GossipDecision.Rejected, _) => stay() // we got disconnected while syncing
 
-    case Event(_: Rebroadcast, _) => stay // ignored
+    case Event(_: Rebroadcast, _) => stay() // ignored
 
-    case Event(_: DelayedRebroadcast, _) => stay // ignored
+    case Event(_: DelayedRebroadcast, _) => stay() // ignored
 
-    case Event(_: RoutingState, _) => stay // ignored
+    case Event(_: RoutingState, _) => stay() // ignored
 
-    case Event(_: TransportHandler.ReadAck, _) => stay // ignored
+    case Event(_: TransportHandler.ReadAck, _) => stay() // ignored
 
-    case Event(SendPing, _) => stay // we got disconnected in the meantime
+    case Event(SendPing, _) => stay() // we got disconnected in the meantime
 
-    case Event(_: Pong, _) => stay // we got disconnected before receiving the pong
+    case Event(_: Pong, _) => stay() // we got disconnected before receiving the pong
 
-    case Event(_: PingTimeout, _) => stay // we got disconnected after sending a ping
+    case Event(_: PingTimeout, _) => stay() // we got disconnected after sending a ping
   }
 
   onTransition {
@@ -425,7 +425,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
   def heartbeat(s: StateFunction): StateFunction = {
     case event if s.isDefinedAt(event) =>
       event match {
-        case Event(_: LightningMessage, d: HasTransport) if sender == d.transport =>
+        case Event(_: LightningMessage, d: HasTransport) if sender() == d.transport =>
           // this is a message from the peer, he's alive, we can delay the next ping
           scheduleNextPing()
         case _ => ()
@@ -435,7 +435,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   def scheduleNextPing(): Unit = {
     log.debug("next ping scheduled in {}", conf.pingInterval)
-    setTimer(SEND_PING_TIMER, SendPing, conf.pingInterval)
+    startSingleTimer(SEND_PING_TIMER, SendPing, conf.pingInterval)
   }
 
   initialize()

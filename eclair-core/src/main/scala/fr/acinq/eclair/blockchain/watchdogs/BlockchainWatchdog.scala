@@ -93,7 +93,7 @@ object BlockchainWatchdog {
             } else {
               context.log.info("{}: we are {} blocks late", source, missingBlocks)
             }
-            Metrics.BitcoinBlocksSkew.withTag(Tags.Source, source).update(missingBlocks)
+            Metrics.BitcoinBlocksSkew.withTag(Tags.Source, source).update(missingBlocks.toDouble)
             Behaviors.same
         }
       }

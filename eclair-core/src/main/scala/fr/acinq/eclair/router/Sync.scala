@@ -72,7 +72,7 @@ object Sync {
 
   def handleQueryChannelRange(channels: SortedMap[ShortChannelId, PublicChannel], routerConf: RouterConf, origin: RemoteGossip, q: QueryChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    ctx.sender ! TransportHandler.ReadAck(q)
+    ctx.sender() ! TransportHandler.ReadAck(q)
     Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
     log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlockNum, q.numberOfBlocks, q.tlvStream)
     // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
@@ -91,7 +91,7 @@ object Sync {
 
   def handleReplyChannelRange(d: Data, routerConf: RouterConf, origin: RemoteGossip, r: ReplyChannelRange)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    ctx.sender ! TransportHandler.ReadAck(r)
+    ctx.sender() ! TransportHandler.ReadAck(r)
 
     d.sync.get(origin.nodeId) match {
       case None =>
@@ -161,7 +161,7 @@ object Sync {
 
   def handleQueryShortChannelIds(nodes: Map[PublicKey, NodeAnnouncement], channels: SortedMap[ShortChannelId, PublicChannel], origin: RemoteGossip, q: QueryShortChannelIds)(implicit ctx: ActorContext, log: LoggingAdapter): Unit = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    ctx.sender ! TransportHandler.ReadAck(q)
+    ctx.sender() ! TransportHandler.ReadAck(q)
 
     val flags = q.queryFlags_opt.map(_.array).getOrElse(List.empty[Long])
     var channelCount = 0
@@ -193,12 +193,12 @@ object Sync {
 
   def handleReplyShortChannelIdsEnd(d: Data, origin: RemoteGossip, r: ReplyShortChannelIdsEnd)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
-    ctx.sender ! TransportHandler.ReadAck(r)
+    ctx.sender() ! TransportHandler.ReadAck(r)
     // do we have more channels to request from this peer?
     val sync1 = d.sync.get(origin.nodeId) match {
       case Some(sync) =>
         sync.remainingQueries match {
-          case nextRequest +: rest =>
+          case nextRequest :: rest =>
             log.info(s"asking for the next slice of short_channel_ids (remaining=${sync.remainingQueries.size}/${sync.totalQueries})")
             origin.peerConnection ! nextRequest
             d.sync + (origin.nodeId -> sync.copy(remainingQueries = rest))
@@ -502,7 +502,7 @@ object Sync {
 
   def addToSync(syncMap: Map[PublicKey, Syncing], current: Syncing, remoteNodeId: PublicKey, pending: List[QueryShortChannelIds]): (Map[PublicKey, Syncing], Option[QueryShortChannelIds]) = {
     pending match {
-      case head +: rest =>
+      case head :: rest =>
         // they may send back several reply_channel_range messages for a single query_channel_range query, and we must not
         // send another query_short_channel_ids query if they're still processing one
         if (current.started) {

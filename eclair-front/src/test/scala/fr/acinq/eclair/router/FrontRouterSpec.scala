@@ -238,14 +238,14 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     router.send(front1, ChannelsDiscovered(SingleChannelDiscovered(chan_ab, 0.sat, None, None) :: Nil))
 
     peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
-    router.expectNoMessage // announcement is pending rebroadcast
+    router.expectNoMessage() // announcement is pending rebroadcast
     peerConnection1.expectMsg(TransportHandler.ReadAck(chan_ab))
 
     router.send(front1, TickBroadcast)
     peerConnection1.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set(origin1)), updates = Map.empty, nodes = Map.empty))
 
     peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
-    router.expectNoMessage // announcement is already known
+    router.expectNoMessage() // announcement is already known
     peerConnection1.expectMsg(TransportHandler.ReadAck(chan_ab))
   }
 

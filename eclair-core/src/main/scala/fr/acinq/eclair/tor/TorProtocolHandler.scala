@@ -278,6 +278,7 @@ object TorProtocolHandler {
         case r2(c, msg) => (c.toInt, msg)
         case x@_ => throw TorException(s"unknown response line format: `$x`")
       }
+      .toIndexedSeq
     if (!ok(lines)) {
       throw TorException(s"server returned error: ${status(lines)} ${reason(lines)}")
     }

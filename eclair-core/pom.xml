@@ -168,7 +168,7 @@
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>3.6.7</version>
+            <version>3.6.11</version>
         </dependency>
         <dependency>
             <groupId>com.softwaremill.sttp</groupId>
@@ -202,7 +202,7 @@
         <dependency>
             <groupId>org.scodec</groupId>
             <artifactId>scodec-core_${scala.version.short}</artifactId>
-            <version>1.11.7</version>
+            <version>1.11.8</version>
         </dependency>
         <dependency>
             <groupId>commons-codec</groupId>
@@ -224,11 +224,11 @@
         <dependency>
             <groupId>org.xerial</groupId>
             <artifactId>sqlite-jdbc</artifactId>
-            <version>3.34.0</version>
+            <version>3.36.0.1</version>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
-            <version>42.2.12</version>
+            <version>42.2.23</version>
             <artifactId>postgresql</artifactId>
         </dependency>
         <dependency>

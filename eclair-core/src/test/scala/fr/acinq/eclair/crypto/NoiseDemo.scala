@@ -84,11 +84,11 @@ object NoiseDemo extends App {
     }
 
     def normal(enc: Noise.CipherState, dec: Noise.CipherState, listener: ActorRef): Receive = {
-      case plaintext: ByteVector if sender == listener =>
+      case plaintext: ByteVector if sender() == listener =>
         val (enc1, ciphertext) = enc.encryptWithAd(ByteVector.empty, plaintext)
         them ! ciphertext
         context become normal(enc1, dec, listener)
-      case ciphertext: ByteVector if sender == them =>
+      case ciphertext: ByteVector if sender() == them =>
         val (dec1, plaintext) = dec.decryptWithAd(ByteVector.empty, ciphertext)
         listener ! plaintext
         context become normal(enc, dec1, listener)
@@ -100,7 +100,7 @@ object NoiseDemo extends App {
 
     def receive = {
       case message: ByteVector =>
-        sender ! ByteVector("response to ".getBytes()) ++ message
+        sender() ! ByteVector("response to ".getBytes()) ++ message
         count = count + 1
         if (count == 5) context stop self
     }
@@ -114,10 +114,10 @@ object NoiseDemo extends App {
     val s = Noise.Secp256k1DHFunctions.generateKeyPair(hex"2121212121212121212121212121212121212121212121212121212121212121")
   }
 
-  val pipe = system.actorOf(Props[Pipe], "pipe")
-  val foo = system.actorOf(Props[MyActor], "foo")
+  val pipe = system.actorOf(Props[Pipe](), "pipe")
+  val foo = system.actorOf(Props[MyActor](), "foo")
   val fooHandler = system.actorOf(Props(new NoiseHandler(Initiator.s, Some(Responder.s.pub), pipe, true, foo)), "foohandler")
-  val bar = system.actorOf(Props[MyActor], "bar")
+  val bar = system.actorOf(Props[MyActor](), "bar")
   val barHandler = system.actorOf(Props(new NoiseHandler(Responder.s, None, pipe, false, bar)), "barhandler")
   pipe ! (fooHandler, barHandler)
 
