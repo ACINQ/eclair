@@ -78,10 +78,24 @@ object Helpers {
       nodeParams.minDepthBlocks.max(blocksToReachFunding)
   }
 
+  def extractShutdownScript(channelId: ByteVector32, channelFeatures: ChannelFeatures, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] =
+    extractShutdownScript(channelId, channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), channelFeatures.hasFeature(Features.ShutdownAnySegwit), upfrontShutdownScript_opt)
+
+  def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
+    (hasOptionUpfrontShutdownScript, upfrontShutdownScript_opt) match {
+      case (true, None) => Left(MissingUpfrontShutdownScript(channelId))
+      case (true, Some(script)) if script.isEmpty => Right(None) // but the provided script can be empty
+      case (true, Some(script)) if !Closing.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (true, Some(script)) => Right(Some(script))
+      case (false, Some(_)) => Right(None) // they provided a script but the feature is not active, we just ignore it
+      case _ => Right(None)
+    }
+  }
+
   /**
    * Called by the fundee
    */
-  def validateParamsFundee(nodeParams: NodeParams, initFeatures: Features, channelFeatures: ChannelFeatures, open: OpenChannel, remoteNodeId: PublicKey): Either[ChannelException, Unit] = {
+  def validateParamsFundee(nodeParams: NodeParams, initFeatures: Features, channelFeatures: ChannelFeatures, open: OpenChannel, remoteNodeId: PublicKey): Either[ChannelException, Option[ByteVector]] = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
@@ -129,13 +143,13 @@ object Helpers {
     val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    Right()
+    extractShutdownScript(open.temporaryChannelId, channelFeatures, open.upfrontShutdownScript_opt)
   }
 
   /**
    * Called by the funder
    */
-  def validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, Unit] = {
+  def validateParamsFunder(nodeParams: NodeParams, channelFeatures: ChannelFeatures, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, Option[ByteVector]] = {
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
@@ -162,7 +176,7 @@ object Helpers {
     val reserveToFundingRatio = accept.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    Right()
+    extractShutdownScript(accept.temporaryChannelId, channelFeatures, accept.upfrontShutdownScript_opt)
   }
 
   /**
@@ -424,7 +438,9 @@ object Helpers {
     def firstClosingFee(commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, feeratePerKw: FeeratePerKw)(implicit log: LoggingAdapter): Satoshi = {
       import commitments._
       // this is just to estimate the weight, it depends on size of the pubkey scripts
-      val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
+      val actualLocalScript = if (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else localScriptPubkey
+      val actualRemoteScript = if (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript)) remoteParams.shutdownScript.getOrElse(remoteScriptPubkey) else remoteScriptPubkey
+      val dummyClosingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
       val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, remoteParams.fundingPubKey, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig).tx)
       log.info(s"using feeratePerKw=$feeratePerKw for initial closing tx")
       Transactions.weight2fee(feeratePerKw, closingWeight)
@@ -450,12 +466,14 @@ object Helpers {
 
     def makeClosingTx(keyManager: ChannelKeyManager, commitments: Commitments, localScriptPubkey: ByteVector, remoteScriptPubkey: ByteVector, closingFee: Satoshi)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
       import commitments._
+      val actualLocalScript = if (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript)) localParams.defaultFinalScriptPubKey else localScriptPubkey
+      val actualRemoteScript = if (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript)) remoteParams.shutdownScript.getOrElse(remoteScriptPubkey) else remoteScriptPubkey
       val allowAnySegwit = Features.canUseFeature(commitments.localParams.initFeatures, commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
-      require(isValidFinalScriptPubkey(localScriptPubkey, allowAnySegwit), "invalid localScriptPubkey")
-      require(isValidFinalScriptPubkey(remoteScriptPubkey, allowAnySegwit), "invalid remoteScriptPubkey")
+      require(isValidFinalScriptPubkey(actualLocalScript, allowAnySegwit), "invalid localScriptPubkey")
+      require(isValidFinalScriptPubkey(actualRemoteScript, allowAnySegwit), "invalid remoteScriptPubkey")
       log.debug("making closing tx with closingFee={} and commitments:\n{}", closingFee, Commitments.specs2String(commitments))
       val dustLimitSatoshis = localParams.dustLimit.max(remoteParams.dustLimit)
-      val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
+      val closingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
       val closingSigned = ClosingSigned(channelId, closingFee, localClosingSig)
       log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")

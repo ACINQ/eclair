@@ -55,6 +55,7 @@ case class CannotCloseWithUnsignedOutgoingHtlcs    (override val channelId: Byte
 case class CannotCloseWithUnsignedOutgoingUpdateFee(override val channelId: ByteVector32) extends ChannelException(channelId, "cannot close when there is an unsigned fee update")
 case class ChannelUnavailable                      (override val channelId: ByteVector32) extends ChannelException(channelId, "channel is unavailable (offline or closing)")
 case class InvalidFinalScript                      (override val channelId: ByteVector32) extends ChannelException(channelId, "invalid final script")
+case class MissingUpfrontShutdownScript            (override val channelId: ByteVector32) extends ChannelException(channelId, "missing upfront shutdown script")
 case class FundingTxTimedout                       (override val channelId: ByteVector32) extends ChannelException(channelId, "funding tx timed out")
 case class FundingTxSpent                          (override val channelId: ByteVector32, spendingTx: Transaction) extends ChannelException(channelId, s"funding tx has been spent by txid=${spendingTx.txid}")
 case class HtlcsTimedoutDownstream                 (override val channelId: ByteVector32, htlcs: Set[UpdateAddHtlc]) extends ChannelException(channelId, s"one or more htlcs timed out downstream: ids=${htlcs.take(10).map(_.id).mkString(",")}") // we only display the first 10 ids
