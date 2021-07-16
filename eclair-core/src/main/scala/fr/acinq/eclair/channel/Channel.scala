@@ -1662,7 +1662,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
             startSingleTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds)
           } else {
-            // except for private channels where our peer is likely a mobile wallet: they will stay() online only for a short period of time,
+            // except for private channels where our peer is likely a mobile wallet: they will stay online only for a short period of time,
             // so we need to re-enable them immediately to ensure we can route payments to them. It's also less of a problem to frequently
             // refresh the channel update for private channels, since we won't broadcast it to the rest of the network.
             self ! BroadcastChannelUpdate(Reconnected)
