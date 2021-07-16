@@ -891,8 +891,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       d.commitments.getRemoteShutdownScript(remoteScriptPubKey) match {
         case Left(e) =>
           log.warning("they sent an invalid closing script")
-          peer ! Peer.Disconnect(remoteNodeId)
-          stay
+          context.system.scheduler.scheduleOnce(2 second, peer, Peer.Disconnect(remoteNodeId))
+          stay sending Warning(d.channelId, "invalid closing script")
         case Right(remoteShutdownScript) =>
           // they have pending unsigned htlcs         => they violated the spec, close the channel
           // they don't have pending unsigned htlcs

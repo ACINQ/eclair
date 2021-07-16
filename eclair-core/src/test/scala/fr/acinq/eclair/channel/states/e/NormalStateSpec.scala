@@ -39,7 +39,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{DefaultCommitmentFormat, HtlcSuccessTx, weight2fee}
-import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryNodeFailure, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc, Warning}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits._
@@ -2045,7 +2045,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv Shutdown (with invalid final script)") { f =>
     import f._
     bob ! Shutdown(ByteVector32.Zeroes, hex"00112233445566778899")
-    bob2alice.expectNoMessage(500 millis)
+    bob2alice.expectMsgType[Warning]
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
       case Peer.Disconnect(nodeId) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.nodeId => true
@@ -2056,7 +2056,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv Shutdown (with unsupported native segwit script)") { f =>
     import f._
     bob ! Shutdown(ByteVector32.Zeroes, hex"51050102030405")
-    bob2alice.expectNoMessage(500 millis)
+    bob2alice.expectMsgType[Warning]
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
       case Peer.Disconnect(nodeId) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.nodeId => true
