@@ -1260,6 +1260,11 @@ recipientAmount | msats
 amount          | msats
 feesPaid        | msats
 
+Possible returned `status.type` values:
+- pending
+- failed
+- sent
+
 > The above command returns:
 
 ```json
@@ -1389,6 +1394,11 @@ field    | unit
 ---------|-----
 expiry   | seconds
 amount   | msats
+
+Possible returned `status.type` values:
+- pending
+- expired
+- received
 
 > The above command returns:
 
