@@ -11,15 +11,6 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 
 ---
 
-:construction: Both the BOLTs and Eclair itself are still a work in progress. Expect things to break/change!
-
-:rotating_light: If you run Eclair on mainnet (which is the default setting):
-
-* Keep in mind that it is beta-quality software and **don't put too much money** in it
-* Eclair's JSON API should **NOT** be accessible from the outside world (similarly to Bitcoin Core API)
-
----
-
 ## Lightning Network Specification Compliance
 
 Please see the latest [release note](https://github.com/ACINQ/eclair/releases) for detailed information on BOLT compliance.
@@ -29,6 +20,8 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 Eclair offers a feature-rich HTTP API that enables application developers to easily integrate.
 
 For more information please visit the [API documentation website](https://acinq.github.io/eclair).
+
+:rotating_light: Eclair's JSON API should **NOT** be accessible from the outside world (similarly to Bitcoin Core API)
 
 ## Documentation
 
