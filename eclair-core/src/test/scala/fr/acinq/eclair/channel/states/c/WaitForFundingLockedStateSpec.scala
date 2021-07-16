@@ -86,7 +86,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val initialChannelUpdate = alice.stateData.asInstanceOf[DATA_NORMAL].channelUpdate
     assert(initialChannelUpdate.feeBaseMsat === initialRelayFees._1)
     assert(initialChannelUpdate.feeProportionalMillionths === initialRelayFees._2)
-    bob2alice.expectNoMsg(200 millis)
+    bob2alice.expectNoMessage(200 millis)
   }
 
   test("recv WatchFundingSpentTriggered (remote commit)") { f =>

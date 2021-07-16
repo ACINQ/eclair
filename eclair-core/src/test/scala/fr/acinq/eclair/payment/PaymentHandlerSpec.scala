@@ -34,20 +34,20 @@ class PaymentHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val intHandler = new ReceiveHandler {
       override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
-        case i: Int => ctx.sender ! -i
+        case i: Int => ctx.sender() ! -i
       }
     }
 
     val stringHandler = new ReceiveHandler {
       override def handle(implicit ctx: ActorContext, log: DiagnosticLoggingAdapter): Receive = {
-        case s: String => ctx.sender ! s.reverse
+        case s: String => ctx.sender() ! s.reverse
       }
     }
 
     val probe = TestProbe()
 
     probe.send(handler, 42)
-    probe.expectNoMsg(300 millis)
+    probe.expectNoMessage(300 millis)
 
     probe.send(handler, intHandler)
 
@@ -55,7 +55,7 @@ class PaymentHandlerSpec extends TestKitBaseClass with AnyFunSuiteLike {
     probe.expectMsg(-42)
 
     probe.send(handler, "abcdef")
-    probe.expectNoMsg(300 millis)
+    probe.expectNoMessage(300 millis)
 
     probe.send(handler, stringHandler)
 

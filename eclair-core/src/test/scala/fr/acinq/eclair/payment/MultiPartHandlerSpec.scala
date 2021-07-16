@@ -101,7 +101,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
       assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
 
-      sender.expectNoMsg(50 millis)
+      sender.expectNoMessage(50 millis)
     }
 
     {
@@ -120,7 +120,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
       assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
 
-      sender.expectNoMsg(50 millis)
+      sender.expectNoMessage(50 millis)
     }
 
     {
@@ -134,8 +134,8 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(cmd.reason == Right(IncorrectOrUnknownPaymentDetails(amountMsat, nodeParams.currentBlockHeight)))
       assert(nodeParams.db.payments.getIncomingPayment(pr.paymentHash).get.status === IncomingPaymentStatus.Pending)
 
-      eventListener.expectNoMsg(100 milliseconds)
-      sender.expectNoMsg(50 millis)
+      eventListener.expectNoMessage(100 milliseconds)
+      sender.expectNoMessage(50 millis)
     }
   }
 

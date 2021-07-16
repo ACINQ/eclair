@@ -113,21 +113,21 @@ class ChannelPaneController(val channelRef: ActorRef, val peerNodeId: String) ex
     buildChannelContextMenu()
   }
 
-  @FXML def openChannelContext(event: ContextMenuEvent) {
+  @FXML def openChannelContext(event: ContextMenuEvent): Unit = {
     contextMenu.show(channelId, event.getScreenX, event.getScreenY)
     event.consume()
   }
 
-  @FXML def closeChannelContext(event: MouseEvent) {
+  @FXML def closeChannelContext(event: MouseEvent): Unit = {
     if (contextMenu != null) contextMenu.hide()
   }
 
-  def updateRemoteNodeAlias(alias: String) {
+  def updateRemoteNodeAlias(alias: String): Unit = {
     nodeAlias.setText(alias)
     nodeAlias.setVisible(!Strings.isNullOrEmpty(alias))
   }
 
-  def updateBalance(commitments: Commitments) {
+  def updateBalance(commitments: Commitments): Unit = {
     balance = commitments.localCommit.spec.toLocal
     capacity = commitments.capacity.toMilliSatoshi
   }

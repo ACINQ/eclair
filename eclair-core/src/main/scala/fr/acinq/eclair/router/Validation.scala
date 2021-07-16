@@ -135,8 +135,8 @@ object Validation {
           None
       }
       // we also reprocess node and channel_update announcements related to channels that were just analyzed
-      val reprocessUpdates = d0.stash.updates.filterKeys(u => u.shortChannelId == c.shortChannelId)
-      val reprocessNodes = d0.stash.nodes.filterKeys(n => isRelatedTo(c, n.nodeId))
+      val reprocessUpdates = d0.stash.updates.view.filterKeys(u => u.shortChannelId == c.shortChannelId)
+      val reprocessNodes = d0.stash.nodes.view.filterKeys(n => isRelatedTo(c, n.nodeId))
       // and we remove the reprocessed messages from the stash
       val stash1 = d0.stash.copy(updates = d0.stash.updates -- reprocessUpdates.keys, nodes = d0.stash.nodes -- reprocessNodes.keys)
       // we remove channel from awaiting map
@@ -203,7 +203,7 @@ object Validation {
         log.debug("received node announcement for nodeId={}", n.nodeId)
         Some(peerConnection)
       case LocalGossip =>
-        log.debug("received node announcement from {}", ctx.sender)
+        log.debug("received node announcement from {}", ctx.sender())
         None
     }
     if (d.stash.nodes.contains(n)) {

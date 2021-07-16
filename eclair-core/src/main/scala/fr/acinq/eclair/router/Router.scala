@@ -61,9 +61,9 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
 
-  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval, repeat = true)
-  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
-  setTimer(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval, repeat = true)
+  startTimerWithFixedDelay(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval)
+  startTimerWithFixedDelay(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour)
+  startTimerWithFixedDelay(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval)
 
   val db: NetworkDb = nodeParams.db.network
 
@@ -115,19 +115,19 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
         log.info("initial routing sync done: computing network statistics")
         self ! TickComputeNetworkStats
       }
-      stay
+      stay()
 
     case Event(GetRoutingState, d: Data) =>
-      log.info(s"getting valid announcements for $sender")
-      sender ! RoutingState(d.channels.values, d.nodes.values)
-      stay
+      log.info(s"getting valid announcements for ${sender()}")
+      sender() ! RoutingState(d.channels.values, d.nodes.values)
+      stay()
 
     case Event(GetNetworkStats, d: Data) =>
-      sender ! GetNetworkStatsResponse(d.stats)
-      stay
+      sender() ! GetNetworkStatsResponse(d.stats)
+      stay()
 
     case Event(GetRoutingStateStreaming, d) =>
-      val listener = sender
+      val listener = sender()
       d.nodes
         .values
         .sliding(100, 100)
@@ -152,16 +152,16 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
             context stop self
         }
       }))
-      stay
+      stay()
 
     case Event(TickBroadcast, d) =>
       if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
-        stay
+        stay()
       } else {
         log.debug("broadcasting routing messages")
         log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
         context.system.eventStream.publish(d.rebroadcast)
-        stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
+        stay() using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
     case Event(TickComputeNetworkStats, d) =>
@@ -170,110 +170,110 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
         Metrics.Channels.withTag(Tags.Announced, value = true).update(d.channels.size)
         Metrics.Channels.withTag(Tags.Announced, value = false).update(d.privateChannels.size)
         log.info("re-computing network statistics")
-        stay using d.copy(stats = NetworkStats.computeStats(d.channels.values))
+        stay() using d.copy(stats = NetworkStats.computeStats(d.channels.values))
       } else {
         log.debug("cannot compute network statistics: no public channels available")
-        stay
+        stay()
       }
 
     case Event(TickPruneStaleChannels, d) =>
-      stay using StaleChannels.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight)
+      stay() using StaleChannels.handlePruneStaleChannels(d, nodeParams.db.network, nodeParams.currentBlockHeight)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.routerConf.channelExcludeDuration
       log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId, nodeId, banDuration)
       context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
-      stay using d.copy(excludedChannels = d.excludedChannels + desc)
+      stay() using d.copy(excludedChannels = d.excludedChannels + desc)
 
     case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
-      stay using d.copy(excludedChannels = d.excludedChannels - desc)
+      stay() using d.copy(excludedChannels = d.excludedChannels - desc)
 
     case Event(GetNodes, d) =>
-      sender ! d.nodes.values
-      stay
+      sender() ! d.nodes.values
+      stay()
 
     case Event(GetLocalChannels, d) =>
       val scids = d.graph.getIncomingEdgesOf(nodeParams.nodeId).map(_.desc.shortChannelId)
       val localChannels = scids.flatMap(scid => d.channels.get(scid).orElse(d.privateChannels.get(scid))).map(c => LocalChannel(nodeParams.nodeId, c))
-      sender ! localChannels
-      stay
+      sender() ! localChannels
+      stay()
 
     case Event(GetChannels, d) =>
-      sender ! d.channels.values.map(_.ann)
-      stay
+      sender() ! d.channels.values.map(_.ann)
+      stay()
 
     case Event(GetChannelsMap, d) =>
-      sender ! d.channels
-      stay
+      sender() ! d.channels
+      stay()
 
     case Event(GetChannelUpdates, d) =>
       val updates: Iterable[ChannelUpdate] = d.channels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt) ++ d.privateChannels.values.flatMap(d => d.update_1_opt ++ d.update_2_opt)
-      sender ! updates
-      stay
+      sender() ! updates
+      stay()
 
     case Event(GetRouterData, d) =>
-      sender ! d
-      stay
+      sender() ! d
+      stay()
 
     case Event(fr: FinalizeRoute, d) =>
-      stay using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr)
+      stay() using RouteCalculation.finalizeRoute(d, nodeParams.nodeId, fr)
 
     case Event(r: RouteRequest, d) =>
-      stay using RouteCalculation.handleRouteRequest(d, nodeParams.routerConf, nodeParams.currentBlockHeight, r)
+      stay() using RouteCalculation.handleRouteRequest(d, nodeParams.routerConf, nodeParams.currentBlockHeight, r)
 
     // Warning: order matters here, this must be the first match for HasChainHash messages !
     case Event(PeerRoutingMessage(_, _, routingMessage: HasChainHash), _) if routingMessage.chainHash != nodeParams.chainHash =>
-      sender ! TransportHandler.ReadAck(routingMessage)
+      sender() ! TransportHandler.ReadAck(routingMessage)
       log.warning("message {} for wrong chain {}, we're on {}", routingMessage, routingMessage.chainHash, nodeParams.chainHash)
-      stay
+      stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, c: ChannelAnnouncement), d) =>
-      stay using Validation.handleChannelAnnouncement(d, nodeParams.db.network, watcher, RemoteGossip(peerConnection, remoteNodeId), c)
+      stay() using Validation.handleChannelAnnouncement(d, nodeParams.db.network, watcher, RemoteGossip(peerConnection, remoteNodeId), c)
 
     case Event(r: ValidateResult, d) =>
-      stay using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
+      stay() using Validation.handleChannelValidationResponse(d, nodeParams, watcher, r)
 
     case Event(WatchExternalChannelSpentTriggered(shortChannelId), d) if d.channels.contains(shortChannelId) =>
-      stay using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
+      stay() using Validation.handleChannelSpent(d, nodeParams.db.network, shortChannelId)
 
     case Event(n: NodeAnnouncement, d: Data) =>
-      stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
+      stay() using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(LocalGossip), n)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, n: NodeAnnouncement), d: Data) =>
-      stay using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
+      stay() using Validation.handleNodeAnnouncement(d, nodeParams.db.network, Set(RemoteGossip(peerConnection, remoteNodeId)), n)
 
     case Event(u: ChannelUpdate, d: Data) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
+      stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(LocalGossip))))
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
-      stay using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
+      stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
     case Event(lcu: LocalChannelUpdate, d: Data) =>
-      stay using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
+      stay() using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
 
     case Event(lcd: LocalChannelDown, d: Data) =>
-      stay using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
+      stay() using Validation.handleLocalChannelDown(d, nodeParams.nodeId, lcd)
 
     case Event(e: AvailableBalanceChanged, d: Data) =>
-      stay using Validation.handleAvailableBalanceChanged(d, e)
+      stay() using Validation.handleAvailableBalanceChanged(d, e)
 
     case Event(s: SendChannelQuery, d) =>
-      stay using Sync.handleSendChannelQuery(d, s)
+      stay() using Sync.handleSendChannelQuery(d, s)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
       Sync.handleQueryChannelRange(d.channels, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
-      stay
+      stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyChannelRange), d) =>
-      stay using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
+      stay() using Sync.handleReplyChannelRange(d, nodeParams.routerConf, RemoteGossip(peerConnection, remoteNodeId), r)
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
       Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
-      stay
+      stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, r: ReplyShortChannelIdsEnd), d) =>
-      stay using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
+      stay() using Sync.handleReplyShortChannelIdsEnd(d, RemoteGossip(peerConnection, remoteNodeId), r)
 
   }
 

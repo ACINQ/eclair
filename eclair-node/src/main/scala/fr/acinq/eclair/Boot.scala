@@ -36,7 +36,7 @@ object Boot extends App with Logging {
     val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
     val config = NodeParams.loadConfiguration(datadir)
 
-    val plugins = Plugin.loadPlugins(args.map(new File(_)))
+    val plugins = Plugin.loadPlugins(args.toIndexedSeq.map(new File(_)))
     plugins.foreach(plugin => logger.info(s"loaded plugin ${plugin.getClass.getSimpleName}"))
     implicit val system: ActorSystem = ActorSystem("eclair-node", config)
     implicit val ec: ExecutionContext = system.dispatcher

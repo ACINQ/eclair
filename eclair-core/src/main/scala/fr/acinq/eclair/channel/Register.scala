@@ -55,15 +55,15 @@ class Register extends Actor with ActorLogging {
       val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(ShortChannelId(0L))
       context become main(channels - channelId, shortIds - shortChannelId, channelsTo - channelId)
 
-    case Symbol("channels") => sender ! channels
+    case Symbol("channels") => sender() ! channels
 
-    case Symbol("shortIds") => sender ! shortIds
+    case Symbol("shortIds") => sender() ! shortIds
 
-    case Symbol("channelsTo") => sender ! channelsTo
+    case Symbol("channelsTo") => sender() ! channelsTo
 
     case fwd@Forward(replyTo, channelId, msg) =>
       // for backward compatibility with legacy ask, we use the replyTo as sender
-      val compatReplyTo = if (replyTo == ActorRef.noSender) sender else replyTo
+      val compatReplyTo = if (replyTo == ActorRef.noSender) sender() else replyTo
       channels.get(channelId) match {
         case Some(channel) => channel.tell(msg, compatReplyTo)
         case None => compatReplyTo ! ForwardFailure(fwd)
@@ -71,7 +71,7 @@ class Register extends Actor with ActorLogging {
 
     case fwd@ForwardShortId(replyTo, shortChannelId, msg) =>
       // for backward compatibility with legacy ask, we use the replyTo as sender
-      val compatReplyTo = if (replyTo == ActorRef.noSender) sender else replyTo
+      val compatReplyTo = if (replyTo == ActorRef.noSender) sender() else replyTo
       shortIds.get(shortChannelId).flatMap(channels.get) match {
         case Some(channel) => channel.tell(msg, compatReplyTo)
         case None => compatReplyTo ! ForwardShortIdFailure(fwd)

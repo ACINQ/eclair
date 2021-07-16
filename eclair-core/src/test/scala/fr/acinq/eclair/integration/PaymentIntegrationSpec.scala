@@ -137,8 +137,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // A requires private channels, as a consequence:
     // - only A and B know about channel A-B (and there is no channel_announcement)
     // - A is not announced (no node_announcement)
-    awaitAnnouncements(nodes.filterKeys(key => List("A", "B").contains(key)).toMap, 6, 8, 18)
-    awaitAnnouncements(nodes.filterKeys(key => List("C", "D", "E", "G").contains(key)).toMap, 6, 8, 16)
+    awaitAnnouncements(nodes.view.filterKeys(key => List("A", "B").contains(key)).toMap, 6, 8, 18)
+    awaitAnnouncements(nodes.view.filterKeys(key => List("C", "D", "E", "G").contains(key)).toMap, 6, 8, 16)
   }
 
   test("wait for channels balance") {
@@ -205,7 +205,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }, max = 30 seconds, interval = 1 seconds)
 
     // first let's wait 3 seconds to make sure the timestamp of the new channel_update will be strictly greater than the former
-    sender.expectNoMsg(3 seconds)
+    sender.expectNoMessage(3 seconds)
     nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, BroadcastChannelUpdate(PeriodicRefresh))
     nodes("B").register ! Register.ForwardShortId(sender.ref, shortIdBC, CMD_GETINFO(ActorRef.noSender))
     val channelUpdateBC_new = sender.expectMsgType[RES_GETINFO].data.asInstanceOf[DATA_NORMAL].channelUpdate
@@ -651,7 +651,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       if (i % 10 == 0) {
         generateBlocks(1, Some(address))
       }
-      AnnouncementsBatchValidationSpec.simulateChannel
+      AnnouncementsBatchValidationSpec.simulateChannel()
     }
     generateBlocks(1, Some(address))
     logger.info(s"simulated ${channels.size} channels")

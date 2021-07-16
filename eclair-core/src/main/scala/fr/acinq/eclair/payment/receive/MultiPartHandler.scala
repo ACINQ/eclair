@@ -159,7 +159,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         ctx.system.eventStream.publish(received)
       }
 
-    case GetPendingPayments => ctx.sender ! PendingPayments(pendingPayments.keySet)
+    case GetPendingPayments => ctx.sender() ! PendingPayments(pendingPayments.keySet)
 
     case _: RES_SUCCESS[_] => // ignoring responses from channels
   }

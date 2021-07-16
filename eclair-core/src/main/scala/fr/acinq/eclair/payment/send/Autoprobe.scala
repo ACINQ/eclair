@@ -38,7 +38,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
   import scala.concurrent.ExecutionContext.Implicits.global
 
   // refresh our map of channel_updates regularly from the router
-  context.system.scheduler.schedule(0 seconds, ROUTING_TABLE_REFRESH_INTERVAL, router, Router.GetRouterData)
+  context.system.scheduler.scheduleWithFixedDelay(0 seconds, ROUTING_TABLE_REFRESH_INTERVAL, router, Router.GetRouterData)
 
   override def receive: Receive = {
     case routingData: Router.Data =>

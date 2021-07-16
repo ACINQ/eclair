@@ -29,13 +29,13 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
   override def receive: Receive = {
     case request: JsonRPCRequest =>
       // immediately process isolated request
-      process(queue = Queue(Pending(request, sender)))
+      process(queue = Queue(Pending(request, sender())))
   }
 
   def waiting(queue: Queue[Pending], processing: Seq[Pending]): Receive = {
     case request: JsonRPCRequest =>
       // there is already a batch in flight, just add this request to the queue
-      context become waiting(queue :+ Pending(request, sender), processing)
+      context become waiting(queue :+ Pending(request, sender()), processing)
 
     case responses: Seq[JsonRPCResponse]@unchecked =>
       log.debug("got {} responses", responses.size)

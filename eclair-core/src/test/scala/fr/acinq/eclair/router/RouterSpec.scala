@@ -57,7 +57,7 @@ class RouterSpec extends BaseRouterSpec {
       val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, chan_ac.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil, TestConstants.Bob.nodeParams.features, timestamp = System.currentTimeMillis.milliseconds.toSeconds + 1)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac))
-      peerConnection.expectNoMsg(100 millis) // we don't immediately acknowledge the announcement (back pressure)
+      peerConnection.expectNoMessage(100 millis) // we don't immediately acknowledge the announcement (back pressure)
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_ac)
       watcher.send(router, ValidateResult(chan_ac, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ac))
@@ -73,8 +73,8 @@ class RouterSpec extends BaseRouterSpec {
       eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_ac, 1000000 sat, None, None) :: Nil))
       eventListener.expectMsg(ChannelUpdatesReceived(update_ac :: Nil))
       eventListener.expectMsg(NodeUpdated(node_c))
-      peerConnection.expectNoMsg(100 millis)
-      eventListener.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
+      eventListener.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
       eventListener.expectMsgType[Rebroadcast]
     }
@@ -87,7 +87,7 @@ class RouterSpec extends BaseRouterSpec {
       val update_uc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_u, c, chan_uc.shortChannelId, CltvExpiryDelta(7), 0 msat, 766000 msat, 10, htlcMaximum)
       val node_u = makeNodeAnnouncement(priv_u, "node-U", Color(-120, -20, 60), Nil, Features.empty)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_uc))
-      peerConnection.expectNoMsg(200 millis) // we don't immediately acknowledge the announcement (back pressure)
+      peerConnection.expectNoMessage(200 millis) // we don't immediately acknowledge the announcement (back pressure)
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_uc)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_uc))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_uc))
@@ -103,8 +103,8 @@ class RouterSpec extends BaseRouterSpec {
       eventListener.expectMsg(ChannelsDiscovered(SingleChannelDiscovered(chan_uc, 2000000 sat, None, None) :: Nil))
       eventListener.expectMsg(ChannelUpdatesReceived(update_uc :: Nil))
       eventListener.expectMsg(NodesDiscovered(node_u :: Nil))
-      peerConnection.expectNoMsg(100 millis)
-      eventListener.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
+      eventListener.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
       eventListener.expectMsgType[Rebroadcast]
     }
@@ -120,9 +120,9 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ab))
       peerConnection.expectMsg(GossipDecision.Duplicate(update_ab))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
     {
@@ -139,9 +139,9 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, invalid_update_ab))
       peerConnection.expectMsg(TransportHandler.ReadAck(invalid_update_ab))
       peerConnection.expectMsg(GossipDecision.InvalidSignature(invalid_update_ab))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
     {
@@ -153,9 +153,9 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_vc))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_vc))
       peerConnection.expectMsg(GossipDecision.ChannelPruned(chan_vc))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
     {
@@ -164,9 +164,9 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab))
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ab))
       peerConnection.expectMsg(GossipDecision.Stale(update_ab))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
     {
@@ -180,9 +180,9 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_y))
       peerConnection.expectMsg(TransportHandler.ReadAck(node_y))
       peerConnection.expectMsg(GossipDecision.NoKnownChannel(node_y))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
     {
@@ -203,9 +203,9 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.expectMsg(GossipDecision.InvalidAnnouncement(chan_ay))
       peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_ay))
       peerConnection.expectMsg(GossipDecision.NoKnownChannel(node_y))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
     {
@@ -217,9 +217,9 @@ class RouterSpec extends BaseRouterSpec {
       watcher.send(router, ValidateResult(chan_ax, Left(new RuntimeException("funding tx not found"))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ax))
       peerConnection.expectMsg(GossipDecision.ValidationFailure(chan_ax))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
     {
@@ -232,9 +232,9 @@ class RouterSpec extends BaseRouterSpec {
       watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = false))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
       peerConnection.expectMsg(GossipDecision.ChannelClosing(chan_az))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
     {
@@ -247,12 +247,12 @@ class RouterSpec extends BaseRouterSpec {
       watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
       peerConnection.expectMsg(GossipDecision.ChannelClosed(chan_az))
-      peerConnection.expectNoMsg(100 millis)
+      peerConnection.expectNoMessage(100 millis)
       router ! Router.TickBroadcast
-      eventListener.expectNoMsg(100 millis)
+      eventListener.expectNoMessage(100 millis)
     }
 
-    watcher.expectNoMsg(100 millis)
+    watcher.expectNoMessage(100 millis)
 
   }
 
@@ -265,19 +265,19 @@ class RouterSpec extends BaseRouterSpec {
     eventListener.expectMsg(ChannelLost(channelId_ab))
     // a doesn't have any channels, b still has one with c
     eventListener.expectMsg(NodeLost(a))
-    eventListener.expectNoMsg(200 milliseconds)
+    eventListener.expectNoMessage(200 milliseconds)
 
     router ! WatchExternalChannelSpentTriggered(channelId_cd)
     eventListener.expectMsg(ChannelLost(channelId_cd))
     // d doesn't have any channels, c still has one with b
     eventListener.expectMsg(NodeLost(d))
-    eventListener.expectNoMsg(200 milliseconds)
+    eventListener.expectNoMessage(200 milliseconds)
 
     router ! WatchExternalChannelSpentTriggered(channelId_bc)
     eventListener.expectMsg(ChannelLost(channelId_bc))
     // now b and c do not have any channels
     eventListener.expectMsgAllOf(NodeLost(b), NodeLost(c))
-    eventListener.expectNoMsg(200 milliseconds)
+    eventListener.expectNoMessage(200 milliseconds)
 
   }
 

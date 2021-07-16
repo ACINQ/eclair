@@ -72,7 +72,7 @@ object BitcoinCoreFeeProvider {
   def parseFeeEstimate(json: JValue): FeeratePerKB = {
     json \ "errors" match {
       case JNothing =>
-        json \ "feerate" match {
+        (json \ "feerate": @unchecked) match {
           case JDecimal(feerate) =>
             // estimatesmartfee returns a fee rate in Btc/KB
             FeeratePerKB(Btc(feerate).toSatoshi)

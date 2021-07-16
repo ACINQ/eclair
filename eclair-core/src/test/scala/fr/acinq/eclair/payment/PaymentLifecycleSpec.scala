@@ -99,7 +99,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val route = Route(defaultAmountMsat, ChannelHop(a, b, update_ab) :: ChannelHop(b, c, update_bc) :: ChannelHop(c, d, update_cd) :: Nil)
     val request = SendPaymentToRoute(sender.ref, Right(route), Onion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get))
     sender.send(paymentFSM, request)
-    routerForwarder.expectNoMsg(100 millis) // we don't need the router, we have the pre-computed route
+    routerForwarder.expectNoMessage(100 millis) // we don't need the router, we have the pre-computed route
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -340,7 +340,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, addCompleted(HtlcResult.OnChainFail(HtlcsTimedoutDownstream(randomBytes32(), Set.empty))))
 
     // this error is fatal
-    routerForwarder.expectNoMsg(100 millis)
+    routerForwarder.expectNoMessage(100 millis)
     sender.expectMsgType[PaymentFailed]
   }
 
@@ -723,7 +723,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFulfill(UpdateFulfillHtlc(ByteVector32.Zeroes, 0, defaultPaymentPreimage))))
     sender.expectMsgType[PaymentSent]
     assert(nodeParams.db.payments.getOutgoingPayment(id) === None)
-    eventListener.expectNoMsg(100 millis)
+    eventListener.expectNoMessage(100 millis)
   }
 
 }

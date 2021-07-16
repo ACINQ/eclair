@@ -105,8 +105,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
 
-    alice2bob.expectNoMsg(500 millis)
-    bob2alice.expectNoMsg(500 millis)
+    alice2bob.expectNoMessage(500 millis)
+    bob2alice.expectNoMessage(500 millis)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localNextHtlcId == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextHtlcId == 1)
@@ -134,7 +134,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob received the signature, but alice won't receive the revocation
     val revB = bob2alice.expectMsgType[RevokeAndAck]
     val sigB = bob2alice.expectMsgType[CommitSig]
-    bob2alice.expectNoMsg(500 millis)
+    bob2alice.expectNoMessage(500 millis)
 
     disconnect(alice, bob)
     val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
@@ -149,8 +149,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // and a signature
     bob2alice.expectMsg(sigB)
 
-    alice2bob.expectNoMsg(500 millis)
-    bob2alice.expectNoMsg(500 millis)
+    alice2bob.expectNoMessage(500 millis)
+    bob2alice.expectNoMessage(500 millis)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localNextHtlcId == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextHtlcId == 1)
@@ -178,7 +178,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob sends a revocation and a signature
     val revB = bob2alice.expectMsgType[RevokeAndAck]
     val sigB = bob2alice.expectMsgType[CommitSig]
-    bob2alice.expectNoMsg(500 millis)
+    bob2alice.expectNoMessage(500 millis)
 
     // alice receives the revocation but not the signature
     bob2alice.forward(alice, revB)
@@ -195,8 +195,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // bob re-sends the lost signature (but not the revocation)
     bob2alice.expectMsg(sigB)
 
-    alice2bob.expectNoMsg(500 millis)
-    bob2alice.expectNoMsg(500 millis)
+    alice2bob.expectNoMessage(500 millis)
+    bob2alice.expectNoMessage(500 millis)
 
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localNextHtlcId == 1)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextHtlcId == 1)
@@ -211,7 +211,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     //   |<--- sig ---|
     //   |--- rev --X |
     bob2alice.forward(alice, sigB)
-    bob2alice.expectNoMsg(500 millis)
+    bob2alice.expectNoMessage(500 millis)
     val revA = alice2bob.expectMsgType[RevokeAndAck]
     disconnect(alice, bob)
 
@@ -225,7 +225,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice re-sends the lost revocation
     alice2bob.expectMsg(revA)
-    alice2bob.expectNoMsg(500 millis)
+    alice2bob.expectNoMessage(500 millis)
 
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
@@ -402,14 +402,14 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     // alice and bob will not announce that their channel is OFFLINE
-    channelUpdateListener.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMessage(300 millis)
 
     // we make alice update here relay fee
     alice ! CMD_UPDATE_RELAY_FEE(sender.ref, 4200 msat, 123456)
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
 
     // alice doesn't broadcast the new channel_update yet
-    channelUpdateListener.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMessage(300 millis)
 
     // then we reconnect them
     reconnect(alice, bob, alice2bob, bob2alice)
@@ -427,7 +427,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(Announcements.isEnabled(channelUpdate.channelFlags))
 
     // no more messages
-    channelUpdateListener.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMessage(300 millis)
   }
 
   test("broadcast disabled channel_update while offline") { f =>
@@ -438,7 +438,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     // alice and bob will not announce that their channel is OFFLINE
-    channelUpdateListener.expectNoMsg(300 millis)
+    channelUpdateListener.expectNoMessage(300 millis)
 
     // we attempt to send a payment
     alice ! CMD_ADD_HTLC(sender.ref, 4200 msat, randomBytes32(), CltvExpiry(123456), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
@@ -544,7 +544,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === initialCommitTx.txid)
     bob2blockchain.expectMsgType[WatchTxConfirmed] // main delayed
     bob2blockchain.expectMsgType[WatchOutputSpent] // htlc
-    bob2blockchain.expectNoMsg(500 millis)
+    bob2blockchain.expectNoMessage(500 millis)
   }
 
   test("pending non-relayed fail htlcs will timeout upstream") { f =>
@@ -559,8 +559,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectOrUnknownPaymentDetails(0 msat, 0)))
     bob ! CurrentBlockCount((htlc.cltvExpiry - bob.underlyingActor.nodeParams.fulfillSafetyBeforeTimeout).toLong)
 
-    bob2blockchain.expectNoMsg(250 millis)
-    alice2blockchain.expectNoMsg(250 millis)
+    bob2blockchain.expectNoMessage(250 millis)
+    alice2blockchain.expectNoMessage(250 millis)
   }
 
   test("handle feerate changes while offline (funder scenario)") { f =>
@@ -597,7 +597,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     if (shouldClose) {
       assert(alice2blockchain.expectMsgType[PublishRawTx].tx.txid === aliceCommitTx.txid)
     } else {
-      alice2blockchain.expectNoMsg()
+      alice2blockchain.expectNoMessage()
     }
   }
 
@@ -620,8 +620,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // this time Alice will ignore feerate changes for the offline channel
     alice ! CurrentFeerates(networkFeerate)
-    alice2blockchain.expectNoMsg()
-    alice2bob.expectNoMsg()
+    alice2blockchain.expectNoMessage()
+    alice2bob.expectNoMessage()
   }
 
   def testUpdateFeeOnReconnect(f: FixtureParam, shouldUpdateFee: Boolean): Unit = {
@@ -637,8 +637,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Alice ignores feerate changes while offline
     alice.underlyingActor.nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(networkFeerate)
     alice ! CurrentFeerates(networkFeerate)
-    alice2blockchain.expectNoMsg()
-    alice2bob.expectNoMsg()
+    alice2blockchain.expectNoMessage()
+    alice2bob.expectNoMessage()
 
     // then we reconnect them; Alice should send the feerate changes to Bob
     reconnect(alice, bob, alice2bob, bob2alice)
@@ -653,7 +653,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       alice2bob.expectMsg(UpdateFee(channelId(alice), networkFeeratePerKw))
     } else {
       alice2bob.expectMsgType[Shutdown]
-      alice2bob.expectNoMsg(100 millis)
+      alice2bob.expectNoMessage(100 millis)
     }
   }
 
@@ -706,7 +706,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     if (shouldClose) {
       assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === bobCommitTx.txid)
     } else {
-      bob2blockchain.expectNoMsg()
+      bob2blockchain.expectNoMessage()
     }
   }
 
@@ -724,8 +724,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // at this point the channel isn't deeply buried: channel_update isn't sent again
     alice2bob.expectMsgType[FundingLocked]
     bob2alice.expectMsgType[FundingLocked]
-    alice2bob.expectNoMsg()
-    bob2alice.expectNoMsg()
+    alice2bob.expectNoMessage()
+    bob2alice.expectNoMessage()
 
     // we make the peers exchange a few messages
     addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -740,8 +740,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.forward(bob)
 
     // at this point the channel still isn't deeply buried: channel_update isn't sent again
-    alice2bob.expectNoMsg()
-    bob2alice.expectNoMsg()
+    alice2bob.expectNoMessage()
+    bob2alice.expectNoMessage()
 
     // funding tx gets 6 confirmations, channel is private so there is no announcement sigs
     alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)

@@ -391,7 +391,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
-    sigListener.expectNoMsg(1 second)
+    sigListener.expectNoMessage(1 second)
     assert(commitmentsF.commitmentFormat === commitmentFormat)
     // in this commitment, both parties should have a main output, there are four pending htlcs and anchor outputs if applicable
     val localCommitF = commitmentsF.localCommit

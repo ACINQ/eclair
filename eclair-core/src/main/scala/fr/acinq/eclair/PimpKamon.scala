@@ -34,7 +34,7 @@ object KamonExt {
   def timeFuture[T](timer: Timer)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
     val started = timer.start()
     val res = f
-    res onComplete (_ => started.stop)
+    res onComplete (_ => started.stop())
     res
   }
 

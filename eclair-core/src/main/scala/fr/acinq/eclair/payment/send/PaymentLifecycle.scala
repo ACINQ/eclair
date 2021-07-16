@@ -88,7 +88,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
-    case Event(RES_SUCCESS(_: CMD_ADD_HTLC, _), _) => stay
+    case Event(RES_SUCCESS(_: CMD_ADD_HTLC, _), _) => stay()
 
     case Event(RES_ADD_FAILED(_, t: ChannelException, _), d: WaitingForComplete) =>
       handleLocalFail(d, t, isFatal = false)
@@ -126,7 +126,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   whenUnhandled {
-    case Event(_: TransportHandler.ReadAck, _) => stay // ignored, router replies with this when we forward a channel_update
+    case Event(_: TransportHandler.ReadAck, _) => stay() // ignored, router replies with this when we forward a channel_update
   }
 
   private def retry(failure: PaymentFailure, data: WaitingForComplete): FSM.State[PaymentLifecycle.State, PaymentLifecycle.Data] = {

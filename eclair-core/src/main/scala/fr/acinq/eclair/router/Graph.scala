@@ -281,11 +281,11 @@ object Graph {
 
         // Every edge is weighted by funding block height where older blocks add less weight. The window considered is 1 year.
         val channelBlockHeight = ShortChannelId.coordinates(edge.desc.shortChannelId).blockHeight
-        val ageFactor = normalize(channelBlockHeight, min = currentBlockHeight - BLOCK_TIME_ONE_YEAR, max = currentBlockHeight)
+        val ageFactor = normalize(channelBlockHeight, min = (currentBlockHeight - BLOCK_TIME_ONE_YEAR).toDouble, max = currentBlockHeight.toDouble)
 
         // Every edge is weighted by channel capacity, larger channels add less weight
         val edgeMaxCapacity = edge.capacity.toMilliSatoshi
-        val capFactor = 1 - normalize(edgeMaxCapacity.toLong, CAPACITY_CHANNEL_LOW.toLong, CAPACITY_CHANNEL_HIGH.toLong)
+        val capFactor = 1 - normalize(edgeMaxCapacity.toLong.toDouble, CAPACITY_CHANNEL_LOW.toLong.toDouble, CAPACITY_CHANNEL_HIGH.toLong.toDouble)
 
         // Every edge is weighted by its cltv-delta value, normalized
         val cltvFactor = normalize(edge.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)

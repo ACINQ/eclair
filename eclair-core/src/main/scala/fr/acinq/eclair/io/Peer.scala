@@ -69,7 +69,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
   when(DISCONNECTED) {
     case Event(p: Peer.Connect, _) =>
       reconnectionTask forward p
-      stay
+      stay()
 
     case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
       gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) })
@@ -82,40 +82,40 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         // we have no existing channels, we can forget about this peer
         stopPeer()
       } else {
-        stay using d.copy(channels = channels1)
+        stay() using d.copy(channels = channels1)
       }
 
     // This event is usually handled while we're connected, but if our peer disconnects right when we're emitting this,
     // we still want to record the channelId mapping.
     case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d: DisconnectedData) =>
       log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
-      stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
+      stay() using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(_: LightningMessage, _) => stay // we probably just got disconnected and that's the last messages we received
+    case Event(_: LightningMessage, _) => stay() // we probably just got disconnected and that's the last messages we received
   }
 
   when(CONNECTED) {
     dropStaleMessages {
       case Event(_: Peer.Connect, _) =>
-        sender ! PeerConnection.ConnectionResult.AlreadyConnected
-        stay
+        sender() ! PeerConnection.ConnectionResult.AlreadyConnected
+        stay()
 
       case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
         logMessage(msg, "OUT")
         d.peerConnection forward msg
-        stay
+        stay()
 
       case Event(warning: Warning, _: ConnectedData) =>
         log.warning("peer sent warning: {}", warning.toAscii)
         // NB: we don't forward warnings to the channel actors, they shouldn't take any automatic action.
         // It's up to the node operator to decide what to do to address the warning.
-        stay
+        stay()
 
       case Event(err@Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
         log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
         d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         d.peerConnection ! PeerConnection.Kill(KillReason.AllChannelsFail)
-        stay
+        stay()
 
       case Event(err: Error, d: ConnectedData) =>
         // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
@@ -123,29 +123,29 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
           case Some(channel) => channel forward err
           case None => () // let's not create a ping-pong of error messages here
         }
-        stay
+        stay()
 
       case Event(c: Peer.OpenChannel, d: ConnectedData) =>
         if (c.fundingSatoshis >= Channel.MAX_FUNDING && !d.localFeatures.hasFeature(Wumbo)) {
-          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
-          stay
+          sender() ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, you must enable large channels support in 'eclair.features' to use funding above ${Channel.MAX_FUNDING} (see eclair.conf)"))
+          stay()
         } else if (c.fundingSatoshis >= Channel.MAX_FUNDING && !d.remoteFeatures.hasFeature(Wumbo)) {
-          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
-          stay
+          sender() ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big, the remote peer doesn't support wumbo"))
+          stay()
         } else if (c.fundingSatoshis > nodeParams.maxFundingSatoshis) {
-          sender ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
-          stay
+          sender() ! Status.Failure(new RuntimeException(s"fundingSatoshis=${c.fundingSatoshis} is too big for the current settings, increase 'eclair.max-funding-satoshis' (see eclair.conf)"))
+          stay()
         } else {
           val channelConfig = ChannelConfig.standard
           val channelFeatures = ChannelFeatures.pickChannelFeatures(d.localFeatures, d.remoteFeatures)
-          val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelFeatures, funder = true, c.fundingSatoshis, origin_opt = Some(sender))
+          val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelFeatures, funder = true, c.fundingSatoshis, origin_opt = Some(sender()))
           c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
           val temporaryChannelId = randomBytes32()
           val channelFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelFeatures, c.fundingSatoshis, None)
           val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
           log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
           channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, c.initialRelayFees_opt, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelConfig, channelFeatures)
-          stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+          stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         }
 
       case Event(msg: protocol.OpenChannel, d: ConnectedData) =>
@@ -158,10 +158,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
             log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
             channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelFeatures)
             channel ! msg
-            stay using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+            stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
           case Some(_) =>
             log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
-            stay
+            stay()
         }
 
       case Event(msg: HasChannelId, d: ConnectedData) =>
@@ -169,14 +169,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
           case Some(channel) => channel forward msg
           case None => replyUnknownChannel(d.peerConnection, msg.channelId)
         }
-        stay
+        stay()
 
       case Event(msg: HasTemporaryChannelId, d: ConnectedData) =>
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case Some(channel) => channel forward msg
           case None => replyUnknownChannel(d.peerConnection, msg.temporaryChannelId)
         }
-        stay
+        stay()
 
       case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d: ConnectedData) if d.channels.contains(TemporaryChannelId(temporaryChannelId)) =>
         log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
@@ -186,13 +186,13 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         }
         // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
         // we won't clean it up, but we won't remember the temporary id on channel termination
-        stay using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
+        stay() using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
       case Event(Disconnect(nodeId), d: ConnectedData) if nodeId == remoteNodeId =>
         log.info("disconnecting")
-        sender ! "disconnecting"
+        sender() ! "disconnecting"
         d.peerConnection ! PeerConnection.Kill(KillReason.UserRequest)
-        stay
+        stay()
 
       case Event(ConnectionDown(peerConnection), d: ConnectedData) if peerConnection == d.peerConnection =>
         Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
@@ -215,7 +215,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
           context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
           d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
         }
-        stay using d.copy(channels = d.channels -- channelIds)
+        stay() using d.copy(channels = d.channels -- channelIds)
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
         log.info(s"got new connection, killing current one and switching")
@@ -225,27 +225,27 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
-        stay
+        stay()
 
       case Event(unhandledMsg: LightningMessage, _) =>
         log.warning("ignoring message {}", unhandledMsg)
-        stay
+        stay()
     }
   }
 
   whenUnhandled {
     case Event(_: Peer.OpenChannel, _) =>
-      sender ! Status.Failure(new RuntimeException("not connected"))
-      stay
+      sender() ! Status.Failure(new RuntimeException("not connected"))
+      stay()
 
     case Event(GetPeerInfo, d) =>
-      sender ! PeerInfo(remoteNodeId, stateName.toString, d match {
+      sender() ! PeerInfo(remoteNodeId, stateName.toString, d match {
         case c: ConnectedData => Some(c.address)
         case _ => None
       }, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
-      stay
+      stay()
 
-    case Event(_: Channel.OutgoingMessage, _) => stay // we got disconnected or reconnected and this message was for the previous connection
+    case Event(_: Channel.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
   }
 
   private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
@@ -293,9 +293,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
    * between connections.
    */
   def dropStaleMessages(s: StateFunction): StateFunction = {
-    case Event(msg: LightningMessage, d: ConnectedData) if sender != d.peerConnection =>
+    case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.peerConnection =>
       log.warning("dropping message from stale connection: {}", msg)
-      stay
+      stay()
     case e if s.isDefinedAt(e) =>
       s(e)
   }

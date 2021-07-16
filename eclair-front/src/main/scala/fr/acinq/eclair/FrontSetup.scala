@@ -99,7 +99,7 @@ class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
       backendAddress <- backendAddressFound.future
 
       // we give time for the cluster to be ready
-      _ <- akka.pattern.after(5.seconds)(Future.successful())
+      _ <- akka.pattern.after(5.seconds)(Future.successful((): Unit))
 
       switchBoardSelection = system.actorSelection(RootActorPath(backendAddress) / "user" / "*" / "switchboard")
       remoteSwitchboard <- switchBoardSelection.resolveOne()

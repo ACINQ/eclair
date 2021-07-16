@@ -133,12 +133,12 @@
                 <version>3.4.2</version>
                 <configuration>
                     <args combine.children="append">
-                        <!--arg>-Xlint:deprecation</arg-->
                         <arg>-feature</arg>
                         <arg>-language:postfixOps</arg>
                         <arg>-language:implicitConversions</arg>
-                        <!--arg>-Werror</arg-->
+                        <arg>-Werror</arg>
                         <arg>-unchecked</arg>
+                        <arg>-deprecation</arg>
                     </args>
                     <jvmArgs>
                         <jvmArg>-Xmx1024m</jvmArg>

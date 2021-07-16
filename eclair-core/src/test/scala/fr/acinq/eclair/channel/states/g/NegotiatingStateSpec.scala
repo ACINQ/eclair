@@ -91,7 +91,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice ! add
     val error = ChannelUnavailable(channelId(alice))
     sender.expectMsg(RES_ADD_FAILED(add, error, None))
-    alice2bob.expectNoMsg(200 millis)
+    alice2bob.expectNoMessage(200 millis)
   }
 
   def testClosingSigned(f: FixtureParam): Unit = {
@@ -220,7 +220,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice ! WatchFundingSpentTriggered(mutualCloseTx)
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === mutualCloseTx)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === mutualCloseTx.txid)
-    alice2blockchain.expectNoMsg(100 millis)
+    alice2blockchain.expectNoMessage(100 millis)
     assert(alice.stateName == CLOSING)
   }
 
@@ -240,7 +240,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     alice ! WatchFundingSpentTriggered(bobClosingTx.tx)
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === bobClosingTx.tx)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobClosingTx.tx.txid)
-    alice2blockchain.expectNoMsg(100 millis)
+    alice2blockchain.expectNoMessage(100 millis)
     assert(alice.stateName == CLOSING)
   }
 

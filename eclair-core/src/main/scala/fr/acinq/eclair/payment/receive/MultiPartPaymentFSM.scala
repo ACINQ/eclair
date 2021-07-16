@@ -43,7 +43,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
 
   val start = System.currentTimeMillis
 
-  setTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry, repeat = false)
+  startSingleTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry)
 
   startWith(WAITING_FOR_HTLC, WaitingForHtlc(Queue.empty))
 
@@ -61,7 +61,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
       } else if (d.paidAmount + part.amount >= totalAmount) {
         goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(updatedParts)
       } else {
-        stay using d.copy(parts = updatedParts)
+        stay() using d.copy(parts = updatedParts)
       }
   }
 
@@ -73,7 +73,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
       log.info("received extraneous payment part with amount={}", part.amount)
       replyTo ! ExtraPaymentReceived(paymentHash, part, None)
-      stay
+      stay()
   }
 
   when(PAYMENT_FAILED) {
@@ -83,7 +83,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
       require(part.paymentHash == paymentHash, s"invalid payment hash (expected $paymentHash, received ${part.paymentHash}")
       log.info("received extraneous payment part for payment hash {}", paymentHash)
       replyTo ! ExtraPaymentReceived(paymentHash, part, Some(failure))
-      stay
+      stay()
   }
 
   onTransition {

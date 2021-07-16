@@ -55,7 +55,7 @@ class Server(keyPair: KeyPair, peerConnectionConf: PeerConnection.Conf, switchbo
   def listening(listener: ActorRef): Receive = {
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
-      val connection = sender
+      val connection = sender()
       val peerConnection = context.actorOf(PeerConnection.props(
         keyPair = keyPair,
         conf = peerConnectionConf,

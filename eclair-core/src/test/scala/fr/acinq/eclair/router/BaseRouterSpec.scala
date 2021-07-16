@@ -196,7 +196,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         GossipDecision.Accepted(node_f),
         GossipDecision.Accepted(node_g),
         GossipDecision.Accepted(node_h))
-      peerConnection.expectNoMsg()
+      peerConnection.expectNoMessage()
       awaitCond({
         sender.send(router, GetNodes)
         val nodes = sender.expectMsgType[Iterable[NodeAnnouncement]]

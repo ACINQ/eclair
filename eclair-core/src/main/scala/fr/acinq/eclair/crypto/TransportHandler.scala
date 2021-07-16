@@ -118,7 +118,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         log.debug("received {}", ByteVector(data))
         val buffer1 = buffer ++ data
         if (buffer1.length < expectedLength(reader))
-          stay using HandshakeData(reader, buffer1)
+          stay() using HandshakeData(reader, buffer1)
         else {
           if (buffer1.head != TransportHandler.prefix) throw InvalidTransportPrefix(ByteVector(buffer1))
 
@@ -139,7 +139,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
                   // message before they can reply
                   if (remainder.nonEmpty) throw UnexpectedDataDuringHandshake(ByteVector(remainder))
                   connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
-                  stay using HandshakeData(reader1, remainder)
+                  stay() using HandshakeData(reader1, remainder)
                 }
                 case (_, message, Some((enc, dec, ck))) => {
                   connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
@@ -159,7 +159,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
   when(WaitingForListener) {
     handleExceptions {
       case Event(Tcp.Received(data), d@WaitingForListenerData(_, dec)) =>
-        stay using d.copy(decryptor = dec.copy(buffer = dec.buffer ++ data))
+        stay() using d.copy(decryptor = dec.copy(buffer = dec.buffer ++ data))
 
       case Event(Listener(listener), d@WaitingForListenerData(_, dec)) =>
         context.watch(listener)
@@ -181,11 +181,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         val (dec1, plaintextMessages) = d.decryptor.copy(buffer = d.decryptor.buffer ++ data).decrypt()
         if (plaintextMessages.isEmpty) {
           connection ! Tcp.ResumeReading
-          stay using d.copy(decryptor = dec1)
+          stay() using d.copy(decryptor = dec1)
         } else {
           log.debug("read {} messages, waiting for readacks", plaintextMessages.size)
           val unackedReceived = sendToListener(d.listener, plaintextMessages)
-          stay using NormalData(d.encryptor, dec1, d.listener, d.sendBuffer, unackedReceived, d.unackedSent)
+          stay() using NormalData(d.encryptor, dec1, d.listener, d.sendBuffer, unackedReceived, d.unackedSent)
         }
 
       case Event(ReadAck(msg: T), d: NormalData[T]) =>
@@ -197,10 +197,10 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         if (unackedReceived1.isEmpty) {
           log.debug("last incoming message was acked, resuming reading")
           connection ! Tcp.ResumeReading
-          stay using d.copy(unackedReceived = unackedReceived1)
+          stay() using d.copy(unackedReceived = unackedReceived1)
         } else {
           log.debug("still waiting for readacks, unacked={}", unackedReceived1)
-          stay using d.copy(unackedReceived = unackedReceived1)
+          stay() using d.copy(unackedReceived = unackedReceived1)
         }
 
       case Event(t: T, d: NormalData[T]) =>
@@ -215,13 +215,13 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
             case _: RoutingMessage => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
             case _ => d.sendBuffer.copy(normalPriority = d.sendBuffer.normalPriority :+ t)
           }
-          stay using d.copy(sendBuffer = sendBuffer1)
+          stay() using d.copy(sendBuffer = sendBuffer1)
         } else {
           diag(t, "OUT")
           val blob = codec.encode(t).require.toByteVector
           val (enc1, ciphertext) = d.encryptor.encrypt(blob)
           connection ! Tcp.Write(buf(ciphertext), WriteAck)
-          stay using d.copy(encryptor = enc1, unackedSent = Some(t))
+          stay() using d.copy(encryptor = enc1, unackedSent = Some(t))
         }
 
       case Event(WriteAck, d: NormalData[T]) =>
@@ -236,14 +236,14 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
         d.sendBuffer.normalPriority.dequeueOption match {
           case Some((t, normalPriority1)) =>
             val enc1 = send(t)
-            stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = normalPriority1), unackedSent = Some(t))
+            stay() using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = normalPriority1), unackedSent = Some(t))
           case None =>
             d.sendBuffer.lowPriority.dequeueOption match {
               case Some((t, lowPriority1)) =>
                 val enc1 = send(t)
-                stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(lowPriority = lowPriority1), unackedSent = Some(t))
+                stay() using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(lowPriority = lowPriority1), unackedSent = Some(t))
               case None =>
-                stay using d.copy(unackedSent = None)
+                stay() using d.copy(unackedSent = None)
             }
         }
     }
@@ -265,7 +265,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
           case n: NormalData[T] => log.warning(s"unhandled message $msg in state normal unackedSent=${n.unackedSent.size} unackedReceived=${n.unackedReceived.size} sendBuffer.lowPriority=${n.sendBuffer.lowPriority.size} sendBuffer.normalPriority=${n.sendBuffer.normalPriority.size}")
           case _ => log.warning(s"unhandled message $msg in state ${d.getClass.getSimpleName}")
         }
-        stay
+        stay()
     }
   }
 

@@ -6,7 +6,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose, NextRemoteClose, RemoteClose}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.{Databases, PendingCommandsDb}
+import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, HtlcSuccessTx, HtlcTimeoutTx}
@@ -220,7 +220,8 @@ object CheckBalance {
               val remoteClose = if (d.remoteCommitPublished.isDefined) {
                 CurrentRemoteClose(d.commitments.remoteCommit, d.remoteCommitPublished.get)
               } else {
-                NextRemoteClose(d.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit, d.nextRemoteCommitPublished.get)
+                val Left(waitingForRevocation) = d.commitments.remoteNextCommitInfo
+                NextRemoteClose(waitingForRevocation.nextRemoteCommit, d.nextRemoteCommitPublished.get)
               }
               r.modify(_.closing.remoteCloseBalance).using(updatePossiblyPublishedBalance(computeRemoteCloseBalance(d.commitments, remoteClose, knownPreimages)))
             case _ => r.modify(_.closing.unknownCloseBalance).using(updateMainAndHtlcBalance(d.commitments.localCommit, knownPreimages))
@@ -267,8 +268,8 @@ object CheckBalance {
   def computeOnChainBalance(bitcoinClient: ExtendedBitcoinClient)(implicit ec: ExecutionContext): Future[CorrectedOnChainBalance] = for {
     utxos <- bitcoinClient.listUnspent()
     detailed = utxos.foldLeft(DetailedBalance()) {
-      case (total, utxo) if utxo.confirmations > 0 => total.modify(_.confirmed).using(_ + utxo.amount)
       case (total, utxo) if utxo.confirmations == 0 => total.modify(_.unconfirmed).using(_ + utxo.amount)
+      case (total, utxo) => total.modify(_.confirmed).using(_ + utxo.amount)
     }
   } yield CorrectedOnChainBalance(detailed.confirmed, detailed.unconfirmed)
 

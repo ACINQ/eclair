@@ -55,7 +55,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
   def exec(script: List[String], a: ActorRef, b: ActorRef): Unit = {
     def resolve(x: String) = if (x == "A") a else b
 
-    script match {
+    (script: @unchecked) match {
       case offer(x, amount, rhash) :: rest =>
         resolve(x) ! CMD_ADD_HTLC(self, MilliSatoshi(amount.toInt), ByteVector32.fromValidHex(rhash), CltvExpiry(144), TestConstants.emptyOnionPacket, Origin.LocalHot(self, UUID.randomUUID()))
         exec(rest, a, b)

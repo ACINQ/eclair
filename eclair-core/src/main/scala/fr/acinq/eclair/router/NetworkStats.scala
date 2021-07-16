@@ -22,7 +22,7 @@ import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi}
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 /**
  * Created by t-bast on 30/08/2019.

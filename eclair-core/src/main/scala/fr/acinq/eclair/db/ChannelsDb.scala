@@ -27,7 +27,7 @@ trait ChannelsDb extends Closeable {
 
   def addOrUpdateChannel(state: HasCommitments): Unit
 
-  def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType)
+  def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit
 
   def removeChannel(channelId: ByteVector32): Unit
 

@@ -118,18 +118,18 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
         setReconnectTimer(initialDelay)
         goto(WAITING) using WaitingData(firstNextReconnectionDelay)
       } else {
-        stay
+        stay()
       }
 
     case Event(Peer.Transition(_, _: Peer.ConnectedData), _) =>
       log.info("peer is connected")
-      stay
+      stay()
   }
 
   whenUnhandled {
-    case Event(_: PeerConnection.ConnectionResult, _) => stay
+    case Event(_: PeerConnection.ConnectionResult, _) => stay()
 
-    case Event(TickReconnect, _) => stay
+    case Event(TickReconnect, _) => stay()
 
     case Event(Peer.Connect(_, hostAndPort_opt), _) =>
       // manual connection requests happen completely independently of the automated reconnection process;
@@ -138,13 +138,13 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       hostAndPort_opt
         .map(hostAndPort2InetSocketAddress)
         .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
-        case Some(address) => connect(address, origin = sender)
-        case None => sender ! PeerConnection.ConnectionResult.NoAddressFound
+        case Some(address) => connect(address, origin = sender())
+        case None => sender() ! PeerConnection.ConnectionResult.NoAddressFound
       }
-      stay
+      stay()
   }
 
-  private def setReconnectTimer(delay: FiniteDuration): Unit = setTimer(RECONNECT_TIMER, TickReconnect, delay, repeat = false)
+  private def setReconnectTimer(delay: FiniteDuration): Unit = startSingleTimer(RECONNECT_TIMER, TickReconnect, delay)
 
   // activate the extension only on demand, so that tests pass
   lazy val mediator = DistributedPubSub(context.system).mediator

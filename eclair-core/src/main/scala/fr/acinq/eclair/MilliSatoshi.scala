@@ -35,7 +35,7 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
   def *(m: Long) = MilliSatoshi(underlying * m)
   def *(m: Double) = MilliSatoshi((underlying * m).toLong)
   def /(d: Long) = MilliSatoshi(underlying / d)
-  def unary_-() = MilliSatoshi(-underlying)
+  def unary_- = MilliSatoshi(-underlying)
 
   override def compare(other: MilliSatoshi): Int = underlying.compareTo(other.underlying)
   // Since BtcAmount is a sealed trait that MilliSatoshi cannot extend, we need to redefine comparison operators.

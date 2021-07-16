@@ -222,19 +222,21 @@ class Setup(val datadir: File,
         case _ =>
           new FallbackFeeProvider(new SmoothFeeProvider(new BitcoinCoreFeeProvider(bitcoin, defaultFeerates), smoothFeerateWindow) :: Nil, minFeeratePerByte)
       }
-      _ = system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.onComplete {
-        case Success(feerates) =>
-          feeratesPerKB.set(feerates)
-          feeratesPerKw.set(FeeratesPerKw(feerates))
-          channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong)
-          blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.mempoolMinFee.toLong)
-          system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
-          logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
-          feeratesRetrieved.trySuccess(Done)
-        case Failure(exception) =>
-          logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
-          blockchain.Monitoring.Metrics.CannotRetrieveFeeratesCount.withoutTags().increment()
-          feeratesRetrieved.tryFailure(CannotRetrieveFeerates)
+      _ = system.scheduler.scheduleWithFixedDelay(0 seconds, 10 minutes)(new Runnable {
+        override def run(): Unit = feeProvider.getFeerates.onComplete {
+          case Success(feerates) =>
+            feeratesPerKB.set(feerates)
+            feeratesPerKw.set(FeeratesPerKw(feerates))
+            channel.Monitoring.Metrics.LocalFeeratePerKw.withoutTags().update(feeratesPerKw.get.feePerBlock(nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget).toLong.toDouble)
+            blockchain.Monitoring.Metrics.MempoolMinFeeratePerKw.withoutTags().update(feeratesPerKw.get.mempoolMinFee.toLong.toDouble)
+            system.eventStream.publish(CurrentFeerates(feeratesPerKw.get))
+            logger.info(s"current feeratesPerKB=${feeratesPerKB.get} feeratesPerKw=${feeratesPerKw.get}")
+            feeratesRetrieved.trySuccess(Done)
+          case Failure(exception) =>
+            logger.warn(s"cannot retrieve feerates: ${exception.getMessage}")
+            blockchain.Monitoring.Metrics.CannotRetrieveFeeratesCount.withoutTags().increment()
+            feeratesRetrieved.tryFailure(CannotRetrieveFeerates)
+        }
       })
       _ <- feeratesRetrieved.future
 

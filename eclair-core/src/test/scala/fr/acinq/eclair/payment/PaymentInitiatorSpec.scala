@@ -259,8 +259,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(fail.id === id)
     assert(fail.failures === LocalFailure(Nil, PaymentError.TrampolineLegacyAmountLessInvoice) :: Nil)
 
-    multiPartPayFsm.expectNoMsg(50 millis)
-    payFsm.expectNoMsg(50 millis)
+    multiPartPayFsm.expectNoMessage(50 millis)
+    payFsm.expectNoMessage(50 millis)
   }
 
   test("retry trampoline payment") { f =>
@@ -289,8 +289,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     multiPartPayFsm.send(initiator, success)
     sender.expectMsg(success)
     eventListener.expectMsg(success)
-    sender.expectNoMsg(100 millis)
-    eventListener.expectNoMsg(100 millis)
+    sender.expectNoMessage(100 millis)
+    eventListener.expectNoMessage(100 millis)
   }
 
   test("retry trampoline payment and fail") { f =>
@@ -319,8 +319,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     multiPartPayFsm.send(initiator, failed)
     sender.expectMsg(failed)
     eventListener.expectMsg(failed)
-    sender.expectNoMsg(100 millis)
-    eventListener.expectNoMsg(100 millis)
+    sender.expectNoMessage(100 millis)
+    eventListener.expectNoMessage(100 millis)
   }
 
   test("retry trampoline payment and fail (route not found)") { f =>
@@ -347,8 +347,8 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val failure = sender.expectMsgType[PaymentFailed]
     assert(failure.failures === Seq(LocalFailure(Seq(NodeHop(nodeParams.nodeId, b, nodeParams.expiryDelta, 0 msat), NodeHop(b, c, CltvExpiryDelta(24), 25000 msat)), RouteNotFound)))
     eventListener.expectMsg(failure)
-    sender.expectNoMsg(100 millis)
-    eventListener.expectNoMsg(100 millis)
+    sender.expectNoMessage(100 millis)
+    eventListener.expectNoMessage(100 millis)
   }
 
   test("forward trampoline payment with pre-defined route") { f =>

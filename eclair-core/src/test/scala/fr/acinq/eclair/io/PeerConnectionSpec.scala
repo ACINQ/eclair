@@ -81,7 +81,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     if (doSync) {
       router.expectMsgType[SendChannelQuery]
     } else {
-      router.expectNoMsg(1 second)
+      router.expectNoMessage(1 second)
     }
     peer.expectMsg(PeerConnection.ConnectionReady(peerConnection, remoteNodeId, address, outgoing = true, localInit, remoteInit))
     assert(peerConnection.stateName === PeerConnection.CONNECTED)
@@ -217,7 +217,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val dummy = updates.head
     for (_ <- 1 to 5) { // the goal of this loop is to make sure that we don't send pings when we receive messages
       // we make the transport send a message, this will delay the sending of a ping --again
-      transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
+      transport.expectNoMessage(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
       transport.send(peerConnection, dummy)
     }
     // ~30s without an incoming message: peer should send a ping
@@ -232,7 +232,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.send(peerConnection, ping)
     transport.expectMsg(TransportHandler.ReadAck(ping))
     assert(transport.expectMsgType[Warning].channelId === Peer.CHANNELID_ZERO)
-    transport.expectNoMsg()
+    transport.expectNoMessage()
   }
 
   test("disconnect if no reply to ping") { f =>
@@ -254,7 +254,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     probe.send(peerConnection, rebroadcast)
-    transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
+    transport.expectNoMessage(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
   }
 
   test("filter gossip message (filtered by origin)") { f =>
@@ -308,7 +308,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsg(updates(6))
     transport.expectMsg(updates(10))
     transport.expectMsg(nodes(4))
-    transport.expectNoMsg(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
+    transport.expectNoMessage(10 / transport.testKitSettings.TestTimeFactor seconds) // we don't want dilated time here
   }
 
   test("react to peer's bad behavior") { f =>
@@ -326,7 +326,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       transport.send(peerConnection, ann)
       router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, ann))
     }
-    transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
+    transport.expectNoMessage(1 second) // peer hasn't acknowledged the messages
 
     // let's assume that the router isn't happy with those channels because the funding tx is already spent
     for (c <- channels) {
@@ -342,7 +342,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       }
       transport.expectMsg(TransportHandler.ReadAck(ann))
     }
-    router.expectNoMsg(1 second)
+    router.expectNoMessage(1 second)
     // other routing messages go through
     transport.send(peerConnection, query)
     router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, query))
@@ -355,7 +355,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       transport.send(peerConnection, ann)
       router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, ann))
     }
-    transport.expectNoMsg(1 second) // peer hasn't acknowledged the messages
+    transport.expectNoMessage(1 second) // peer hasn't acknowledged the messages
 
     // now let's assume that the router isn't happy with those channels because the announcement is invalid
     router.send(peerConnection, GossipDecision.InvalidAnnouncement(channels(0)))

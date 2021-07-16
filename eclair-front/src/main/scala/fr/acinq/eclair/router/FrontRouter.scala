@@ -47,32 +47,32 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
 
   when(SYNCING) {
     case Event(networkEvent: NetworkEvent, d) =>
-      stay using FrontRouter.updateTable(d, networkEvent, doRebroadcast = false)
+      stay() using FrontRouter.updateTable(d, networkEvent, doRebroadcast = false)
 
     case Event(RoutingStateStreamingUpToDate, d) =>
       log.info("sync done nodes={} channels={}", d.nodes.size, d.channels.size)
       initialized.map(_.success(Done))
-      setTimer(TickBroadcast.toString, TickBroadcast, routerConf.routerBroadcastInterval, repeat = true)
+      startTimerWithFixedDelay(TickBroadcast.toString, TickBroadcast, routerConf.routerBroadcastInterval)
       goto(NORMAL) using d
   }
 
   when(NORMAL) {
     case Event(GetRoutingState, d) =>
-      log.info(s"getting valid announcements for $sender")
-      sender ! RoutingState(d.channels.values, d.nodes.values)
-      stay
+      log.info(s"getting valid announcements for ${sender()}")
+      sender() ! RoutingState(d.channels.values, d.nodes.values)
+      stay()
 
     case Event(s: SendChannelQuery, _) =>
       remoteRouter forward s
-      stay
+      stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
       Sync.handleQueryChannelRange(d.channels, routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
-      stay
+      stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
       Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
-      stay
+      stay()
 
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, ann: AnnouncementMessage), d) =>
       val origin = RemoteGossip(peerConnection, remoteNodeId)
@@ -134,7 +134,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
               }
           }
       }
-      stay using d1
+      stay() using d1
 
     case Event(accepted: GossipDecision.Accepted, d) =>
       log.debug("message has been accepted by router: {}", accepted)
@@ -155,7 +155,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
       // acknowledging their message (because the announcement is still in the processing map) and we will
       // wait forever for the very gossip decision that we are processing now, resulting in a stuck connection
       val origins1 = d.processing.getOrElse(accepted.ann, Set.empty[RemoteGossip])
-      stay using d.copy(processing = d.processing - accepted.ann, accepted = d.accepted + (accepted.ann -> origins1))
+      stay() using d.copy(processing = d.processing - accepted.ann, accepted = d.accepted + (accepted.ann -> origins1))
 
     case Event(rejected: GossipDecision.Rejected, d) =>
       log.debug("message has been rejected by router: {}", rejected)
@@ -168,29 +168,29 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
         }
         case None => ()
       }
-      stay using d.copy(processing = d.processing - rejected.ann)
+      stay() using d.copy(processing = d.processing - rejected.ann)
 
     case Event(networkEvent: NetworkEvent, d) =>
       log.debug("received event={}", networkEvent)
       Metrics.routerEvent(networkEvent).increment()
-      stay using FrontRouter.updateTable(d, networkEvent, doRebroadcast = true)
+      stay() using FrontRouter.updateTable(d, networkEvent, doRebroadcast = true)
 
     case Event(TickBroadcast, d) =>
       if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
-        stay
+        stay()
       } else {
         log.debug("broadcasting routing messages")
         log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
         context.system.eventStream.publish(d.rebroadcast)
-        stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
+        stay() using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
     case Event(msg: PeerRoutingMessage, _) =>
       log.debug("forwarding peer routing message class={}", msg.message.getClass.getSimpleName)
       remoteRouter forward msg
-      stay
+      stay()
 
-    case Event(_: TransportHandler.ReadAck, _) => stay // acks from remote router
+    case Event(_: TransportHandler.ReadAck, _) => stay() // acks from remote router
   }
 
   override def mdc(currentMessage: Any): MDC = {
