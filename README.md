@@ -10,6 +10,23 @@
 This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning), [lnd](https://github.com/LightningNetwork/lnd), and [rust-lightning](https://github.com/rust-bitcoin/rust-lightning).
 
 ---
+  * [Lightning Network Specification Compliance](#lightning-network-specification-compliance)
+  * [JSON API](#json-api)
+  * [Documentation](#documentation)
+  * [Installation](#installation)
+    * [Configuring Bitcoin Core](#configuring-bitcoin-core)
+    * [Installing Eclair](#installing-eclair)
+    * [Configuring Eclair](#configuring-eclair)
+      * [Configuration file](#configuration-file)
+      * [Configure Bitcoin Core wallet](#configure-bitcoin-core-wallet)
+      * [Java Environment Variables](#java-environment-variables)
+      * [Logging](#logging)
+      * [Backup](#backup)
+  * [Docker](#docker)
+  * [Plugins](#plugins)
+  * [Testnet usage](#testnet-usage)
+  * [Resources](#resources)
+---
 
 ## Lightning Network Specification Compliance
 
@@ -147,7 +164,7 @@ always consistent and safe to use even when Eclair is running, and this is what 
 For example, you could configure a `cron` task for your backup job. Or you could configure an optional notification script to be called by eclair once a new database snapshot has been created, using the following option:
 
 ```conf
-eclair.backup-notify-script = "/absolute/path/to/script.sh"
+eclair.file-backup.notify-script = "/absolute/path/to/script.sh"
 ```
 
 Make sure your script is executable and uses an absolute path name for `eclair.sqlite.bak`.
