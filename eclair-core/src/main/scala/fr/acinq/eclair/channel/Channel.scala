@@ -1038,12 +1038,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(INPUT_DISCONNECTED, d: DATA_NORMAL) =>
       // we cancel the timer that would have made us send the enabled update after reconnection (flappy channel protection)
       cancelTimer(Reconnected.toString)
-      // if we have pending unsigned htlcs, then we cancel them and advertise the fact that the channel is now disabled
+      // if we have pending unsigned htlcs, then we cancel them and generate an update with the disabled flag set, that will be returned to the sender in a temporary channel failure
       val d1 = if (d.commitments.localChanges.proposed.collectFirst { case add: UpdateAddHtlc => add }.isDefined) {
         log.debug("updating channel_update announcement (reason=disabled)")
         val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
+        // NB: the htlcs stay in the commitments.localChange, they will be cleaned up after reconnection
         d.commitments.localChanges.proposed.collect {
-          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.Disconnected(channelUpdate))
+          case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.DisconnectedBeforeSigned(channelUpdate))
         }
         d.copy(channelUpdate = channelUpdate)
       } else {
@@ -1790,7 +1791,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case data: HasCommitments =>
           val replyTo = if (c.replyTo == ActorRef.noSender) sender else c.replyTo
           replyTo ! RES_SUCCESS(c, data.channelId)
-          handleLocalError(ForcedLocalCommit(data.channelId), data, Some(c))
+          val failure = ForcedLocalCommit(data.channelId)
+          handleLocalError(failure, data, Some(c))
         case _ => handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
       }
 
@@ -1888,12 +1890,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
   }
 
+  /** Metrics */
   onTransition {
     case state -> nextState if state != nextState =>
       if (state != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, state.toString).decrement()
       if (nextState != WAIT_FOR_INIT_INTERNAL) Metrics.ChannelsCount.withTag(Tags.State, nextState.toString).increment()
   }
 
+  /** Check pending settlement commands */
   onTransition {
     case _ -> CLOSING =>
       PendingCommandsDb.getSettlementCommands(nodeParams.db.pendingCommands, nextStateData.asInstanceOf[HasCommitments].channelId) match {
@@ -1911,6 +1915,17 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           log.info("replaying {} unacked fulfills/fails", cmds.size)
           cmds.foreach(self ! _) // they all have commit = false
           self ! CMD_SIGN() // so we can sign all of them at once
+      }
+  }
+
+  /** Fail outgoing unsigned htlcs right away when transitioning from NORMAL to CLOSING */
+  onTransition {
+    case NORMAL -> CLOSING =>
+      nextStateData match {
+        case d: DATA_CLOSING =>
+          d.commitments.localChanges.proposed.collect {
+            case add: UpdateAddHtlc => relayer ! RES_ADD_SETTLED(d.commitments.originChannels(add.id), add, HtlcResult.ChannelFailureBeforeSigned)
+          }
       }
   }
 
@@ -2578,4 +2593,3 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   initialize()
 
 }
-
