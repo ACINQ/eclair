@@ -87,7 +87,7 @@ object Helpers {
       case (true, Some(script)) if script.isEmpty => Right(None) // but the provided script can be empty
       case (true, Some(script)) if !Closing.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
       case (true, Some(script)) => Right(Some(script))
-      case (false, Some(script)) if !script.isEmpty => Left(InvalidFinalScript(channelId))
+      case (false, Some(_)) => Right(None) // they provided a script but the feature is not active, we just ignore it
       case _ => Right(None)
     }
   }

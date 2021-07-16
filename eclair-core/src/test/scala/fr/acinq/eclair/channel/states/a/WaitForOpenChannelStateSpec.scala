@@ -216,6 +216,31 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
   }
 
+  test("recv OpenChannel (upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    alice2bob.forward(bob, open)
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].remoteParams.shutdownScript == open.upfrontShutdownScript_opt)
+  }
+
+  test("recv OpenChannel (empty upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+    alice2bob.forward(bob, open1)
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].remoteParams.shutdownScript.isEmpty)
+  }
+
+  test("recv OpenChannel (invalid upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.fromValidHex("deadbeef"))))
+    alice2bob.forward(bob, open1)
+    awaitCond(bob.stateName == CLOSED)
+  }
+
   test("recv Error") { f =>
     import f._
     bob ! Error(ByteVector32.Zeroes, "oops")

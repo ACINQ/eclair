@@ -340,7 +340,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, d@DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit, channelConfig, channelFeatures))) =>
       log.info("received OpenChannel={}", open)
-      val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteInit.features, Features.ShutdownAnySegwit)
       Helpers.validateParamsFundee(nodeParams, localParams.initFeatures, channelFeatures, open, remoteNodeId) match {
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right(remoteShutdownScript) =>
@@ -893,7 +892,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case Left(e) =>
           log.warning("they sent an invalid closing script")
           peer ! Peer.Disconnect(remoteNodeId)
-          stay()
+          stay
         case Right(remoteShutdownScript) =>
           // they have pending unsigned htlcs         => they violated the spec, close the channel
           // they don't have pending unsigned htlcs

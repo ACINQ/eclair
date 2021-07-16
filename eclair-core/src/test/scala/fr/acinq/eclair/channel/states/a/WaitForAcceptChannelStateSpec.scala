@@ -179,24 +179,23 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    accept.tlvStream.get[ChannelTlv.UpfrontShutdownScript].contains(ChannelTlv.UpfrontShutdownScript(Bob.channelParams.defaultFinalScriptPubKey))
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].remoteParams.shutdownScript == accept.upfrontShutdownScript_opt)
   }
 
   test("recv AcceptChannel (empty upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    accept.tlvStream.get[ChannelTlv.UpfrontShutdownScript].contains(ChannelTlv.UpfrontShutdownScript(Bob.channelParams.defaultFinalScriptPubKey))
     val accept1 = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
     bob2alice.forward(alice, accept1)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].remoteParams.shutdownScript.isEmpty)
   }
 
   test("recv AcceptChannel (invalid upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    accept.tlvStream.get[ChannelTlv.UpfrontShutdownScript].contains(ChannelTlv.UpfrontShutdownScript(Bob.channelParams.defaultFinalScriptPubKey))
     val accept1 = accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.fromValidHex("deadbeef"))))
     bob2alice.forward(alice, accept1)
     awaitCond(alice.stateName == CLOSED)

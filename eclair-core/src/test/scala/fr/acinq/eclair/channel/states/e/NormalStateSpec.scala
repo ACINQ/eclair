@@ -2056,7 +2056,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv Shutdown (with unsupported native segwit script)") { f =>
     import f._
     bob ! Shutdown(ByteVector32.Zeroes, hex"51050102030405")
-    bob2alice.expectNoMessage(3 seconds)
+    bob2alice.expectNoMessage(500 millis)
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
       case Peer.Disconnect(nodeId) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.nodeId => true
