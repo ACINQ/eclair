@@ -20,7 +20,6 @@ import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, Script, ScriptFlags, Transaction}
-import fr.acinq.eclair.balance.CheckBalance.PossiblyPublishedMainAndHtlcBalance
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.UInt64.Conversions._
@@ -1919,7 +1918,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_CLOSE (with a script that does not match our upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val sender = TestProbe()
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
     val shutdownScript = Script.write(Script.pay2wpkh(randomKey().publicKey))
     alice ! CMD_CLOSE(sender.ref, Some(shutdownScript))
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, InvalidFinalScript]]
@@ -1928,7 +1926,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_CLOSE (with a script that does match our upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val sender = TestProbe()
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
     val shutdownScript = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey
     alice ! CMD_CLOSE(sender.ref, Some(shutdownScript))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
@@ -1941,7 +1938,6 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_CLOSE (upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val sender = TestProbe()
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
     alice ! CMD_CLOSE(sender.ref, None)
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val shutdown = alice2bob.expectMsgType[Shutdown]
@@ -2049,7 +2045,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv Shutdown (with invalid final script)") { f =>
     import f._
     bob ! Shutdown(ByteVector32.Zeroes, hex"00112233445566778899")
-    bob2alice.expectNoMessage(3 seconds)
+    bob2alice.expectNoMessage(500 millis)
     // we should fail the connection as per the BOLTs
     bobPeer.fishForMessage(3 seconds) {
       case Peer.Disconnect(nodeId) if nodeId == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteParams.nodeId => true

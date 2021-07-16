@@ -153,7 +153,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     testFeeConverge(f)
   }
 
-  test("recv ClosingSigned (theirCloseFee == ourCloseFee) (fee 1, upfront shutdown script)", Tag("fee1"), Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv ClosingSigned (theirCloseFee == ourCloseFee) (fee 1, upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
     testFeeConverge(f)
   }
 

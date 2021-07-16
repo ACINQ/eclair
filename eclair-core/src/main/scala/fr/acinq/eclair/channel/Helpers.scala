@@ -78,17 +78,17 @@ object Helpers {
       nodeParams.minDepthBlocks.max(blocksToReachFunding)
   }
 
-  def extractShutdownScript(channelFeatures: ChannelFeatures, upfrontShutdownScript_opt: Option[ChannelTlv.UpfrontShutdownScript]): Option[ByteVector] =
-    extractShutdownScript(channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), channelFeatures.hasFeature(Features.ShutdownAnySegwit), upfrontShutdownScript_opt)
+  def extractShutdownScript(channelId: ByteVector32, channelFeatures: ChannelFeatures, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] =
+    extractShutdownScript(channelId, channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), channelFeatures.hasFeature(Features.ShutdownAnySegwit), upfrontShutdownScript_opt)
 
-  def extractShutdownScript(hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ChannelTlv.UpfrontShutdownScript]): Option[ByteVector] = {
-    (hasOptionUpfrontShutdownScript, upfrontShutdownScript_opt.map(_.script)) match {
-      case (true, None) => throw new IllegalArgumentException("they must provide a script if option_ufront_shutdown_script is set")
-      case (true, Some(script)) if script.isEmpty => None // but the provided script can be empty
-      case (true, Some(script)) if !Closing.isValidFinalScriptPubkey(script, allowAnySegwit) => throw new IllegalArgumentException("invalid shutdown script")
-      case (true, Some(script)) => Some(script)
-      case (false, Some(script)) if !script.isEmpty => throw new IllegalArgumentException("they must not provide a script if option_ufront_shutdown_script is not set")
-      case _ => None
+  def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
+    (hasOptionUpfrontShutdownScript, upfrontShutdownScript_opt) match {
+      case (true, None) => Left(MissingUpfrontShutdownScript(channelId))
+      case (true, Some(script)) if script.isEmpty => Right(None) // but the provided script can be empty
+      case (true, Some(script)) if !Closing.isValidFinalScriptPubkey(script, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (true, Some(script)) => Right(Some(script))
+      case (false, Some(script)) if !script.isEmpty => Left(InvalidFinalScript(channelId))
+      case _ => Right(None)
     }
   }
 
@@ -143,10 +143,7 @@ object Helpers {
     val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    Try(extractShutdownScript(channelFeatures, open.tlvStream.get[ChannelTlv.UpfrontShutdownScript])) match {
-      case Failure(_) => Left(InvalidFinalScript(open.temporaryChannelId))
-      case Success(script) => Right(script)
-    }
+    extractShutdownScript(open.temporaryChannelId, channelFeatures, open.upfrontShutdownScript_opt)
   }
 
   /**
@@ -179,10 +176,7 @@ object Helpers {
     val reserveToFundingRatio = accept.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    Try(extractShutdownScript(channelFeatures, accept.tlvStream.get[ChannelTlv.UpfrontShutdownScript])) match {
-      case Failure(_) => Left(InvalidFinalScript(open.temporaryChannelId))
-      case Success(script) => Right(script)
-    }
+    extractShutdownScript(accept.temporaryChannelId, channelFeatures, accept.upfrontShutdownScript_opt)
   }
 
   /**

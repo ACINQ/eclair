@@ -111,9 +111,9 @@ case class Commitments(channelId: ByteVector32,
     // to check whether shutdown_any_segwit is active we check features in local and remote parameters, which are negotiated each time we connect to our peer.
     val allowAnySegwit = Features.canUseFeature(localParams.initFeatures, remoteParams.initFeatures, Features.ShutdownAnySegwit)
     (channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), remoteParams.shutdownScript) match {
-      case (false, _) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit )=> Left(InvalidFinalScript(channelId))
-      case (false, _)  => Right(remoteScriptPubKey)
-      case (true, None) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit )=> {
+      case (false, _) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => Left(InvalidFinalScript(channelId))
+      case (false, _) => Right(remoteScriptPubKey)
+      case (true, None) if !Closing.isValidFinalScriptPubkey(remoteScriptPubKey, allowAnySegwit) => {
         // this is a special case: they set option_upfront_shutdown_script but did not provide a script in their open/accept message
         Left(InvalidFinalScript(channelId))
       }
