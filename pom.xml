@@ -58,6 +58,9 @@
         <developer>
             <id>sstone</id>
         </developer>
+        <developer>
+            <id>t-bast</id>
+        </developer>
     </developers>
 
     <properties>
