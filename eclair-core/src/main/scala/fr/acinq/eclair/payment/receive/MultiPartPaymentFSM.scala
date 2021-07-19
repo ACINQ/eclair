@@ -70,9 +70,10 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
         // That is why, instead, we wait for all parts to arrive. Then, if there is at least one pay-to-open part, and if
         // the total received amount is less than the minimum amount required for a pay-to-open, we fail the payment.
         updatedParts
-          .collectFirst { case p: PayToOpenPart => p } match {
-          case Some(p) if p.totalAmount < p.payToOpen.payToOpenMinAmount =>
-            context.system.eventStream.publish(MissedPayToOpenPayment(p.paymentHash, p.totalAmount, p.payToOpen.payToOpenMinAmount))
+          .collect { case p: PayToOpenPart => p.payToOpen } match {
+          case payToOpenRequests if payToOpenRequests.nonEmpty && PayToOpenRequest.combine(payToOpenRequests).amountMsat < payToOpenRequests.head.payToOpenMinAmount =>
+            val p = payToOpenRequests.head
+            context.system.eventStream.publish(MissedPayToOpenPayment(p.paymentHash, part.totalAmount, p.payToOpenMinAmount))
             goto(PAYMENT_FAILED) using PaymentFailed(IncorrectOrUnknownPaymentDetails(part.totalAmount, nodeParams.currentBlockHeight), updatedParts)
           case _ =>
             goto(PAYMENT_SUCCEEDED) using PaymentSucceeded(updatedParts)

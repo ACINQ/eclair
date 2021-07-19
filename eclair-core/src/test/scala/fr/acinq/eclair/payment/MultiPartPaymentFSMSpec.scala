@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.payment
 
+import akka.actor.ActorRef
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM._
-import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
-import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, wire}
+import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, PayToOpenRequest, UnknownNextPeer, UpdateAddHtlc}
+import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, MilliSatoshi, NodeParams, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32, wire}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
@@ -110,6 +111,19 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
     f.eventListener.expectNoMsg(50 millis)
   }
 
+  test("fail all if total pay-to-open is below minimum") {
+    val f = createFixture(250 millis, 20000000 msat)
+    f.parent.send(f.handler, createMultiPartHtlc(20000000 msat, 16000000 msat, 1))
+    f.parent.send(f.handler, createPayToOpenPart(20000000 msat, 4000000 msat))
+    val fail = f.parent.expectMsgType[MultiPartPaymentFailed]
+    assert(fail.paymentHash === paymentHash)
+    assert(fail.failure === IncorrectOrUnknownPaymentDetails(20000000 msat, f.currentBlockHeight))
+    assert(fail.parts.length === 2)
+
+    f.parent.expectNoMsg(50 millis)
+    f.eventListener.expectNoMsg(50 millis)
+  }
+
   test("fulfill all when total amount reached") {
     val f = createFixture(10 seconds, 1000 msat)
     val parts = Seq(
@@ -162,6 +176,22 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
     assert(paymentResult.parts === Seq(part))
+
+    f.parent.expectNoMsg(50 millis)
+    f.eventListener.expectNoMsg(50 millis)
+  }
+
+  test("fulfil all if total pay-to-open is above minimum") {
+    val f = createFixture(250 millis, 20000000 msat)
+    val parts = Seq(
+      createMultiPartHtlc(20000000 msat, 6000000 msat, 1),
+      createPayToOpenPart(20000000 msat, 7000000 msat),
+      createPayToOpenPart(20000000 msat, 7000000 msat)
+    )
+    parts.foreach(p => f.parent.send(f.handler, p))
+
+    val paymentResult = f.parent.expectMsgType[MultiPartPaymentSucceeded]
+    assert(paymentResult.parts.toSet === parts.toSet)
 
     f.parent.expectNoMsg(50 millis)
     f.eventListener.expectNoMsg(50 millis)
@@ -234,5 +264,20 @@ object MultiPartPaymentFSMSpec {
     val htlc = UpdateAddHtlc(htlcIdToChannelId(htlcId), htlcId, htlcAmount, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)
     HtlcPart(totalAmount, htlc)
   }
+
+  def createPayToOpenPart(totalAmount: MilliSatoshi, payToOpenAmount: MilliSatoshi): PayToOpenPart =
+    PayToOpenPart(
+      totalAmount = totalAmount,
+      payToOpen = PayToOpenRequest(
+        chainHash = Block.RegtestGenesisBlock.blockId,
+        fundingSatoshis = payToOpenAmount.truncateToSatoshi * 2,
+        amountMsat = payToOpenAmount,
+        payToOpenFee = 10 sat,
+        paymentHash = paymentHash,
+        expireAt = Long.MaxValue,
+        htlc_opt = None,
+        payToOpenMinAmount = 10000.sat.toMilliSatoshi),
+      peer = ActorRef.noSender
+    )
 
 }
