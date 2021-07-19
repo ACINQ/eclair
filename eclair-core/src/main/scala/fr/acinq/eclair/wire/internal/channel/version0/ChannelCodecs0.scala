@@ -286,7 +286,6 @@ private[channel] object ChannelCodecs0 {
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | provide[Option[Transaction]](None)) ::
-        ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
         ("waitingSince" | provide(System.currentTimeMillis.milliseconds.toSeconds)) ::
         ("deferred" | optional(bool, fundingLockedCodec)) ::
         ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
@@ -294,7 +293,6 @@ private[channel] object ChannelCodecs0 {
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | optional(bool, txCodec)) ::
-        ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
         ("waitingSince" | int64) ::
         ("deferred" | optional(bool, fundingLockedCodec)) ::
         ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
@@ -302,8 +300,7 @@ private[channel] object ChannelCodecs0 {
     val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
-        ("lastSent" | fundingLockedCodec) ::
-        ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)]))).as[DATA_WAIT_FOR_FUNDING_LOCKED].decodeOnly
+        ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED].decodeOnly
 
     // this is a decode-only codec compatible with versions 9afb26e and below
     val DATA_NORMAL_COMPAT_03_Codec: Codec[DATA_NORMAL] = (

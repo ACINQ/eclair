@@ -232,7 +232,6 @@ private[channel] object ChannelCodecs1 {
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | optional(bool8, txCodec)) ::
-        ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)])) ::
         ("waitingSince" | int64) ::
         ("deferred" | optional(bool8, lengthDelimited(fundingLockedCodec))) ::
         ("lastSent" | either(bool8, lengthDelimited(fundingCreatedCodec), lengthDelimited(fundingSignedCodec)))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED]
@@ -240,8 +239,7 @@ private[channel] object ChannelCodecs1 {
     val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
-        ("lastSent" | lengthDelimited(fundingLockedCodec)) ::
-        ("initialRelayFees" | provide(Option.empty[(MilliSatoshi, Int)]))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
+        ("lastSent" | lengthDelimited(fundingLockedCodec))).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
     val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
       ("commitments" | commitmentsCodec) ::

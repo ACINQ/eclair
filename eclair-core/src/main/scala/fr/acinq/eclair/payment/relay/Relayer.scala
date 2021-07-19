@@ -113,9 +113,18 @@ object Relayer extends Logging {
 
   // @formatter:off
   case class RelayFees(feeBase: MilliSatoshi, feeProportionalMillionth: Int)
+
   case class RelayParams(publicChannelFees: RelayFees,
                          privateChannelFees: RelayFees,
-                         minTrampolineFees: RelayFees)
+                         minTrampolineFees: RelayFees) {
+    def defaultFees(announceChannel: Boolean): RelayFees = {
+      if (announceChannel) {
+        publicChannelFees
+      } else {
+        privateChannelFees
+      }
+    }
+  }
 
   case class RelayForward(add: UpdateAddHtlc)
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)

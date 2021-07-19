@@ -41,6 +41,8 @@ case class DualDatabases(sqlite: SqliteDatabases, postgres: PostgresDatabases) e
 
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(sqlite.pendingCommands, postgres.pendingCommands)
 
+  override val relayFees: RelayFeesDb = DualRelayFeesDb(sqlite.relayFees, postgres.relayFees)
+
   override def backup(backupFile: File): Unit = sqlite.backup(backupFile)
 }
 
@@ -369,6 +371,26 @@ case class DualPendingCommandsDb(sqlite: SqlitePendingCommandsDb, postgres: PgPe
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = {
     runAsync(postgres.listSettlementCommands())
     sqlite.listSettlementCommands()
+  }
+
+  override def close(): Unit = {
+    runAsync(postgres.close())
+    sqlite.close()
+  }
+}
+
+case class DualRelayFeesDb(sqlite: SqliteRelayFeesDb, postgres: PgRelayFeesDb) extends RelayFeesDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-relay-fees").build()))
+
+  override def addOrUpdateFees(nodeId: Crypto.PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long): Unit = {
+    runAsync(postgres.addOrUpdateFees(nodeId, feeBase, feeProportionalMillionths))
+    sqlite.addOrUpdateFees(nodeId, feeBase, feeProportionalMillionths)
+  }
+
+  override def getFees(nodeId: Crypto.PublicKey): Option[(MilliSatoshi, Long)] = {
+    runAsync(postgres.getFees(nodeId))
+    sqlite.getFees(nodeId)
   }
 
   override def close(): Unit = {

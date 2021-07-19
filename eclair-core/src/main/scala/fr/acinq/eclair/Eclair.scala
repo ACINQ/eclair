@@ -96,7 +96,7 @@ trait Eclair {
 
   def forceClose(channels: List[ApiTypes.ChannelIdentifier])(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_FORCECLOSE]]]]
 
-  def updateRelayFee(channels: List[ApiTypes.ChannelIdentifier], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]]
+  def updateRelayFee(nodes: List[PublicKey], feeBase: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]]
 
   def channelsInfo(toRemoteNode_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[RES_GETINFO]]
 
@@ -177,7 +177,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     (appKit.switchboard ? Peer.Disconnect(nodeId)).mapTo[String]
   }
 
-  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeeratePerByte_opt: Option[FeeratePerByte], initialRelayFees_opt: Option[(MilliSatoshi, Int)], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse] = {
+  override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], fundingFeeratePerByte_opt: Option[FeeratePerByte], relayFees_opt: Option[(MilliSatoshi, Int)], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse] = {
+    relayFees_opt match {
+      case Some((feeBase, feeProportionalMillionths)) => updateRelayFee(List(nodeId), feeBase, feeProportionalMillionths)
+      case None => ()
+    }
     // we want the open timeout to expire *before* the default ask timeout, otherwise user won't get a generic response
     val openTimeout = openTimeout_opt.getOrElse(Timeout(10 seconds))
     (appKit.switchboard ? Peer.OpenChannel(
@@ -185,7 +189,6 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       fundingSatoshis = fundingAmount,
       pushMsat = pushAmount_opt.getOrElse(0 msat),
       fundingTxFeeratePerKw_opt = fundingFeeratePerByte_opt.map(FeeratePerKw(_)),
-      initialRelayFees_opt = initialRelayFees_opt,
       channelFlags = flags_opt.map(_.toByte),
       timeout_opt = Some(openTimeout))).mapTo[ChannelOpenResponse]
   }
@@ -198,8 +201,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     sendToChannels[CommandResponse[CMD_FORCECLOSE]](channels, CMD_FORCECLOSE(ActorRef.noSender))
   }
 
-  override def updateRelayFee(channels: List[ApiTypes.ChannelIdentifier], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
-    sendToChannels[CommandResponse[CMD_UPDATE_RELAY_FEE]](channels, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, feeBaseMsat, feeProportionalMillionths))
+  override def updateRelayFee(nodes: List[PublicKey], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
+    for (node_id <- nodes) {
+      appKit.nodeParams.db.relayFees.addOrUpdateFees(node_id, feeBaseMsat, feeProportionalMillionths)
+    }
+    allChannels()
+      .map(channels => channels.filter(c => nodes.contains(c.a) || nodes.contains(c.b)).map(c => Right(c.shortChannelId)))
+      .flatMap(channels => sendToChannels[CommandResponse[CMD_UPDATE_RELAY_FEE]](channels.toList, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, feeBaseMsat, feeProportionalMillionths)))
   }
 
   override def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
