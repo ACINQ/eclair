@@ -146,7 +146,8 @@ case class UpdateAddHtlc(channelId: ByteVector32,
                          amountMsat: MilliSatoshi,
                          paymentHash: ByteVector32,
                          cltvExpiry: CltvExpiry,
-                         onionRoutingPacket: OnionRoutingPacket) extends HtlcMessage with UpdateMessage with HasChannelId
+                         onionRoutingPacket: OnionRoutingPacket,
+                         tlvStream: TlvStream[UpdateAddHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,

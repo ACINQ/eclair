@@ -27,7 +27,7 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, PublishableTxs}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.UpdateMessage
+import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -78,6 +78,15 @@ private[channel] object ChannelCodecs1 {
         ("shutdownScript" | provide[Option[ByteVector]](None))).as[RemoteParams]
 
     def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
+
+    val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
+      ("channelId" | bytes32) ::
+        ("id" | uint64overflow) ::
+        ("amountMsat" | millisatoshi) ::
+        ("paymentHash" | bytes32) ::
+        ("expiry" | cltvExpiry) ::
+        ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec) ::
+        ("tlvStream" | provide(TlvStream.empty[UpdateAddHtlcTlv]))).as[UpdateAddHtlc]
 
     val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool8)
       .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
