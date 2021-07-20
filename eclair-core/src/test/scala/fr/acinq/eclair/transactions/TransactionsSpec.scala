@@ -391,7 +391,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   def htlcOut(amount: Satoshi): DirectedHtlc = OutgoingHtlc(UpdateAddHtlc(ByteVector32.Zeroes, 0, amount.toMilliSatoshi, ByteVector32.Zeroes, CltvExpiry(144), TestConstants.emptyOnionPacket))
 
-  test("BOLT 2 fee tests") {
+  // This test is ignored because some of the tests listed in the BOLT-03 specification require anchor output
+  ignore("BOLT 3 fee tests") {
     val bolt3 = Source
       .fromURL("https://raw.githubusercontent.com/lightningnetwork/lightning-rfc/master/03-transactions.md")
       .mkString
