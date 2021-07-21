@@ -20,9 +20,10 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratesPerKw, OnChainFeeConf, _}
-import fr.acinq.eclair.channel.{ChannelFeatures, LocalParams}
+import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.{Peer, PeerConnection}
+import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
@@ -117,8 +118,16 @@ object TestConstants {
       minDepthBlocks = 3,
       toRemoteDelay = CltvExpiryDelta(144),
       maxToLocalDelay = CltvExpiryDelta(1000),
-      feeBase = 546000 msat,
-      feeProportionalMillionth = 10,
+      relayParams = RelayParams(
+         publicChannelFees = RelayFees(
+          feeBase = 546000 msat,
+          feeProportionalMillionth = 10),
+        privateChannelFees = RelayFees(
+          feeBase = 547000 msat,
+          feeProportionalMillionth = 20),
+        minTrampolineFees = RelayFees(
+          feeBase = 548000 msat,
+          feeProportionalMillionth = 30)),
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
       db = TestDatabases.inMemoryDb(),
@@ -224,8 +233,16 @@ object TestConstants {
       minDepthBlocks = 3,
       toRemoteDelay = CltvExpiryDelta(144),
       maxToLocalDelay = CltvExpiryDelta(1000),
-      feeBase = 546000 msat,
-      feeProportionalMillionth = 10,
+      relayParams = RelayParams(
+        publicChannelFees = RelayFees(
+          feeBase = 546000 msat,
+          feeProportionalMillionth = 10),
+        privateChannelFees = RelayFees(
+          feeBase = 547000 msat,
+          feeProportionalMillionth = 20),
+        minTrampolineFees = RelayFees(
+          feeBase = 548000 msat,
+          feeProportionalMillionth = 30)),
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
       db = TestDatabases.inMemoryDb(),

@@ -102,7 +102,7 @@ object NodeRelay {
     }
 
   def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
-    val fee = nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, payloadOut.amountToForward)
+    val fee = nodeFee(nodeParams.relayParams.minTrampolineFees.feeBase, nodeParams.relayParams.minTrampolineFees.feeProportionalMillionth, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
       Some(TrampolineFeeInsufficient)
     } else if (upstream.expiryIn - payloadOut.outgoingCltv < nodeParams.expiryDelta) {
@@ -136,7 +136,7 @@ object NodeRelay {
    */
   def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload): Option[FailureMessage] = {
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, RouteNotFound) => f }.nonEmpty
-    val routingFeeHigh = upstream.amountIn - nextPayload.amountToForward >= nodeFee(nodeParams.feeBase, nodeParams.feeProportionalMillionth, nextPayload.amountToForward) * 5
+    val routingFeeHigh = upstream.amountIn - nextPayload.amountToForward >= nodeFee(nodeParams.relayParams.minTrampolineFees.feeBase, nodeParams.relayParams.minTrampolineFees.feeProportionalMillionth, nextPayload.amountToForward) * 5
     failures match {
       case Nil => None
       case LocalFailure(_, BalanceTooLow) :: Nil if routingFeeHigh =>

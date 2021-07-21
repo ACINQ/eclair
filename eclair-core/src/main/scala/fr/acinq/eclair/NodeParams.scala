@@ -26,6 +26,7 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
+import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Router.RouterConf
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
@@ -69,8 +70,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       toRemoteDelay: CltvExpiryDelta,
                       maxToLocalDelay: CltvExpiryDelta,
                       minDepthBlocks: Int,
-                      feeBase: MilliSatoshi,
-                      feeProportionalMillionth: Int,
+                      relayParams: RelayParams,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
                       db: Databases,
@@ -294,10 +294,13 @@ object NodeParams extends Logging {
       claimMainBlockTarget = config.getInt("on-chain-fees.target-blocks.claim-main")
     )
 
-    val feeBase = MilliSatoshi(config.getInt("fee-base-msat"))
-    // fee base is in msat but is encoded on 32 bits and not 64 in the BOLTs, which is why it has
-    // to be below 0x100000000 msat which is about 42 mbtc
-    require(feeBase <= MilliSatoshi(0xFFFFFFFFL), "fee-base-msat must be below 42 mbtc")
+    def getRelayFees(relayFeesConfig: Config): RelayFees = {
+      val feeBase = MilliSatoshi(relayFeesConfig.getInt("fee-base-msat"))
+      // fee base is in msat but is encoded on 32 bits and not 64 in the BOLTs, which is why it has
+      // to be below 0x100000000 msat which is about 42 mbtc
+      require(feeBase <= MilliSatoshi(0xFFFFFFFFL), "fee-base-msat must be below 42 mbtc")
+      RelayFees(feeBase, relayFeesConfig.getInt("fee-proportional-millionths"))
+    }
 
     val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
       case "uncompressed" => EncodingType.UNCOMPRESSED
@@ -349,8 +352,11 @@ object NodeParams extends Logging {
       toRemoteDelay = CltvExpiryDelta(config.getInt("to-remote-delay-blocks")),
       maxToLocalDelay = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
-      feeBase = feeBase,
-      feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
+      relayParams = RelayParams(
+        getRelayFees(config.getConfig("relay.fees.public-channels")),
+        getRelayFees(config.getConfig("relay.fees.private-channels")),
+        getRelayFees(config.getConfig("relay.fees.min-trampoline")),
+      ),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       db = database,
