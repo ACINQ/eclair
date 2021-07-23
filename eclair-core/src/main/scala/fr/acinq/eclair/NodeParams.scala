@@ -353,9 +353,9 @@ object NodeParams extends Logging {
       maxToLocalDelay = CltvExpiryDelta(config.getInt("max-to-local-delay-blocks")),
       minDepthBlocks = config.getInt("mindepth-blocks"),
       relayParams = RelayParams(
-        getRelayFees(config.getConfig("relay.fees.public-channels")),
-        getRelayFees(config.getConfig("relay.fees.private-channels")),
-        getRelayFees(config.getConfig("relay.fees.min-trampoline")),
+        publicChannelFees = getRelayFees(config.getConfig("relay.fees.public-channels")),
+        privateChannelFees = getRelayFees(config.getConfig("relay.fees.private-channels")),
+        minTrampolineFees = getRelayFees(config.getConfig("relay.fees.min-trampoline")),
       ),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
