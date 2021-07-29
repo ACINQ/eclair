@@ -112,6 +112,11 @@ object Relayer extends Logging {
     Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
 
   // @formatter:off
+  case class RelayFees(feeBase: MilliSatoshi, feeProportionalMillionth: Int)
+  case class RelayParams(publicChannelFees: RelayFees,
+                         privateChannelFees: RelayFees,
+                         minTrampolineFees: RelayFees)
+
   case class RelayForward(add: UpdateAddHtlc)
   case class UsableBalance(remoteNodeId: PublicKey, shortChannelId: ShortChannelId, canSend: MilliSatoshi, canReceive: MilliSatoshi, isPublic: Boolean)
 

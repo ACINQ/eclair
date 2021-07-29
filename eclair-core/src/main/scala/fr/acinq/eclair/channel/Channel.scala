@@ -663,7 +663,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       blockchain ! WatchFundingDeeplyBuried(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId, None))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
-      val (feeBase, feeProportionalMillionths) = initialRelayFees_opt.getOrElse((nodeParams.feeBase, nodeParams.feeProportionalMillionth))
+      val defaultFees =
+        if (commitments.announceChannel) {
+          (nodeParams.relayParams.publicChannelFees.feeBase, nodeParams.relayParams.publicChannelFees.feeProportionalMillionth)
+        } else {
+          (nodeParams.relayParams.privateChannelFees.feeBase, nodeParams.relayParams.privateChannelFees.feeProportionalMillionth)
+        }
+      val (feeBase, feeProportionalMillionths) = initialRelayFees_opt.getOrElse(defaultFees)
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDelta, d.commitments.remoteParams.htlcMinimum, feeBase, feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
