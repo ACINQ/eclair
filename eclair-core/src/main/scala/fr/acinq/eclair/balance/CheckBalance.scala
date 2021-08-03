@@ -76,8 +76,8 @@ object CheckBalance {
   def updateMainAndHtlcBalance(localCommit: LocalCommit, knownPreimages: Set[(ByteVector32, Long)]): MainAndHtlcBalance => MainAndHtlcBalance = { b: MainAndHtlcBalance =>
     val toLocal = localCommit.spec.toLocal.truncateToSatoshi
     // we only count htlcs in if we know the preimage
-    val htlcIn = localCommit.spec.htlcs.collect(incoming).filter(add => knownPreimages.contains((add.channelId, add.id))).map(_.amountMsat.truncateToSatoshi).sum
-    val htlcOut = localCommit.spec.htlcs.collect(outgoing).map(_.amountMsat.truncateToSatoshi).sum
+    val htlcIn = localCommit.spec.htlcs.collect(incoming).filter(add => knownPreimages.contains((add.channelId, add.id))).toList.map(_.amountMsat.truncateToSatoshi).sum
+    val htlcOut = localCommit.spec.htlcs.collect(outgoing).toList.map(_.amountMsat.truncateToSatoshi).sum
     b.modify(_.toLocal).using(_ + toLocal)
       .modify(_.htlcOut).using(_ + htlcIn + htlcOut)
   }
@@ -109,12 +109,13 @@ object CheckBalance {
     // incoming htlcs for which we have a preimage but we are still waiting for the to-local delay
     val htlcIn = localCommit.spec.htlcs.collect(incoming)
       .filterNot(htlc => htlcsInOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
-      .filter(add => knownPreimages.contains((add.channelId, add.id))).map(_.amountMsat.truncateToSatoshi).sum
+      .filter(add => knownPreimages.contains((add.channelId, add.id)))
+      .toList.map(_.amountMsat.truncateToSatoshi).sum
     // all outgoing htlcs for which remote didn't prove it had the preimage are expected to time out
     val htlcOut = localCommit.spec.htlcs.collect(outgoing)
       .filterNot(htlc => htlcsOutOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
       .filterNot(htlc => remoteHasPreimages(c, htlc.id))
-      .map(_.amountMsat.truncateToSatoshi).sum
+      .toList.map(_.amountMsat.truncateToSatoshi).sum
     // all claim txs have possibly been published
     val htlcs = localCommitPublished.claimHtlcDelayedTxs
       .map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
@@ -149,12 +150,12 @@ object CheckBalance {
     val htlcIn = remoteCommit.spec.htlcs.collect(outgoing)
       .filter(add => knownPreimages.contains((add.channelId, add.id)))
       .filterNot(htlc => htlcsInOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
-      .map(_.amountMsat.truncateToSatoshi).sum
+      .toList.map(_.amountMsat.truncateToSatoshi).sum
     // all outgoing htlcs for which remote didn't prove it had the preimage are expected to time out
     val htlcOut = remoteCommit.spec.htlcs.collect(incoming)
       .filterNot(htlc => htlcsOutOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
       .filterNot(htlc => remoteHasPreimages(c, htlc.id))
-      .map(_.amountMsat.truncateToSatoshi).sum
+      .toList.map(_.amountMsat.truncateToSatoshi).sum
     // all claim txs have possibly been published
     val htlcs = remoteCommitPublished.claimHtlcTxs.values.flatten
       .map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
