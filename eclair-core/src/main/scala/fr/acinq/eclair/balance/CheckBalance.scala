@@ -1,7 +1,8 @@
 package fr.acinq.eclair.balance
 
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.{Btc, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.{Btc, ByteVector32, Satoshi, SatoshiLong}
+import fr.acinq.eclair.{MilliSatoshi, _}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose, NextRemoteClose, RemoteClose}
@@ -10,11 +11,19 @@ import fr.acinq.eclair.db.Databases
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, HtlcSuccessTx, HtlcTimeoutTx}
-import fr.acinq.eclair.wire.protocol.UpdateFulfillHtlc
+import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFulfillHtlc}
 
 import scala.concurrent.{ExecutionContext, Future}
 
 object CheckBalance {
+
+  /**
+   * Helper to avoid accidental deduplication caused by the [[Set]]
+   * Amounts are truncated to the [[Satoshi]] because that is what would happen on-chain.
+   */
+  implicit class HtlcsWithSum(htlcs: Set[UpdateAddHtlc]) {
+    def sumAmount: Satoshi = htlcs.toList.map(_.amountMsat.truncateToSatoshi).sum
+  }
 
   /**
    * For more fine-grained analysis, we count the in-flight amounts separately from the main amounts.
@@ -76,8 +85,8 @@ object CheckBalance {
   def updateMainAndHtlcBalance(localCommit: LocalCommit, knownPreimages: Set[(ByteVector32, Long)]): MainAndHtlcBalance => MainAndHtlcBalance = { b: MainAndHtlcBalance =>
     val toLocal = localCommit.spec.toLocal.truncateToSatoshi
     // we only count htlcs in if we know the preimage
-    val htlcIn = localCommit.spec.htlcs.collect(incoming).filter(add => knownPreimages.contains((add.channelId, add.id))).toList.map(_.amountMsat.truncateToSatoshi).sum
-    val htlcOut = localCommit.spec.htlcs.collect(outgoing).toList.map(_.amountMsat.truncateToSatoshi).sum
+    val htlcIn = localCommit.spec.htlcs.collect(incoming).filter(add => knownPreimages.contains((add.channelId, add.id))).sumAmount
+    val htlcOut = localCommit.spec.htlcs.collect(outgoing).sumAmount
     b.modify(_.toLocal).using(_ + toLocal)
       .modify(_.htlcOut).using(_ + htlcIn + htlcOut)
   }
@@ -110,12 +119,12 @@ object CheckBalance {
     val htlcIn = localCommit.spec.htlcs.collect(incoming)
       .filterNot(htlc => htlcsInOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
       .filter(add => knownPreimages.contains((add.channelId, add.id)))
-      .toList.map(_.amountMsat.truncateToSatoshi).sum
+      .sumAmount
     // all outgoing htlcs for which remote didn't prove it had the preimage are expected to time out
     val htlcOut = localCommit.spec.htlcs.collect(outgoing)
       .filterNot(htlc => htlcsOutOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
       .filterNot(htlc => remoteHasPreimages(c, htlc.id))
-      .toList.map(_.amountMsat.truncateToSatoshi).sum
+      .sumAmount
     // all claim txs have possibly been published
     val htlcs = localCommitPublished.claimHtlcDelayedTxs
       .map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
@@ -150,12 +159,12 @@ object CheckBalance {
     val htlcIn = remoteCommit.spec.htlcs.collect(outgoing)
       .filter(add => knownPreimages.contains((add.channelId, add.id)))
       .filterNot(htlc => htlcsInOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
-      .toList.map(_.amountMsat.truncateToSatoshi).sum
+      .sumAmount
     // all outgoing htlcs for which remote didn't prove it had the preimage are expected to time out
     val htlcOut = remoteCommit.spec.htlcs.collect(incoming)
       .filterNot(htlc => htlcsOutOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
       .filterNot(htlc => remoteHasPreimages(c, htlc.id))
-      .toList.map(_.amountMsat.truncateToSatoshi).sum
+      .sumAmount
     // all claim txs have possibly been published
     val htlcs = remoteCommitPublished.claimHtlcTxs.values.flatten
       .map(c => c.tx.txid -> c.tx.txOut.head.amount.toBtc).toMap
