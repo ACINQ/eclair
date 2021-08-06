@@ -280,7 +280,7 @@ object TestConstants {
         searchMaxFeePct = 0.03,
         searchMaxCltv = CltvExpiryDelta(2016),
         searchMaxRouteLength = 20,
-        searchRatioBias = 0.0,
+        searchRatioBias = 1.0,
         searchRatioCltv = 0.0,
         searchRatioChannelAge = 0.0,
         searchRatioChannelCapacity = 0.0,
