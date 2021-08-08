@@ -32,7 +32,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
-import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
+import fr.acinq.eclair.db.{FileBackupHandler, IncomingPayment, OutgoingPayment}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnection}
 import fr.acinq.eclair.payment._
@@ -159,6 +159,8 @@ trait Eclair {
   def signMessage(message: ByteVector): SignedMessage
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
+
+  def backupDatabase()(implicit timeout: Timeout): Future[String]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -455,5 +457,14 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     val recoveryId = recoverableSignature.head.toInt - 31
     val pubKeyFromSignature = Crypto.recoverPublicKey(signature, signedBytes, recoveryId)
     VerifiedMessage(valid = true, pubKeyFromSignature)
+  }
+
+  override def backupDatabase()(implicit timeout: Timeout): Future[String] =  {
+    for {
+      backupResult <- appKit.fileBackupHandler.ask(ref => FileBackupHandler.ForceBackup(ref))(timeout, appKit.system.scheduler.toTyped)
+      _ <- Future.fromTry(backupResult.result)
+    } yield {
+      "backup completed"
+    }
   }
 }

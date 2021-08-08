@@ -26,11 +26,11 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
-import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
-import fr.acinq.eclair.blockchain.{EclairWallet, _}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.{Channel, Register}
 import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
@@ -257,9 +257,9 @@ class Setup(val datadir: File,
       channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")
       _ <- channelsListenerReady.future
 
-      _ = if (config.getBoolean("file-backup.enabled")) {
+      backuphandler = if (config.getBoolean("file-backup.enabled")) {
         nodeParams.db match {
-          case fileBackup: FileBackup if config.getBoolean("file-backup.enabled") =>
+          case fileBackup: FileBackup =>
             val fileBackupParams = FileBackupParams(
               interval = FiniteDuration(config.getDuration("file-backup.interval").getSeconds, TimeUnit.SECONDS),
               targetFile = new File(chaindir, config.getString("file-backup.target-file")),
@@ -267,11 +267,12 @@ class Setup(val datadir: File,
             )
             system.spawn(Behaviors.supervise(FileBackupHandler(fileBackup, fileBackupParams)).onFailure(typed.SupervisorStrategy.restart), name = "backuphandler")
           case _ =>
-            system.deadLetters
+            system.spawn(FileBackupHandler.noOp("database backup is supported for sqlite only"),  name = "backuphandler")
         }
       } else {
-        logger.warn("database backup is disabled")
-        system.deadLetters
+        val msg = "database backup is disabled"
+        logger.warn(msg)
+        system.spawn(FileBackupHandler.noOp(msg),  name = "backuphandler")
       }
       dbEventHandler = system.actorOf(SimpleSupervisor.props(DbEventHandler.props(nodeParams), "db-event-handler", SupervisorStrategy.Resume))
       register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
@@ -306,7 +307,9 @@ class Setup(val datadir: File,
         server = server,
         channelsListener = channelsListener,
         balanceActor = balanceActor,
-        wallet = wallet)
+        wallet = wallet,
+        fileBackupHandler = backuphandler
+      )
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -374,7 +377,8 @@ case class Kit(nodeParams: NodeParams,
                server: ActorRef,
                channelsListener: typed.ActorRef[ChannelsListener.Command],
                balanceActor: typed.ActorRef[BalanceActor.Command],
-               wallet: EclairWallet)
+               wallet: EclairWallet,
+               fileBackupHandler: typed.ActorRef[FileBackupHandler.Command])
 
 object Kit {
 

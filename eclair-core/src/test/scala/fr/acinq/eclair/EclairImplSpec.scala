@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
-import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.PaymentRequest
@@ -64,6 +64,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val server = TestProbe()
     val channelsListener = TestProbe()
     val balanceActor = TestProbe()
+    val backupHandler = TestProbe()
     val kit = Kit(
       TestConstants.Alice.nodeParams,
       system,
@@ -77,7 +78,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       server.ref,
       channelsListener.ref.toTyped,
       balanceActor.ref.toTyped,
-      new TestWallet()
+      new TestWallet(),
+      backupHandler.ref.toTyped
     )
 
     withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, paymentHandler, kit)))

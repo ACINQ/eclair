@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db
 
 import akka.Done
+import akka.actor.typed
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
@@ -29,8 +30,8 @@ import fr.acinq.eclair.db.Monitoring.Metrics
 import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
 import java.util.concurrent.Executors
-import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.{ExecutionContext, Future}
 import scala.sys.process.Process
 import scala.util.{Failure, Success, Try}
 
@@ -53,9 +54,10 @@ object FileBackupHandler {
                               script_opt: Option[String])
 
   sealed trait Command
+  case class BackupResult(result: Try[Done]) extends Command
   case class WrappedChannelPersisted(wrapped: ChannelPersisted) extends Command
+  case class ForceBackup(replyTo: typed.ActorRef[BackupResult]) extends Command
   private case object TickBackup extends Command
-  private case class BackupResult(result: Try[Done]) extends Command
 
   sealed trait BackupEvent
   // this notification is sent when we have completed our backup process (our backup file is ready to be used)
@@ -74,6 +76,22 @@ object FileBackupHandler {
         new FileBackupHandler(databases, backupParams, context).waiting(willBackupAtNextTick = false)
       }
     }
+
+  def noOp(message: String): Behavior[Command] = {
+    Behaviors.setup { context =>
+      new NoOpBackupHandler(message, context).waiting
+    }
+  }
+
+  private class NoOpBackupHandler(message: String, context: ActorContext[Command]) {
+    def waiting: Behavior[Command] =
+      Behaviors.receiveMessagePartial {
+        case ForceBackup(replyTo) =>
+          context.log.debug("forcing backup")
+          replyTo ! BackupResult(Try(throw new IllegalArgumentException(message)))
+          Behaviors.same
+      }
+  }
 }
 
 class FileBackupHandler private(databases: FileBackup,
@@ -92,18 +110,23 @@ class FileBackupHandler private(databases: FileBackup,
       } else {
         Behaviors.same
       }
+      case ForceBackup(replyTo) =>
+        context.log.debug("forcing backup")
+        context.pipeToSelf(doBackup())(BackupResult)
+        backuping(willBackupAtNextTick = willBackupAtNextTick, Some(replyTo))
     }
 
-  def backuping(willBackupAtNextTick: Boolean): Behavior[Command] =
+  def backuping(willBackupAtNextTick: Boolean, replyTo_opt: Option[typed.ActorRef[BackupResult]] = None): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case _: WrappedChannelPersisted =>
         context.log.debug("will perform backup at next tick")
         backuping(willBackupAtNextTick = true)
-      case BackupResult(res) =>
+      case br@BackupResult(res) =>
         res match {
           case Success(Done) => context.log.debug("backup succeeded")
           case Failure(cause) => context.log.warn(s"backup failed: $cause")
         }
+        replyTo_opt.foreach(_ ! br)
         waiting(willBackupAtNextTick)
     }
 

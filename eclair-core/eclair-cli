@@ -34,6 +34,7 @@ and COMMAND is one of the available commands:
     - disconnect
     - peers
     - audit
+    - backupdatabase
 
   === Channel ===
     - open
@@ -80,6 +81,7 @@ and COMMAND is one of the available commands:
     - sendonchain
     - onchainbalance
     - onchaintransactions
+    - globalbalance
 
 Examples
 --------

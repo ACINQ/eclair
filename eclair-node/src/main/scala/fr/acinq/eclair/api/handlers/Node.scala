@@ -62,5 +62,9 @@ trait Node {
     }
   }
 
-  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ audit
+  val backupDatabase: Route = postRequest("backupdatabase") { implicit t =>
+    complete(eclairApi.backupDatabase())
+  }
+
+  val nodeRoutes: Route = getInfo ~ connect ~ disconnect ~ peers ~ audit ~ backupDatabase
 }
