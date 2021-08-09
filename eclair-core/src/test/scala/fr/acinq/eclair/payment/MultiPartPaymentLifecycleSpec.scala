@@ -18,9 +18,9 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{ActorContext, ActorRef, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable, HtlcsTimedoutDownstream}
+import fr.acinq.eclair.channel.{ChannelFlags, ChannelUnavailable, HtlcsTimedoutDownstream, RemoteCannotAffordFeesForNewHtlc}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{FailureSummary, FailureType, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
@@ -204,6 +204,31 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val result = fulfillPendingPayments(f, 2)
     assert(result.amountWithFees === 1000200.msat)
     assert(result.nonTrampolineFees === 200.msat)
+  }
+
+  test("retry local channel failures") { f =>
+    import f._
+
+    val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 3, routeParams = Some(routeParams))
+    sender.send(payFsm, payment)
+    router.expectMsgType[RouteRequest]
+    router.send(payFsm, RouteResponse(Seq(Route(finalAmount, hop_ab_1 :: hop_be :: Nil))))
+    childPayFsm.expectMsgType[SendPaymentToRoute]
+    childPayFsm.expectNoMessage(100 millis)
+
+    val (failedId, failedRoute) :: Nil = payFsm.stateData.asInstanceOf[PaymentProgress].pending.toSeq
+    childPayFsm.send(payFsm, PaymentFailed(failedId, paymentHash, Seq(LocalFailure(failedRoute.hops, RemoteCannotAffordFeesForNewHtlc(randomBytes32(), finalAmount, 15 sat, 0 sat, 15 sat)))))
+
+    // We retry without the failing channel.
+    val expectedRouteRequest = RouteRequest(
+      nodeParams.nodeId, e,
+      failedRoute.amount, maxFee,
+      ignore = Ignore(Set.empty, Set(ChannelDesc(channelId_ab_1, a, b))),
+      pendingPayments = Nil,
+      allowMultiPart = true,
+      routeParams = Some(routeParams.copy(randomize = true)),
+      paymentContext = Some(cfg.paymentContext))
+    router.expectMsg(expectedRouteRequest)
   }
 
   test("retry without ignoring channels") { f =>
@@ -562,7 +587,7 @@ object MultiPartPaymentLifecycleSpec {
   val expiry = CltvExpiry(1105)
   val finalAmount = 1000000 msat
   val finalRecipient = randomKey().publicKey
-  val routeParams = RouteParams(randomize = false, 15000 msat, 0.01, 6, CltvExpiryDelta(1008), None, MultiPartParams(1000 msat, 5), false)
+  val routeParams = RouteParams(randomize = false, 15000 msat, 0.01, 6, CltvExpiryDelta(1008), None, MultiPartParams(1000 msat, 5), includeLocalChannelCost = false)
   val maxFee = 15000 msat // max fee for the defaultAmount
 
   /**
