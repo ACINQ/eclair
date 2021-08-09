@@ -2,7 +2,7 @@ package fr.acinq.eclair.balance
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.{Btc, ByteVector32, Satoshi, SatoshiLong}
-import fr.acinq.eclair.{MilliSatoshi, _}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose, NextRemoteClose, RemoteClose}
