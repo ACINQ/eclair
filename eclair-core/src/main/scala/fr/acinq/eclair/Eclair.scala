@@ -37,7 +37,7 @@ import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnection}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
-import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, UsableBalance}
+import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, RelayFees, UsableBalance}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPayment, SendPaymentToRoute, SendPaymentToRouteResponse, SendSpontaneousPayment}
 import fr.acinq.eclair.router.Router._
@@ -203,7 +203,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def updateRelayFee(nodes: List[PublicKey], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
     for (node_id <- nodes) {
-      appKit.nodeParams.db.relayFees.addOrUpdateFees(node_id, feeBaseMsat, feeProportionalMillionths)
+      appKit.nodeParams.db.relayFees.addOrUpdateFees(node_id, RelayFees(feeBaseMsat, feeProportionalMillionths))
     }
     allChannels()
       .map(channels => channels.filter(c => nodes.contains(c.a) || nodes.contains(c.b)).map(c => Right(c.shortChannelId)))

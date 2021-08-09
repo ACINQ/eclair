@@ -23,6 +23,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.RelayFeesDb
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import grizzled.slf4j.Logging
 
 import java.sql.Timestamp
@@ -53,27 +54,27 @@ class PgRelayFeesDb(implicit ds: DataSource, lock: PgLock) extends RelayFeesDb w
     }
   }
 
-  override def addOrUpdateFees(nodeId: Crypto.PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long): Unit = withMetrics("relay_fees/add-or-update", DbBackends.Postgres) {
+  override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("relay_fees/add-or-update", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement(
         "INSERT INTO local.relay_fees VALUES (?, ?, ?, ?)")) { statement =>
         statement.setString(1, nodeId.value.toHex)
-        statement.setLong(2, feeBase.toLong)
-        statement.setLong(3, feeProportionalMillionths)
+        statement.setLong(2, fees.feeBase.toLong)
+        statement.setLong(3, fees.feeProportionalMillionths)
         statement.setTimestamp(4, Timestamp.from(Instant.now()))
         statement.executeUpdate()
       }
     }
   }
 
-  override def getFees(nodeId: PublicKey): Option[(MilliSatoshi, Long)] = withMetrics("relay_fees/get", DbBackends.Postgres) {
+  override def getFees(nodeId: PublicKey): Option[RelayFees] = withMetrics("relay_fees/get", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT fee_base_msat, fee_proportional_millionths FROM local.relay_fees WHERE node_id=? ORDER BY timestamp DESC LIMIT 1")) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.executeQuery()
           .headOption
           .map(rs =>
-            (MilliSatoshi(rs.getLong("fee_base_msat")), rs.getLong("fee_proportional_millionths"))
+            RelayFees(MilliSatoshi(rs.getLong("fee_base_msat")), rs.getLong("fee_proportional_millionths"))
           )
       }
     }

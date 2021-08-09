@@ -17,14 +17,14 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.MilliSatoshi
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 
 import java.io.Closeable
 
 trait RelayFeesDb extends Closeable {
 
-  def addOrUpdateFees(nodeId: PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long): Unit
+  def addOrUpdateFees(nodeId: PublicKey, fees: RelayFees): Unit
 
-  def getFees(nodeId: PublicKey): Option[(MilliSatoshi, Long)]
+  def getFees(nodeId: PublicKey): Option[RelayFees]
 
 }

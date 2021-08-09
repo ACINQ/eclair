@@ -32,6 +32,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPayment, SendPaymentToRoute, SendSpontaneousPayment}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
@@ -500,8 +501,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.updateRelayFee(List(a, b), 999 msat, 1234)
 
-    relayFeesDb.addOrUpdateFees(a, 999 msat, 1234).wasCalled(once)
-    relayFeesDb.addOrUpdateFees(b, 999 msat, 1234).wasCalled(once)
+    relayFeesDb.addOrUpdateFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
+    relayFeesDb.addOrUpdateFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
   }
 
   test("opening a channel with non default relay fees updates relay fees for the node") { f =>
@@ -519,7 +520,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.open(a, 10000000L sat, None, None, Some(888 msat, 2345), None, None)
 
-    relayFeesDb.addOrUpdateFees(a, 888 msat, 2345).wasCalled(once)
+    relayFeesDb.addOrUpdateFees(a, RelayFees(888 msat, 2345)).wasCalled(once)
   }
 
 }

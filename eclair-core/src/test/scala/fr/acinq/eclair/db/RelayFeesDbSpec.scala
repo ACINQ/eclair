@@ -20,6 +20,7 @@ import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair.db.pg.PgRelayFeesDb
 import fr.acinq.eclair.db.sqlite.SqliteRelayFeesDb
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import org.scalatest.funsuite.AnyFunSuite
 
 class RelayFeesDbSpec extends AnyFunSuite {
@@ -46,14 +47,14 @@ class RelayFeesDbSpec extends AnyFunSuite {
 
       assert(db.getFees(a) === None)
       assert(db.getFees(b) === None)
-      db.addOrUpdateFees(a, 1 msat, 123)
+      db.addOrUpdateFees(a, RelayFees(1 msat, 123))
       assert(db.getFees(a) === Some(1 msat, 123))
       assert(db.getFees(b) === None)
       Thread.sleep(2)
-      db.addOrUpdateFees(a, 2 msat, 456)
+      db.addOrUpdateFees(a, RelayFees(2 msat, 456))
       assert(db.getFees(a) === Some(2 msat, 456))
       assert(db.getFees(b) === None)
-      db.addOrUpdateFees(b, 3 msat, 789)
+      db.addOrUpdateFees(b, RelayFees(3 msat, 789))
       assert(db.getFees(a) === Some(2 msat, 456))
       assert(db.getFees(b) === Some(3 msat, 789))
     }

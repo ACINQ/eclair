@@ -112,7 +112,7 @@ object Relayer extends Logging {
     Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
 
   // @formatter:off
-  case class RelayFees(feeBase: MilliSatoshi, feeProportionalMillionth: Int)
+  case class RelayFees(feeBase: MilliSatoshi, feeProportionalMillionths: Long)
 
   case class RelayParams(publicChannelFees: RelayFees,
                          privateChannelFees: RelayFees,

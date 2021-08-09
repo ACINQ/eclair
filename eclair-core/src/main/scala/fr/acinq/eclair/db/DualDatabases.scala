@@ -10,6 +10,7 @@ import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId}
@@ -383,12 +384,12 @@ case class DualRelayFeesDb(sqlite: SqliteRelayFeesDb, postgres: PgRelayFeesDb) e
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-relay-fees").build()))
 
-  override def addOrUpdateFees(nodeId: Crypto.PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long): Unit = {
-    runAsync(postgres.addOrUpdateFees(nodeId, feeBase, feeProportionalMillionths))
-    sqlite.addOrUpdateFees(nodeId, feeBase, feeProportionalMillionths)
+  override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = {
+    runAsync(postgres.addOrUpdateFees(nodeId, fees))
+    sqlite.addOrUpdateFees(nodeId, fees)
   }
 
-  override def getFees(nodeId: Crypto.PublicKey): Option[(MilliSatoshi, Long)] = {
+  override def getFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
     runAsync(postgres.getFees(nodeId))
     sqlite.getFees(nodeId)
   }

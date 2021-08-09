@@ -23,6 +23,7 @@ import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.RelayFeesDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, setVersion, using}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 
 import java.sql.Connection
 
@@ -45,23 +46,23 @@ class SqliteRelayFeesDb(sqlite: Connection) extends RelayFeesDb {
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addOrUpdateFees(nodeId: Crypto.PublicKey, feeBase: MilliSatoshi, feeProportionalMillionths: Long): Unit = withMetrics("relay_fees/add-or-update", DbBackends.Sqlite) {
+  override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("relay_fees/add-or-update", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO relay_fees VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
-      statement.setLong(2, feeBase.toLong)
-      statement.setLong(3, feeProportionalMillionths)
+      statement.setLong(2, fees.feeBase.toLong)
+      statement.setLong(3, fees.feeProportionalMillionths)
       statement.setLong(4, System.currentTimeMillis)
       statement.executeUpdate()
     }
   }
 
-  override def getFees(nodeId: PublicKey): Option[(MilliSatoshi, Long)] = withMetrics("relay_fees/get", DbBackends.Sqlite) {
+  override def getFees(nodeId: PublicKey): Option[RelayFees] = withMetrics("relay_fees/get", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT fee_base_msat, fee_proportional_millionths FROM relay_fees WHERE node_id=? ORDER BY timestamp DESC LIMIT 1")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
       statement.executeQuery()
         .headOption
         .map(rs =>
-          (MilliSatoshi(rs.getLong("fee_base_msat")), rs.getLong("fee_proportional_millionths"))
+          RelayFees(MilliSatoshi(rs.getLong("fee_base_msat")), rs.getLong("fee_proportional_millionths"))
         )
     }
   }
