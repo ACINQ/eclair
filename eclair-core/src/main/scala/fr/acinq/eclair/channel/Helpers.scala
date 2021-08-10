@@ -27,6 +27,7 @@ import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.db.ChannelsDb
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Scripts._
@@ -248,6 +249,11 @@ object Helpers {
   /** NB: this is a blocking call, use carefully! */
   def getWalletPaymentBasepoint(wallet: EclairWallet): PublicKey = {
     Await.result(wallet.getReceivePubkey(), 40 seconds)
+  }
+
+  def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, commitments: Commitments): RelayFees = {
+    val defaultFees = nodeParams.relayParams.defaultFees(commitments.announceChannel)
+    nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
   }
 
   object Funding {

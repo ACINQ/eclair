@@ -99,7 +99,7 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
     }
   }
 
-  override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("relay_fees/add-or-update", DbBackends.Sqlite) {
+  override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("peers/add-or-update-relay-fees", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE relay_fees SET fee_base_msat=?, fee_proportional_millionths=? WHERE node_id=?")) { update =>
       update.setLong(1, fees.feeBase.toLong)
       update.setLong(2, fees.feeProportionalMillionths)
@@ -115,7 +115,7 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
     }
   }
 
-  override def getFees(nodeId: PublicKey): Option[RelayFees] = withMetrics("relay_fees/get", DbBackends.Sqlite) {
+  override def getRelayFees(nodeId: PublicKey): Option[RelayFees] = withMetrics("peers/get-relay-fees", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT fee_base_msat, fee_proportional_millionths FROM relay_fees WHERE node_id=?")) { statement =>
       statement.setBytes(1, nodeId.value.toArray)
       statement.executeQuery()

@@ -91,12 +91,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     // standard conversion
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), relayFees_opt = None, flags_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), flags_opt = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
     assert(open.fundingTxFeeratePerKw_opt === Some(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), relayFees_opt = None, flags_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), flags_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeeratePerKw_opt === Some(FeeratePerKw.MinimumFeeratePerKw))
   }
@@ -501,26 +501,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.updateRelayFee(List(a, b), 999 msat, 1234)
 
-    peersDb.addOrUpdateFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
-    peersDb.addOrUpdateFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
-  }
-
-  test("opening a channel with non default relay fees updates relay fees for the node") { f =>
-    import f._
-
-    val peersDb = mock[PeersDb]
-
-    val databases = mock[Databases]
-    databases.peers returns peersDb
-
-    val kitWithMockDb = kit.copy(nodeParams = kit.nodeParams.copy(db = databases))
-    val eclair = new EclairImpl(kitWithMockDb)
-
-    val a = randomKey().publicKey
-
-    eclair.open(a, 10000000L sat, None, None, Some(888 msat, 2345), None, None)
-
-    peersDb.addOrUpdateFees(a, RelayFees(888 msat, 2345)).wasCalled(once)
+    peersDb.addOrUpdateRelayFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
+    peersDb.addOrUpdateRelayFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
   }
 
 }

@@ -256,14 +256,14 @@ case class DualPeersDb(sqlite: SqlitePeersDb, postgres: PgPeersDb) extends Peers
     sqlite.listPeers()
   }
 
-  override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = {
-    runAsync(postgres.addOrUpdateFees(nodeId, fees))
-    sqlite.addOrUpdateFees(nodeId, fees)
+  override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = {
+    runAsync(postgres.addOrUpdateRelayFees(nodeId, fees))
+    sqlite.addOrUpdateRelayFees(nodeId, fees)
   }
 
-  override def getFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
-    runAsync(postgres.getFees(nodeId))
-    sqlite.getFees(nodeId)
+  override def getRelayFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
+    runAsync(postgres.getRelayFees(nodeId))
+    sqlite.getRelayFees(nodeId)
   }
 
   override def close(): Unit = {

@@ -123,7 +123,7 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     }
   }
 
-  override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("relay_fees/add-or-update", DbBackends.Postgres) {
+  override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("peers/add-or-update-relay-fees", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement(
       """
@@ -140,7 +140,7 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     }
   }
 
-  override def getFees(nodeId: PublicKey): Option[RelayFees] = withMetrics("relay_fees/get", DbBackends.Postgres) {
+  override def getRelayFees(nodeId: PublicKey): Option[RelayFees] = withMetrics("peers/get-relay-fees", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT fee_base_msat, fee_proportional_millionths FROM local.relay_fees WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)

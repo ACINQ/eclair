@@ -48,7 +48,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
-      alice.underlyingActor.nodeParams.db.peers.addOrUpdateFees(bobParams.nodeId, relayFees)
+      alice.underlyingActor.nodeParams.db.peers.addOrUpdateRelayFees(bobParams.nodeId, relayFees)
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, aliceChannelFeatures)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, bobChannelFeatures)

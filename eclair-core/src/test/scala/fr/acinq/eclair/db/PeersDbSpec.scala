@@ -93,17 +93,17 @@ class PeersDbSpec extends AnyFunSuite {
       val a = randomKey().publicKey
       val b = randomKey().publicKey
 
-      assert(db.getFees(a) === None)
-      assert(db.getFees(b) === None)
-      db.addOrUpdateFees(a, RelayFees(1 msat, 123))
-      assert(db.getFees(a) === Some(RelayFees(1 msat, 123)))
-      assert(db.getFees(b) === None)
-      db.addOrUpdateFees(a, RelayFees(2 msat, 456))
-      assert(db.getFees(a) === Some(RelayFees(2 msat, 456)))
-      assert(db.getFees(b) === None)
-      db.addOrUpdateFees(b, RelayFees(3 msat, 789))
-      assert(db.getFees(a) === Some(RelayFees(2 msat, 456)))
-      assert(db.getFees(b) === Some(RelayFees(3 msat, 789)))
+      assert(db.getRelayFees(a) === None)
+      assert(db.getRelayFees(b) === None)
+      db.addOrUpdateRelayFees(a, RelayFees(1 msat, 123))
+      assert(db.getRelayFees(a) === Some(RelayFees(1 msat, 123)))
+      assert(db.getRelayFees(b) === None)
+      db.addOrUpdateRelayFees(a, RelayFees(2 msat, 456))
+      assert(db.getRelayFees(a) === Some(RelayFees(2 msat, 456)))
+      assert(db.getRelayFees(b) === None)
+      db.addOrUpdateRelayFees(b, RelayFees(3 msat, 789))
+      assert(db.getRelayFees(a) === Some(RelayFees(2 msat, 456)))
+      assert(db.getRelayFees(b) === Some(RelayFees(3 msat, 789)))
     }
   }
 

@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
+import fr.acinq.eclair.channel.Helpers.{Closing, Funding, getRelayFees}
 import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -285,8 +285,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId, None))
 
           // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
-          val defaultFees = nodeParams.relayParams.defaultFees(data.commitments.announceChannel)
-          val fees = nodeParams.db.peers.getFees(remoteNodeId).getOrElse(defaultFees)
+          val fees = getRelayFees(nodeParams, remoteNodeId, data.commitments)
           val candidateChannelUpdate = Announcements.makeChannelUpdate(
             nodeParams.chainHash,
             nodeParams.privateKey,
@@ -663,8 +662,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       blockchain ! WatchFundingDeeplyBuried(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF)
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId, None))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
-      val defaultFees = nodeParams.relayParams.defaultFees(commitments.announceChannel)
-      val fees = nodeParams.db.peers.getFees(remoteNodeId).getOrElse(defaultFees)
+      val fees = getRelayFees(nodeParams, remoteNodeId, commitments)
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDelta, d.commitments.remoteParams.htlcMinimum, fees.feeBase, fees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))

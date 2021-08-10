@@ -32,8 +32,8 @@ trait PeersDb extends Closeable {
 
   def listPeers(): Map[PublicKey, NodeAddress]
 
-  def addOrUpdateFees(nodeId: PublicKey, fees: RelayFees): Unit
+  def addOrUpdateRelayFees(nodeId: PublicKey, fees: RelayFees): Unit
 
-  def getFees(nodeId: PublicKey): Option[RelayFees]
+  def getRelayFees(nodeId: PublicKey): Option[RelayFees]
 
 }
