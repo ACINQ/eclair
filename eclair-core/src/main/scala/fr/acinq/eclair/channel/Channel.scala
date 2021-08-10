@@ -286,7 +286,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
           // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
           val defaultFees = nodeParams.relayParams.defaultFees(data.commitments.announceChannel)
-          val fees = nodeParams.db.relayFees.getFees(remoteNodeId).getOrElse(defaultFees)
+          val fees = nodeParams.db.peers.getFees(remoteNodeId).getOrElse(defaultFees)
           val candidateChannelUpdate = Announcements.makeChannelUpdate(
             nodeParams.chainHash,
             nodeParams.privateKey,
@@ -664,7 +664,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId, None))
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val defaultFees = nodeParams.relayParams.defaultFees(commitments.announceChannel)
-      val fees = nodeParams.db.relayFees.getFees(remoteNodeId).getOrElse(defaultFees)
+      val fees = nodeParams.db.peers.getFees(remoteNodeId).getOrElse(defaultFees)
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDelta, d.commitments.remoteParams.htlcMinimum, fees.feeBase, fees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))

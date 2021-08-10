@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol.NodeAddress
 
 import java.io.Closeable
@@ -30,5 +31,9 @@ trait PeersDb extends Closeable {
   def getPeer(nodeId: PublicKey): Option[NodeAddress]
 
   def listPeers(): Map[PublicKey, NodeAddress]
+
+  def addOrUpdateFees(nodeId: PublicKey, fees: RelayFees): Unit
+
+  def getFees(nodeId: PublicKey): Option[RelayFees]
 
 }

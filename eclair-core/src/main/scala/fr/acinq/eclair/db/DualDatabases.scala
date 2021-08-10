@@ -8,7 +8,6 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
-import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
@@ -41,8 +40,6 @@ case class DualDatabases(sqlite: SqliteDatabases, postgres: PostgresDatabases) e
   override val payments: PaymentsDb = DualPaymentsDb(sqlite.payments, postgres.payments)
 
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(sqlite.pendingCommands, postgres.pendingCommands)
-
-  override val relayFees: RelayFeesDb = DualRelayFeesDb(sqlite.relayFees, postgres.relayFees)
 
   override def backup(backupFile: File): Unit = sqlite.backup(backupFile)
 }
@@ -259,6 +256,16 @@ case class DualPeersDb(sqlite: SqlitePeersDb, postgres: PgPeersDb) extends Peers
     sqlite.listPeers()
   }
 
+  override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = {
+    runAsync(postgres.addOrUpdateFees(nodeId, fees))
+    sqlite.addOrUpdateFees(nodeId, fees)
+  }
+
+  override def getFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
+    runAsync(postgres.getFees(nodeId))
+    sqlite.getFees(nodeId)
+  }
+
   override def close(): Unit = {
     runAsync(postgres.close())
     sqlite.close()
@@ -372,26 +379,6 @@ case class DualPendingCommandsDb(sqlite: SqlitePendingCommandsDb, postgres: PgPe
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = {
     runAsync(postgres.listSettlementCommands())
     sqlite.listSettlementCommands()
-  }
-
-  override def close(): Unit = {
-    runAsync(postgres.close())
-    sqlite.close()
-  }
-}
-
-case class DualRelayFeesDb(sqlite: SqliteRelayFeesDb, postgres: PgRelayFeesDb) extends RelayFeesDb {
-
-  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-relay-fees").build()))
-
-  override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = {
-    runAsync(postgres.addOrUpdateFees(nodeId, fees))
-    sqlite.addOrUpdateFees(nodeId, fees)
-  }
-
-  override def getFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
-    runAsync(postgres.getFees(nodeId))
-    sqlite.getFees(nodeId)
   }
 
   override def close(): Unit = {

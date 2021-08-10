@@ -488,10 +488,10 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
   test("update relay fees in database") { f =>
     import f._
 
-    val relayFeesDb = mock[RelayFeesDb]
+    val peersDb = mock[PeersDb]
 
     val databases = mock[Databases]
-    databases.relayFees returns relayFeesDb
+    databases.peers returns peersDb
 
     val kitWithMockDb = kit.copy(nodeParams = kit.nodeParams.copy(db = databases))
     val eclair = new EclairImpl(kitWithMockDb)
@@ -501,17 +501,17 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.updateRelayFee(List(a, b), 999 msat, 1234)
 
-    relayFeesDb.addOrUpdateFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
-    relayFeesDb.addOrUpdateFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
+    peersDb.addOrUpdateFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
+    peersDb.addOrUpdateFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
   }
 
   test("opening a channel with non default relay fees updates relay fees for the node") { f =>
     import f._
 
-    val relayFeesDb = mock[RelayFeesDb]
+    val peersDb = mock[PeersDb]
 
     val databases = mock[Databases]
-    databases.relayFees returns relayFeesDb
+    databases.peers returns peersDb
 
     val kitWithMockDb = kit.copy(nodeParams = kit.nodeParams.copy(db = databases))
     val eclair = new EclairImpl(kitWithMockDb)
@@ -520,7 +520,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     eclair.open(a, 10000000L sat, None, None, Some(888 msat, 2345), None, None)
 
-    relayFeesDb.addOrUpdateFees(a, RelayFees(888 msat, 2345)).wasCalled(once)
+    peersDb.addOrUpdateFees(a, RelayFees(888 msat, 2345)).wasCalled(once)
   }
 
 }

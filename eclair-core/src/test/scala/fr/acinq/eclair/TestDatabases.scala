@@ -30,7 +30,6 @@ sealed trait TestDatabases extends Databases {
   override def peers: PeersDb = db.peers
   override def payments: PaymentsDb = db.payments
   override def pendingCommands: PendingCommandsDb = db.pendingCommands
-  override def relayFees: RelayFeesDb = db.relayFees
   def close(): Unit
   // @formatter:on
 }
