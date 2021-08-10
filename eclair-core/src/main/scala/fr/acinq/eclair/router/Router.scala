@@ -195,7 +195,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
     case Event(GetLocalChannels, d) =>
       val scids = d.graph.getIncomingEdgesOf(nodeParams.nodeId).map(_.desc.shortChannelId)
-      val localChannels = scids.flatMap(scid => d.channels.get(scid).orElse(d.privateChannels.get(scid))).map(c => LocalChannel(nodeParams.nodeId, c))
+      val localChannels = scids.flatMap(scid => d.channels.get(scid).orElse(d.privateChannels.get(scid)).map(c => LocalChannel(nodeParams.nodeId, scid, c)))
       sender() ! localChannels
       stay()
 
@@ -364,7 +364,7 @@ object Router {
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
   }
-  case class LocalChannel(localNodeId: PublicKey, channel: ChannelDetails) {
+  case class LocalChannel(localNodeId: PublicKey, shortChannelId: ShortChannelId, channel: ChannelDetails) {
     val isPrivate: Boolean = channel match {
       case _: PrivateChannel => true
       case _ => false

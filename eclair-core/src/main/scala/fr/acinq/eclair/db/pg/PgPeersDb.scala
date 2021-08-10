@@ -126,12 +126,12 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
   override def addOrUpdateFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("relay_fees/add-or-update", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement(
-        """
-          | INSERT INTO local.relay_fees (node_id, fee_base_msat, fee_proportional_millionths)
-          | VALUES (?, ?, ?)
-          | ON CONFLICT (node_id)
-          | DO UPDATE SET fee_base_msat = EXCLUDED.fee_base_msat, fee_proportional_millionths = EXCLUDED.fee_proportional_millionths
-          | """.stripMargin)) { statement =>
+      """
+      INSERT INTO local.relay_fees (node_id, fee_base_msat, fee_proportional_millionths)
+      VALUES (?, ?, ?)
+      ON CONFLICT (node_id)
+      DO UPDATE SET fee_base_msat = EXCLUDED.fee_base_msat, fee_proportional_millionths = EXCLUDED.fee_proportional_millionths
+      """)) { statement =>
         statement.setString(1, nodeId.value.toHex)
         statement.setLong(2, fees.feeBase.toLong)
         statement.setLong(3, fees.feeProportionalMillionths)

@@ -98,7 +98,6 @@ class PeersDbSpec extends AnyFunSuite {
       db.addOrUpdateFees(a, RelayFees(1 msat, 123))
       assert(db.getFees(a) === Some(RelayFees(1 msat, 123)))
       assert(db.getFees(b) === None)
-      Thread.sleep(2)
       db.addOrUpdateFees(a, RelayFees(2 msat, 456))
       assert(db.getFees(a) === Some(RelayFees(2 msat, 456)))
       assert(db.getFees(b) === None)

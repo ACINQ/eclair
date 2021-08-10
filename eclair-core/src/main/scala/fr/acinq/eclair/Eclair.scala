@@ -202,11 +202,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def updateRelayFee(nodes: List[PublicKey], feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long)(implicit timeout: Timeout): Future[Map[ApiTypes.ChannelIdentifier, Either[Throwable, CommandResponse[CMD_UPDATE_RELAY_FEE]]]] = {
-    for (node_id <- nodes) {
-      appKit.nodeParams.db.peers.addOrUpdateFees(node_id, RelayFees(feeBaseMsat, feeProportionalMillionths))
+    for (nodeId <- nodes) {
+      appKit.nodeParams.db.peers.addOrUpdateFees(nodeId, RelayFees(feeBaseMsat, feeProportionalMillionths))
     }
-    allChannels()
-      .map(channels => channels.filter(c => nodes.contains(c.a) || nodes.contains(c.b)).map(c => Right(c.shortChannelId)))
+    (appKit.router ? Router.GetLocalChannels).mapTo[Iterable[LocalChannel]]
+      .map(channels => channels.filter(c => nodes.contains(c.remoteNodeId)).map(c => Right(c.shortChannelId)))
       .flatMap(channels => sendToChannels[CommandResponse[CMD_UPDATE_RELAY_FEE]](channels.toList, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, feeBaseMsat, feeProportionalMillionths)))
   }
 
