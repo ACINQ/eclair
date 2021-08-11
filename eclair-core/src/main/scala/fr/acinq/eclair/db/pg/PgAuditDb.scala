@@ -105,20 +105,24 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON audit.channel_updates(channel_id)")
           statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON audit.channel_updates(node_id)")
           statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON audit.channel_updates(timestamp)")
-        case Some(v@(4 | 5 | 6 | 7)) =>
+        case Some(v@4) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          if (v < 5) {
-            migration45(statement)
-          }
-          if (v < 6) {
-            migration56(statement)
-          }
-          if (v < 7) {
-            migration67(statement)
-          }
-          if (v < 8) {
-            migration78(statement)
-          }
+          migration45(statement)
+          migration56(statement)
+          migration67(statement)
+          migration78(statement)
+        case Some(v@5) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+          migration56(statement)
+          migration67(statement)
+          migration78(statement)
+        case Some(v@6) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+          migration67(statement)
+          migration78(statement)
+        case Some(v@7) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+          migration78(statement)
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
