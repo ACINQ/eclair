@@ -22,7 +22,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.wire.protocol.ChannelUpdate
 
 import java.io.Closeable
 
@@ -40,7 +39,7 @@ trait AuditDb extends Closeable {
 
   def add(channelErrorOccurred: ChannelErrorOccurred): Unit
 
-  def addChannelUpdate(channelId: ByteVector32, channelUpdate: ChannelUpdate): Unit
+  def addChannelUpdate(localChannelUpdate: LocalChannelUpdate): Unit
 
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 

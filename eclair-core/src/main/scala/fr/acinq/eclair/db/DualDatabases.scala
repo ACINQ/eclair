@@ -161,9 +161,9 @@ case class DualAuditDb(sqlite: SqliteAuditDb, postgres: PgAuditDb) extends Audit
     sqlite.add(channelErrorOccurred)
   }
 
-  override def addChannelUpdate(channelId: ByteVector32, channelUpdate: ChannelUpdate): Unit = {
-    runAsync(postgres.addChannelUpdate(channelId, channelUpdate))
-    sqlite.addChannelUpdate(channelId, channelUpdate)
+  override def addChannelUpdate(localChannelUpdate: LocalChannelUpdate): Unit = {
+    runAsync(postgres.addChannelUpdate(localChannelUpdate))
+    sqlite.addChannelUpdate(localChannelUpdate)
   }
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] = {

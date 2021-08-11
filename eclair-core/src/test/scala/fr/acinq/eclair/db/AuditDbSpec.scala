@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
-import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
+import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalChannelUpdate, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db.AuditDb.Stats
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
@@ -29,6 +29,7 @@ import fr.acinq.eclair.db.pg.PgAuditDb
 import fr.acinq.eclair.db.pg.PgUtils.{getVersion, setVersion}
 import fr.acinq.eclair.db.sqlite.SqliteAuditDb
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.wire.protocol.Error
 import org.scalatest.Tag
@@ -600,6 +601,16 @@ class AuditDbSpec extends AnyFunSuite {
       }
 
       assert(db.listRelayed(0, 40) === Nil)
+    }
+  }
+
+  test("add channel update") {
+    forAllDbs { dbs =>
+      val channelId = randomBytes32()
+      val scid = ShortChannelId(123)
+      val remoteNodeId = randomKey().publicKey
+      val u = Announcements.makeChannelUpdate(randomBytes32(), randomKey(), remoteNodeId, scid, CltvExpiryDelta(56), 2000 msat, 1000 msat, 999, 1000000000 msat)
+      dbs.audit.addChannelUpdate(LocalChannelUpdate(null, channelId, scid, remoteNodeId, None, u, null))
     }
   }
 

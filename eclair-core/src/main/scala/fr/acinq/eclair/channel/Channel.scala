@@ -302,7 +302,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             normal.channelUpdate
           } else {
             log.info("refreshing channel_update due to configuration changes old={} new={}", normal.channelUpdate, candidateChannelUpdate)
-            nodeParams.db.audit.addChannelUpdate(data.channelId, candidateChannelUpdate)
             candidateChannelUpdate
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
@@ -665,7 +664,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // we create a channel_update early so that we can use it to send payments through this channel, but it won't be propagated to other nodes since the channel is not yet announced
       val fees = getRelayFees(nodeParams, remoteNodeId, commitments)
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDelta, d.commitments.remoteParams.htlcMinimum, fees.feeBase, fees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
-      nodeParams.db.audit.addChannelUpdate(d.channelId, initialChannelUpdate)
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
       goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None) storing()
@@ -1017,7 +1015,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
       log.info("updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
-      nodeParams.db.audit.addChannelUpdate(d.channelId, channelUpdate)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
       // we use GOTO instead of stay() because we want to fire transitions
@@ -1545,7 +1542,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
       log.info(s"updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
-      nodeParams.db.audit.addChannelUpdate(d.channelId, channelUpdate)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
       // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
