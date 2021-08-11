@@ -8,8 +8,8 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.db.pg._
 import fr.acinq.eclair.db.sqlite._
-import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId}
@@ -161,6 +161,11 @@ case class DualAuditDb(sqlite: SqliteAuditDb, postgres: PgAuditDb) extends Audit
     sqlite.add(channelErrorOccurred)
   }
 
+  override def addChannelUpdate(localChannelUpdate: LocalChannelUpdate): Unit = {
+    runAsync(postgres.addChannelUpdate(localChannelUpdate))
+    sqlite.addChannelUpdate(localChannelUpdate)
+  }
+
   override def listSent(from: Long, to: Long): Seq[PaymentSent] = {
     runAsync(postgres.listSent(from, to))
     sqlite.listSent(from, to)
@@ -254,6 +259,16 @@ case class DualPeersDb(sqlite: SqlitePeersDb, postgres: PgPeersDb) extends Peers
   override def listPeers(): Map[Crypto.PublicKey, NodeAddress] = {
     runAsync(postgres.listPeers())
     sqlite.listPeers()
+  }
+
+  override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = {
+    runAsync(postgres.addOrUpdateRelayFees(nodeId, fees))
+    sqlite.addOrUpdateRelayFees(nodeId, fees)
+  }
+
+  override def getRelayFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
+    runAsync(postgres.getRelayFees(nodeId))
+    sqlite.getRelayFees(nodeId)
   }
 
   override def close(): Unit = {

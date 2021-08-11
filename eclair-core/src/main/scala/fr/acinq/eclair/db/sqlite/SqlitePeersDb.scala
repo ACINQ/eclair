@@ -18,26 +18,38 @@ package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PeersDb
 import fr.acinq.eclair.db.sqlite.SqliteUtils.{getVersion, setVersion, using}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
+import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
-import java.sql.Connection
+import java.sql.{Connection, Statement}
 
-class SqlitePeersDb(sqlite: Connection) extends PeersDb {
+class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
 
   import SqliteUtils.ExtendedResultSet._
 
   val DB_NAME = "peers"
-  val CURRENT_VERSION = 1
+  val CURRENT_VERSION = 2
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
+
+    def migration12(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE relay_fees (node_id BLOB NOT NULL PRIMARY KEY, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL)")
+      case Some(v@1) =>
+        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+        migration12(statement)
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -86,6 +98,34 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
         .toMap
     }
   }
+
+  override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("peers/add-or-update-relay-fees", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("UPDATE relay_fees SET fee_base_msat=?, fee_proportional_millionths=? WHERE node_id=?")) { update =>
+      update.setLong(1, fees.feeBase.toLong)
+      update.setLong(2, fees.feeProportionalMillionths)
+      update.setBytes(3, nodeId.value.toArray)
+      if (update.executeUpdate() == 0) {
+        using(sqlite.prepareStatement("INSERT INTO relay_fees VALUES (?, ?, ?)")) { statement =>
+          statement.setBytes(1, nodeId.value.toArray)
+          statement.setLong(2, fees.feeBase.toLong)
+          statement.setLong(3, fees.feeProportionalMillionths)
+          statement.executeUpdate()
+        }
+      }
+    }
+  }
+
+  override def getRelayFees(nodeId: PublicKey): Option[RelayFees] = withMetrics("peers/get-relay-fees", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT fee_base_msat, fee_proportional_millionths FROM relay_fees WHERE node_id=?")) { statement =>
+      statement.setBytes(1, nodeId.value.toArray)
+      statement.executeQuery()
+        .headOption
+        .map(rs =>
+          RelayFees(MilliSatoshi(rs.getLong("fee_base_msat")), rs.getLong("fee_proportional_millionths"))
+        )
+    }
+  }
+
 
   // used by mobile apps
   override def close(): Unit = sqlite.close()

@@ -32,6 +32,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPayment, SendPaymentToRoute, SendSpontaneousPayment}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
@@ -90,12 +91,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     // standard conversion
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), initialRelayFees_opt = None, flags_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), flags_opt = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
     assert(open.fundingTxFeeratePerKw_opt === Some(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), initialRelayFees_opt = None, flags_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), flags_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeeratePerKw_opt === Some(FeeratePerKw.MinimumFeeratePerKw))
   }
@@ -482,6 +483,26 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val invalidSignature = (if (signedMessage.signature.head.toInt == 31) 32 else 31).toByte +: signedMessage.signature.tail
     val verifiedMessage: VerifiedMessage = eclair.verifyMessage(bytesMsg, invalidSignature)
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
+  }
+
+  test("update relay fees in database") { f =>
+    import f._
+
+    val peersDb = mock[PeersDb]
+
+    val databases = mock[Databases]
+    databases.peers returns peersDb
+
+    val kitWithMockDb = kit.copy(nodeParams = kit.nodeParams.copy(db = databases))
+    val eclair = new EclairImpl(kitWithMockDb)
+
+    val a = randomKey().publicKey
+    val b = randomKey().publicKey
+
+    eclair.updateRelayFee(List(a, b), 999 msat, 1234)
+
+    peersDb.addOrUpdateRelayFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
+    peersDb.addOrUpdateRelayFees(b, RelayFees(999 msat, 1234)).wasCalled(once)
   }
 
 }
