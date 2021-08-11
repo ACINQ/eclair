@@ -28,8 +28,7 @@ import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
 
-import java.sql.{Statement, Timestamp}
-import java.time.Instant
+import java.sql.Statement
 import javax.sql.DataSource
 
 class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logging {
@@ -58,13 +57,14 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
           statement.executeUpdate("CREATE SCHEMA IF NOT EXISTS local")
           statement.executeUpdate("CREATE TABLE local.peers (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL)")
           statement.executeUpdate("CREATE TABLE local.relay_fees (node_id TEXT NOT NULL PRIMARY KEY, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL)")
-        case Some(v@1) =>
+        case Some(v@(1 | 2)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          migration12(statement)
-          migration23(statement)
-        case Some(v@2) =>
-          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          migration23(statement)
+          if (v < 2) {
+            migration12(statement)
+          }
+          if (v < 3) {
+            migration23(statement)
+          }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }

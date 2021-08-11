@@ -82,13 +82,14 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
           statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON payments.sent(payment_hash)")
           statement.executeUpdate("CREATE INDEX sent_created_idx ON payments.sent(created_at)")
           statement.executeUpdate("CREATE INDEX received_created_idx ON payments.received(created_at)")
-        case Some(v@4) =>
+        case Some(v@(4 | 5)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          migration45(statement)
-          migration56(statement)
-        case Some(v@5) =>
-          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          migration56(statement)
+          if (v < 5) {
+            migration45(statement)
+          }
+          if (v < 6) {
+            migration56(statement)
+          }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
