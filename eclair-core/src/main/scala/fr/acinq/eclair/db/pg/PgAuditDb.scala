@@ -26,6 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 import grizzled.slf4j.Logging
 
@@ -40,7 +41,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   import ExtendedResultSet._
 
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 7
+  val CURRENT_VERSION = 8
 
   case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
 
@@ -73,6 +74,12 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("ALTER TABLE channel_errors SET SCHEMA audit")
       }
 
+      def migration78(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE INDEX channel_updates_id_idx ON audit.channel_updates(channel_id)")
+        statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON audit.channel_updates(timestamp)")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
@@ -83,6 +90,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.network_fees (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, tx_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
 
           statement.executeUpdate("CREATE TABLE audit.channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON audit.sent(timestamp)")
@@ -94,18 +102,26 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX network_fees_timestamp_idx ON audit.network_fees(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON audit.channel_errors(timestamp)")
+          statement.executeUpdate("CREATE INDEX channel_updates_id_idx ON audit.channel_updates(channel_id)")
+          statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON audit.channel_updates(timestamp)")
         case Some(v@4) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration45(statement)
           migration56(statement)
           migration67(statement)
+          migration78(statement)
         case Some(v@5) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration56(statement)
           migration67(statement)
+          migration78(statement)
         case Some(v@6) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           migration67(statement)
+          migration78(statement)
+        case Some(v@7) =>
+          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
+          migration78(statement)
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }
@@ -222,6 +238,21 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(4, errorMessage)
         statement.setBoolean(5, e.isFatal)
         statement.setTimestamp(6, Timestamp.from(Instant.now()))
+        statement.executeUpdate()
+      }
+    }
+  }
+
+  override def addChannelUpdate(channelId: ByteVector32, u : ChannelUpdate): Unit = withMetrics("audit/add-channel-update", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("INSERT INTO audit.channel_updates VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.setLong(2, u.feeBaseMsat.toLong)
+        statement.setLong(3, u.feeProportionalMillionths)
+        statement.setLong(4, u.cltvExpiryDelta.toInt)
+        statement.setLong(5, u.htlcMinimumMsat.toLong)
+        statement.setLong(6, u.htlcMaximumMsat.map(_.toLong).getOrElse(-1))
+        statement.setTimestamp(7, Timestamp.from(Instant.now()))
         statement.executeUpdate()
       }
     }

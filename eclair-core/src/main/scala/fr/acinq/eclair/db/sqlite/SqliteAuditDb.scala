@@ -26,6 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
+import fr.acinq.eclair.wire.protocol.ChannelUpdate
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 import grizzled.slf4j.Logging
 
@@ -38,7 +39,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   import ExtendedResultSet._
 
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 5
+  val CURRENT_VERSION = 6
 
   case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
 
@@ -81,6 +82,12 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
     }
 
+    def migration56(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE INDEX channel_updates_id_idx ON channel_updates(channel_id)")
+      statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
@@ -90,6 +97,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
         statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
@@ -100,6 +108,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX network_fees_timestamp_idx ON network_fees(timestamp)")
         statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
         statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON channel_errors(timestamp)")
+        statement.executeUpdate("CREATE INDEX channel_updates_id_idx ON channel_updates(channel_id)")
+        statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
       case Some(v@1) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         migration12(statement)
@@ -223,6 +233,19 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setString(4, errorMessage)
       statement.setBoolean(5, e.isFatal)
       statement.setLong(6, System.currentTimeMillis)
+      statement.executeUpdate()
+    }
+  }
+
+  override def addChannelUpdate(channelId: ByteVector32, u: ChannelUpdate): Unit = withMetrics("audit/add-channel-update", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT INTO channel_updates VALUES (?, ?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, channelId.toArray)
+      statement.setLong(2, u.feeBaseMsat.toLong)
+      statement.setLong(3, u.feeProportionalMillionths)
+      statement.setLong(4, u.cltvExpiryDelta.toInt)
+      statement.setLong(5, u.htlcMinimumMsat.toLong)
+      statement.setLong(6, u.htlcMaximumMsat.map(_.toLong).getOrElse(-1))
+      statement.setLong(7, System.currentTimeMillis)
       statement.executeUpdate()
     }
   }

@@ -183,7 +183,7 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate sqlite audit database v1 -> v5") {
+  test("migrate sqlite audit database v1 -> v6") {
 
     val dbs = TestSqliteDatabases()
 
@@ -228,7 +228,7 @@ class AuditDbSpec extends AnyFunSuite {
         }
       },
       dbName = "audit",
-      targetVersion = 5,
+      targetVersion = 6,
       postCheck = connection => {
         // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
         assert(dbs.audit.listSent(0, (System.currentTimeMillis.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ZERO_UUID, parts = Seq(ps.parts.head.copy(id = ZERO_UUID)))))
@@ -236,7 +236,7 @@ class AuditDbSpec extends AnyFunSuite {
         val postMigrationDb = new SqliteAuditDb(connection)
 
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit").contains(5))
+          assert(getVersion(statement, "audit").contains(6))
         }
 
         postMigrationDb.add(ps1)
@@ -250,7 +250,7 @@ class AuditDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migrate sqlite audit database v2 -> v5") {
+  test("migrate sqlite audit database v2 -> v6") {
     val dbs = TestSqliteDatabases()
 
     val e1 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
@@ -279,24 +279,24 @@ class AuditDbSpec extends AnyFunSuite {
         }
       },
       dbName = "audit",
-      targetVersion = 5,
+      targetVersion = 6,
       postCheck = connection => {
         val migratedDb = dbs.audit
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit").contains(5))
+          assert(getVersion(statement, "audit").contains(6))
         }
         migratedDb.add(e1)
 
         val postMigrationDb = new SqliteAuditDb(connection)
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit").contains(5))
+          assert(getVersion(statement, "audit").contains(6))
         }
         postMigrationDb.add(e2)
       }
     )
   }
 
-  test("migrate sqlite audit database v3 -> v5") {
+  test("migrate sqlite audit database v3 -> v6") {
 
     val dbs = TestSqliteDatabases()
 
@@ -357,11 +357,11 @@ class AuditDbSpec extends AnyFunSuite {
         }
       },
       dbName = "audit",
-      targetVersion = 5,
+      targetVersion = 6,
       postCheck = connection => {
         val migratedDb = dbs.audit
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit").contains(5))
+          assert(getVersion(statement, "audit").contains(6))
         }
         assert(migratedDb.listSent(50, 150).toSet === Set(
           ps1.copy(id = pp1.id, recipientAmount = pp1.amount, parts = pp1 :: Nil),
@@ -371,7 +371,7 @@ class AuditDbSpec extends AnyFunSuite {
 
         val postMigrationDb = new SqliteAuditDb(connection)
         using(connection.createStatement()) { statement =>
-          assert(getVersion(statement, "audit").contains(5))
+          assert(getVersion(statement, "audit").contains(6))
         }
         val ps2 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 1100 msat, randomKey().publicKey, Seq(
           PaymentSent.PartialPayment(UUID.randomUUID(), 500 msat, 10 msat, randomBytes32(), None, 160),
@@ -386,7 +386,7 @@ class AuditDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migrate audit database v4 -> v5/v7") {
+  test("migrate audit database v4 -> v6/v8") {
 
     val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 105)
     val relayed2 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(300 msat, randomBytes32()), PaymentRelayed.Part(350 msat, randomBytes32())), Seq(PaymentRelayed.Part(600 msat, randomBytes32())), PlaceHolderPubKey, 0 msat, 110)
@@ -458,7 +458,7 @@ class AuditDbSpec extends AnyFunSuite {
             }
           },
           dbName = "audit",
-          targetVersion = 7,
+          targetVersion = 8,
           postCheck = connection => {
             val migratedDb = dbs.audit
 
@@ -466,7 +466,7 @@ class AuditDbSpec extends AnyFunSuite {
 
             val postMigrationDb = new PgAuditDb()(dbs.datasource)
             using(connection.createStatement()) { statement =>
-              assert(getVersion(statement, "audit").contains(7))
+              assert(getVersion(statement, "audit").contains(8))
             }
             val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150)
             postMigrationDb.add(relayed3)
@@ -539,17 +539,17 @@ class AuditDbSpec extends AnyFunSuite {
             }
           },
           dbName = "audit",
-          targetVersion = 5,
+          targetVersion = 6,
           postCheck = connection => {
             val migratedDb = dbs.audit
             using(connection.createStatement()) { statement =>
-              assert(getVersion(statement, "audit").contains(5))
+              assert(getVersion(statement, "audit").contains(6))
             }
             assert(migratedDb.listRelayed(100, 120) === Seq(relayed1, relayed2))
 
             val postMigrationDb = new SqliteAuditDb(connection)
             using(connection.createStatement()) { statement =>
-              assert(getVersion(statement, "audit").contains(5))
+              assert(getVersion(statement, "audit").contains(6))
             }
             val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150)
             postMigrationDb.add(relayed3)
