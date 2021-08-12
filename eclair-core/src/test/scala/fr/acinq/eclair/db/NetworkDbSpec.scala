@@ -276,7 +276,7 @@ class NetworkDbSpec extends AnyFunSuite {
           }
         }
       },
-      dbName = "network",
+      dbName = SqliteNetworkDb.DB_NAME,
       targetVersion = SqliteNetworkDb.CURRENT_VERSION,
       postCheck = _ => {
         assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
@@ -316,7 +316,7 @@ class NetworkDbSpec extends AnyFunSuite {
           }
         }
       },
-      dbName = "network",
+      dbName = PgNetworkDb.DB_NAME,
       targetVersion = PgNetworkDb.CURRENT_VERSION,
       postCheck = _ => {
         assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)

@@ -95,7 +95,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "pending_relay",
+          dbName = PgPendingCommandsDb.DB_NAME,
           targetVersion = PgPendingCommandsDb.CURRENT_VERSION,
           postCheck = _ =>
             assert(dbs.pendingCommands.listSettlementCommands().toSet === testCases.map(tc => tc.channelId -> tc.cmd))
@@ -117,7 +117,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "pending_relay",
+          dbName = SqlitePendingCommandsDb.DB_NAME,
           targetVersion = SqlitePendingCommandsDb.CURRENT_VERSION,
           postCheck = _ =>
             assert(dbs.pendingCommands.listSettlementCommands().toSet === testCases.map(tc => tc.channelId -> tc.cmd))

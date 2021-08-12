@@ -242,7 +242,7 @@ class ChannelsDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "channels",
+          dbName = PgChannelsDb.DB_NAME,
           targetVersion = PgChannelsDb.CURRENT_VERSION,
           postCheck = _ => postCheck(dbs.channels)
         )
@@ -277,7 +277,7 @@ class ChannelsDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "channels",
+          dbName = SqliteChannelsDb.DB_NAME,
           targetVersion = SqliteChannelsDb.CURRENT_VERSION,
           postCheck = _ => postCheck(dbs.channels)
         )
@@ -312,7 +312,7 @@ class ChannelsDbSpec extends AnyFunSuite {
           }
         }
       },
-      dbName = "channels",
+      dbName = PgChannelsDb.DB_NAME,
       targetVersion = PgChannelsDb.CURRENT_VERSION,
       postCheck = connection => {
         assert(dbs.channels.listLocalChannels().size === testCases.filterNot(_.isClosed).size)

@@ -228,7 +228,7 @@ class AuditDbSpec extends AnyFunSuite {
           statement.executeUpdate()
         }
       },
-      dbName = "audit",
+      dbName = SqliteAuditDb.DB_NAME,
       targetVersion = SqliteAuditDb.CURRENT_VERSION,
       postCheck = connection => {
         // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
@@ -279,7 +279,7 @@ class AuditDbSpec extends AnyFunSuite {
           setVersion(statement, "audit", 2)
         }
       },
-      dbName = "audit",
+      dbName = SqliteAuditDb.DB_NAME,
       targetVersion = SqliteAuditDb.CURRENT_VERSION,
       postCheck = connection => {
         val migratedDb = dbs.audit
@@ -357,7 +357,7 @@ class AuditDbSpec extends AnyFunSuite {
           }
         }
       },
-      dbName = "audit",
+      dbName = SqliteAuditDb.DB_NAME,
       targetVersion = SqliteAuditDb.CURRENT_VERSION,
       postCheck = connection => {
         val migratedDb = dbs.audit
@@ -458,7 +458,7 @@ class AuditDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "audit",
+          dbName = PgAuditDb.DB_NAME,
           targetVersion = PgAuditDb.CURRENT_VERSION,
           postCheck = connection => {
             val migratedDb = dbs.audit
@@ -539,7 +539,7 @@ class AuditDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "audit",
+          dbName = SqliteAuditDb.DB_NAME,
           targetVersion = SqliteAuditDb.CURRENT_VERSION,
           postCheck = connection => {
             val migratedDb = dbs.audit

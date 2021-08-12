@@ -373,7 +373,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         assert(connection.createStatement().executeQuery("SELECT * FROM received_payments").map(rs => rs.getString("payment_hash")).toSeq.size > 0)
 
       },
-      dbName = "payments",
+      dbName = PgPaymentsDb.DB_NAME,
       targetVersion = PgPaymentsDb.CURRENT_VERSION,
       postCheck = _ => {
         val db = dbs.db.payments
