@@ -186,6 +186,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.targetExpiry.toLong === currentBlockCount + 9 + 12 + 1)
     assert(msg.totalAmount === finalAmount + trampolineFees)
     assert(msg.additionalTlvs.head.isInstanceOf[OnionTlv.TrampolineOnion])
+    assert(msg.maxAttempts === nodeParams.maxPaymentAttempts)
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
     val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionTlv.TrampolineOnion].packet
