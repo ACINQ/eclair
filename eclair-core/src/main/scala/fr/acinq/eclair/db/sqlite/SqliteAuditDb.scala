@@ -241,16 +241,28 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def addChannelUpdate(u: LocalChannelUpdate): Unit = withMetrics("audit/add-channel-update", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO channel_updates VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    val needs_update = using(sqlite.prepareStatement("SELECT * FROM channel_updates WHERE channel_id = ? ORDER BY timestamp DESC LIMIT 1")) { statement =>
       statement.setBytes(1, u.channelId.toArray)
-      statement.setBytes(2, u.remoteNodeId.value.toArray)
-      statement.setLong(3, u.channelUpdate.feeBaseMsat.toLong)
-      statement.setLong(4, u.channelUpdate.feeProportionalMillionths)
-      statement.setLong(5, u.channelUpdate.cltvExpiryDelta.toInt)
-      statement.setLong(6, u.channelUpdate.htlcMinimumMsat.toLong)
-      statement.setLong(7, u.channelUpdate.htlcMaximumMsat.map(_.toLong).getOrElse(-1))
-      statement.setLong(8, System.currentTimeMillis)
-      statement.executeUpdate()
+      val rs = statement.executeQuery()
+      (!rs.next()) ||
+        rs.getLong("fee_base_msat") != u.channelUpdate.feeBaseMsat.toLong ||
+        rs.getLong("fee_proportional_millionths") != u.channelUpdate.feeProportionalMillionths ||
+        rs.getLong("cltv_expiry_delta") != u.channelUpdate.cltvExpiryDelta.toInt ||
+        rs.getLong("htlc_minimum_msat") != u.channelUpdate.htlcMinimumMsat.toLong ||
+        rs.getLong("htlc_maximum_msat") != u.channelUpdate.htlcMaximumMsat.map(_.toLong).getOrElse(-1)
+    }
+    if (needs_update) {
+      using(sqlite.prepareStatement("INSERT INTO channel_updates VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+        statement.setBytes(1, u.channelId.toArray)
+        statement.setBytes(2, u.remoteNodeId.value.toArray)
+        statement.setLong(3, u.channelUpdate.feeBaseMsat.toLong)
+        statement.setLong(4, u.channelUpdate.feeProportionalMillionths)
+        statement.setLong(5, u.channelUpdate.cltvExpiryDelta.toInt)
+        statement.setLong(6, u.channelUpdate.htlcMinimumMsat.toLong)
+        statement.setLong(7, u.channelUpdate.htlcMaximumMsat.map(_.toLong).getOrElse(-1))
+        statement.setLong(8, System.currentTimeMillis)
+        statement.executeUpdate()
+      }
     }
   }
 

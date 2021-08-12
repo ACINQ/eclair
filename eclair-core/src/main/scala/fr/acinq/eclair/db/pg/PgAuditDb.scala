@@ -244,17 +244,31 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   }
 
   override def addChannelUpdate(u: LocalChannelUpdate): Unit = withMetrics("audit/add-channel-update", DbBackends.Postgres) {
-    inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.channel_updates VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+    val needs_update = inTransaction { pg =>
+      using(pg.prepareStatement("SELECT * FROM audit.channel_updates WHERE channel_id = ? ORDER BY timestamp DESC LIMIT 1")) { statement =>
         statement.setString(1, u.channelId.toHex)
-        statement.setString(2, u.remoteNodeId.value.toHex)
-        statement.setLong(3, u.channelUpdate.feeBaseMsat.toLong)
-        statement.setLong(4, u.channelUpdate.feeProportionalMillionths)
-        statement.setLong(5, u.channelUpdate.cltvExpiryDelta.toInt)
-        statement.setLong(6, u.channelUpdate.htlcMinimumMsat.toLong)
-        statement.setLong(7, u.channelUpdate.htlcMaximumMsat.map(_.toLong).getOrElse(-1))
-        statement.setTimestamp(8, Timestamp.from(Instant.now()))
-        statement.executeUpdate()
+        val rs = statement.executeQuery()
+        (!rs.next()) ||
+          rs.getLong("fee_base_msat") != u.channelUpdate.feeBaseMsat.toLong ||
+          rs.getLong("fee_proportional_millionths") != u.channelUpdate.feeProportionalMillionths ||
+          rs.getLong("cltv_expiry_delta") != u.channelUpdate.cltvExpiryDelta.toInt ||
+          rs.getLong("htlc_minimum_msat") != u.channelUpdate.htlcMinimumMsat.toLong ||
+          rs.getLong("htlc_maximum_msat") != u.channelUpdate.htlcMaximumMsat.map(_.toLong).getOrElse(-1)
+      }
+    }
+    if (needs_update) {
+      inTransaction { pg =>
+        using(pg.prepareStatement("INSERT INTO audit.channel_updates VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
+          statement.setString(1, u.channelId.toHex)
+          statement.setString(2, u.remoteNodeId.value.toHex)
+          statement.setLong(3, u.channelUpdate.feeBaseMsat.toLong)
+          statement.setLong(4, u.channelUpdate.feeProportionalMillionths)
+          statement.setLong(5, u.channelUpdate.cltvExpiryDelta.toInt)
+          statement.setLong(6, u.channelUpdate.htlcMinimumMsat.toLong)
+          statement.setLong(7, u.channelUpdate.htlcMaximumMsat.map(_.toLong).getOrElse(-1))
+          statement.setTimestamp(8, Timestamp.from(Instant.now()))
+          statement.executeUpdate()
+        }
       }
     }
   }

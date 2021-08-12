@@ -604,13 +604,49 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("add channel update") {
+  test("add channel update without duplicates") {
     forAllDbs { dbs =>
+      val db = dbs.audit
+      val isPg = dbs.isInstanceOf[TestPgDatabases]
+      val table = if (isPg) "audit.channel_updates" else "channel_updates"
+
+      using(dbs.connection.createStatement()) {statement =>
+        val rs = statement.executeQuery(s"SELECT count(*) FROM $table")
+        assert(rs.next())
+        assert(rs.getLong(1) == 0)
+      }
+
       val channelId = randomBytes32()
       val scid = ShortChannelId(123)
+      val chainHash = randomBytes32()
+      val nodeSecret = randomKey()
       val remoteNodeId = randomKey().publicKey
-      val u = Announcements.makeChannelUpdate(randomBytes32(), randomKey(), remoteNodeId, scid, CltvExpiryDelta(56), 2000 msat, 1000 msat, 999, 1000000000 msat)
-      dbs.audit.addChannelUpdate(LocalChannelUpdate(null, channelId, scid, remoteNodeId, None, u, null))
+      val u1 = Announcements.makeChannelUpdate(chainHash, nodeSecret, remoteNodeId, scid, CltvExpiryDelta(56), 2000 msat, 1000 msat, 999, 1000000000 msat)
+      db.addChannelUpdate(LocalChannelUpdate(null, channelId, scid, remoteNodeId, None, u1, null))
+
+      using(dbs.connection.createStatement()) {statement =>
+        val rs = statement.executeQuery(s"SELECT count(*) FROM $table")
+        assert(rs.next())
+        assert(rs.getLong(1) == 1)
+      }
+
+      val u2 = Announcements.makeChannelUpdate(chainHash, nodeSecret, remoteNodeId, scid, CltvExpiryDelta(56), 2000 msat, 1000 msat, 999, 1000000000 msat)
+      db.addChannelUpdate(LocalChannelUpdate(null, channelId, scid, remoteNodeId, None, u2, null))
+
+      using(dbs.connection.createStatement()) {statement =>
+        val rs = statement.executeQuery(s"SELECT count(*) FROM $table")
+        assert(rs.next())
+        assert(rs.getLong(1) == 1)
+      }
+
+      val u3 = Announcements.makeChannelUpdate(chainHash, nodeSecret, remoteNodeId, scid, CltvExpiryDelta(56), 2000 msat, 1000 msat, 1001, 1000000000 msat)
+      db.addChannelUpdate(LocalChannelUpdate(null, channelId, scid, remoteNodeId, None, u3, null))
+
+      using(dbs.connection.createStatement()) {statement =>
+        val rs = statement.executeQuery(s"SELECT count(*) FROM $table")
+        assert(rs.next())
+        assert(rs.getLong(1) == 2)
+      }
     }
   }
 
