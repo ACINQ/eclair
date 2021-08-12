@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
 import fr.acinq.eclair.channel.{Commitments, HtlcTxAndRemoteSig}
 import fr.acinq.eclair.transactions.Transactions
@@ -329,6 +329,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, tx))
       case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) =>
+        reason match {
+          case TxRejectedReason.WalletInputGone =>
+            // The transaction now has an unknown input from bitcoind's point of view, so it will keep it in the wallet in
+            // case that input appears later in the mempool or the blockchain. In our case, we know it won't happen so we
+            // abandon that transaction and will retry with a different set of inputs (if it still makes sense to publish).
+            bitcoinClient.abandonTransaction(tx.txid)
+          case _ => // nothing to do
+        }
         replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
         // We wait for our parent to stop us: when that happens we will unlock utxos.
         Behaviors.same

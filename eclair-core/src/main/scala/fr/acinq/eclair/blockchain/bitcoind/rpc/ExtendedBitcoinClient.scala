@@ -153,6 +153,15 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
     }
 
   /**
+   * Mark a transaction as abandoned, which will allow for its wallet inputs to be re-spent.
+   * This method can be used to replace "stuck" or evicted transactions.
+   * It only works on transactions which are not included in a block and are not currently in the mempool.
+   */
+  def abandonTransaction(txId: ByteVector32)(implicit ec: ExecutionContext): Future[Boolean] = {
+    rpcClient.invoke("abandontransaction", txId).map(_ => true).recover(_ => false)
+  }
+
+  /**
    * @param outPoints outpoints to unlock.
    * @return true if all outpoints were successfully unlocked, false otherwise.
    */
@@ -282,7 +291,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
       val JBool(safe) = utxo \ "safe"
       val JDecimal(amount) = utxo \ "amount"
       val JString(txid) = utxo \ "txid"
-      val label =  utxo \ "label" match {
+      val label = utxo \ "label" match {
         case JString(label) => Some(label)
         case _ => None
       }
