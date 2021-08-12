@@ -195,45 +195,46 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def checkAnchorPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
-    val commitFeerate = cmd.commitments.localCommit.spec.feeratePerKw
-    if (targetFeerate <= commitFeerate) {
-      log.info("skipping {}: commit feerate is high enough (feerate={})", cmd.desc, commitFeerate)
-      // We set retry = true in case the on-chain feerate rises before the commit tx is confirmed: if that happens we'll
-      // want to claim our anchor to raise the feerate of the commit tx and get it confirmed faster.
-      sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
-    } else {
-      // We verify that:
-      //  - our commit is not confirmed (if it is, no need to claim our anchor)
-      //  - their commit is not confirmed (if it is, no need to claim our anchor either)
-      //  - our commit tx is in the mempool (otherwise we can't claim our anchor)
-      val commitTx = cmd.commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
-      val fundingOutpoint = cmd.commitments.commitInput.outPoint
-      context.pipeToSelf(bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
-        case false => Future.failed(CommitTxAlreadyConfirmed)
-        case true =>
-          // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
-          // If it's already published, this call will be a no-op.
-          bitcoinClient.publishTransaction(commitTx)
-      }) {
-        case Success(_) => PreconditionsOk
-        case Failure(CommitTxAlreadyConfirmed) => CommitTxAlreadyConfirmed
-        case Failure(reason) if reason.getMessage.contains("rejecting replacement") => RemoteCommitTxPublished
-        case Failure(reason) => UnknownFailure(reason)
-      }
-      Behaviors.receiveMessagePartial {
-        case PreconditionsOk => fund(replyTo, cmd, targetFeerate)
-        case CommitTxAlreadyConfirmed =>
-          log.debug("commit tx is already confirmed, no need to claim our anchor")
-          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
-        case RemoteCommitTxPublished =>
-          log.warn("cannot publish commit tx: there is a conflicting tx in the mempool")
-          // We retry until that conflicting commit tx is confirmed or we're able to publish our local commit tx.
+    // We verify that:
+    //  - our commit is not confirmed (if it is, no need to claim our anchor)
+    //  - their commit is not confirmed (if it is, no need to claim our anchor either)
+    //  - our commit tx is in the mempool (otherwise we can't claim our anchor)
+    val commitTx = cmd.commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
+    val fundingOutpoint = cmd.commitments.commitInput.outPoint
+    context.pipeToSelf(bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
+      case false => Future.failed(CommitTxAlreadyConfirmed)
+      case true =>
+        // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
+        // If it's already published, this call will be a no-op.
+        bitcoinClient.publishTransaction(commitTx)
+    }) {
+      case Success(_) => PreconditionsOk
+      case Failure(CommitTxAlreadyConfirmed) => CommitTxAlreadyConfirmed
+      case Failure(reason) if reason.getMessage.contains("rejecting replacement") => RemoteCommitTxPublished
+      case Failure(reason) => UnknownFailure(reason)
+    }
+    Behaviors.receiveMessagePartial {
+      case PreconditionsOk =>
+        val commitFeerate = cmd.commitments.localCommit.spec.feeratePerKw
+        if (targetFeerate <= commitFeerate) {
+          log.info("skipping {}: commit feerate is high enough (feerate={})", cmd.desc, commitFeerate)
+          // We set retry = true in case the on-chain feerate rises before the commit tx is confirmed: if that happens we'll
+          // want to claim our anchor to raise the feerate of the commit tx and get it confirmed faster.
           sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
-        case UnknownFailure(reason) =>
-          log.error(s"could not check ${cmd.desc} preconditions", reason)
-          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
-        case Stop => Behaviors.stopped
-      }
+        } else {
+          fund(replyTo, cmd, targetFeerate)
+        }
+      case CommitTxAlreadyConfirmed =>
+        log.debug("commit tx is already confirmed, no need to claim our anchor")
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
+      case RemoteCommitTxPublished =>
+        log.warn("cannot publish commit tx: there is a conflicting tx in the mempool")
+        // We retry until that conflicting commit tx is confirmed or we're able to publish our local commit tx.
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
+      case UnknownFailure(reason) =>
+        log.error(s"could not check ${cmd.desc} preconditions", reason)
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
+      case Stop => Behaviors.stopped
     }
   }
 

@@ -115,7 +115,6 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     // Generate blocks to ensure the funding tx is confirmed.
     generateBlocks(1)
-    // TODO: do I need a method that generateBlocks AND sets blockCount AND sends event?
 
     // Execute our test.
     val publisher = system.spawn(ReplaceableTxPublisher(aliceNodeParams, bitcoinClient, alice2blockchain.ref, TxPublishLogContext(testId, TestConstants.Bob.nodeParams.nodeId, None)), testId.toString)
@@ -167,6 +166,23 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       generateBlocks(1)
 
       publisher ! Publish(probe.ref, anchorTx, FeeratePerKw(10_000 sat))
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd === anchorTx)
+      assert(result.reason === TxSkipped(retryNextBlock = false))
+    })
+  }
+
+  test("commit tx feerate high enough and commit tx confirmed, not spending anchor output") {
+    withFixture(Seq(500 millibtc), f => {
+      import f._
+
+      val commitFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f)
+      walletClient.publishTransaction(commitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(commitTx.tx.txid)
+      generateBlocks(1)
+
+      publisher ! Publish(probe.ref, anchorTx, commitFeerate)
       val result = probe.expectMsgType[TxRejected]
       assert(result.cmd === anchorTx)
       assert(result.reason === TxSkipped(retryNextBlock = false))
