@@ -1251,6 +1251,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(NEGOTIATING)(handleExceptions {
+    // Upon reconnection, nodes must re-transmit their shutdown message, so we may receive it now.
+    case Event(remoteShutdown: Shutdown, d: DATA_NEGOTIATING) =>
+      if (remoteShutdown != d.remoteShutdown) {
+        // This is a spec violation: it will likely lead to a disagreement when exchanging closing_signed and a force-close.
+        log.warning("received unexpected shutdown={} (previous={})", remoteShutdown, d.remoteShutdown)
+      }
+      stay()
+
     case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
       log.info("received closingFeeSatoshis={}", remoteClosingFee)
       Closing.checkClosingSignature(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, remoteClosingFee, remoteSig) match {
