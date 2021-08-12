@@ -35,14 +35,17 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 
+object PgPaymentsDb {
+  val DB_NAME = "payments"
+  val CURRENT_VERSION = 6
+}
+
 class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb with Logging {
 
+  import PgPaymentsDb._
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import lock._
-
-  val DB_NAME = "payments"
-  val CURRENT_VERSION = 6
 
   private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
   private val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)
@@ -82,13 +85,14 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
           statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON payments.sent(payment_hash)")
           statement.executeUpdate("CREATE INDEX sent_created_idx ON payments.sent(created_at)")
           statement.executeUpdate("CREATE INDEX received_created_idx ON payments.received(created_at)")
-        case Some(v@4) =>
+        case Some(v@(4 | 5)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          migration45(statement)
-          migration56(statement)
-        case Some(v@5) =>
-          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          migration56(statement)
+          if (v < 5) {
+            migration45(statement)
+          }
+          if (v < 6) {
+            migration56(statement)
+          }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }

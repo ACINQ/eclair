@@ -184,7 +184,7 @@ class AuditDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate sqlite audit database v1 -> v6") {
+  test("migrate sqlite audit database v1 -> current") {
 
     val dbs = TestSqliteDatabases()
 
@@ -228,8 +228,8 @@ class AuditDbSpec extends AnyFunSuite {
           statement.executeUpdate()
         }
       },
-      dbName = "audit",
-      targetVersion = 6,
+      dbName = SqliteAuditDb.DB_NAME,
+      targetVersion = SqliteAuditDb.CURRENT_VERSION,
       postCheck = connection => {
         // existing rows in the 'sent' table will use id=00000000-0000-0000-0000-000000000000 as default
         assert(dbs.audit.listSent(0, (System.currentTimeMillis.milliseconds + 1.minute).toMillis) === Seq(ps.copy(id = ZERO_UUID, parts = Seq(ps.parts.head.copy(id = ZERO_UUID)))))
@@ -251,7 +251,7 @@ class AuditDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migrate sqlite audit database v2 -> v6") {
+  test("migrate sqlite audit database v2 -> current") {
     val dbs = TestSqliteDatabases()
 
     val e1 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
@@ -279,8 +279,8 @@ class AuditDbSpec extends AnyFunSuite {
           setVersion(statement, "audit", 2)
         }
       },
-      dbName = "audit",
-      targetVersion = 6,
+      dbName = SqliteAuditDb.DB_NAME,
+      targetVersion = SqliteAuditDb.CURRENT_VERSION,
       postCheck = connection => {
         val migratedDb = dbs.audit
         using(connection.createStatement()) { statement =>
@@ -297,7 +297,7 @@ class AuditDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migrate sqlite audit database v3 -> v6") {
+  test("migrate sqlite audit database v3 -> current") {
 
     val dbs = TestSqliteDatabases()
 
@@ -357,8 +357,8 @@ class AuditDbSpec extends AnyFunSuite {
           }
         }
       },
-      dbName = "audit",
-      targetVersion = 6,
+      dbName = SqliteAuditDb.DB_NAME,
+      targetVersion = SqliteAuditDb.CURRENT_VERSION,
       postCheck = connection => {
         val migratedDb = dbs.audit
         using(connection.createStatement()) { statement =>
@@ -387,7 +387,7 @@ class AuditDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migrate audit database v4 -> v6/v8") {
+  test("migrate audit database v4 -> current") {
 
     val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 105)
     val relayed2 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(300 msat, randomBytes32()), PaymentRelayed.Part(350 msat, randomBytes32())), Seq(PaymentRelayed.Part(600 msat, randomBytes32())), PlaceHolderPubKey, 0 msat, 110)
@@ -458,8 +458,8 @@ class AuditDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "audit",
-          targetVersion = 8,
+          dbName = PgAuditDb.DB_NAME,
+          targetVersion = PgAuditDb.CURRENT_VERSION,
           postCheck = connection => {
             val migratedDb = dbs.audit
 
@@ -539,8 +539,8 @@ class AuditDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "audit",
-          targetVersion = 6,
+          dbName = SqliteAuditDb.DB_NAME,
+          targetVersion = SqliteAuditDb.CURRENT_VERSION,
           postCheck = connection => {
             val migratedDb = dbs.audit
             using(connection.createStatement()) { statement =>

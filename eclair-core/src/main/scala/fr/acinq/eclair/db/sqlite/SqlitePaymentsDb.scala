@@ -39,9 +39,6 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   import SqlitePaymentsDb._
   import SqliteUtils.ExtendedResultSet._
 
-  val DB_NAME = "payments"
-  val CURRENT_VERSION = 4
-
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
     def migration12(statement: Statement): Unit = {
@@ -106,18 +103,17 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
         statement.executeUpdate("CREATE INDEX sent_payment_hash_idx ON sent_payments(payment_hash)")
         statement.executeUpdate("CREATE INDEX sent_created_idx ON sent_payments(created_at)")
         statement.executeUpdate("CREATE INDEX received_created_idx ON received_payments(created_at)")
-      case Some(v@1) =>
+      case Some(v@(1 | 2 | 3)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration12(statement)
-        migration23(statement)
-        migration34(statement)
-      case Some(v@2) =>
-        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration23(statement)
-        migration34(statement)
-      case Some(v@3) =>
-        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration34(statement)
+        if (v < 2) {
+          migration12(statement)
+        }
+        if (v < 3) {
+          migration23(statement)
+        }
+        if (v < 4) {
+          migration34(statement)
+        }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }
@@ -400,6 +396,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 }
 
 object SqlitePaymentsDb {
+  val DB_NAME = "payments"
+  val CURRENT_VERSION = 4
 
   private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
   val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)

@@ -32,13 +32,16 @@ import grizzled.slf4j.Logging
 import java.sql.{Connection, Statement}
 import java.util.UUID
 
+object SqliteAuditDb {
+  val DB_NAME = "audit"
+  val CURRENT_VERSION = 6
+}
+
 class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
   import SqliteUtils._
   import ExtendedResultSet._
-
-  val DB_NAME = "audit"
-  val CURRENT_VERSION = 6
+  import SqliteAuditDb._
 
   case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
 
@@ -111,31 +114,23 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
         statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
         statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
-      case Some(v@1)=>
+      case Some(v@(1 | 2 | 3 | 4 | 5)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration12(statement)
-        migration23(statement)
-        migration34(statement)
-        migration45(statement)
-        migration56(statement)
-      case Some(v@2) =>
-        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration23(statement)
-        migration34(statement)
-        migration45(statement)
-        migration56(statement)
-      case Some(v@3) =>
-        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration34(statement)
-        migration45(statement)
-        migration56(statement)
-      case Some(v@4) =>
-        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration45(statement)
-        migration56(statement)
-      case Some(v@5) =>
-        logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-        migration56(statement)
+        if (v < 2) {
+          migration12(statement)
+        }
+        if (v < 3) {
+          migration23(statement)
+        }
+        if (v < 4) {
+          migration34(statement)
+        }
+        if (v < 5) {
+          migration45(statement)
+        }
+        if (v < 6) {
+          migration56(statement)
+        }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
     }

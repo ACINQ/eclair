@@ -51,7 +51,7 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
     assert(db.getFeerates().get == feerate)
   }
 
-  test("migration 1->2") {
+  test("migration v1 -> current") {
     val sqlite = TestDatabases.sqliteInMemory()
 
     using(sqlite.createStatement()) { statement =>
@@ -82,7 +82,7 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
 
     val migratedDb = new SqliteFeeratesDb(sqlite)
     using(sqlite.createStatement()) { statement =>
-      assert(getVersion(statement, "feerates").contains(2))
+      assert(getVersion(statement, "feerates").contains(SqliteFeeratesDb.CURRENT_VERSION))
     }
 
     // When migrating, we simply copy the estimate for blocks 144 to blocks 1008.

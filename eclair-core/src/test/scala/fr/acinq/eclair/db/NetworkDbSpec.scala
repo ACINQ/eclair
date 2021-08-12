@@ -229,7 +229,7 @@ class NetworkDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migration test 1->2 (sqlite)") {
+  test("migration sqlite v1 -> current") {
     val dbs = TestSqliteDatabases()
     migrationCheck(
       dbs = dbs,
@@ -276,8 +276,8 @@ class NetworkDbSpec extends AnyFunSuite {
           }
         }
       },
-      dbName = "network",
-      targetVersion = 2,
+      dbName = SqliteNetworkDb.DB_NAME,
+      targetVersion = SqliteNetworkDb.CURRENT_VERSION,
       postCheck = _ => {
         assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
         // NB: channel updates are not migrated
@@ -286,7 +286,7 @@ class NetworkDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migration test 2->4 (postgres)") {
+  test("migration postgres v2 -> current") {
     val dbs = TestPgDatabases()
     migrationCheck(
       dbs = dbs,
@@ -316,8 +316,8 @@ class NetworkDbSpec extends AnyFunSuite {
           }
         }
       },
-      dbName = "network",
-      targetVersion = 4,
+      dbName = PgNetworkDb.DB_NAME,
+      targetVersion = PgNetworkDb.CURRENT_VERSION,
       postCheck = _ => {
         assert(dbs.network.listNodes().toSet === nodeTestCases.map(_.node).toSet)
         // NB: channel updates are not migrated
