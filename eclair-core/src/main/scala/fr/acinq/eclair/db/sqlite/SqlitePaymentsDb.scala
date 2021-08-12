@@ -39,9 +39,6 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   import SqlitePaymentsDb._
   import SqliteUtils.ExtendedResultSet._
 
-  val DB_NAME = "payments"
-  val CURRENT_VERSION = 4
-
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
     def migration12(statement: Statement): Unit = {
@@ -399,6 +396,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 }
 
 object SqlitePaymentsDb {
+  val DB_NAME = "payments"
+  val CURRENT_VERSION = 4
 
   private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
   val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)

@@ -29,13 +29,16 @@ import scodec.bits.BitVector
 
 import java.sql.{Connection, Statement}
 
-class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
-
-  import SqliteUtils.ExtendedResultSet._
-  import SqliteUtils._
-
+object SqliteChannelsDb {
   val DB_NAME = "channels"
   val CURRENT_VERSION = 4
+}
+
+class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
+
+  import SqliteChannelsDb._
+  import SqliteUtils.ExtendedResultSet._
+  import SqliteUtils._
 
   /**
    * The SQLite documentation states that "It is not possible to enable or disable foreign key constraints in the middle

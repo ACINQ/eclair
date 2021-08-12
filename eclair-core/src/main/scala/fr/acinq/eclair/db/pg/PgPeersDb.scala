@@ -31,14 +31,17 @@ import scodec.bits.BitVector
 import java.sql.Statement
 import javax.sql.DataSource
 
+object PgPeersDb {
+  val DB_NAME = "peers"
+  val CURRENT_VERSION = 3
+}
+
 class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logging {
 
+  import PgPeersDb._
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import lock._
-
-  val DB_NAME = "peers"
-  val CURRENT_VERSION = 3
 
   inTransaction { pg =>
 

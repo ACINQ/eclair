@@ -29,14 +29,17 @@ import grizzled.slf4j.Logging
 import java.sql.Statement
 import javax.sql.DataSource
 
+object PgPendingCommandsDb {
+  val DB_NAME = "pending_relay"
+  val CURRENT_VERSION = 3
+}
+
 class PgPendingCommandsDb(implicit ds: DataSource, lock: PgLock) extends PendingCommandsDb with Logging {
 
+  import PgPendingCommandsDb._
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import lock._
-
-  val DB_NAME = "pending_relay"
-  val CURRENT_VERSION = 3
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>

@@ -35,14 +35,17 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 
+object PgPaymentsDb {
+  val DB_NAME = "payments"
+  val CURRENT_VERSION = 6
+}
+
 class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb with Logging {
 
+  import PgPaymentsDb._
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import lock._
-
-  val DB_NAME = "payments"
-  val CURRENT_VERSION = 6
 
   private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
   private val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)

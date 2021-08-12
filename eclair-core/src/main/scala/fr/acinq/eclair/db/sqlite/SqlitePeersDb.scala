@@ -30,12 +30,15 @@ import scodec.bits.BitVector
 
 import java.sql.{Connection, Statement}
 
-class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
-
-  import SqliteUtils.ExtendedResultSet._
-
+object SqlitePeersDb {
   val DB_NAME = "peers"
   val CURRENT_VERSION = 2
+}
+
+class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
+
+  import SqlitePeersDb._
+  import SqliteUtils.ExtendedResultSet._
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 

@@ -26,13 +26,16 @@ import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
 
-class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with Logging {
-
-  import SqliteUtils.ExtendedResultSet._
-  import SqliteUtils._
-
+object SqlitePendingCommandsDb {
   val DB_NAME = "pending_relay"
   val CURRENT_VERSION = 2
+}
+
+class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with Logging {
+
+  import SqlitePendingCommandsDb._
+  import SqliteUtils.ExtendedResultSet._
+  import SqliteUtils._
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 

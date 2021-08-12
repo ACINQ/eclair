@@ -23,13 +23,16 @@ import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
 
-class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
-
-  import SqliteUtils.ExtendedResultSet._
-  import SqliteUtils._
-
+object SqliteFeeratesDb {
   val DB_NAME = "feerates"
   val CURRENT_VERSION = 2
+}
+
+class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
+
+  import SqliteFeeratesDb._
+  import SqliteUtils.ExtendedResultSet._
+  import SqliteUtils._
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 

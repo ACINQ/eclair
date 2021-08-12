@@ -34,13 +34,16 @@ import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 
+object PgAuditDb {
+  val DB_NAME = "audit"
+  val CURRENT_VERSION = 8
+}
+
 class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   import PgUtils._
   import ExtendedResultSet._
-
-  val DB_NAME = "audit"
-  val CURRENT_VERSION = 8
+  import PgAuditDb._
 
   case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
 

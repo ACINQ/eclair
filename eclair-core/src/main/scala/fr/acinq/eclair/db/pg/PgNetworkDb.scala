@@ -31,14 +31,17 @@ import java.sql.{Connection, Statement}
 import javax.sql.DataSource
 import scala.collection.immutable.SortedMap
 
+object PgNetworkDb {
+  val DB_NAME = "network"
+  val CURRENT_VERSION = 4
+}
+
 class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
 
+  import PgNetworkDb._
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import fr.acinq.eclair.json.JsonSerializers.{formats, serialization}
-
-  val DB_NAME = "network"
-  val CURRENT_VERSION = 4
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>

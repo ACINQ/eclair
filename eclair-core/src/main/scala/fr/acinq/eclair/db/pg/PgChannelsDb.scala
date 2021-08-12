@@ -33,15 +33,18 @@ import java.sql.{Connection, Statement, Timestamp}
 import java.time.Instant
 import javax.sql.DataSource
 
+object PgChannelsDb {
+  val DB_NAME = "channels"
+  val CURRENT_VERSION = 7
+}
+
 class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb with Logging {
 
+  import PgChannelsDb._
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import fr.acinq.eclair.json.JsonSerializers.{formats, serialization}
   import lock._
-
-  val DB_NAME = "channels"
-  val CURRENT_VERSION = 7
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>

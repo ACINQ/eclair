@@ -32,13 +32,16 @@ import grizzled.slf4j.Logging
 import java.sql.{Connection, Statement}
 import java.util.UUID
 
+object SqliteAuditDb {
+  val DB_NAME = "audit"
+  val CURRENT_VERSION = 6
+}
+
 class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
 
   import SqliteUtils._
   import ExtendedResultSet._
-
-  val DB_NAME = "audit"
-  val CURRENT_VERSION = 6
+  import SqliteAuditDb._
 
   case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
 

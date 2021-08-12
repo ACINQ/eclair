@@ -29,13 +29,16 @@ import grizzled.slf4j.Logging
 import java.sql.{Connection, Statement}
 import scala.collection.immutable.SortedMap
 
+object SqliteNetworkDb {
+  val CURRENT_VERSION = 2
+  val DB_NAME = "network"
+}
+
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
 
+  import SqliteNetworkDb._
   import SqliteUtils.ExtendedResultSet._
   import SqliteUtils._
-
-  val DB_NAME = "network"
-  val CURRENT_VERSION = 2
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
