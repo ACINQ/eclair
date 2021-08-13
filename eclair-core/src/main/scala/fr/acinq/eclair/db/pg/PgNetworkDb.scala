@@ -31,14 +31,17 @@ import java.sql.{Connection, Statement}
 import javax.sql.DataSource
 import scala.collection.immutable.SortedMap
 
+object PgNetworkDb {
+  val DB_NAME = "network"
+  val CURRENT_VERSION = 4
+}
+
 class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
 
+  import PgNetworkDb._
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import fr.acinq.eclair.json.JsonSerializers.{formats, serialization}
-
-  val DB_NAME = "network"
-  val CURRENT_VERSION = 4
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
@@ -68,13 +71,14 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
           statement.executeUpdate("CREATE TABLE network.nodes (node_id TEXT NOT NULL PRIMARY KEY, data BYTEA NOT NULL, json JSONB NOT NULL)")
           statement.executeUpdate("CREATE TABLE network.public_channels (short_channel_id BIGINT NOT NULL PRIMARY KEY, txid TEXT NOT NULL, channel_announcement BYTEA NOT NULL, capacity_sat BIGINT NOT NULL, channel_update_1 BYTEA NULL, channel_update_2 BYTEA NULL, channel_announcement_json JSONB NOT NULL, channel_update_1_json JSONB NULL, channel_update_2_json JSONB NULL)")
           statement.executeUpdate("CREATE TABLE network.pruned_channels (short_channel_id BIGINT NOT NULL PRIMARY KEY)")
-        case Some(v@2) =>
+        case Some(v@(2 | 3)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          migration23(statement)
-          migration34(statement)
-        case Some(v@3) =>
-          logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
-          migration34(statement)
+          if (v < 3) {
+            migration23(statement)
+          }
+          if (v < 4) {
+            migration34(statement)
+          }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
       }

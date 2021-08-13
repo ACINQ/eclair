@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.api.handlers
 
-import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
+import akka.http.scaladsl.server.Route
 import akka.util.Timeout
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.MilliSatoshi
@@ -32,21 +32,11 @@ trait Channel {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "fundingFeerateSatByte".as[FeeratePerByte].?, "feeBaseMsat".as[MilliSatoshi].?,
-      "feeProportionalMillionths".as[Int].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, feeBase, feeProportional, channelFlags, openTimeout_opt) =>
-        if (feeBase.nonEmpty && feeProportional.isEmpty || feeBase.isEmpty && feeProportional.nonEmpty) {
-          reject(MalformedFormFieldRejection("feeBaseMsat/feeProportionalMillionths",
-            "All relay fees parameters (feeBaseMsat/feeProportionalMillionths) must be specified to override node defaults"
-          ))
-        } else {
-          val initialRelayFees = (feeBase, feeProportional) match {
-            case (Some(feeBase), Some(feeProportional)) => Some(feeBase, feeProportional)
-            case _ => None
-          }
-          complete {
-            eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, initialRelayFees, channelFlags, openTimeout_opt)
-          }
+    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "fundingFeerateSatByte".as[FeeratePerByte].?,
+      "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
+      (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>
+        complete {
+          eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt)
         }
     }
   }

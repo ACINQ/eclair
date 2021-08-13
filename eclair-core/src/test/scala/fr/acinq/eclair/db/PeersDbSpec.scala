@@ -20,7 +20,8 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases}
 import fr.acinq.eclair.db.pg.PgPeersDb
 import fr.acinq.eclair.db.sqlite.SqlitePeersDb
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair._
 import fr.acinq.eclair.wire.protocol.{NodeAddress, Tor2, Tor3}
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -82,6 +83,27 @@ class PeersDbSpec extends AnyFunSuite {
       }
       val res = Future.sequence(futures)
       Await.result(res, 60 seconds)
+    }
+  }
+
+  test("add and update relay fees") {
+    forAllDbs { dbs =>
+      val db = dbs.peers
+
+      val a = randomKey().publicKey
+      val b = randomKey().publicKey
+
+      assert(db.getRelayFees(a) === None)
+      assert(db.getRelayFees(b) === None)
+      db.addOrUpdateRelayFees(a, RelayFees(1 msat, 123))
+      assert(db.getRelayFees(a) === Some(RelayFees(1 msat, 123)))
+      assert(db.getRelayFees(b) === None)
+      db.addOrUpdateRelayFees(a, RelayFees(2 msat, 456))
+      assert(db.getRelayFees(a) === Some(RelayFees(2 msat, 456)))
+      assert(db.getRelayFees(b) === None)
+      db.addOrUpdateRelayFees(b, RelayFees(3 msat, 789))
+      assert(db.getRelayFees(a) === Some(RelayFees(2 msat, 456)))
+      assert(db.getRelayFees(b) === Some(RelayFees(3 msat, 789)))
     }
   }
 

@@ -250,10 +250,10 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
     val mockService = new MockService(eclair)
 
-    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100000").toEntity) ~>
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.open) ~>
@@ -261,29 +261,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
-        eclair.open(nodeId, 100000 sat, None, None, None, None, None)(any[Timeout]).wasCalled(once)
-      }
-
-    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "50000", "feeBaseMsat" -> "100", "feeProportionalMillionths" -> "10").toEntity) ~>
-      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
-      addHeader("Content-Type", "application/json") ~>
-      Route.seal(mockService.open) ~>
-      check {
-        assert(handled)
-        assert(status == OK)
-        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
-        eclair.open(nodeId, 50000 sat, None, None, Some(100 msat, 10), None, None)(any[Timeout]).wasCalled(once)
-      }
-
-    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "feeBaseMsat" -> "250", "feeProportionalMillionths" -> "10").toEntity) ~>
-      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
-      addHeader("Content-Type", "application/json") ~>
-      Route.seal(mockService.route) ~>
-      check {
-        assert(handled)
-        assert(status == OK)
-        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
-        eclair.open(nodeId, 25000 sat, None, None, Some(250 msat, 10), None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 100002 sat, None, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 

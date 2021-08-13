@@ -151,7 +151,7 @@ class ChannelsDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate channel database v1 -> v4 (sqlite)") {
+  test("migrate sqlite channel database v1 -> current") {
     forAllDbs {
       case _: TestPgDatabases => // no migration
       case dbs: TestSqliteDatabases =>
@@ -185,9 +185,10 @@ class ChannelsDbSpec extends AnyFunSuite {
         }
 
         // check that db migration works
+        val targetVersion = SqliteChannelsDb.CURRENT_VERSION
         val db = new SqliteChannelsDb(sqlite)
         using(sqlite.createStatement()) { statement =>
-          assert(getVersion(statement, "channels").contains(4))
+          assert(getVersion(statement, "channels").contains(targetVersion))
         }
         assert(db.listLocalChannels().size === testCases.size)
         for (testCase <- testCases) {
@@ -199,7 +200,7 @@ class ChannelsDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate channel database v2 -> v4/v7") {
+  test("migrate channel database v2 -> current") {
     def postCheck(channelsDb: ChannelsDb): Unit = {
       assert(channelsDb.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
       for (testCase <- testCases.filterNot(_.isClosed)) {
@@ -241,8 +242,8 @@ class ChannelsDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "channels",
-          targetVersion = 7,
+          dbName = PgChannelsDb.DB_NAME,
+          targetVersion = PgChannelsDb.CURRENT_VERSION,
           postCheck = _ => postCheck(dbs.channels)
         )
       case dbs: TestSqliteDatabases =>
@@ -276,14 +277,14 @@ class ChannelsDbSpec extends AnyFunSuite {
               }
             }
           },
-          dbName = "channels",
-          targetVersion = 4,
+          dbName = SqliteChannelsDb.DB_NAME,
+          targetVersion = SqliteChannelsDb.CURRENT_VERSION,
           postCheck = _ => postCheck(dbs.channels)
         )
     }
   }
 
-  test("migrate pg channel database v3->v6") {
+  test("migrate pg channel database v3 -> current") {
     val dbs = TestPgDatabases()
 
     migrationCheck(
@@ -311,8 +312,8 @@ class ChannelsDbSpec extends AnyFunSuite {
           }
         }
       },
-      dbName = "channels",
-      targetVersion = 7,
+      dbName = PgChannelsDb.DB_NAME,
+      targetVersion = PgChannelsDb.CURRENT_VERSION,
       postCheck = connection => {
         assert(dbs.channels.listLocalChannels().size === testCases.filterNot(_.isClosed).size)
         testCases.foreach { testCase =>

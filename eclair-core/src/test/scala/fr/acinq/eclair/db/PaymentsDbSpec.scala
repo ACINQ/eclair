@@ -48,7 +48,7 @@ class PaymentsDbSpec extends AnyFunSuite {
     }
   }
 
-  test("migrate sqlite payments db v1 -> v4") {
+  test("migrate sqlite payments db v1 -> current") {
     val dbs = TestSqliteDatabases()
 
     migrationCheck(
@@ -70,7 +70,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         }
       },
       dbName = "payments",
-      targetVersion = 4,
+      targetVersion = SqlitePaymentsDb.CURRENT_VERSION,
       postCheck = _ => {
         val db = dbs.db.payments
         // the existing received payment can NOT be queried anymore
@@ -92,7 +92,7 @@ class PaymentsDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migrate sqlite payments db v2 -> v4") {
+  test("migrate sqlite payments db v2 -> current") {
     val dbs = TestSqliteDatabases()
 
     // Test data
@@ -180,7 +180,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         }
       },
       dbName = "payments",
-      targetVersion = 4,
+      targetVersion = SqlitePaymentsDb.CURRENT_VERSION,
       postCheck = _ => {
         val db = dbs.db.payments
 
@@ -207,7 +207,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       })
   }
 
-  test("migrate sqlite payments db v3 -> v4") {
+  test("migrate sqlite payments db v3 -> current") {
     val dbs = TestSqliteDatabases()
 
     // Test data
@@ -281,7 +281,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         //  - re-ordered columns
       },
       dbName = "payments",
-      targetVersion = 4,
+      targetVersion = SqlitePaymentsDb.CURRENT_VERSION,
       postCheck = _ => {
         val db = dbs.db.payments
         assert(db.getOutgoingPayment(id1) === Some(ps1))
@@ -290,7 +290,7 @@ class PaymentsDbSpec extends AnyFunSuite {
     )
   }
 
-  test("migrate postgres payments db v4 -> v6") {
+  test("migrate postgres payments db v4 -> current") {
     val dbs = TestPgDatabases()
 
     // Test data
@@ -373,8 +373,8 @@ class PaymentsDbSpec extends AnyFunSuite {
         assert(connection.createStatement().executeQuery("SELECT * FROM received_payments").map(rs => rs.getString("payment_hash")).toSeq.size > 0)
 
       },
-      dbName = "payments",
-      targetVersion = 6,
+      dbName = PgPaymentsDb.DB_NAME,
+      targetVersion = PgPaymentsDb.CURRENT_VERSION,
       postCheck = _ => {
         val db = dbs.db.payments
 
