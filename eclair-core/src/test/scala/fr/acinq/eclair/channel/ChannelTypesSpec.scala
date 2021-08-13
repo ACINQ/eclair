@@ -20,7 +20,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateAddHtlc}
@@ -28,7 +28,7 @@ import fr.acinq.eclair.{Features, MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
-class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateTestsHelperMethods {
+class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
@@ -81,7 +81,7 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with StateT
 
   case class HtlcWithPreimage(preimage: ByteVector32, htlc: UpdateAddHtlc)
 
-  case class Fixture(alice: TestFSMRef[State, Data, Channel], alicePendingHtlc: HtlcWithPreimage, bob: TestFSMRef[State, Data, Channel], bobPendingHtlc: HtlcWithPreimage, probe: TestProbe)
+  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel], alicePendingHtlc: HtlcWithPreimage, bob: TestFSMRef[ChannelState, ChannelData, Channel], bobPendingHtlc: HtlcWithPreimage, probe: TestProbe)
 
   private def setupClosingChannel(testTags: Set[String] = Set.empty): Fixture = {
     val probe = TestProbe()

@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
-import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol.{ClosingSigned, Error, Shutdown}
 import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomKey}
@@ -39,7 +39,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
+class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
   type FixtureParam = SetupFixture
 
@@ -62,7 +62,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       val bobShutdown = bob2alice.expectMsgType[Shutdown]
       bob2alice.forward(alice)
       val aliceShutdown = alice2bob.expectMsgType[Shutdown]
-      if (test.tags.contains(StateTestsTags.OptionUpfrontShutdownScript)) {
+      if (test.tags.contains(ChannelStateTestsTags.OptionUpfrontShutdownScript)) {
         assert(bobShutdown.scriptPubKey == bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
         assert(aliceShutdown.scriptPubKey == alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localParams.defaultFinalScriptPubKey)
       }
@@ -124,11 +124,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     testClosingSigned _
   }
 
-  test("recv ClosingSigned (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) {
+  test("recv ClosingSigned (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
     testClosingSigned _
   }
 
-  test("recv ClosingSigned (anchor outputs, upfront shutdown scripts)", Tag(StateTestsTags.AnchorOutputs), Tag(StateTestsTags.OptionUpfrontShutdownScript)) {
+  test("recv ClosingSigned (anchor outputs, upfront shutdown scripts)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) {
     testClosingSigned _
   }
 
@@ -153,11 +153,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     testFeeConverge(f)
   }
 
-  test("recv ClosingSigned (theirCloseFee == ourCloseFee) (fee 1, upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv ClosingSigned (theirCloseFee == ourCloseFee) (fee 1, upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
     testFeeConverge(f)
   }
 
-  test("recv ClosingSigned (nothing at stake)", Tag(StateTestsTags.NoPushMsat)) { f =>
+  test("recv ClosingSigned (nothing at stake)", Tag(ChannelStateTestsTags.NoPushMsat)) { f =>
     import f._
     val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
     alice2bob.forward(bob)

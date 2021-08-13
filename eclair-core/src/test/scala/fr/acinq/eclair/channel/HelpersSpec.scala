@@ -22,7 +22,7 @@ import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
+import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
@@ -32,7 +32,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 import java.util.UUID
 import scala.concurrent.duration._
 
-class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with StateTestsHelperMethods {
+class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
@@ -55,7 +55,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with StateTestsH
     Helpers.nextChannelUpdateRefresh(System.currentTimeMillis.milliseconds.toSeconds).toSeconds should equal(10 * 24 * 3600L +- 100)
   }
 
-  case class Fixture(alice: TestFSMRef[State, Data, Channel], aliceCommitPublished: LocalCommitPublished, aliceHtlcs: Set[UpdateAddHtlc], bob: TestFSMRef[State, Data, Channel], bobCommitPublished: RemoteCommitPublished, bobHtlcs: Set[UpdateAddHtlc], probe: TestProbe)
+  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceCommitPublished: LocalCommitPublished, aliceHtlcs: Set[UpdateAddHtlc], bob: TestFSMRef[ChannelState, ChannelData, Channel], bobCommitPublished: RemoteCommitPublished, bobHtlcs: Set[UpdateAddHtlc], probe: TestProbe)
 
   def setupHtlcs(testTags: Set[String] = Set.empty): Fixture = {
     val probe = TestProbe()
@@ -144,8 +144,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with StateTestsH
     identifyHtlcs(setupHtlcs())
   }
 
-  test("identify htlc txs (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) {
-    identifyHtlcs(setupHtlcs(Set(StateTestsTags.AnchorOutputs)))
+  test("identify htlc txs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
+    identifyHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)))
   }
 
   private def removeHtlcId(htlcTx: HtlcTx): HtlcTx = htlcTx match {
@@ -214,8 +214,8 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with StateTestsH
     findTimedOutHtlcs(setupHtlcs(), withoutHtlcId = true)
   }
 
-  test("find timed out htlcs (anchor outputs)", Tag(StateTestsTags.AnchorOutputs)) {
-    findTimedOutHtlcs(setupHtlcs(Set(StateTestsTags.AnchorOutputs)), withoutHtlcId = false)
+  test("find timed out htlcs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
+    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)), withoutHtlcId = false)
   }
 
   test("tell closing type") {
