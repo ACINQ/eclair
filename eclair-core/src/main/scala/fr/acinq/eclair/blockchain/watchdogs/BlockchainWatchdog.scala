@@ -22,6 +22,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.tor.Socks5ProxyParams
 
 import java.util.UUID
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
@@ -37,6 +38,11 @@ object BlockchainWatchdog {
   // @formatter:off
   case class BlockHeaderAt(blockCount: Long, blockHeader: BlockHeader)
   case object NoBlockReceivedTimer
+
+  trait SupportsTor {
+    /** Tor proxy connection parameters */
+    def socksProxy_opt: Option[Socks5ProxyParams]
+  }
 
   sealed trait BlockchainWatchdogEvent
   /**
@@ -59,7 +65,7 @@ object BlockchainWatchdog {
    * @param maxRandomDelay to avoid the herd effect whenever a block is created, we add a random delay before we query
    *                       secondary blockchain sources. This parameter specifies the maximum delay we'll allow.
    */
-  def apply(chainHash: ByteVector32, maxRandomDelay: FiniteDuration, blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
+  def apply(chainHash: ByteVector32, maxRandomDelay: FiniteDuration, socksProxy_opt: Option[Socks5ProxyParams], watchdogBlacklist: Seq[String],  blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
       Behaviors.withTimers { timers =>
@@ -77,10 +83,24 @@ object BlockchainWatchdog {
             Behaviors.same
           case CheckLatestHeaders(blockCount) =>
             val id = UUID.randomUUID()
-            context.spawn(HeadersOverDns(chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
-            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockstreamExplorer()), s"blockstream-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
-            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.BlockcypherExplorer()), s"blockcypher-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
-            context.spawn(ExplorerApi(chainHash, blockCount, ExplorerApi.MempoolSpaceExplorer()), s"mempool.space-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
+            if (!watchdogBlacklist.contains(HeadersOverDns.Source) && socksProxy_opt.isEmpty) {
+              // TODO implement Tor support for bitcoinheaders.net
+              context.spawn(HeadersOverDns(chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
+            } else {
+              context.log.warn(s"blockchain watchdog ${HeadersOverDns.Source} is disabled")
+            }
+            val explorers = Seq(ExplorerApi.BlockstreamExplorer(socksProxy_opt), ExplorerApi.BlockcypherExplorer(socksProxy_opt), ExplorerApi.MempoolSpaceExplorer(socksProxy_opt))
+              .foldLeft(Seq.empty[ExplorerApi.Explorer]) { (acc, w) =>
+                if (!watchdogBlacklist.contains(w.name)) {
+                  acc :+ w
+                } else {
+                  context.log.warn(s"blockchain watchdog ${w.name} is disabled")
+                  acc
+                }
+              }
+            explorers.foreach { explorer =>
+              context.spawn(ExplorerApi(chainHash, blockCount, explorer), s"${explorer.name}-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
+            }
             Behaviors.same
           case headers@LatestHeaders(blockCount, blockHeaders, source) =>
             val missingBlocks = blockHeaders match {

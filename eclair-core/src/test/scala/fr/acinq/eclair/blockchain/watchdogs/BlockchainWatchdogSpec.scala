@@ -22,16 +22,19 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.TestTags
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{DangerousBlocksSkew, WrappedCurrentBlockCount}
+import fr.acinq.eclair.tor.Socks5ProxyParams
+import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuiteLike
 
+import java.net.InetSocketAddress
 import scala.concurrent.duration.DurationInt
 
-class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
+class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike with Logging {
 
   test("fetch block headers from four sources on mainnet", TestTags.ExternalApi) {
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
-    val watchdog = testKit.spawn(BlockchainWatchdog(Block.LivenetGenesisBlock.hash, 1 second))
+    val watchdog = testKit.spawn(BlockchainWatchdog(Block.LivenetGenesisBlock.hash, 1 second, None, Seq()))
     watchdog ! WrappedCurrentBlockCount(630561)
 
     val events = Seq(
@@ -48,7 +51,7 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
   test("fetch block headers from three sources on testnet", TestTags.ExternalApi) {
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
-    val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 1 second))
+    val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 1 second, None, Seq()))
     watchdog ! WrappedCurrentBlockCount(500000)
 
     val events = Seq(
@@ -65,9 +68,10 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     val eventListener = TestProbe[DangerousBlocksSkew]()
     system.eventStream ! EventStream.Subscribe(eventListener.ref)
     val blockTimeout = 5 seconds
-    val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 1 second, blockTimeout))
+    val watchdog = testKit.spawn(BlockchainWatchdog(Block.TestnetGenesisBlock.hash, 1 second, None, Seq(), blockTimeout))
 
     watchdog ! WrappedCurrentBlockCount(500000)
+    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
@@ -86,4 +90,31 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     eventListener.expectNoMessage(100 millis)
   }
 
+  test("fetch block headers on mainnet over Tor", TestTags.ExternalApi) {
+    val proxyParams = Socks5ProxyParams(new InetSocketAddress("127.0.0.1", 9050),
+      credentials_opt = None,
+      randomizeCredentials = true,
+      useForIPv4 = true,
+      useForIPv6 = true,
+      useForTor = true)
+
+    if (Socks5ProxyParams.proxyAcceptsConnections(proxyParams)) {
+      val eventListener = TestProbe[DangerousBlocksSkew]()
+      system.eventStream ! EventStream.Subscribe(eventListener.ref)
+
+      val blacklist = Seq("blockcypher.com")
+      val watchdog = testKit.spawn(BlockchainWatchdog(Block.LivenetGenesisBlock.hash, 1 second, Some(proxyParams), blacklist))
+      watchdog ! WrappedCurrentBlockCount(630561)
+
+      val events = Seq(
+        eventListener.expectMessageType[DangerousBlocksSkew],
+        eventListener.expectMessageType[DangerousBlocksSkew]
+      )
+      eventListener.expectNoMessage(100 millis)
+      assert(events.map(_.recentHeaders.source).toSet === Set("blockstream.info", "mempool.space"))
+      testKit.stop(watchdog)
+    } else {
+      cancel("Tor daemon is not up and running")
+    }
+  }
 }

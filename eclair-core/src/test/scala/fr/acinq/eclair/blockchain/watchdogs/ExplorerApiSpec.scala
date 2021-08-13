@@ -26,7 +26,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 
 class ExplorerApiSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
-  val explorers = Seq(BlockcypherExplorer(), BlockstreamExplorer(), MempoolSpaceExplorer())
+  val explorers = Seq(BlockcypherExplorer(None), BlockstreamExplorer(None), MempoolSpaceExplorer(None))
 
   test("fetch latest block headers", TestTags.ExternalApi) {
     for (explorer <- explorers) {

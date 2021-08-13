@@ -76,7 +76,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     system.eventStream.subscribe(listener.ref, classOf[CurrentBlockCount])
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     val bitcoinWallet = new BitcoinCoreWallet(bitcoinrpcclient)
-    val watcher = system.spawn(ZmqWatcher(Block.RegtestGenesisBlock.hash, blockCount, bitcoinClient), UUID.randomUUID().toString)
+    val watcher = system.spawn(ZmqWatcher(Block.RegtestGenesisBlock.hash, blockCount, bitcoinClient, None, Seq()), UUID.randomUUID().toString)
     try {
       testFun(Fixture(blockCount, bitcoinClient, bitcoinWallet, watcher, probe, listener))
     } finally {

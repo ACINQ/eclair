@@ -16,14 +16,15 @@
 
 package fr.acinq.eclair.tor
 
-import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
-
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import akka.io.Tcp
 import akka.util.ByteString
 import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.tor.Socks5Connection.{Credentials, Socks5Connect}
 import fr.acinq.eclair.wire.protocol._
+
+import java.net._
+import scala.util.Try
 
 
 /**
@@ -236,4 +237,10 @@ object Socks5ProxyParams {
     } else {
       proxyParams.credentials_opt
     }
+
+  def proxyAcceptsConnections(proxyParams: Socks5ProxyParams): Boolean = Try {
+    val s = new Socket(proxyParams.address.getAddress, proxyParams.address.getPort)
+    s.close()
+  }.isSuccess
+
 }
