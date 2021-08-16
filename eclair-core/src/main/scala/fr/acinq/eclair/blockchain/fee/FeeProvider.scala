@@ -45,7 +45,7 @@ case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
   def max(other: FeeratePerKB): FeeratePerKB = if (this > other) this else other
   def min(other: FeeratePerKB): FeeratePerKB = if (this < other) this else other
   def toLong: Long = feerate.toLong
-  override def toString: String = s"$feerate/kb"
+  override def toString: String = s"$feerate/kB"
   // @formatter:on
 }
 
