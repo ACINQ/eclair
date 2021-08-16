@@ -17,10 +17,12 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto, OutPoint, Psbt, Satoshi, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.transactions.Scripts
 import scodec.bits._
 
 import scala.concurrent.{ExecutionContext, Future, Promise}
@@ -41,8 +43,8 @@ class DummyOnChainWallet extends OnChainWallet {
 
   override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
-    Future.successful(DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, amount))
+  override def makeFundingTx(localFundingKey: ExtendedPublicKey, remoteFundingKey: PublicKey, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
+    Future.successful(DummyOnChainWallet.makeDummyFundingTx(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingKey.publicKey, remoteFundingKey))), amount))
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
@@ -65,7 +67,7 @@ class NoOpOnChainWallet extends OnChainWallet {
 
   override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse]().future // will never be completed
+  override def makeFundingTx(localFundingKey: ExtendedPublicKey, remoteFundingKey: PublicKey, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse]().future // will never be completed
 
   override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 

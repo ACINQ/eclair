@@ -413,8 +413,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-          val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
-          wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeeratePerKw).pipeTo(self)
+          wallet.makeFundingTx(localFundingPubkey, remoteParams.fundingPubKey, fundingSatoshis, fundingTxFeeratePerKw).pipeTo(self)
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, channelConfig, channelFeatures, open)
       }
 

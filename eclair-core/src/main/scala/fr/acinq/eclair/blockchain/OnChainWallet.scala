@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin.{Psbt, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
@@ -33,7 +34,7 @@ trait OnChainChannelFunder {
   import OnChainWallet.MakeFundingTxResponse
 
   /** Create a channel funding transaction with the provided pubkeyScript. */
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
+  def makeFundingTx(localFundingKey: ExtendedPublicKey, remoteFundingKey: PublicKey, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
 
   /**
    * Committing *must* include publishing the transaction on the network.
