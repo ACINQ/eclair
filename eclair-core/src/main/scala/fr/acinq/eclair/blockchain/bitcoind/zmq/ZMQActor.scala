@@ -39,9 +39,10 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
 
   val subscriber = ctx.createSocket(SocketType.SUB)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
-  subscriber.connect(address)
+  subscriber.setRcvHWM(0) // disable high watermark to ensure we never drop messages
+  subscriber.setTCPKeepAlive(1) // enable tcp keep-alive
   subscriber.subscribe(topic.getBytes(ZMQ.CHARSET))
-  subscriber.setTCPKeepAlive(1)
+  subscriber.connect(address)
 
   val monitor = ctx.createSocket(SocketType.PAIR)
   monitor.connect("inproc://events")
