@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
@@ -24,7 +25,7 @@ import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
-import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.Formats
@@ -181,7 +182,7 @@ class BitcoinCoreClient(val chainHash: ByteVector32, val rpcClient: BitcoinJsonR
   }
 
   def fundPsbt(inputs: Seq[FundPsbtInput], outputs: Map[String, Satoshi], locktime: Int, options: FundPsbtOptions)(implicit ec: ExecutionContext): Future[FundPsbtResponse] = {
-    rpcClient.invoke("walletcreatefundedpsbt", inputs.toArray, outputs.map { case (a,b) => a -> b.toBtc.toBigDecimal }, locktime, options).map(json => {
+    rpcClient.invoke("walletcreatefundedpsbt", inputs.toArray, outputs.map { case (a, b) => a -> b.toBtc.toBigDecimal }, locktime, options).map(json => {
       val JString(base64) = json \ "psbt"
       val JInt(changePos) = json \ "changepos"
       val JDecimal(fee) = json \ "fee"
@@ -225,54 +226,44 @@ class BitcoinCoreClient(val chainHash: ByteVector32, val rpcClient: BitcoinJsonR
     }
   }
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+  override def makeFundingTx(localFundingKey: ExtendedPublicKey, remoteFundingKey: PublicKey, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
     val hrp = chainHash match {
       case Block.RegtestGenesisBlock.hash => "bcrt"
       case Block.TestnetGenesisBlock.hash => "tb"
       case Block.LivenetGenesisBlock.hash => "bc"
       case _ => return Future.failed(new IllegalArgumentException(s"invalid chain hash ${chainHash}"))
     }
-    val fundingAddress = Script.parse(pubkeyScript) match {
-      case OP_0 :: OP_PUSHDATA(data, _) :: Nil if data.size == 20 || data.size == 32 =>  Bech32.encodeWitnessAddress(hrp, 0, data)
+    logger.info(s"funding psbt with local_funding_key=$localFundingKey and remote_funding_key=$remoteFundingKey")
+    val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingKey.publicKey, remoteFundingKey)))
+    val fundingAddress = Script.parse(fundingPubkeyScript) match {
+      case OP_0 :: OP_PUSHDATA(data, _) :: Nil if data.size == 20 || data.size == 32 => Bech32.encodeWitnessAddress(hrp, 0, data)
       case _ => return Future.failed(new IllegalArgumentException("invalid pubkey script"))
     }
 
     for {
       // we ask bitcoin core to create and fund the funding tx
-      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
-      FundPsbtResponse(psbt, fee, changePosition) <- fundPsbt(Map(fundingAddress -> amount), 0, FundPsbtOptions(feerate, lockUtxos = true))
+      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(feeRatePerKw))
+      FundPsbtResponse(psbt, fee, Some(changePos)) <- fundPsbt(Map(fundingAddress -> amount), 0, FundPsbtOptions(feerate, lockUtxos = true))
+      ourbip32path = localFundingKey.path.drop(2)
+      output = psbt.outputs(1 - changePos).copy(
+        derivationPaths = Map(
+          localFundingKey.publicKey -> Psbt.KeyPathWithMaster(localFundingKey.parent, ourbip32path),
+          remoteFundingKey -> Psbt.KeyPathWithMaster(0L, DeterministicWallet.KeyPath("1/2/3/4"))
+        )
+      )
+      psbt1 = psbt.copy(outputs = psbt.outputs.updated(1 - changePos, output))
       // now let's sign the funding tx
-      ProcessPsbtResponse(signedPsbt, true) <- signPsbtOrUnlock(psbt)
+      ProcessPsbtResponse(signedPsbt, true) <- signPsbtOrUnlock(psbt1)
       Success(fundingTx) = signedPsbt.extract()
       // there will probably be a change output, so we need to find which output is ours
-      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript) match {
+      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, fundingPubkeyScript) match {
         case Right(outputIndex) => Future.successful(outputIndex)
         case Left(skipped) => Future.failed(new RuntimeException(skipped.toString))
       }
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fee}")
     } yield MakeFundingTxResponse(signedPsbt, outputIndex, fee)
-  }
 
-//  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
-//    val partialFundingTx = Transaction(
-//      version = 2,
-//      txIn = Seq.empty[TxIn],
-//      txOut = TxOut(amount, pubkeyScript) :: Nil,
-//      lockTime = 0)
-//    for {
-//      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
-//      // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
-//      fundTxResponse <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate, lockUtxos = true))
-//      // now let's sign the funding tx
-//      SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(fundTxResponse.tx)
-//      // there will probably be a change output, so we need to find which output is ours
-//      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript) match {
-//        case Right(outputIndex) => Future.successful(outputIndex)
-//        case Left(skipped) => Future.failed(new RuntimeException(skipped.toString))
-//      }
-//      _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fundTxResponse.fee}")
-//    } yield MakeFundingTxResponse(fundingTx, outputIndex, fundTxResponse.fee)
-//  }
+  }
 
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).transformWith {
     case Success(_) => Future.successful(true)
@@ -521,7 +512,7 @@ object BitcoinCoreClient {
   }
 
   case class FundPsbtResponse(psbt: Psbt, fee: Satoshi, changePosition: Option[Int]) {
-    val amountIn: Satoshi = fee + psbt.computeFees().get
+    val amountIn: Satoshi = psbt.computeFees().get + psbt.global.tx.txOut.map(_.amount).sum
   }
 
   case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
