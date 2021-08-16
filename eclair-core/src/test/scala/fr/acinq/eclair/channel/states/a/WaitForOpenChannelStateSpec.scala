@@ -49,12 +49,13 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
 
     import setup._
     val channelConfig = ChannelConfig.standard
-    val (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures) = computeFeatures(setup, test.tags)
+    val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
+    val initialFeeratePerKw = if (channelType == ChannelTypes.AnchorOutputs) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, aliceChannelFeatures)
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, bobChannelFeatures)
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, channelType)
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_CHANNEL)
       withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, bob2blockchain)))
     }
@@ -64,7 +65,17 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
-    assert(open.tlvStream === TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+    assert(open.tlvStream.get[ChannelTlv.UpfrontShutdownScript] === Some(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
+    // We always send a channel type, even for standard channels.
+    assert(open.channelType_opt === Some(ChannelTypes.Standard.features))
+    alice2bob.forward(bob)
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
+  }
+
+  test("recv OpenChannel (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+    import f._
+    val open = alice2bob.expectMsgType[OpenChannel]
+    assert(open.channelType_opt === Some(ChannelTypes.AnchorOutputs.features))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
   }

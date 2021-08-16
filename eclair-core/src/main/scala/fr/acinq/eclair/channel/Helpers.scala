@@ -79,8 +79,11 @@ object Helpers {
       nodeParams.minDepthBlocks.max(blocksToReachFunding)
   }
 
-  def extractShutdownScript(channelId: ByteVector32, channelFeatures: ChannelFeatures, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] =
-    extractShutdownScript(channelId, channelFeatures.hasFeature(Features.OptionUpfrontShutdownScript), channelFeatures.hasFeature(Features.ShutdownAnySegwit), upfrontShutdownScript_opt)
+  def extractShutdownScript(channelId: ByteVector32, localFeatures: Features, remoteFeatures: Features, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
+    val canUseUpfrontShutdownScript = Features.canUseFeature(localFeatures, remoteFeatures, Features.OptionUpfrontShutdownScript)
+    val canUseAnySegwit = Features.canUseFeature(localFeatures, remoteFeatures, Features.ShutdownAnySegwit)
+    extractShutdownScript(channelId, canUseUpfrontShutdownScript, canUseAnySegwit, upfrontShutdownScript_opt)
+  }
 
   def extractShutdownScript(channelId: ByteVector32, hasOptionUpfrontShutdownScript: Boolean, allowAnySegwit: Boolean, upfrontShutdownScript_opt: Option[ByteVector]): Either[ChannelException, Option[ByteVector]] = {
     (hasOptionUpfrontShutdownScript, upfrontShutdownScript_opt) match {
@@ -96,7 +99,7 @@ object Helpers {
   /**
    * Called by the fundee
    */
-  def validateParamsFundee(nodeParams: NodeParams, initFeatures: Features, channelFeatures: ChannelFeatures, open: OpenChannel, remoteNodeId: PublicKey): Either[ChannelException, Option[ByteVector]] = {
+  def validateParamsFundee(nodeParams: NodeParams, initFeatures: Features, channelType: ChannelType, open: OpenChannel, remoteNodeId: PublicKey, remoteFeatures: Features): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
@@ -131,8 +134,8 @@ object Helpers {
     }
 
     // BOLT #2: The receiving node MUST fail the channel if: it considers feerate_per_kw too small for timely processing or unreasonably large.
-    val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelFeatures, open.fundingSatoshis, None)
-    if (nodeParams.onChainFeeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(channelFeatures, localFeeratePerKw, open.feeratePerKw)) return Left(FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw))
+    val localFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, open.fundingSatoshis, None)
+    if (nodeParams.onChainFeeConf.feerateToleranceFor(remoteNodeId).isFeeDiffTooHigh(channelType, localFeeratePerKw, open.feeratePerKw)) return Left(FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw))
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) return Left(DustLimitTooSmall(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT))
@@ -144,13 +147,25 @@ object Helpers {
     val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    extractShutdownScript(open.temporaryChannelId, channelFeatures, open.upfrontShutdownScript_opt)
+    val channelFeatures = ChannelFeatures(channelType, initFeatures, remoteFeatures)
+    extractShutdownScript(open.temporaryChannelId, initFeatures, remoteFeatures, open.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
   /**
    * Called by the funder
    */
-  def validateParamsFunder(nodeParams: NodeParams, channelFeatures: ChannelFeatures, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, Option[ByteVector]] = {
+  def validateParamsFunder(nodeParams: NodeParams, channelType: ChannelType, initFeatures: Features, remoteFeatures: Features, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
+    accept.channelType_opt match {
+      case None if channelType != ChannelTypes.pickChannelType(initFeatures, remoteFeatures) =>
+        // If we have overridden the default channel type, but they didn't support explicit channel type negotiation,
+        // we need to abort because they expect a different channel type than what we offered.
+        return Left(InvalidChannelType(open.temporaryChannelId, channelType.features, ChannelTypes.pickChannelType(initFeatures, remoteFeatures).features))
+      case Some(theirChannelType) if accept.channelType_opt != open.channelType_opt =>
+        // if channel_type is set, and channel_type was set in open_channel, and they are not equal types: MUST reject the channel.
+        return Left(InvalidChannelType(open.temporaryChannelId, channelType.features, theirChannelType))
+      case _ => // we agree on channel type
+    }
+
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) return Left(InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS))
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
@@ -177,7 +192,8 @@ object Helpers {
     val reserveToFundingRatio = accept.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    extractShutdownScript(accept.temporaryChannelId, channelFeatures, accept.upfrontShutdownScript_opt)
+    val channelFeatures = ChannelFeatures(channelType, initFeatures, remoteFeatures)
+    extractShutdownScript(accept.temporaryChannelId, initFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
   /**

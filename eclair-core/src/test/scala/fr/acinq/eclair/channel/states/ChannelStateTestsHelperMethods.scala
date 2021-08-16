@@ -114,7 +114,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
-  def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, ChannelFeatures, LocalParams, ChannelFeatures) = {
+  def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, LocalParams, ChannelType) = {
     import setup._
 
     val aliceInitFeatures = Alice.nodeParams.features
@@ -130,20 +130,19 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionUpfrontShutdownScript))(_.updated(Features.OptionUpfrontShutdownScript, FeatureSupport.Optional))
 
-    val aliceChannelFeatures = ChannelFeatures.pickChannelFeatures(aliceInitFeatures, bobInitFeatures)
-    val bobChannelFeatures = ChannelFeatures.pickChannelFeatures(bobInitFeatures, aliceInitFeatures)
+    val channelType = ChannelTypes.pickChannelType(aliceInitFeatures, bobInitFeatures)
 
     val aliceParams = Alice.channelParams
       .modify(_.initFeatures).setTo(aliceInitFeatures)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(aliceChannelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
     val bobParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
-      .modify(_.walletStaticPaymentBasepoint).setToIf(bobChannelFeatures.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
+      .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
 
-    (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures)
+    (aliceParams, bobParams, channelType)
   }
 
   def reachNormal(setup: SetupFixture, tags: Set[String] = Set.empty): Unit = {
@@ -151,7 +150,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     import setup._
 
     val channelConfig = ChannelConfig.standard
-    val (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures) = computeFeatures(setup, tags)
+    val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags)
     val channelFlags = if (tags.contains(ChannelStateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val initialFeeratePerKw = if (tags.contains(ChannelStateTestsTags.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(ChannelStateTestsTags.NoPushMsat)) {
@@ -162,9 +161,9 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
 
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
-    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, aliceChannelFeatures)
+    alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, fundingSatoshis, pushMsat, initialFeeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, channelFlags, channelConfig, channelType)
     assert(alice2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
-    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, bobChannelFeatures)
+    bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
     assert(bob2blockchain.expectMsgType[TxPublisher.SetChannelId].channelId === ByteVector32.Zeroes)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)

@@ -18,6 +18,8 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, SatoshiLong}
+import fr.acinq.eclair.FeatureSupport.Mandatory
+import fr.acinq.eclair.Features.{AnchorOutputs, StaticRemoteKey}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.router.Announcements
@@ -162,7 +164,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       // empty upfront_shutdown_script + unknown odd tlv records
       defaultEncoded ++ hex"0000 0302002a 050102" -> defaultOpen.copy(tlvStream = TlvStream(Seq(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)), Seq(GenericTlv(UInt64(3), hex"002a"), GenericTlv(UInt64(5), hex"02")))),
       // non-empty upfront_shutdown_script + unknown odd tlv records
-      defaultEncoded ++ hex"0002 1234 0303010203" -> defaultOpen.copy(tlvStream = TlvStream(Seq(ChannelTlv.UpfrontShutdownScript(hex"1234")), Seq(GenericTlv(UInt64(3), hex"010203"))))
+      defaultEncoded ++ hex"0002 1234 0303010203" -> defaultOpen.copy(tlvStream = TlvStream(Seq(ChannelTlv.UpfrontShutdownScript(hex"1234")), Seq(GenericTlv(UInt64(3), hex"010203")))),
+      // empty upfront_shutdown_script + default channel type
+      defaultEncoded ++ hex"0000" ++ hex"0100" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), ChannelTlv.ChannelType(Features.empty))),
+      // empty upfront_shutdown_script + channel type
+      defaultEncoded ++ hex"0000" ++ hex"01021000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), ChannelTlv.ChannelType(Features(StaticRemoteKey -> Mandatory)))),
+      // non-empty upfront_shutdown_script + channel type
+      defaultEncoded ++ hex"0004 01abcdef" ++ hex"0103101000" -> defaultOpen.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(hex"01abcdef"), ChannelTlv.ChannelType(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory))))
     )
 
     for ((encoded, expected) <- testCases) {
@@ -179,6 +187,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       defaultEncoded ++ hex"00", // truncated length
       defaultEncoded ++ hex"01", // truncated length
       defaultEncoded ++ hex"0004 123456", // truncated upfront_shutdown_script
+      defaultEncoded ++ hex"0000 01040101", // truncated channel type
       defaultEncoded ++ hex"0000 02012a", // invalid tlv stream (unknown even record)
       defaultEncoded ++ hex"0000 01012a 030201", // invalid tlv stream (truncated)
       defaultEncoded ++ hex"02012a", // invalid tlv stream (unknown even record)
@@ -200,8 +209,10 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val testCases = Map(
       defaultEncoded -> defaultAccept, // legacy encoding without upfront_shutdown_script
       defaultEncoded ++ hex"0000" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty))), // empty upfront_shutdown_script
+      defaultEncoded ++ hex"0000" ++ hex"0100" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty), ChannelTlv.ChannelType(Features.empty))), // empty upfront_shutdown_script with channel type
       defaultEncoded ++ hex"0004 01abcdef" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(hex"01abcdef"))), // non-empty upfront_shutdown_script
-      defaultEncoded ++ hex"0000 0102002a 030102" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty) :: Nil, GenericTlv(UInt64(1), hex"002a") :: GenericTlv(UInt64(3), hex"02") :: Nil)), // empty upfront_shutdown_script + unknown odd tlv records
+      defaultEncoded ++ hex"0004 01abcdef" ++ hex"01021000" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(hex"01abcdef"), ChannelTlv.ChannelType(Features(StaticRemoteKey -> Mandatory)))), // non-empty upfront_shutdown_script with channel type
+      defaultEncoded ++ hex"0000 0302002a 050102" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty) :: Nil, GenericTlv(UInt64(3), hex"002a") :: GenericTlv(UInt64(5), hex"02") :: Nil)), // empty upfront_shutdown_script + unknown odd tlv records
       defaultEncoded ++ hex"0002 1234 0303010203" -> defaultAccept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(hex"1234") :: Nil, GenericTlv(UInt64(3), hex"010203") :: Nil)), // non-empty upfront_shutdown_script + unknown odd tlv records
       defaultEncoded ++ hex"0303010203 05020123" -> defaultAccept.copy(tlvStream = TlvStream(Nil, GenericTlv(UInt64(3), hex"010203") :: GenericTlv(UInt64(5), hex"0123") :: Nil)) // no upfront_shutdown_script + unknown odd tlv records
     )

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.api.handlers
 
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.MilliSatoshi
@@ -24,6 +24,7 @@ import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
+import fr.acinq.eclair.channel.ChannelTypes
 import scodec.bits.ByteVector
 
 trait Channel {
@@ -32,11 +33,21 @@ trait Channel {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val open: Route = postRequest("open") { implicit t =>
-    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "fundingFeerateSatByte".as[FeeratePerByte].?,
-      "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
-      (nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>
-        complete {
-          eclairApi.open(nodeId, fundingSatoshis, pushMsat, fundingFeerateSatByte, channelFlags, openTimeout_opt)
+    formFields(nodeIdFormParam, "fundingSatoshis".as[Satoshi], "pushMsat".as[MilliSatoshi].?, "channelType".?, "fundingFeerateSatByte".as[FeeratePerByte].?, "channelFlags".as[Int].?, "openTimeoutSeconds".as[Timeout].?) {
+      (nodeId, fundingSatoshis, pushMsat, channelType, fundingFeerateSatByte, channelFlags, openTimeout_opt) =>
+        val (channelTypeOk, channelType_opt) = channelType match {
+          case Some(str) if str == ChannelTypes.Standard.toString => (true, Some(ChannelTypes.Standard))
+          case Some(str) if str == ChannelTypes.StaticRemoteKey.toString => (true, Some(ChannelTypes.StaticRemoteKey))
+          case Some(str) if str == ChannelTypes.AnchorOutputs.toString => (true, Some(ChannelTypes.AnchorOutputs))
+          case Some(_) => (false, None)
+          case None => (true, None)
+        }
+        if (!channelTypeOk) {
+          reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be ${ChannelTypes.Standard.toString}, ${ChannelTypes.StaticRemoteKey.toString} or ${ChannelTypes.AnchorOutputs.toString}"))
+        } else {
+          complete {
+            eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, channelFlags, openTimeout_opt)
+          }
         }
     }
   }

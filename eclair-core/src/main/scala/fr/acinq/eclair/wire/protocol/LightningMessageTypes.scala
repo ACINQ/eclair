@@ -104,6 +104,7 @@ case class OpenChannel(chainHash: ByteVector32,
                        channelFlags: Byte,
                        tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScript].map(_.script)
+  val channelType_opt: Option[Features] = tlvStream.get[ChannelTlv.ChannelType].map(_.features)
 }
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
@@ -122,6 +123,7 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          firstPerCommitmentPoint: PublicKey,
                          tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
   val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScript].map(_.script)
+  val channelType_opt: Option[Features] = tlvStream.get[ChannelTlv.ChannelType].map(_.features)
 }
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
