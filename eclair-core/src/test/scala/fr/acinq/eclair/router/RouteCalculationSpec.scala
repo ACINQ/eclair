@@ -975,12 +975,12 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("calculate multipart route to neighbor (many channels, known balance)") {
-    val amount = 65000 msat
+    val amount = 60000 msat
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 50 msat, 100, minHtlc = 1 msat, balance_opt = Some(15000 msat)),
-      makeEdge(2L, a, b, 15 msat, 10, minHtlc = 1 msat, balance_opt = Some(25000 msat)),
-      makeEdge(3L, a, b, 1 msat, 50, minHtlc = 1 msat, balance_opt = Some(20000 msat)),
-      makeEdge(4L, a, b, 100 msat, 20, minHtlc = 1 msat, balance_opt = Some(10000 msat)),
+      makeEdge(2L, a, b, 15 msat, 10, minHtlc = 1 msat, balance_opt = Some(21000 msat)),
+      makeEdge(3L, a, b, 1 msat, 50, minHtlc = 1 msat, balance_opt = Some(17000 msat)),
+      makeEdge(4L, a, b, 100 msat, 20, minHtlc = 1 msat, balance_opt = Some(16000 msat)),
     ))
     // We set max-parts to 3, but it should be ignored when sending to a direct neighbor.
     val routeParams = DEFAULT_ROUTE_PARAMS.copy(mpp = MultiPartParams(2500 msat, 3))
@@ -998,11 +998,9 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       checkRouteAmounts(routes, amount, 0 msat)
     }
     {
-      // We set min-part-amount to a value that would exclude channels 1 and 4, but it should be ignored when sending to a direct neighbor.
-      val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = routeParams.copy(mpp = MultiPartParams(20000 msat, 3)), currentBlockHeight = 400000)
-      assert(routes.length === 4, routes)
-      assert(routes.forall(_.length == 1), routes)
-      checkRouteAmounts(routes, amount, 0 msat)
+      // We set min-part-amount to a value that excludes channels 1 and 4.
+      val failure = findMultiPartRoute(g, a, b, amount, 1 msat, routeParams = routeParams.copy(mpp = MultiPartParams(16500 msat, 3)), currentBlockHeight = 400000)
+      assert(failure === Failure(RouteNotFound))
     }
   }
 
