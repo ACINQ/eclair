@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.{Block, Btc, ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, ChannelTlv, Error, Init, OpenChannel, TlvStream}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -34,9 +34,9 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
+class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
 
@@ -100,7 +100,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv OpenChannel (fundingSatoshis > max-funding-satoshis)", Tag(StateTestsTags.Wumbo)) { f =>
+  test("recv OpenChannel (fundingSatoshis > max-funding-satoshis)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val highFundingSat = Bob.nodeParams.maxFundingSatoshis + Btc(1)
@@ -207,7 +207,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == CLOSED)
   }
 
-  test("recv OpenChannel (wumbo size)", Tag(StateTestsTags.Wumbo), Tag("max-funding-satoshis")) { f =>
+  test("recv OpenChannel (wumbo size)", Tag(ChannelStateTestsTags.Wumbo), Tag("max-funding-satoshis")) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val highFundingSat = Btc(1).toSatoshi
@@ -216,7 +216,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
   }
 
-  test("recv OpenChannel (upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv OpenChannel (upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     assert(open.upfrontShutdownScript_opt.contains(alice.stateData.asInstanceOf[DATA_WAIT_FOR_ACCEPT_CHANNEL].initFunder.localParams.defaultFinalScriptPubKey))
@@ -225,7 +225,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].remoteParams.shutdownScript == open.upfrontShutdownScript_opt)
   }
 
-  test("recv OpenChannel (empty upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv OpenChannel (empty upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.empty)))
@@ -234,7 +234,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].remoteParams.shutdownScript.isEmpty)
   }
 
-  test("recv OpenChannel (invalid upfront shutdown script)", Tag(StateTestsTags.OptionUpfrontShutdownScript)) { f =>
+  test("recv OpenChannel (invalid upfront shutdown script)", Tag(ChannelStateTestsTags.OptionUpfrontShutdownScript)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     val open1 = open.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScript(ByteVector.fromValidHex("deadbeef"))))
