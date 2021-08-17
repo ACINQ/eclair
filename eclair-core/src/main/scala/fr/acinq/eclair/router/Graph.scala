@@ -42,7 +42,7 @@ object Graph {
     override def compare(that: RichWeight): Int = this.weight.compareTo(that.weight)
   }
   /**
-   * We use heuristics to calculate the weight of an edge based on channel age, cltv delta and capacity.
+   * We use heuristics to calculate the weight of an edge based on channel age, cltv delta, capacity and a virtual hop cost to keep routes short.
    * We favor older channels, with bigger capacity and small cltv delta.
    */
   case class WeightRatios(baseFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopCostBase: MilliSatoshi, hopCostMillionths: Long) {

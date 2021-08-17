@@ -322,6 +322,8 @@ object Router {
     require(searchRatioChannelAge >= 0.0, "ratio-channel-age must be nonnegative")
     require(searchRatioChannelCapacity >= 0.0, "ratio-channel-capacity must be nonnegative")
     require(searchRatioBase + searchRatioCltv + searchRatioChannelAge + searchRatioChannelCapacity == 1, "The sum of heuristics ratios must be 1")
+    require(searchHopCostBase.toLong >= 0.0, "hop-cost-base-msat must be nonnegative")
+    require(searchHopCostMillionths >= 0.0, "hop-cost-millionths must be nonnegative")
   }
 
   // @formatter:off
