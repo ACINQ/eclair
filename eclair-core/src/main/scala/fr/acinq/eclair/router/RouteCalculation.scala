@@ -189,14 +189,14 @@ object RouteCalculation {
     maxFeePct = routerConf.searchMaxFeePct,
     routeMaxLength = routerConf.searchMaxRouteLength,
     routeMaxCltv = routerConf.searchMaxCltv,
-    ratios = routerConf.searchHeuristicsEnabled match {
-      case false => None
-      case true => Some(WeightRatios(
-        cltvDeltaFactor = routerConf.searchRatioCltv,
-        ageFactor = routerConf.searchRatioChannelAge,
-        capacityFactor = routerConf.searchRatioChannelCapacity
-      ))
-    },
+    ratios = WeightRatios(
+      baseFactor = routerConf.searchRatioBase,
+      cltvDeltaFactor = routerConf.searchRatioCltv,
+      ageFactor = routerConf.searchRatioChannelAge,
+      capacityFactor = routerConf.searchRatioChannelCapacity,
+      hopCostBase = routerConf.searchHopCostBase,
+      hopCostMillionths = routerConf.searchHopCostMillionths
+    ),
     mpp = MultiPartParams(routerConf.mppMinPartAmount, routerConf.mppMaxParts),
     includeLocalChannelCost = false,
   )
