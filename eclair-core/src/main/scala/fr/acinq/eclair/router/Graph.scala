@@ -45,8 +45,8 @@ object Graph {
    * We use heuristics to calculate the weight of an edge based on channel age, cltv delta and capacity.
    * We favor older channels, with bigger capacity and small cltv delta.
    */
-  case class WeightRatios(biasFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopCostBase: MilliSatoshi, hopCostMillionths: Long) {
-    require(biasFactor + cltvDeltaFactor + ageFactor + capacityFactor == 1, "The sum of heuristics ratios must be 1")
+  case class WeightRatios(baseFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopCostBase: MilliSatoshi, hopCostMillionths: Long) {
+    require(baseFactor + cltvDeltaFactor + ageFactor + capacityFactor == 1, "The sum of heuristics ratios must be 1")
   }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
@@ -288,7 +288,7 @@ object Graph {
     val cltvFactor = normalize(edge.update.cltvExpiryDelta.toInt, CLTV_LOW, CLTV_HIGH)
 
     // NB we're guaranteed to have weightRatios and factors > 0
-    val factor = weightRatios.biasFactor + (cltvFactor * weightRatios.cltvDeltaFactor) + (ageFactor * weightRatios.ageFactor) + (capFactor * weightRatios.capacityFactor)
+    val factor = weightRatios.baseFactor + (cltvFactor * weightRatios.cltvDeltaFactor) + (ageFactor * weightRatios.ageFactor) + (capFactor * weightRatios.capacityFactor)
     val totalWeight = prev.weight + (fee + hopCost).toLong * factor
     RichWeight(totalCost, prev.length + 1, totalCltv, totalWeight)
   }

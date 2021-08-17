@@ -309,14 +309,20 @@ object Router {
                         searchMaxFeePct: Double,
                         searchMaxRouteLength: Int,
                         searchMaxCltv: CltvExpiryDelta,
-                        searchRatioBias: Double,
+                        searchRatioBase: Double,
                         searchRatioCltv: Double,
                         searchRatioChannelAge: Double,
                         searchRatioChannelCapacity: Double,
                         searchHopCostBase: MilliSatoshi,
                         searchHopCostMillionths: Long,
                         mppMinPartAmount: MilliSatoshi,
-                        mppMaxParts: Int)
+                        mppMaxParts: Int) {
+    require(searchRatioBase >= 0.0, "ratio-base must be nonnegative")
+    require(searchRatioCltv >= 0.0, "ratio-cltv must be nonnegative")
+    require(searchRatioChannelAge >= 0.0, "ratio-channel-age must be nonnegative")
+    require(searchRatioChannelCapacity >= 0.0, "ratio-channel-capacity must be nonnegative")
+    require(searchRatioBase + searchRatioCltv + searchRatioChannelAge + searchRatioChannelCapacity == 1, "The sum of heuristics ratios must be 1")
+  }
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)

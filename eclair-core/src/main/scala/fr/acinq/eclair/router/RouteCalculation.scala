@@ -190,7 +190,7 @@ object RouteCalculation {
     routeMaxLength = routerConf.searchMaxRouteLength,
     routeMaxCltv = routerConf.searchMaxCltv,
     ratios = WeightRatios(
-      biasFactor = routerConf.searchRatioBias,
+      baseFactor = routerConf.searchRatioBase,
       cltvDeltaFactor = routerConf.searchRatioCltv,
       ageFactor = routerConf.searchRatioChannelAge,
       capacityFactor = routerConf.searchRatioChannelCapacity,

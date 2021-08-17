@@ -820,7 +820,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(route2Nodes(routeFeeOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
 
     val Success(routeCltvOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
-      biasFactor = 0,
+      baseFactor = 0,
       cltvDeltaFactor = 1,
       ageFactor = 0,
       capacityFactor = 0,
@@ -830,7 +830,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     assert(route2Nodes(routeCltvOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
 
     val Success(routeCapacityOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
-      biasFactor = 0,
+      baseFactor = 0,
       cltvDeltaFactor = 0,
       ageFactor = 0,
       capacityFactor = 1,
@@ -853,7 +853,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
-      biasFactor = 0.01,
+      baseFactor = 0.01,
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33,
@@ -875,7 +875,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
-      biasFactor = 0.01,
+      baseFactor = 0.01,
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33,
@@ -899,7 +899,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val Success(routeScoreOptimized :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT / 2, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(
-      biasFactor = 0.01,
+      baseFactor = 0.01,
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33,
@@ -943,7 +943,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val g = DirectedGraph.makeGraph(updates)
     val params = DEFAULT_ROUTE_PARAMS.copy(
       routeMaxCltv = CltvExpiryDelta(1008),
-      ratios = WeightRatios(biasFactor = 0, cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5, hopCostBase = 0 msat, hopCostMillionths = 0),
+      ratios = WeightRatios(baseFactor = 0, cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5, hopCostBase = 0 msat, hopCostMillionths = 0),
     )
     val thisNode = PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")
     val targetNode = PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")
