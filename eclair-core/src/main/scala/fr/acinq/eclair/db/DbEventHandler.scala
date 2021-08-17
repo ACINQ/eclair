@@ -118,7 +118,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
       channelsDb.updateChannelMeta(e.channelId, event)
 
     case u: LocalChannelUpdate =>
-      u.previousChannelUpdate match {
+      u.previousChannelUpdate_opt match {
         case Some(previous) if
           u.channelUpdate.feeBaseMsat == previous.feeBaseMsat &&
           u.channelUpdate.feeProportionalMillionths == previous.feeProportionalMillionths &&
