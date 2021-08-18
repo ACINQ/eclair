@@ -59,6 +59,16 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```
 
+Depending on the actual hardware configuration, it may be useful to provide increased `dbcache` parameter value for faster verification and `rpcthreads` parameter value for better handling of multiple simultaneous API requests from `bitcoind` side. 
+
+```conf
+dbcache=2048
+rpcworkqueue=128
+rpcthreads=128
+rpctimeout=220
+```
+
+
 ### Installing Eclair
 
 Eclair is developed in [Scala](https://www.scala-lang.org/), a powerful functional language that runs on the JVM, and is packaged as a ZIP archive.
@@ -117,7 +127,11 @@ Any BTC found in the wallet can be used to fund the channels you choose to open.
 
 #### Java Environment Variables
 
-Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section.
+Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section. However, if Eclair instance fails to start with Java heap size error, try to increase JVM memory allocation via
+
+```shell
+export JAVA_OPTS=-Xmx512m
+```
 
 :warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in `eclair.conf` (see above).
 
