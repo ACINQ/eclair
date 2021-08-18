@@ -120,7 +120,7 @@ object Databases extends Logging {
               logger.info("cancelling the pg lock renew task...")
               leaseLockTask.cancel()
               logger.info("releasing the curent pg lock...")
-              l.releaseExclusiveLock
+              l.releaseExclusiveLock(ds)
               logger.info("closing the connection pool...")
               ds.close()
               Done

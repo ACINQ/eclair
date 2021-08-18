@@ -102,21 +102,21 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
 
   test("lock release utility method") {
     val pg = EmbeddedPostgres.start()
-    implicit val ds: DataSource = pg.getPostgresDatabase
+    val ds: DataSource = pg.getPostgresDatabase
 
     val lock1 = LeaseLock(UUID.randomUUID(), 2 minutes, 1 minute, LockFailureHandler.logAndThrow)
     val lock2 = LeaseLock(UUID.randomUUID(), 2 minutes, 1 minute, LockFailureHandler.logAndThrow)
 
-    lock1.obtainExclusiveLock
+    lock1.obtainExclusiveLock(ds)
     intercept[LockFailureHandler.LockException] {
-      lock2.obtainExclusiveLock
+      lock2.obtainExclusiveLock(ds)
     }
 
-    lock1.releaseExclusiveLock
+    lock1.releaseExclusiveLock(ds)
     Thread.sleep(5)
-    lock2.obtainExclusiveLock
+    lock2.obtainExclusiveLock(ds)
     intercept[LockFailureHandler.LockException] {
-      lock1.obtainExclusiveLock
+      lock1.obtainExclusiveLock(ds)
     }
 
     pg.close()
