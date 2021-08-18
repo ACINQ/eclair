@@ -127,7 +127,11 @@ Any BTC found in the wallet can be used to fund the channels you choose to open.
 
 #### Java Environment Variables
 
-Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section. However, if Eclair instance fails to start with Java heap size error, try to increase JVM memory allocation via
+Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section.
+
+However, if you're seeing Java heap size errors, you can try increasing the maximum memory allocated to the JVM with the `-Xmx` parameter.
+
+You can for example set it to use up to 512 MB (or any value that fits the amount of RAM on your machine) with:
 
 ```shell
 export JAVA_OPTS=-Xmx512m
