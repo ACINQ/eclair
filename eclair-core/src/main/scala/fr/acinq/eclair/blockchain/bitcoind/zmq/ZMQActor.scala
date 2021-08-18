@@ -41,6 +41,8 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.setRcvHWM(0) // disable high watermark to ensure we never drop messages
   subscriber.setTCPKeepAlive(1) // enable tcp keep-alive
+  subscriber.setTCPKeepAliveIdle(300)
+  subscriber.setTCPKeepAliveInterval(300)
   subscriber.subscribe(topic.getBytes(ZMQ.CHARSET))
   subscriber.connect(address)
 
