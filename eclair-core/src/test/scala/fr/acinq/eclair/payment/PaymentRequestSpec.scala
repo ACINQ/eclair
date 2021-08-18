@@ -27,6 +27,7 @@ import scodec.bits._
 import scodec.codecs.bits
 
 import java.nio.ByteOrder
+import scala.util.Success
 
 /**
  * Created by fabrice on 15/05/17.
@@ -54,18 +55,18 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("decode empty amount") {
-    assert(Amount.decode("") === None)
-    assert(Amount.decode("0") === None)
-    assert(Amount.decode("0p") === None)
-    assert(Amount.decode("0n") === None)
-    assert(Amount.decode("0u") === None)
-    assert(Amount.decode("0m") === None)
+    assert(Amount.decode("") === Success(None))
+    assert(Amount.decode("0") === Success(None))
+    assert(Amount.decode("0p") === Success(None))
+    assert(Amount.decode("0n") === Success(None))
+    assert(Amount.decode("0u") === Success(None))
+    assert(Amount.decode("0m") === Success(None))
   }
 
   test("check that we can still decode non-minimal amount encoding") {
-    assert(Amount.decode("1000u") === Some(100000000 msat))
-    assert(Amount.decode("1000000n") === Some(100000000 msat))
-    assert(Amount.decode("1000000000p") === Some(100000000 msat))
+    assert(Amount.decode("1000u") === Success(Some(100000000 msat)))
+    assert(Amount.decode("1000000n") === Success(Some(100000000 msat)))
+    assert(Amount.decode("1000000000p") === Success(Some(100000000 msat)))
   }
 
   test("data string -> bitvector") {
@@ -287,7 +288,7 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("On mainnet, please send 0.00967878534 BTC for a list of items within one week, amount in pico-BTC") {
-    val ref = "lnbc9678785340p1pwmna7lsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5gc3xfm08u9qy06djf8dfflhugl6p7lgza6dsjxq454gxhj9t7a0sd8dgfkx7cmtwd68yetpd5s9xar0wfjn5gpc8qhrsdfq24f5ggrxdaezqsnvda3kkum5wfjkzmfqf3jkgem9wgsyuctwdus9xgrcyqcjcgpzgfskx6eqf9hzqnteypzxz7fzypfhg6trddjhygrcyqezcgpzfysywmm5ypxxjemgw3hxjmn8yptk7untd9hxwg3q2d6xjcmtv4ezq7pqxgsxzmnyyqcjqmt0wfjjq6t5v4khxxqyjw5qcqp2rzjq0gxwkzc8w6323m55m4jyxcjwmy7stt9hwkwe2qxmy8zpsgg7jcuwz87fcqqeuqqqyqqqqlgqqqqn3qq9qufzt0rlypjgwvq3k0p79gkjl2fadnswnl2x89puj8m5g3lj9q4y9ft5fs7v5t3g95dcavg23l634vatl46ww8ev6dx2m6xp2ehv4hssq0e27ql"
+    val ref = "lnbc9678785340p1pwmna7lpp5gc3xfm08u9qy06djf8dfflhugl6p7lgza6dsjxq454gxhj9t7a0sd8dgfkx7cmtwd68yetpd5s9xar0wfjn5gpc8qhrsdfq24f5ggrxdaezqsnvda3kkum5wfjkzmfqf3jkgem9wgsyuctwdus9xgrcyqcjcgpzgfskx6eqf9hzqnteypzxz7fzypfhg6trddjhygrcyqezcgpzfysywmm5ypxxjemgw3hxjmn8yptk7untd9hxwg3q2d6xjcmtv4ezq7pqxgsxzmnyyqcjqmt0wfjjq6t5v4khxsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygsxqyjw5qcqp2rzjq0gxwkzc8w6323m55m4jyxcjwmy7stt9hwkwe2qxmy8zpsgg7jcuwz87fcqqeuqqqyqqqqlgqqqqn3qq9q0777th7sgnqqpykcmu4c2u65vtnefrnjzws78maaxy87euvpj0hr8t5ma58cyw5f3f9ej4aw9swcyvk4vp6vjlxtgpcfdy8u9m4c6wgpdqfxt2"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
     assert(pr.amount === Some(967878534 msat))
@@ -316,7 +317,9 @@ class PaymentRequestSpec extends AnyFunSuite {
       // String is too short.
       "lnbc1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6na6hlh",
       // Invalid multiplier.
-      "lnbc2500x1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpujr6jxr9gq9pv6g46y7d20jfkegkg4gljz2ea2a3m9lmvvr95tq2s0kvu70u3axgelz3kyvtp2ywwt0y8hkx2869zq5dll9nelr83zzqqpgl2zg"
+      "lnbc2500x1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpujr6jxr9gq9pv6g46y7d20jfkegkg4gljz2ea2a3m9lmvvr95tq2s0kvu70u3axgelz3kyvtp2ywwt0y8hkx2869zq5dll9nelr83zzqqpgl2zg",
+      // Invalid sub-millisatoshi precision.
+      "lnbc2500000001p1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu7hqtk93pkf7sw55rdv4k9z2vj050rxdr6za9ekfs3nlt5lr89jqpdmxsmlj9urqumg0h9wzpqecw7th56tdms40p2ny9q4ddvjsedzcplva53s"
     )
     for (ref <- refs) {
       assertThrows[Exception](PaymentRequest.read(ref))
