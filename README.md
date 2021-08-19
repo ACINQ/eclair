@@ -62,7 +62,9 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 Depending on the actual hardware configuration, it may be useful to provide increased `dbcache` parameter value for faster verification and `rpcthreads` parameter value for better handling of multiple simultaneous API requests from `bitcoind` side. 
 
 ```conf
+# UTXO database cache size, in MiB
 dbcache=2048
+# Number of allowed pending RPC requests (default is 16)
 rpcworkqueue=128
 rpcthreads=128
 
