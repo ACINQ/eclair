@@ -65,7 +65,10 @@ Depending on the actual hardware configuration, it may be useful to provide incr
 dbcache=2048
 rpcworkqueue=128
 rpcthreads=128
-rpctimeout=220
+
+# How many seconds bitcoin will wait for a complete RPC HTTP request.
+# after the HTTP connection is established.
+rpcclienttimeout=30
 ```
 
 
