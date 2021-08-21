@@ -21,11 +21,13 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.pattern.after
 import com.softwaremill.sttp.json4s.asJson
-import com.softwaremill.sttp.{StatusCodes, SttpBackend, Uri, UriContext, sttp}
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
+import com.softwaremill.sttp.{StatusCodes, SttpBackend, SttpBackendOptions, Uri, UriContext, sttp}
 import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog.{BlockHeaderAt, LatestHeaders, SupportsTor}
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.tor.{Socks5ProxyParams, SttpUtils}
+import fr.acinq.eclair.randomBytes
+import fr.acinq.eclair.tor.Socks5ProxyParams
 import org.json4s.JsonAST.{JArray, JInt, JObject, JString}
 import org.json4s.jackson.Serialization
 import org.json4s.{DefaultFormats, Serialization}
@@ -90,12 +92,26 @@ object ExplorerApi {
     }
   }
 
+  def createSttpBackend(socksProxy_opt: Option[Socks5ProxyParams]): SttpBackend[Future, Nothing] = {
+    val options = SttpBackendOptions(connectionTimeout = 30.seconds, proxy = None)
+    val sttpBackendOptions = socksProxy_opt match {
+      case Some(proxy) =>
+        val host = proxy.address.getHostString
+        val port = proxy.address.getPort
+        if (proxy.randomizeCredentials)
+          options.socksProxy(host, port, username = randomBytes(16).toHex, password = randomBytes(16).toHex)
+        else
+          options.socksProxy(host, port)
+      case None => options
+    }
+    OkHttpFutureBackend(sttpBackendOptions)
+  }
+
   /**
    * Query https://blockcypher.com/ to fetch block headers.
    * See https://www.blockcypher.com/dev/bitcoin/#introduction.
    */
-  case class BlockcypherExplorer(socksProxy_opt: Option[Socks5ProxyParams]) extends Explorer with SupportsTor {
-    private implicit val sb = SttpUtils.backend(socksProxy_opt)
+  case class BlockcypherExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, Nothing]) extends Explorer with SupportsTor {
     override val name = "blockcypher.com"
     override val baseUris = Map(
       Block.TestnetGenesisBlock.hash -> uri"https://api.blockcypher.com/v1/btc/test3",
@@ -156,7 +172,7 @@ object ExplorerApi {
 
   /** Explorer API based on Esplora: see https://github.com/Blockstream/esplora/blob/master/API.md. */
   sealed trait Esplora extends Explorer with SupportsTor {
-    private implicit val sb = SttpUtils.backend(socksProxy_opt)
+    implicit val sb: SttpBackend[Future, Nothing]
 
     override def getLatestHeaders(baseUri: Uri, currentBlockCount: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
       implicit val ec: ExecutionContext = context.system.executionContext
@@ -186,7 +202,7 @@ object ExplorerApi {
   }
 
   /** Query https://blockstream.info/ to fetch block headers. */
-  case class BlockstreamExplorer(socksProxy_opt: Option[Socks5ProxyParams]) extends Esplora {
+  case class BlockstreamExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, Nothing]) extends Esplora {
     override val name = "blockstream.info"
     override val baseUris = socksProxy_opt match {
       case Some(_) =>
@@ -203,7 +219,7 @@ object ExplorerApi {
   }
 
   /** Query https://mempool.space/ to fetch block headers. */
-  case class MempoolSpaceExplorer(socksProxy_opt: Option[Socks5ProxyParams]) extends Esplora {
+  case class MempoolSpaceExplorer(socksProxy_opt: Option[Socks5ProxyParams])(implicit val sb: SttpBackend[Future, Nothing]) extends Esplora {
     override val name = "mempool.space"
     override val baseUris = socksProxy_opt match {
       case Some(_) =>

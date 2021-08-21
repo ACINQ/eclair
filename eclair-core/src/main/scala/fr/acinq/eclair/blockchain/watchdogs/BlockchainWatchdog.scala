@@ -19,13 +19,16 @@ package fr.acinq.eclair.blockchain.watchdogs
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
+import com.softwaremill.sttp.{SttpBackend, SttpBackendOptions}
+import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
-import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.{NodeParams, randomBytes}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 
 import java.util.UUID
+import scala.concurrent.Future
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.Random
 
@@ -92,6 +95,7 @@ object BlockchainWatchdog {
             } else {
               context.log.warn(s"blockchain watchdog ${HeadersOverDns.Source} is disabled")
             }
+            implicit val sttpBackend = ExplorerApi.createSttpBackend(nodeParams.socksProxy_opt)
             val explorers = Seq(ExplorerApi.BlockstreamExplorer(socksProxy_opt), ExplorerApi.BlockcypherExplorer(socksProxy_opt), ExplorerApi.MempoolSpaceExplorer(socksProxy_opt))
               .foldLeft(Seq.empty[ExplorerApi.Explorer]) { (acc, w) =>
                 if (sources.contains(w.name)) {
