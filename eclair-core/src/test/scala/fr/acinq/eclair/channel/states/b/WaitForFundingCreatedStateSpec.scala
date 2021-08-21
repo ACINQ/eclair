@@ -23,7 +23,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher
-import fr.acinq.eclair.channel.states.{StateTestsBase, StateTestsTags}
+import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, ToMilliSatoshiConversion}
@@ -36,20 +36,20 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
+class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
+  case class FixtureParam(bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, bob2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
     val aliceNodeParams = Alice.nodeParams
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains(StateTestsTags.Wumbo))(Btc(100))
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
     val bobNodeParams = Bob.nodeParams
-      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains(StateTestsTags.Wumbo))(Btc(100))
+      .modify(_.maxFundingSatoshis).setToIf(test.tags.contains(ChannelStateTestsTags.Wumbo))(Btc(100))
 
     val (fundingSatoshis, pushMsat) = if (test.tags.contains("funder_below_reserve")) {
       (1000100 sat, (1000000 sat).toMilliSatoshi) // toLocal = 100 satoshis
-    } else if (test.tags.contains(StateTestsTags.Wumbo)) {
+    } else if (test.tags.contains(ChannelStateTestsTags.Wumbo)) {
       (Btc(5).toSatoshi, TestConstants.pushMsat)
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
@@ -88,7 +88,7 @@ class WaitForFundingCreatedStateSpec extends TestKitBaseClass with FixtureAnyFun
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }
 
-  test("recv FundingCreated (wumbo)", Tag(StateTestsTags.Wumbo)) { f =>
+  test("recv FundingCreated (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
     import f._
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)

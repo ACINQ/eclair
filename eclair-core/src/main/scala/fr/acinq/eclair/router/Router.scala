@@ -309,12 +309,22 @@ object Router {
                         searchMaxFeePct: Double,
                         searchMaxRouteLength: Int,
                         searchMaxCltv: CltvExpiryDelta,
-                        searchHeuristicsEnabled: Boolean,
+                        searchRatioBase: Double,
                         searchRatioCltv: Double,
                         searchRatioChannelAge: Double,
                         searchRatioChannelCapacity: Double,
+                        searchHopCostBase: MilliSatoshi,
+                        searchHopCostMillionths: Long,
                         mppMinPartAmount: MilliSatoshi,
-                        mppMaxParts: Int)
+                        mppMaxParts: Int) {
+    require(searchRatioBase >= 0.0, "ratio-base must be nonnegative")
+    require(searchRatioCltv >= 0.0, "ratio-cltv must be nonnegative")
+    require(searchRatioChannelAge >= 0.0, "ratio-channel-age must be nonnegative")
+    require(searchRatioChannelCapacity >= 0.0, "ratio-channel-capacity must be nonnegative")
+    require(searchRatioBase + searchRatioCltv + searchRatioChannelAge + searchRatioChannelCapacity == 1, "The sum of heuristics ratios must be 1")
+    require(searchHopCostBase.toLong >= 0.0, "hop-cost-base-msat must be nonnegative")
+    require(searchHopCostMillionths >= 0.0, "hop-cost-millionths must be nonnegative")
+  }
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
@@ -432,7 +442,7 @@ object Router {
 
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
-  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: Option[WeightRatios], mpp: MultiPartParams, includeLocalChannelCost: Boolean) {
+  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: WeightRatios, mpp: MultiPartParams, includeLocalChannelCost: Boolean) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
       maxFeeBase.max(amount * maxFeePct)

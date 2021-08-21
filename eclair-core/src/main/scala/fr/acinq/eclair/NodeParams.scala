@@ -393,10 +393,12 @@ object NodeParams extends Logging {
         searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
         searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
         searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
-        searchHeuristicsEnabled = config.getBoolean("router.path-finding.heuristics-enable"),
+        searchRatioBase = config.getDouble("router.path-finding.ratio-base"),
         searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),
         searchRatioChannelAge = config.getDouble("router.path-finding.ratio-channel-age"),
         searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity"),
+        searchHopCostBase = MilliSatoshi(config.getLong("router.path-finding.hop-cost-base-msat")),
+        searchHopCostMillionths = config.getLong("router.path-finding.hop-cost-millionths"),
         mppMinPartAmount = Satoshi(config.getLong("router.path-finding.mpp.min-amount-satoshis")).toMilliSatoshi,
         mppMaxParts = config.getInt("router.path-finding.mpp.max-parts")
       ),

@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
-import fr.acinq.eclair.channel.states.StateTestsBase
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
@@ -40,7 +40,7 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase {
+class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
   type FixtureParam = SetupFixture
 
@@ -764,14 +764,14 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
-  def disconnect(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel]): Unit = {
+  def disconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel]): Unit = {
     alice ! INPUT_DISCONNECTED
     bob ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == OFFLINE)
     awaitCond(bob.stateName == OFFLINE)
   }
 
-  def reconnect(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], alice2bob: TestProbe, bob2alice: TestProbe): (PublicKey, PublicKey) = {
+  def reconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe): (PublicKey, PublicKey) = {
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
 

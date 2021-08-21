@@ -123,8 +123,8 @@ class ChannelIdentifierSerializer extends CustomKeySerializerOnly[ChannelIdentif
   case Right(x: ShortChannelId) => x.toString
 })
 
-class StateSerializer extends CustomSerializerOnly[State](_ => {
-  case x: State => JString(x.toString)
+class ChannelStateSerializer extends CustomSerializerOnly[ChannelState](_ => {
+  case x: ChannelState => JString(x.toString)
 })
 
 class ShaChainSerializer extends CustomSerializerOnly[ShaChain](_ => {
@@ -412,7 +412,7 @@ object JsonSerializers {
     new FeeratePerKwSerializer +
     new ShortChannelIdSerializer +
     new ChannelIdentifierSerializer +
-    new StateSerializer +
+    new ChannelStateSerializer +
     new ShaChainSerializer +
     new PublicKeySerializer +
     new PrivateKeySerializer +

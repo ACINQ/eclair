@@ -189,14 +189,14 @@ object RouteCalculation {
     maxFeePct = routerConf.searchMaxFeePct,
     routeMaxLength = routerConf.searchMaxRouteLength,
     routeMaxCltv = routerConf.searchMaxCltv,
-    ratios = routerConf.searchHeuristicsEnabled match {
-      case false => None
-      case true => Some(WeightRatios(
-        cltvDeltaFactor = routerConf.searchRatioCltv,
-        ageFactor = routerConf.searchRatioChannelAge,
-        capacityFactor = routerConf.searchRatioChannelCapacity
-      ))
-    },
+    ratios = WeightRatios(
+      baseFactor = routerConf.searchRatioBase,
+      cltvDeltaFactor = routerConf.searchRatioCltv,
+      ageFactor = routerConf.searchRatioChannelAge,
+      capacityFactor = routerConf.searchRatioChannelCapacity,
+      hopCostBase = routerConf.searchHopCostBase,
+      hopCostMillionths = routerConf.searchHopCostMillionths
+    ),
     mpp = MultiPartParams(routerConf.mppMinPartAmount, routerConf.mppMaxParts),
     includeLocalChannelCost = false,
   )
@@ -338,8 +338,9 @@ object RouteCalculation {
       // If we have direct channels to the target, we can use them all.
       // We also count empty channels, which allows replacing them with a non-direct route (multiple hops).
       val numRoutes = routeParams.mpp.maxParts.max(directChannels.length)
-      // If we have direct channels to the target, we can use them all, even if they have only a small balance left.
-      val minPartAmount = (amount +: routeParams.mpp.minPartAmount +: directChannels.filter(!_.isEmpty).map(_.balance)).min
+      // We want to ensure that the set of routes we find have enough capacity to allow sending the total amount,
+      // without excluding routes with small capacity when the total amount is small.
+      val minPartAmount = routeParams.mpp.minPartAmount.max(amount / numRoutes).min(amount)
       routeParams.copy(mpp = MultiPartParams(minPartAmount, numRoutes))
     }
     findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight) match {

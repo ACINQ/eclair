@@ -31,7 +31,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.{ConflictingTxUnconfirmed, CouldNotFund, TxSkipped}
 import fr.acinq.eclair.channel.publish.TxPublisher._
-import fr.acinq.eclair.channel.states.{StateTestsHelperMethods, StateTestsTags}
+import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
@@ -44,7 +44,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.DurationInt
 import scala.util.Random
 
-class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with BitcoindService with StateTestsHelperMethods with BeforeAndAfterAll {
+class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with BitcoindService with ChannelStateTestsHelperMethods with BeforeAndAfterAll {
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -55,8 +55,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     stopBitcoind()
   }
 
-  case class Fixture(alice: TestFSMRef[State, Data, Channel],
-                     bob: TestFSMRef[State, Data, Channel],
+  case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel],
+                     bob: TestFSMRef[ChannelState, ChannelData, Channel],
                      alice2bob: TestProbe,
                      bob2alice: TestProbe,
                      alice2blockchain: TestProbe,
@@ -108,7 +108,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     blockCount.set(currentBlockHeight(probe))
     val aliceNodeParams = TestConstants.Alice.nodeParams.copy(blockCount = blockCount)
     val setup = init(aliceNodeParams, TestConstants.Bob.nodeParams.copy(blockCount = blockCount), bitcoinWallet)
-    reachNormal(setup, Set(StateTestsTags.AnchorOutputs))
+    reachNormal(setup, Set(ChannelStateTestsTags.AnchorOutputs))
     import setup._
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)

@@ -129,7 +129,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: Channel.TxPublisherFactory, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
+class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: Channel.TxPublisherFactory, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[ChannelState, ChannelData] with FSMDiagnosticActorLogging[ChannelState, ChannelData] {
 
   import Channel._
 
@@ -1251,6 +1251,14 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   })
 
   when(NEGOTIATING)(handleExceptions {
+    // Upon reconnection, nodes must re-transmit their shutdown message, so we may receive it now.
+    case Event(remoteShutdown: Shutdown, d: DATA_NEGOTIATING) =>
+      if (remoteShutdown != d.remoteShutdown) {
+        // This is a spec violation: it will likely lead to a disagreement when exchanging closing_signed and a force-close.
+        log.warning("received unexpected shutdown={} (previous={})", remoteShutdown, d.remoteShutdown)
+      }
+      stay()
+
     case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
       log.info("received closingFeeSatoshis={}", remoteClosingFee)
       Closing.checkClosingSignature(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, remoteClosingFee, remoteSig) match {
@@ -1871,20 +1879,25 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case _ => ()
       }
 
+      val previousChannelUpdate_opt = stateData match {
+        case data: DATA_NORMAL => Some(data.channelUpdate)
+        case _ => None
+      }
+
       (state, nextState, stateData, nextStateData) match {
         // ORDER MATTERS!
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
           Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
             log.debug("re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           }
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, previousChannelUpdate_opt, normal.commitments))
         case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
           // don't do anything if neither the channel_update nor the channel_announcement didn't change
           ()
         case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
           // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
           log.info("emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, previousChannelUpdate_opt, normal.commitments))
         case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
           // in any other case (e.g. OFFLINE->SYNCING) we do nothing
           ()
@@ -2008,7 +2021,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     goto(CLOSED)
   }
 
-  private def handleCommandSuccess(c: channel.Command, newData: Data) = {
+  private def handleCommandSuccess(c: channel.Command, newData: ChannelData) = {
     val replyTo_opt = c match {
       case hasOptionalReplyTo: HasOptionalReplyToCommand => hasOptionalReplyTo.replyTo_opt
       case hasReplyTo: HasReplyToCommand => if (hasReplyTo.replyTo == ActorRef.noSender) Some(sender()) else Some(hasReplyTo.replyTo)
@@ -2164,7 +2177,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  private def handleLocalError(cause: Throwable, d: Data, msg: Option[Any]) = {
+  private def handleLocalError(cause: Throwable, d: ChannelData, msg: Option[Any]) = {
     cause match {
       case _: ForcedLocalCommit => log.warning(s"force-closing channel at user request")
       case _ if stateName == WAIT_FOR_OPEN_CHANNEL => log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
@@ -2188,7 +2201,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     }
   }
 
-  private def handleRemoteError(e: Error, d: Data) = {
+  private def handleRemoteError(e: Error, d: ChannelData) = {
     // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
     log.error(s"peer sent error: ascii='${e.toAscii}' bin=${e.data.toHex}")
     context.system.eventStream.publish(ChannelErrorOccurred(self, stateData.channelId, remoteNodeId, stateData, RemoteError(e), isFatal = true))
@@ -2519,11 +2532,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     context.system.eventStream.publish(NetworkFeePaid(self, remoteNodeId, channelId, tx, fee, desc))
   }
 
-  implicit private def state2mystate(state: FSM.State[fr.acinq.eclair.channel.State, Data]): MyState = MyState(state)
+  implicit private def state2mystate(state: FSM.State[ChannelState, ChannelData]): MyState = MyState(state)
 
-  case class MyState(state: FSM.State[fr.acinq.eclair.channel.State, Data]) {
+  case class MyState(state: FSM.State[ChannelState, ChannelData]) {
 
-    def storing(unused: Unit = ()): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def storing(unused: Unit = ()): FSM.State[ChannelState, ChannelData] = {
       state.stateData match {
         case d: HasCommitments =>
           log.debug("updating database record for channelId={}", d.channelId)
@@ -2536,12 +2549,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
     }
 
-    def sending(msgs: Seq[LightningMessage]): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def sending(msgs: Seq[LightningMessage]): FSM.State[ChannelState, ChannelData] = {
       msgs.foreach(sending)
       state
     }
 
-    def sending(msg: LightningMessage): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def sending(msg: LightningMessage): FSM.State[ChannelState, ChannelData] = {
       send(msg)
       state
     }
@@ -2550,7 +2563,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
      * This method allows performing actions during the transition, e.g. after a call to [[MyState.storing]]. This is
      * particularly useful to publish transactions only after we are sure that the state has been persisted.
      */
-    def calling(f: => Unit): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def calling(f: => Unit): FSM.State[ChannelState, ChannelData] = {
       f
       state
     }
@@ -2561,13 +2574,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
      *
      * @param cmd fail/fulfill command that has been processed
      */
-    def acking(channelId: ByteVector32, cmd: HtlcSettlementCommand): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def acking(channelId: ByteVector32, cmd: HtlcSettlementCommand): FSM.State[ChannelState, ChannelData] = {
       log.debug("scheduling acknowledgement of cmd id={}", cmd.id)
       context.system.scheduler.scheduleOnce(10 seconds)(PendingCommandsDb.ackSettlementCommand(nodeParams.db.pendingCommands, channelId, cmd))(context.system.dispatcher)
       state
     }
 
-    def acking(updates: List[UpdateMessage]): FSM.State[fr.acinq.eclair.channel.State, Data] = {
+    def acking(updates: List[UpdateMessage]): FSM.State[ChannelState, ChannelData] = {
       log.debug("scheduling acknowledgement of cmds ids={}", updates.collect { case s: HtlcSettlementMessage => s.id }.mkString(","))
       context.system.scheduler.scheduleOnce(10 seconds)(PendingCommandsDb.ackSettlementCommands(nodeParams.db.pendingCommands, updates))(context.system.dispatcher)
       state

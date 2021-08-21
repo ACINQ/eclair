@@ -26,8 +26,8 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.publish.TxPublisher
-import fr.acinq.eclair.channel.states.StateTestsBase
-import fr.acinq.eclair.channel.states.StateTestsHelperMethods.FakeTxPublisherFactory
+import fr.acinq.eclair.channel.states.ChannelStateTestsBase
+import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -49,9 +49,9 @@ import scala.util.Random
  * Created by PM on 05/07/2016.
  */
 
-class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateTestsBase with Logging {
+class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase with Logging {
 
-  case class FixtureParam(alice: TestFSMRef[State, Data, Channel], bob: TestFSMRef[State, Data, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], pipe: ActorRef, relayerA: ActorRef, relayerB: ActorRef, paymentHandlerA: ActorRef, paymentHandlerB: ActorRef)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val fuzzy = test.tags.contains("fuzzy")
@@ -71,8 +71,8 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     val relayerA = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, registerA, paymentHandlerA))
     val relayerB = system.actorOf(Relayer.props(bobParams, TestProbe().ref, registerB, paymentHandlerB))
     val wallet = new TestWallet
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(aliceParams, wallet, bobParams.nodeId, alice2blockchain.ref, relayerA, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bobParams, wallet, aliceParams.nodeId, bob2blockchain.ref, relayerB, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceParams, wallet, bobParams.nodeId, alice2blockchain.ref, relayerA, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobParams, wallet, aliceParams.nodeId, bob2blockchain.ref, relayerB, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.initFeatures)
       val bobInit = Init(Bob.channelParams.initFeatures)
@@ -113,7 +113,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with StateT
     }
   }
 
-  class SenderActor(sendChannel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, latch: CountDownLatch, count: Int) extends Actor with ActorLogging {
+  class SenderActor(sendChannel: TestFSMRef[ChannelState, ChannelData, Channel], paymentHandler: ActorRef, latch: CountDownLatch, count: Int) extends Actor with ActorLogging {
 
     // we don't want to be below htlcMinimumMsat
     val requiredAmount = 1000000 msat

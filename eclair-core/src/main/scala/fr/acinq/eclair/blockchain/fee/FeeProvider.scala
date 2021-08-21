@@ -30,7 +30,9 @@ trait FeeProvider {
 case object CannotRetrieveFeerates extends RuntimeException("cannot retrieve feerates, channels may be at risk: ensure bitcoind estimatesmartfee correctly returns feerates and restart eclair")
 
 /** Fee rate in satoshi-per-bytes. */
-case class FeeratePerByte(feerate: Satoshi)
+case class FeeratePerByte(feerate: Satoshi) {
+  override def toString: String = s"$feerate/byte"
+}
 
 object FeeratePerByte {
   def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(FeeratePerKB(feeratePerKw).feerate / 1000)
@@ -43,6 +45,7 @@ case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
   def max(other: FeeratePerKB): FeeratePerKB = if (this > other) this else other
   def min(other: FeeratePerKB): FeeratePerKB = if (this < other) this else other
   def toLong: Long = feerate.toLong
+  override def toString: String = s"$feerate/kB"
   // @formatter:on
 }
 
@@ -64,6 +67,7 @@ case class FeeratePerKw(feerate: Satoshi) extends Ordered[FeeratePerKw] {
   def *(l: Long): FeeratePerKw = FeeratePerKw(feerate * l)
   def /(l: Long): FeeratePerKw = FeeratePerKw(feerate / l)
   def toLong: Long = feerate.toLong
+  override def toString: String = s"$feerate/kw"
   // @formatter:on
 }
 

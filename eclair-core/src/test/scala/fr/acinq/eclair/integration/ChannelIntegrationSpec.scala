@@ -301,7 +301,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     // we wait for C to detect the unilateral close
     awaitCond({
       sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
-      sender.expectMsgType[RES_GETSTATEDATA[Data]].data match {
+      sender.expectMsgType[RES_GETSTATEDATA[ChannelData]].data match {
         case d: DATA_CLOSING if d.remoteCommitPublished.nonEmpty => true
         case _ => false
       }
@@ -535,9 +535,9 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       sender.expectMsgAnyOf(30 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
 
       fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE(ActorRef.noSender))
-      val fundeeState = sender.expectMsgType[RES_GETSTATE[State]].state
+      val fundeeState = sender.expectMsgType[RES_GETSTATE[ChannelState]].state
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE(ActorRef.noSender))
-      val funderState = sender.expectMsgType[RES_GETSTATE[State]].state
+      val funderState = sender.expectMsgType[RES_GETSTATE[ChannelState]].state
       fundeeState == WAIT_FOR_FUNDING_CONFIRMED && funderState == WAIT_FOR_FUNDING_LOCKED
     }, max = 30 seconds, interval = 10 seconds)
 
@@ -546,9 +546,9 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     awaitCond({
       fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE(ActorRef.noSender))
-      val fundeeState = sender.expectMsgType[RES_GETSTATE[State]].state
+      val fundeeState = sender.expectMsgType[RES_GETSTATE[ChannelState]].state
       funder.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE(ActorRef.noSender))
-      val funderState = sender.expectMsgType[RES_GETSTATE[State]].state
+      val funderState = sender.expectMsgType[RES_GETSTATE[ChannelState]].state
       fundeeState == NORMAL && funderState == NORMAL
     })
 
