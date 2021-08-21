@@ -161,5 +161,9 @@ Tor support for `blockchainheaders.net` is not implemented (yet), so it gets aut
 If you experience similar troubles with `blockcypher.com` use this config parameter to disable it:
 
 ```
-eclair.blockchain-watchdog.disabled-backends = ["blockcypher.com"]
+eclair.blockchain-watchdog.sources = [
+  "bitcoinheaders.net",
+  "blockstream.info",
+  "mempool.space"
+]
 ```

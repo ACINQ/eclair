@@ -65,7 +65,7 @@ object BlockchainWatchdog {
    * @param maxRandomDelay to avoid the herd effect whenever a block is created, we add a random delay before we query
    *                       secondary blockchain sources. This parameter specifies the maximum delay we'll allow.
    */
-  def apply(chainHash: ByteVector32, maxRandomDelay: FiniteDuration, socksProxy_opt: Option[Socks5ProxyParams], watchdogBlacklist: Seq[String],  blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
+  def apply(chainHash: ByteVector32, maxRandomDelay: FiniteDuration, socksProxy_opt: Option[Socks5ProxyParams], sources: Seq[String], blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
       Behaviors.withTimers { timers =>
@@ -83,15 +83,14 @@ object BlockchainWatchdog {
             Behaviors.same
           case CheckLatestHeaders(blockCount) =>
             val id = UUID.randomUUID()
-            if (!watchdogBlacklist.contains(HeadersOverDns.Source) && socksProxy_opt.isEmpty) {
-              // TODO implement Tor support for bitcoinheaders.net
+            if (socksProxy_opt.isEmpty && sources.contains(HeadersOverDns.Source)) {
               context.spawn(HeadersOverDns(chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
             } else {
               context.log.warn(s"blockchain watchdog ${HeadersOverDns.Source} is disabled")
             }
             val explorers = Seq(ExplorerApi.BlockstreamExplorer(socksProxy_opt), ExplorerApi.BlockcypherExplorer(socksProxy_opt), ExplorerApi.MempoolSpaceExplorer(socksProxy_opt))
               .foldLeft(Seq.empty[ExplorerApi.Explorer]) { (acc, w) =>
-                if (!watchdogBlacklist.contains(w.name)) {
+                if (sources.contains(w.name)) {
                   acc :+ w
                 } else {
                   context.log.warn(s"blockchain watchdog ${w.name} is disabled")

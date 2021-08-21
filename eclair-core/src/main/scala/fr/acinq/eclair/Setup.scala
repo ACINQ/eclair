@@ -244,7 +244,7 @@ class Setup(val datadir: File,
       watcher = {
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.RawBlock, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
-        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams.chainHash, blockCount, extendedBitcoinClient, nodeParams.socksProxy_opt, config.getStringList("blockchain-watchdog.disabled-backends").asScala.toSeq)).onFailure(typed.SupervisorStrategy.resume), "watcher")
+        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams.chainHash, blockCount, extendedBitcoinClient, nodeParams.socksProxy_opt, config.getStringList("blockchain-watchdog.sources").asScala.toSeq)).onFailure(typed.SupervisorStrategy.resume), "watcher")
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))

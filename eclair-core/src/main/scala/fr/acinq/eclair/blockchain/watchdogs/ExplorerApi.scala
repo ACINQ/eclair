@@ -71,9 +71,7 @@ object ExplorerApi {
             case Some(uri) =>
               context.pipeToSelf(explorer.getLatestHeaders(uri, currentBlockCount)(context)) {
                 case Success(headers) => WrappedLatestHeaders(replyTo, headers)
-                case Failure(e) =>
-                  context.log.error(s"${explorer.name} failed to get latest headers", e)
-                  WrappedFailure(e)
+                case Failure(e) => WrappedFailure(e)
               }
               Behaviors.same
             case None =>
