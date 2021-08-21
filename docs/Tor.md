@@ -144,7 +144,7 @@ Note, that bitcoind should be configured to use Tor as well (https://en.bitcoin.
 ### Blockchain watchdogs
 
 Eclair version 0.5.0 introduced blockchain watchdogs, that fetch bitcoin headers from various sources in 
-order to detect whether the node is being eclipsed. Eclair supports four sources atm:
+order to detect whether the node is being eclipsed. Eclair supports four sources at the moment:
 
 * blockchainheaders.net
 * blockcypher.com

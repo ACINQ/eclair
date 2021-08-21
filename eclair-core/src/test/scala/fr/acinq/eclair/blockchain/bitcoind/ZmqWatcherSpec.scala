@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransa
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewTransaction}
-import fr.acinq.eclair.{ShortChannelId, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32}
 import grizzled.slf4j.Logging
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -76,7 +76,8 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     system.eventStream.subscribe(listener.ref, classOf[CurrentBlockCount])
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     val bitcoinWallet = new BitcoinCoreWallet(bitcoinrpcclient)
-    val watcher = system.spawn(ZmqWatcher(Block.RegtestGenesisBlock.hash, blockCount, bitcoinClient, None, Seq()), UUID.randomUUID().toString)
+    val nodeParams = TestConstants.Alice.nodeParams.copy(chainHash = Block.RegtestGenesisBlock.hash)
+    val watcher = system.spawn(ZmqWatcher(nodeParams, blockCount, bitcoinClient), UUID.randomUUID().toString)
     try {
       testFun(Fixture(blockCount, bitcoinClient, bitcoinWallet, watcher, probe, listener))
     } finally {

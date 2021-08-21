@@ -20,6 +20,7 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
 import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
+import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
@@ -65,7 +66,7 @@ object BlockchainWatchdog {
    * @param maxRandomDelay to avoid the herd effect whenever a block is created, we add a random delay before we query
    *                       secondary blockchain sources. This parameter specifies the maximum delay we'll allow.
    */
-  def apply(chainHash: ByteVector32, maxRandomDelay: FiniteDuration, socksProxy_opt: Option[Socks5ProxyParams], sources: Seq[String], blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, maxRandomDelay: FiniteDuration, blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
       Behaviors.withTimers { timers =>
@@ -83,6 +84,9 @@ object BlockchainWatchdog {
             Behaviors.same
           case CheckLatestHeaders(blockCount) =>
             val id = UUID.randomUUID()
+            val chainHash = nodeParams.chainHash
+            val socksProxy_opt = nodeParams.socksProxy_opt
+            val sources = nodeParams.blockchainWatchdogSources
             if (socksProxy_opt.isEmpty && sources.contains(HeadersOverDns.Source)) {
               context.spawn(HeadersOverDns(chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
             } else {
