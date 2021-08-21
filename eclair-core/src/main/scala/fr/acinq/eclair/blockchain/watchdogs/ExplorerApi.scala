@@ -102,17 +102,6 @@ object ExplorerApi {
       Block.LivenetGenesisBlock.hash -> uri"https://api.blockcypher.com/v1/btc/main"
     )
 
-    // Mimic Firefox
-    private val headers = Map(
-      "User-Agent" -> "Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0",
-      "Accept" -> "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-      "Accept-Language" -> "en-US,en;q=0.5",
-      "Connection" -> "keep-alive",
-      "Upgrade-Insecure-Requests" -> "1",
-      "Cache-Control" -> "max-age=0"
-    )
-
-
     override def getLatestHeaders(baseUri: Uri, currentBlockCount: Long)(implicit context: ActorContext[Command]): Future[LatestHeaders] = {
       implicit val classicSystem: ActorSystem = context.system.classicSystem
       implicit val ec: ExecutionContext = context.system.executionContext
@@ -128,7 +117,7 @@ object ExplorerApi {
     private def getTip(baseUri: Uri)(implicit ec: ExecutionContext, sb: SttpBackend[Future, Nothing]): Future[Long] = {
       for {
         tip <- sttp.readTimeout(30 seconds).get(baseUri)
-          .headers(headers)
+          .headers(Socks5ProxyParams.FakeFirefoxHeaders)
           .response(asJson[JObject])
           .send()
           .map(r => {
@@ -140,7 +129,7 @@ object ExplorerApi {
 
     private def getHeader(baseUri: Uri, blockCount: Long)(implicit ec: ExecutionContext, sb: SttpBackend[Future, Nothing]): Future[Seq[BlockHeaderAt]] = for {
       header <- sttp.readTimeout(30 seconds).get(baseUri.path(baseUri.path :+ "blocks" :+ blockCount.toString))
-        .headers(headers)
+        .headers(Socks5ProxyParams.FakeFirefoxHeaders)
         .response(asJson[JObject])
         .send()
         .map(r => r.code match {

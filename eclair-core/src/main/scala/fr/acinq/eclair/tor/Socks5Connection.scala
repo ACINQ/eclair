@@ -222,6 +222,16 @@ case class Socks5ProxyParams(address: InetSocketAddress, credentials_opt: Option
 
 object Socks5ProxyParams {
 
+  val FakeFirefoxHeaders = Map(
+    "User-Agent" -> "Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0",
+    "Accept" -> "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+    "Accept-Language" -> "en-US,en;q=0.5",
+    "Connection" -> "keep-alive",
+    "Upgrade-Insecure-Requests" -> "1",
+    "Cache-Control" -> "max-age=0"
+  )
+
+
   def proxyAddress(socketAddress: InetSocketAddress, proxyParams: Socks5ProxyParams): Option[InetSocketAddress] =
     NodeAddress.fromParts(socketAddress.getHostString, socketAddress.getPort).toOption collect {
       case _: IPv4 if proxyParams.useForIPv4 => proxyParams.address

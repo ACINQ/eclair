@@ -29,7 +29,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 import java.net.InetSocketAddress
 import scala.concurrent.duration.DurationInt
 
-class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike with Logging {
+class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with AnyFunSuiteLike {
 
   test("fetch block headers from four sources on mainnet", TestTags.ExternalApi) {
     val eventListener = TestProbe[DangerousBlocksSkew]()
