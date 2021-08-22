@@ -71,6 +71,7 @@ object BlockchainWatchdog {
    */
   def apply(nodeParams: NodeParams, maxRandomDelay: FiniteDuration, blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
+      implicit val sttpBackend = ExplorerApi.createSttpBackend(nodeParams.socksProxy_opt)
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
       Behaviors.withTimers { timers =>
         // We start a timer to check blockchain watchdogs regularly even when we don't receive any block.
@@ -95,7 +96,6 @@ object BlockchainWatchdog {
             } else {
               context.log.warn(s"blockchain watchdog ${HeadersOverDns.Source} is disabled")
             }
-            implicit val sttpBackend = ExplorerApi.createSttpBackend(nodeParams.socksProxy_opt)
             val explorers = Seq(ExplorerApi.BlockstreamExplorer(socksProxy_opt), ExplorerApi.BlockcypherExplorer(socksProxy_opt), ExplorerApi.MempoolSpaceExplorer(socksProxy_opt))
               .foldLeft(Seq.empty[ExplorerApi.Explorer]) { (acc, w) =>
                 if (sources.contains(w.name)) {
