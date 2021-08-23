@@ -79,7 +79,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val script = Script.createMultiSigMofN(2, Seq(priv1.publicKey, priv2.publicKey))
     val address = Bech32.encodeWitnessAddress("bcrt", 0, Crypto.sha256(Script.write(script)))
 
-    bitcoinClient.fundPsbt(Map(address -> 10000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+    bitcoinClient.fundPsbt(Seq(address -> 10000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
     val FundPsbtResponse(psbt, _, _) = sender.expectMsgType[FundPsbtResponse]
 
     bitcoinClient.processPsbt(psbt).pipeTo(sender.ref)
@@ -95,22 +95,22 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     {
       // check that it does work
-      bitcoinClient.fundPsbt(Map(address -> 10000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+      bitcoinClient.fundPsbt(Seq(address -> 10000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
       sender.expectMsgType[FundPsbtResponse]
     }
     {
       // invalid address
-      bitcoinClient.fundPsbt(Map("invalid address" -> 10000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+      bitcoinClient.fundPsbt(Seq("invalid address" -> 10000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
       sender.expectMsgType[akka.actor.Status.Failure]
     }
     {
       // amount is too small
-      bitcoinClient.fundPsbt(Map(address -> 100.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+      bitcoinClient.fundPsbt(Seq(address -> 100.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
       sender.expectMsgType[akka.actor.Status.Failure]
     }
     {
       // amount is too large
-      bitcoinClient.fundPsbt(Map(address -> 11_000_000.btc), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
+      bitcoinClient.fundPsbt(Seq(address -> 11_000_000.btc), 0, FundPsbtOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
       sender.expectMsgType[akka.actor.Status.Failure]
     }
   }
