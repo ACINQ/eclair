@@ -18,6 +18,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, Protocol, SatoshiLong}
+import fr.acinq.eclair.FeatureSupport.Mandatory
 import fr.acinq.eclair.Features.{PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, ToMilliSatoshiConversion}
@@ -90,82 +91,88 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("Please make a donation of any amount using payment_hash 0001020304050607080900010203040506070809000102030405060708090102 to me @03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad") {
-    val ref = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq0py3tfrnxkt5xadpzangn5rry6r0kqt4f3g36lwln8wwpxtxqccn5agpyte3nx0v78uwn78zu6k30k5mgdgn50yvnd20namlmzp2ersq8065fg"
+    val ref = "lnbc1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpl2pkx2ctnv5sxxmmwwd5kgetjypeh2ursdae8g6twvus8g6rfwvs8qun0dfjkxaq9qrsgq357wnc5r2ueh7ck6q93dj32dlqnls087fxdwk8qakdyafkq3yap9us6v52vjjsrvywa6rt52cm9r9zqt8r2t7mlcwspyetp5h2tztugp9lfyql"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount.isEmpty)
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
     assert(pr.paymentSecret.map(_.bytes) === Some(hex"1111111111111111111111111111111111111111111111111111111111111111"))
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Left("Please consider supporting this project"))
     assert(pr.fallbackAddress() === None)
-    assert(pr.tags.size === 3)
+    assert(pr.tags.size === 4)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
   test("Please send $3 for a cup of coffee to the same peer, within 1 minute") {
-    val ref = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuu4tgyw2zt3v3c7eljkv2cn8a3etgn8kh8ukctqdmuxdfa7xup0w5ruwpt6eugv73pgzqczz3nc8tcqt2pcljp8ldkrnu5klff35vyscq6lp6ja"
+    val ref = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpu9qrsgquk0rl77nj30yxdy8j9vdx85fkpmdla2087ne0xh8nhedh8w27kyke0lp53ut353s06fv3qfegext0eh0ymjpf39tuven09sam30g4vgpfna3rh"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount === Some(250000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Left("1 cup coffee"))
     assert(pr.fallbackAddress() === None)
-    assert(pr.tags.size === 4)
+    assert(pr.tags.size === 5)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
   test("Please send 0.0025 BTC for a cup of nonsense (ナンセンス 1杯) to the same peer, within one minute") {
-    val ref = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpquwpc4curk03c9wlrswe78q4eyqc7d8d0xqzpuy0x9mrk2a32xsyvz6lzmrs38vzemux64pv6vdtmshnr9fc8eqgt4j74fnf3s60tzgeh6dnwzyv56wftaqwyyl3xu9nccq3py2hnnvsgqu5lqmm"
+    val ref = "lnbc2500u1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdpquwpc4curk03c9wlrswe78q4eyqc7d8d0xqzpu9qrsgqhtjpauu9ur7fw2thcl4y9vfvh4m9wlfyz2gem29g5ghe2aak2pm3ps8fdhtceqsaagty2vph7utlgj48u0ged6a337aewvraedendscp573dxr"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount === Some(250000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Left("ナンセンス 1杯"))
+    assert(pr.fallbackAddress() === None)
+    assert(pr.tags.size === 5)
+    assert(PaymentRequest.write(pr.sign(priv)) == ref)
+  }
+
+  test("Now send $24 for an entire list of things (hashed)") {
+    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs9qrsgq7ea976txfraylvgzuxs8kgcw23ezlrszfnh8r6qtfpr6cxga50aj6txm9rxrydzd06dfeawfk6swupvz4erwnyutnjq7x39ymw6j38gp7ynn44"
+    val pr = PaymentRequest.read(ref)
+    assert(pr.prefix == "lnbc")
+    assert(pr.amount === Some(2000000000 msat))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.timestamp == 1496314658L)
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.description == Right(Crypto.sha256(ByteVector("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === None)
     assert(pr.tags.size === 4)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
-  test("Now send $24 for an entire list of things (hashed)") {
-    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqs6e4fy93me7wjwdf9sxgrzr8xldm570z02ur92rv6pa7wkhzpfehnecuyhp4mdhsv5t7em4jz4tjtchs8zmx3tr555yl59lk848due0gqvkanpl"
-    val pr = PaymentRequest.read(ref)
-    assert(pr.prefix == "lnbc")
-    assert(pr.amount === Some(2000000000 msat))
-    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
-    assert(pr.timestamp == 1496314658L)
-    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
-    assert(pr.description == Right(Crypto.sha256(ByteVector("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
-    assert(pr.fallbackAddress() === None)
-    assert(pr.tags.size === 3)
-    assert(PaymentRequest.write(pr.sign(priv)) == ref)
-  }
-
   test("The same, on testnet, with a fallback address mk2QpYatsKicvFVuTAQLBryyccRXMUaGHP") {
-    val ref = "lntb20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfpp3x9et2e20v6pu37c5d9vax37wxq72un989yc66dftyfrx5g53s7r80rxljxj8wugm7nhqcnfdmqzw758jda4yur0nxahhyg04ln2p47wmjdrz5weu2ajfqh4l2qya4244ujuytvgp6nw4dc"
+    val ref = "lntb20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfpp3x9et2e20v6pu37c5d9vax37wxq72un989qrsgqdj545axuxtnfemtpwkc45hx9d2ft7x04mt8q7y6t0k2dge9e7h8kpy9p34ytyslj3yu569aalz2xdk8xkd7ltxqld94u8h2esmsmacgpghe9k8"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lntb")
     assert(pr.amount === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("mk2QpYatsKicvFVuTAQLBryyccRXMUaGHP"))
-    assert(pr.tags.size == 4)
+    assert(pr.tags.size == 5)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
   test("On mainnet, with fallback address 1RustyRX2oai4EYYDpQGWvEL62BBGqN9T with extra routing info to go via nodes 029e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255 then 039e03a901b85534ff1e92c43c74431f7ce72046060fcf7a95c37e148f78c77255") {
-    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfpp3qjmp7lwpagxun9pygexvgpjdc4jdj85fr9yq20q82gphp2nflc7jtzrcazrra7wwgzxqc8u7754cdlpfrmccae92qgzqvzq2ps8pqqqqqqpqqqqq9qqqvpeuqafqxu92d8lr6fvg0r5gv0heeeqgcrqlnm6jhphu9y00rrhy4grqszsvpcgpy9qqqqqqgqqqqq7qqzqg042ea62q6wnxh909rfuu4x2amxc59mj99mrhr32kvqhytrm04us8edg0syy9n0ukgam0ud20jcxwskphv3rzpnengjsf8m3w9u5w8cqzrhtg2"
+    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfpp3qjmp7lwpagxun9pygexvgpjdc4jdj85fr9yq20q82gphp2nflc7jtzrcazrra7wwgzxqc8u7754cdlpfrmccae92qgzqvzq2ps8pqqqqqqpqqqqq9qqqvpeuqafqxu92d8lr6fvg0r5gv0heeeqgcrqlnm6jhphu9y00rrhy4grqszsvpcgpy9qqqqqqgqqqqq7qqzq9qrsgqdfjcdk6w3ak5pca9hwfwfh63zrrz06wwfya0ydlzpgzxkn5xagsqz7x9j4jwe7yj7vaf2k9lqsdk45kts2fd0fkr28am0u4w95tt2nsq76cqw0"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
@@ -176,78 +183,80 @@ class PaymentRequestSpec extends AnyFunSuite {
     )))
     assert(Protocol.writeUInt64(0x0102030405060708L, ByteOrder.BIG_ENDIAN) == hex"0102030405060708")
     assert(Protocol.writeUInt64(0x030405060708090aL, ByteOrder.BIG_ENDIAN) == hex"030405060708090a")
-    assert(pr.tags.size == 5)
+    assert(pr.tags.size == 6)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
   test("On mainnet, with fallback (p2sh) address 3EktnHQD7RiAE6uzMj2ZifT9YgRrkSgzQX") {
-    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfppj3a24vwu6r8ejrss3axul8rxldph2q7z9859drl0equ52uf58vpc4ekc58katdnsa0wpxrp7x8m34kz9wh4rhlk2ke89c5uuwcngz8axxkhs9drar8j3h83k5yx27s7fw7l9va2cpt3h3em"
+    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfppj3a24vwu6r8ejrss3axul8rxldph2q7z99qrsgqz6qsgww34xlatfj6e3sngrwfy3ytkt29d2qttr8qz2mnedfqysuqypgqex4haa2h8fx3wnypranf3pdwyluftwe680jjcfp438u82xqphf75ym"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("3EktnHQD7RiAE6uzMj2ZifT9YgRrkSgzQX"))
-    assert(pr.tags.size == 4)
+    assert(pr.tags.size == 5)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
   test("On mainnet, with fallback (p2wpkh) address bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4") {
-    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfppqw508d6qejxtdg4y5r3zarvary0c5xw7k2v7at953q5p0dyg8axg4xxfxsm5d4hl8x2j606a5usxzgzs35rjq2m05ly7qlt293get8qct3tsv2h0f87ygthvg5mentx24yf39v4gpgx7n58"
+    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfppqw508d6qejxtdg4y5r3zarvary0c5xw7k9qrsgqt29a0wturnys2hhxpner2e3plp6jyj8qx7548zr2z7ptgjjc7hljm98xhjym0dg52sdrvqamxdezkmqg4gdrvwwnf0kv2jdfnl4xatsqmrnsse"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"))
-    assert(pr.tags.size == 4)
+    assert(pr.tags.size == 5)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
   test("On mainnet, with fallback (p2wsh) address bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3") {
-    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qdplqpgddtaej8regxl46lj2jgu0s8yeent3dugye96zsldwtu2a3edz947azn7qksetrrk38mx2kryp0vxnh2nqgenuwcdau5flwa2cqcnjrk0"
+    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygshp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqspp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q9qrsgq9vlvyj8cqvq6ggvpwd53jncp9nwc47xlrsnenq2zp70fq83qlgesn4u3uyf4tesfkkwwfg3qs54qe426hp3tz7z6sweqdjg05axsrjqp9yrrwc"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(!pr.features.allowMultiPart)
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
-    assert(pr.tags.size == 4)
-    assert(pr.features.bitmask.isEmpty)
-    assert(!pr.features.allowMultiPart)
+    assert(pr.tags.size == 5)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
   test("On mainnet, with fallback (p2wsh) address bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3 and a minimum htlc cltv expiry of 12") {
-    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygscqpvpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q2p29ulle8ent6hnchk9qeggmrvjvrs7j2vu6gdrcj2jz2r8qtcj3ge5nun8smpwem9sl4flev7j9ru3x5qgqr5dwrnzrz5gj8ck6d5sp52le9p"
+    val ref = "lnbc20m1pvjluezsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygscqpvpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqhp58yjmdan79s6qqdhdzgynm4zwqd5d7xmw5fk98klysy043l2ahrqsfp4qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q9qrsgq999fraffdzl6c8j7qd325dfurcq7vl0mfkdpdvve9fy3hy4lw0x9j3zcj2qdh5e5pyrp6cncvmxrhchgey64culwmjtw9wym74xm6xqqevh9r0"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount === Some(2000000000 msat))
     assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(!pr.features.allowMultiPart)
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description == Right(Crypto.sha256(ByteVector.view("One piece of chocolate cake, one icecream cone, one pickle, one slice of swiss cheese, one slice of salami, one lollypop, one piece of cherry pie, one sausage, one cupcake, and one slice of watermelon".getBytes))))
     assert(pr.fallbackAddress() === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(12)))
-    assert(pr.tags.size == 5)
-    assert(pr.features.bitmask.isEmpty)
-    assert(!pr.features.allowMultiPart)
+    assert(pr.tags.size == 6)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
-  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 9, 15 and 99, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
+  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14 and 99, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
     val refs = Seq(
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqsq67gye39hfg3zd8rgc80k32tvy9xk2xunwm5lzexnvpx6fd77en8qaq424dxgt56cag2dpt359k3ssyhetktkpqh24jqnjyw6uqd08sgptq44qu",
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2a25dxl5hrntdtn6zvydt7d66hyzsyhqs4wdynavys42xgl6sgx9c4g7me86a27t07mdtfry458rtjr0v92cnmswpsjscgt2vcse3sgpz3uapa",
       // All upper-case
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqsq67gye39hfg3zd8rgc80k32tvy9xk2xunwm5lzexnvpx6fd77en8qaq424dxgt56cag2dpt359k3ssyhetktkpqh24jqnjyw6uqd08sgptq44qu".toUpperCase,
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2a25dxl5hrntdtn6zvydt7d66hyzsyhqs4wdynavys42xgl6sgx9c4g7me86a27t07mdtfry458rtjr0v92cnmswpsjscgt2vcse3sgpz3uapa".toUpperCase,
       // With ignored fields
-      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqpqsq2qrqqqfppnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqppnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhpnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqspnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqsp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnp5qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnpkqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq2jxxfsnucm4jf4zwtznpaxphce606fvhvje5x7d4gw7n73994hgs7nteqvenq8a4ml8aqtchv5d9pf7l558889hp4yyrqv6a7zpq9fgpskqhza"
+      "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q5sqqqqqqqqqqqqqqqqsgq2qrqqqfppnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqppnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhpnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqhp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqspnqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqsp4qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnp5qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqnpkqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqz599y53s3ujmcfjp5xrdap68qxymkqphwsexhmhr8wdz5usdzkzrse33chw6dlp3jhuhge9ley7j2ayx36kawe7kmgg8sv5ugdyusdcqzn8z9x"
     )
 
     for (ref <- refs) {
@@ -259,17 +268,17 @@ class PaymentRequestSpec extends AnyFunSuite {
       assert(pr.timestamp === 1496314658L)
       assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
       assert(pr.description === Left("coffee beans"))
-      assert(pr.features.bitmask === bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000001000001000000000")
+      assert(pr.features.bitmask === bin"1000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
       assert(!pr.features.allowMultiPart)
-      assert(!pr.features.requirePaymentSecret)
+      assert(pr.features.requirePaymentSecret)
       assert(!pr.features.allowTrampoline)
       assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
       assert(PaymentRequest.write(pr.sign(priv)) === ref.toLowerCase)
     }
   }
 
-  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 9, 15, 99 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
-    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqpqsqq40wa3khl49yue3zsgm26jrepqr2eghqlx86rttutve3ugd05em86nsefzh4pfurpd9ek9w2vp95zxqnfe2u7ckudyahsa52q66tgzcp6t2dyk"
+  test("On mainnet, please send $30 for coffee beans to the same peer, which supports features 8, 14, 99 and 100, using secret 0x1111111111111111111111111111111111111111111111111111111111111111") {
+    val ref = "lnbc25m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5vdhkven9v5sxyetpdeessp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q4psqqqqqqqqqqqqqqqqsgqtqyx5vggfcsll4wu246hz02kp85x4katwsk9639we5n5yngc3yhqkm35jnjw4len8vrnqnf5ejh0mzj9n3vz2px97evektfm2l6wqccp3y7372"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
     assert(pr.amount === Some(2500000000L msat))
@@ -279,20 +288,22 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("coffee beans"))
     assert(pr.fallbackAddress().isEmpty)
-    assert(pr.features.bitmask === bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000001000001000000000")
+    assert(pr.features.bitmask === bin"000011000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000100000000")
     assert(!pr.features.allowMultiPart)
-    assert(!pr.features.requirePaymentSecret)
+    assert(pr.features.requirePaymentSecret)
     assert(!pr.features.allowTrampoline)
     assert(!pr.features.areSupported(TestConstants.Alice.nodeParams))
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
   test("On mainnet, please send 0.00967878534 BTC for a list of items within one week, amount in pico-BTC") {
-    val ref = "lnbc9678785340p1pwmna7lpp5gc3xfm08u9qy06djf8dfflhugl6p7lgza6dsjxq454gxhj9t7a0sd8dgfkx7cmtwd68yetpd5s9xar0wfjn5gpc8qhrsdfq24f5ggrxdaezqsnvda3kkum5wfjkzmfqf3jkgem9wgsyuctwdus9xgrcyqcjcgpzgfskx6eqf9hzqnteypzxz7fzypfhg6trddjhygrcyqezcgpzfysywmm5ypxxjemgw3hxjmn8yptk7untd9hxwg3q2d6xjcmtv4ezq7pqxgsxzmnyyqcjqmt0wfjjq6t5v4khxsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygsxqyjw5qcqp2rzjq0gxwkzc8w6323m55m4jyxcjwmy7stt9hwkwe2qxmy8zpsgg7jcuwz87fcqqeuqqqyqqqqlgqqqqn3qq9q0777th7sgnqqpykcmu4c2u65vtnefrnjzws78maaxy87euvpj0hr8t5ma58cyw5f3f9ej4aw9swcyvk4vp6vjlxtgpcfdy8u9m4c6wgpdqfxt2"
+    val ref = "lnbc9678785340p1pwmna7lpp5gc3xfm08u9qy06djf8dfflhugl6p7lgza6dsjxq454gxhj9t7a0sd8dgfkx7cmtwd68yetpd5s9xar0wfjn5gpc8qhrsdfq24f5ggrxdaezqsnvda3kkum5wfjkzmfqf3jkgem9wgsyuctwdus9xgrcyqcjcgpzgfskx6eqf9hzqnteypzxz7fzypfhg6trddjhygrcyqezcgpzfysywmm5ypxxjemgw3hxjmn8yptk7untd9hxwg3q2d6xjcmtv4ezq7pqxgsxzmnyyqcjqmt0wfjjq6t5v4khxsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygsxqyjw5qcqp2rzjq0gxwkzc8w6323m55m4jyxcjwmy7stt9hwkwe2qxmy8zpsgg7jcuwz87fcqqeuqqqyqqqqlgqqqqn3qq9q9qrsgqrvgkpnmps664wgkp43l22qsgdw4ve24aca4nymnxddlnp8vh9v2sdxlu5ywdxefsfvm0fq3sesf08uf6q9a2ke0hc9j6z6wlxg5z5kqpu2v9wz"
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix === "lnbc")
     assert(pr.amount === Some(967878534 msat))
     assert(pr.paymentHash.bytes === hex"462264ede7e14047e9b249da94fefc47f41f7d02ee9b091815a5506bc8abf75f")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
+    assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
     assert(pr.timestamp === 1572468703L)
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("Blockstream Store: 88.85 USD for Blockstream Ledger Nano S x 1, \"Back In My Day\" Sticker x 2, \"I Got Lightning Working\" Sticker x 2 and 1 more items"))
@@ -300,7 +311,6 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(pr.expiry === Some(604800L))
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(10)))
     assert(pr.routingInfo === Seq(Seq(ExtraHop(PublicKey(hex"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"), ShortChannelId("589390x3312x1"), 1000 msat, 2500, CltvExpiryDelta(40)))))
-    assert(pr.features.areSupported(TestConstants.Alice.nodeParams))
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
   }
 
