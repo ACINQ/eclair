@@ -19,6 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
 import scodec.Codec
 import scodec.codecs.{discriminated, list, variableSizeBytesLong}
 
@@ -42,8 +43,32 @@ object InitTlvCodecs {
 
   private val networks: Codec[Networks] = variableSizeBytesLong(varintoverflow, list(bytes32)).as[Networks]
 
-  val initTlvCodec = TlvCodecs.tlvStream(discriminated[InitTlv].by(varint)
+  val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)
   )
 
+}
+
+sealed trait WarningTlv extends Tlv
+
+object WarningTlv {
+  val warningTlvCodec: Codec[TlvStream[WarningTlv]] = tlvStream(discriminated[WarningTlv].by(varint))
+}
+
+sealed trait ErrorTlv extends Tlv
+
+object ErrorTlv {
+  val errorTlvCodec: Codec[TlvStream[ErrorTlv]] = tlvStream(discriminated[ErrorTlv].by(varint))
+}
+
+sealed trait PingTlv extends Tlv
+
+object PingTlv {
+  val pingTlvCodec: Codec[TlvStream[PingTlv]] = tlvStream(discriminated[PingTlv].by(varint))
+}
+
+sealed trait PongTlv extends Tlv
+
+object PongTlv {
+  val pongTlvCodec: Codec[TlvStream[PongTlv]] = tlvStream(discriminated[PongTlv].by(varint))
 }

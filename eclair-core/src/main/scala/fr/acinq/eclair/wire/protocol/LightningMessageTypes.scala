@@ -47,11 +47,11 @@ sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- not in the spec
 // @formatter:on
 
-case class Init(features: Features, tlvs: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
-  val networks = tlvs.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
+case class Init(features: Features, tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
+  val networks = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
 }
 
-case class Warning(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId {
+case class Warning(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[WarningTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
   // @formatter:off
   val isGlobal: Boolean = channelId == ByteVector32.Zeroes
   def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
@@ -65,7 +65,7 @@ object Warning {
   // @formatter:on
 }
 
-case class Error(channelId: ByteVector32, data: ByteVector) extends SetupMessage with HasChannelId {
+case class Error(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[ErrorTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
   def toAscii: String = if (fr.acinq.eclair.isAsciiPrintable(data)) new String(data.toArray, StandardCharsets.US_ASCII) else "n/a"
 }
 
@@ -73,15 +73,16 @@ object Error {
   def apply(channelId: ByteVector32, msg: String): Error = Error(channelId, ByteVector.view(msg.getBytes(Charsets.US_ASCII)))
 }
 
-case class Ping(pongLength: Int, data: ByteVector) extends SetupMessage
+case class Ping(pongLength: Int, data: ByteVector, tlvStream: TlvStream[PingTlv] = TlvStream.empty) extends SetupMessage
 
-case class Pong(data: ByteVector) extends SetupMessage
+case class Pong(data: ByteVector, tlvStream: TlvStream[PongTlv] = TlvStream.empty) extends SetupMessage
 
 case class ChannelReestablish(channelId: ByteVector32,
                               nextLocalCommitmentNumber: Long,
                               nextRemoteRevocationNumber: Long,
                               yourLastPerCommitmentSecret: PrivateKey,
-                              myCurrentPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
+                              myCurrentPerCommitmentPoint: PublicKey,
+                              tlvStream: TlvStream[ChannelReestablishTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: ByteVector32,
                        temporaryChannelId: ByteVector32,
@@ -126,20 +127,25 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
 case class FundingCreated(temporaryChannelId: ByteVector32,
                           fundingTxid: ByteVector32,
                           fundingOutputIndex: Int,
-                          signature: ByteVector64) extends ChannelMessage with HasTemporaryChannelId
+                          signature: ByteVector64,
+                          tlvStream: TlvStream[FundingCreatedTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingSigned(channelId: ByteVector32,
-                         signature: ByteVector64) extends ChannelMessage with HasChannelId
+                         signature: ByteVector64,
+                         tlvStream: TlvStream[FundingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
 
 case class FundingLocked(channelId: ByteVector32,
-                         nextPerCommitmentPoint: PublicKey) extends ChannelMessage with HasChannelId
+                         nextPerCommitmentPoint: PublicKey,
+                         tlvStream: TlvStream[FundingLockedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
 
 case class Shutdown(channelId: ByteVector32,
-                    scriptPubKey: ByteVector) extends ChannelMessage with HasChannelId
+                    scriptPubKey: ByteVector,
+                    tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
-                         signature: ByteVector64) extends ChannelMessage with HasChannelId
+                         signature: ByteVector64,
+                         tlvStream: TlvStream[ClosingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
 
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
@@ -151,32 +157,39 @@ case class UpdateAddHtlc(channelId: ByteVector32,
 
 case class UpdateFulfillHtlc(channelId: ByteVector32,
                              id: Long,
-                             paymentPreimage: ByteVector32) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
+                             paymentPreimage: ByteVector32,
+                             tlvStream: TlvStream[UpdateFulfillHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class UpdateFailHtlc(channelId: ByteVector32,
                           id: Long,
-                          reason: ByteVector) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
+                          reason: ByteVector,
+                          tlvStream: TlvStream[UpdateFailHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class UpdateFailMalformedHtlc(channelId: ByteVector32,
                                    id: Long,
                                    onionHash: ByteVector32,
-                                   failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
+                                   failureCode: Int,
+                                   tlvStream: TlvStream[UpdateFailMalformedHtlcTlv] = TlvStream.empty) extends HtlcMessage with UpdateMessage with HasChannelId with HtlcSettlementMessage
 
 case class CommitSig(channelId: ByteVector32,
                      signature: ByteVector64,
-                     htlcSignatures: List[ByteVector64]) extends HtlcMessage with HasChannelId
+                     htlcSignatures: List[ByteVector64],
+                     tlvStream: TlvStream[CommitSigTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId
 
 case class RevokeAndAck(channelId: ByteVector32,
                         perCommitmentSecret: PrivateKey,
-                        nextPerCommitmentPoint: PublicKey) extends HtlcMessage with HasChannelId
+                        nextPerCommitmentPoint: PublicKey,
+                        tlvStream: TlvStream[RevokeAndAckTlv] = TlvStream.empty) extends HtlcMessage with HasChannelId
 
 case class UpdateFee(channelId: ByteVector32,
-                     feeratePerKw: FeeratePerKw) extends ChannelMessage with UpdateMessage with HasChannelId
+                     feeratePerKw: FeeratePerKw,
+                     tlvStream: TlvStream[UpdateFeeTlv] = TlvStream.empty) extends ChannelMessage with UpdateMessage with HasChannelId
 
 case class AnnouncementSignatures(channelId: ByteVector32,
                                   shortChannelId: ShortChannelId,
                                   nodeSignature: ByteVector64,
-                                  bitcoinSignature: ByteVector64) extends RoutingMessage with HasChannelId
+                                  bitcoinSignature: ByteVector64,
+                                  tlvStream: TlvStream[AnnouncementSignaturesTlv] = TlvStream.empty) extends RoutingMessage with HasChannelId
 
 case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeSignature2: ByteVector64,
@@ -189,7 +202,7 @@ case class ChannelAnnouncement(nodeSignature1: ByteVector64,
                                nodeId2: PublicKey,
                                bitcoinKey1: PublicKey,
                                bitcoinKey2: PublicKey,
-                               unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasChainHash
+                               tlvStream: TlvStream[ChannelAnnouncementTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasChainHash
 
 case class Color(r: Byte, g: Byte, b: Byte) {
   override def toString: String = f"#$r%02x$g%02x$b%02x" // to hexa s"#  ${r}%02x ${r & 0xFF}${g & 0xFF}${b & 0xFF}"
@@ -224,7 +237,6 @@ case class Tor2(tor2: String, port: Int) extends OnionAddress { override def soc
 case class Tor3(tor3: String, port: Int) extends OnionAddress { override def socketAddress = InetSocketAddress.createUnresolved(tor3 + ".onion", port) }
 // @formatter:on
 
-
 case class NodeAnnouncement(signature: ByteVector64,
                             features: Features,
                             timestamp: Long,
@@ -232,7 +244,7 @@ case class NodeAnnouncement(signature: ByteVector64,
                             rgbColor: Color,
                             alias: String,
                             addresses: List[NodeAddress],
-                            unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp
+                            tlvStream: TlvStream[NodeAnnouncementTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp
 
 case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
@@ -245,7 +257,7 @@ case class ChannelUpdate(signature: ByteVector64,
                          feeBaseMsat: MilliSatoshi,
                          feeProportionalMillionths: Long,
                          htlcMaximumMsat: Option[MilliSatoshi],
-                         unknownFields: ByteVector = ByteVector.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
+                         tlvStream: TlvStream[ChannelUpdateTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 
   def isNode1 = Announcements.isNode1(channelFlags)
@@ -268,7 +280,7 @@ case class QueryShortChannelIds(chainHash: ByteVector32, shortChannelIds: Encode
   val queryFlags_opt: Option[QueryShortChannelIdsTlv.EncodedQueryFlags] = tlvStream.get[QueryShortChannelIdsTlv.EncodedQueryFlags]
 }
 
-case class ReplyShortChannelIdsEnd(chainHash: ByteVector32, complete: Byte) extends RoutingMessage with HasChainHash
+case class ReplyShortChannelIdsEnd(chainHash: ByteVector32, complete: Byte, tlvStream: TlvStream[ReplyShortChannelIdsEndTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
 
 case class QueryChannelRange(chainHash: ByteVector32, firstBlockNum: Long, numberOfBlocks: Long, tlvStream: TlvStream[QueryChannelRangeTlv] = TlvStream.empty) extends RoutingMessage {
   val queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags] = tlvStream.get[QueryChannelRangeTlv.QueryFlags]
@@ -293,7 +305,7 @@ object ReplyChannelRange {
   }
 }
 
-case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Long, timestampRange: Long) extends RoutingMessage with HasChainHash
+case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Long, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
 
 // NB: blank lines to minimize merge conflicts
 

@@ -28,7 +28,35 @@ import scodec.codecs.discriminated
 sealed trait UpdateAddHtlcTlv extends Tlv
 
 object UpdateAddHtlcTlv {
-
   val addHtlcTlvCodec: Codec[TlvStream[UpdateAddHtlcTlv]] = tlvStream(discriminated[UpdateAddHtlcTlv].by(varint))
+}
 
+sealed trait UpdateFulfillHtlcTlv extends Tlv
+
+object UpdateFulfillHtlcTlv {
+  val updateFulfillHtlcTlvCodec: Codec[TlvStream[UpdateFulfillHtlcTlv]] = tlvStream(discriminated[UpdateFulfillHtlcTlv].by(varint))
+}
+
+sealed trait UpdateFailHtlcTlv extends Tlv
+
+object UpdateFailHtlcTlv {
+  val updateFailHtlcTlvCodec: Codec[TlvStream[UpdateFailHtlcTlv]] = tlvStream(discriminated[UpdateFailHtlcTlv].by(varint))
+}
+
+sealed trait UpdateFailMalformedHtlcTlv extends Tlv
+
+object UpdateFailMalformedHtlcTlv {
+  val updateFailMalformedHtlcTlvCodec: Codec[TlvStream[UpdateFailMalformedHtlcTlv]] = tlvStream(discriminated[UpdateFailMalformedHtlcTlv].by(varint))
+}
+
+sealed trait CommitSigTlv extends Tlv
+
+object CommitSigTlv {
+  val commitSigTlvCodec: Codec[TlvStream[CommitSigTlv]] = tlvStream(discriminated[CommitSigTlv].by(varint))
+}
+
+sealed trait RevokeAndAckTlv extends Tlv
+
+object RevokeAndAckTlv {
+  val revokeAndAckTlvCodec: Codec[TlvStream[RevokeAndAckTlv]] = tlvStream(discriminated[RevokeAndAckTlv].by(varint))
 }
