@@ -95,6 +95,34 @@ package object eclair {
     }
   }
 
+  def publicKeyScriptToAddress(scriptPubKey: Seq[ScriptElt], chainHash: ByteVector32): String = {
+    val base58PubkeyPrefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => Base58.Prefix.PubkeyAddress
+      case Block.TestnetGenesisBlock.hash | Block.RegtestGenesisBlock.hash => Base58.Prefix.PubkeyAddressTestnet
+      case _ => ???
+    }
+    val base58ScriptPrefix = chainHash match {
+      case Block.LivenetGenesisBlock.hash => Base58.Prefix.ScriptAddress
+      case Block.TestnetGenesisBlock.hash | Block.RegtestGenesisBlock.hash => Base58.Prefix.ScriptAddressTestnet
+      case _ => ???
+    }
+    val hrp = chainHash match {
+      case Block.LivenetGenesisBlock.hash => "bc"
+      case Block.TestnetGenesisBlock.hash => "tb"
+      case Block.RegtestGenesisBlock.hash => "bcrt"
+      case _ => ???
+    }
+    scriptPubKey match {
+      case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil => Base58Check.encode(base58PubkeyPrefix, pubKeyHash)
+      case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil => Base58Check.encode(base58ScriptPrefix, scriptHash)
+      case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress(hrp, 0, pubKeyHash)
+      case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress(hrp, 0, scriptHash)
+      case _ => ???
+    }
+  }
+
+  def publicKeyScriptToAddress(scriptPubKey: ByteVector, chainHash: ByteVector32): String = publicKeyScriptToAddress(Script.parse(scriptPubKey), chainHash)
+
   implicit class MilliSatoshiLong(private val n: Long) extends AnyVal {
     def msat = MilliSatoshi(n)
   }
@@ -103,7 +131,9 @@ package object eclair {
   implicit object NumericMilliSatoshi extends Numeric[MilliSatoshi] {
     // @formatter:off
     override def plus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = x + y
+
     override def minus(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = x - y
+
     override def times(x: MilliSatoshi, y: MilliSatoshi): MilliSatoshi = MilliSatoshi(x.toLong * y.toLong)
     override def negate(x: MilliSatoshi): MilliSatoshi = -x
     override def fromInt(x: Int): MilliSatoshi = MilliSatoshi(x)
