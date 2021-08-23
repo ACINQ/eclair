@@ -11,6 +11,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPubli
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
 import fr.acinq.eclair.wire.protocol.{ChannelReestablish, CommitSig, Error, Init, RevokeAndAck}
@@ -131,8 +132,8 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Cha
     val sender = TestProbe()
 
     // we start by storing the current state
-    assert(alice.stateData.isInstanceOf[HasCommitments])
-    val oldStateData = alice.stateData.asInstanceOf[HasCommitments]
+    assert(alice.stateData.isInstanceOf[DATA_NORMAL])
+    val oldStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
 
     // we simulate a disconnection
     sender.send(alice, INPUT_DISCONNECTED)
@@ -151,7 +152,8 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Cha
     bob2alice.forward(newAlice)
     awaitCond(newAlice.stateName == NORMAL)
     val u = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(!u.hasChanged)
+    assert(u.previousChannelUpdate_opt.nonEmpty)
+    assert(Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, u.channelUpdate))
   }
 
   test("restore channel with configuration change") { f =>
@@ -159,8 +161,8 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Cha
     val sender = TestProbe()
 
     // we start by storing the current state
-    assert(alice.stateData.isInstanceOf[HasCommitments])
-    val oldStateData = alice.stateData.asInstanceOf[HasCommitments]
+    assert(alice.stateData.isInstanceOf[DATA_NORMAL])
+    val oldStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
 
     // we simulate a disconnection
     sender.send(alice, INPUT_DISCONNECTED)
@@ -181,6 +183,8 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Cha
     bob2alice.forward(newAlice)
     awaitCond(newAlice.stateName == NORMAL)
     val u = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(u.hasChanged)
+    assert(u.previousChannelUpdate_opt.nonEmpty)
+    assert(!Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, u.channelUpdate))
+    assert(Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, oldStateData.channelUpdate))
   }
 }

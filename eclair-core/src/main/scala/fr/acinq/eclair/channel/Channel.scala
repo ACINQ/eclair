@@ -305,8 +305,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             candidateChannelUpdate
           }
 
-          val hasChanged = !Announcements.areSameWithoutFlags(candidateChannelUpdate, normal.channelUpdate)
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, channelUpdate1, hasChanged, normal.commitments))
+          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, channelUpdate1, Some(normal.channelUpdate), normal.commitments))
 
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
@@ -1896,11 +1895,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
           // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
           log.info("emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
-          val hasChanged = stateData match {
-            case data: DATA_NORMAL => !Announcements.areSameWithoutFlags(data.channelUpdate, normal.channelUpdate)
-            case _ => true
+          val previousChannelUpdate_opt = stateData match {
+            case data: DATA_NORMAL => Some(data.channelUpdate)
+            case _ => None
           }
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, hasChanged, normal.commitments))
+          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, previousChannelUpdate_opt, normal.commitments))
         case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
           // in any other case (e.g. OFFLINE->SYNCING) we do nothing
           ()
