@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, BitcoindService}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop}
-import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.{ConflictingTxUnconfirmed, CouldNotFund, TxSkipped}
+import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.{ConflictingTxUnconfirmed, CouldNotFund, TxSkipped, WalletInputGone}
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, HtlcTimeoutTx}
@@ -115,7 +115,6 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     // Generate blocks to ensure the funding tx is confirmed.
     generateBlocks(1)
-    // TODO: do I need a method that generateBlocks AND sets blockCount AND sends event?
 
     // Execute our test.
     val publisher = system.spawn(ReplaceableTxPublisher(aliceNodeParams, bitcoinClient, alice2blockchain.ref, TxPublishLogContext(testId, TestConstants.Bob.nodeParams.nodeId, None)), testId.toString)
@@ -173,6 +172,23 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     })
   }
 
+  test("commit tx feerate high enough and commit tx confirmed, not spending anchor output") {
+    withFixture(Seq(500 millibtc), f => {
+      import f._
+
+      val commitFeerate = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f)
+      walletClient.publishTransaction(commitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(commitTx.tx.txid)
+      generateBlocks(1)
+
+      publisher ! Publish(probe.ref, anchorTx, commitFeerate)
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd === anchorTx)
+      assert(result.reason === TxSkipped(retryNextBlock = false))
+    })
+  }
+
   test("remote commit tx confirmed, not spending anchor output") {
     withFixture(Seq(500 millibtc), f => {
       import f._
@@ -205,6 +221,33 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // When the remote commit tx is still unconfirmed, we want to retry in case it is evicted from the mempool and our
       // commit is then published.
       assert(result.reason === TxSkipped(retryNextBlock = true))
+    })
+  }
+
+  test("remote commit tx replaces local commit tx, not spending anchor output") {
+    withFixture(Seq(500 millibtc), f => {
+      import f._
+
+      val remoteCommit = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw === FeeratePerKw(2500 sat))
+
+      // We lower the feerate to make it easy to replace our commit tx by theirs in the mempool.
+      val lowFeerate = FeeratePerKw(500 sat)
+      updateFee(lowFeerate, alice, bob, alice2bob, bob2alice)
+      val (localCommit, anchorTx) = closeChannelWithoutHtlcs(f)
+      publisher ! Publish(probe.ref, anchorTx, FeeratePerKw(600 sat))
+      val mempoolTxs = getMempoolTxs(2)
+      assert(mempoolTxs.map(_.txid).contains(localCommit.tx.txid))
+
+      // Our commit tx is replaced by theirs.
+      walletClient.publishTransaction(remoteCommit.tx).pipeTo(probe.ref)
+      probe.expectMsg(remoteCommit.tx.txid)
+      generateBlocks(1)
+      system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
+
+      val result = probe.expectMsgType[TxRejected]
+      assert(result.cmd === anchorTx)
+      assert(result.reason === WalletInputGone)
     })
   }
 
