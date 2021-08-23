@@ -1,13 +1,16 @@
 package fr.acinq.eclair.channel
 
-import akka.testkit.TestProbe
+import akka.actor.typed.scaladsl.adapter.actorRefAdapter
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
+import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
+import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
 import fr.acinq.eclair.wire.protocol.{ChannelReestablish, CommitSig, Error, Init, RevokeAndAck}
@@ -121,5 +124,63 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Cha
       DefaultCommitmentFormat)
     val tx1 = tx.updateWitness(0, ScriptWitness(Scripts.der(sig) :: ourToRemotePubKey.value :: Nil))
     Transaction.correctlySpends(tx1, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+  }
+
+  test("restore channel without configuration change") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we start by storing the current state
+    assert(alice.stateData.isInstanceOf[HasCommitments])
+    val oldStateData = alice.stateData.asInstanceOf[HasCommitments]
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // we restart Alice
+    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(TestConstants.Alice.nodeParams, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    newAlice ! INPUT_RESTORED(oldStateData)
+    newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.forward(newAlice)
+    awaitCond(newAlice.stateName == NORMAL)
+    val u = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(!u.hasChanged)
+  }
+
+  test("restore channel with configuration change") { f =>
+    import f._
+    val sender = TestProbe()
+
+    // we start by storing the current state
+    assert(alice.stateData.isInstanceOf[HasCommitments])
+    val oldStateData = alice.stateData.asInstanceOf[HasCommitments]
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // we restart Alice with a different configuration
+    val newFees = RelayFees(765 msat, 2345)
+    val newConfig = TestConstants.Alice.nodeParams.copy(relayParams = RelayParams(newFees, newFees, newFees))
+    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    newAlice ! INPUT_RESTORED(oldStateData)
+    newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+    alice2bob.forward(bob)
+    bob2alice.forward(newAlice)
+    awaitCond(newAlice.stateName == NORMAL)
+    val u = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(u.hasChanged)
   }
 }

@@ -118,16 +118,9 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
       channelsDb.updateChannelMeta(e.channelId, event)
 
     case u: LocalChannelUpdate =>
-      u.previousChannelUpdate_opt match {
-        case Some(previous) if
-          u.channelUpdate.feeBaseMsat == previous.feeBaseMsat &&
-          u.channelUpdate.feeProportionalMillionths == previous.feeProportionalMillionths &&
-          u.channelUpdate.cltvExpiryDelta == previous.cltvExpiryDelta &&
-          u.channelUpdate.htlcMinimumMsat == previous.htlcMinimumMsat &&
-          u.channelUpdate.htlcMaximumMsat == previous.htlcMaximumMsat => ()
-        case _ => auditDb.addChannelUpdate(u)
+      if (u.hasChanged) {
+        auditDb.addChannelUpdate(u)
       }
-
   }
 
   override def unhandled(message: Any): Unit = log.warning(s"unhandled msg=$message")
