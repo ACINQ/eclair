@@ -31,7 +31,7 @@ class PsbtSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLik
 
   def createOurTx(pub: PublicKey) : (Transaction, Int) = {
     val sender = TestProbe()
-    bitcoinClient.fundPsbt(Map(computeP2WpkhAddress(pub, Block.RegtestGenesisBlock.hash) -> 100000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw, lockUtxos = false)).pipeTo(sender.ref)
+    bitcoinClient.fundPsbt(Seq(computeP2WpkhAddress(pub, Block.RegtestGenesisBlock.hash) -> 100000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw, lockUtxos = false)).pipeTo(sender.ref)
     val FundPsbtResponse(psbt, _, Some(changepos)) = sender.expectMsgType[FundPsbtResponse]
     bitcoinClient.processPsbt(psbt, sign = true).pipeTo(sender.ref)
     val ProcessPsbtResponse(psbt1, true) = sender.expectMsgType[ProcessPsbtResponse]
@@ -51,7 +51,7 @@ class PsbtSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLik
     val (ourTx, index) = createOurTx(priv.publicKey)
 
     // fund a psbt without inputs
-    bitcoinClient.fundPsbt(Map(computeP2WpkhAddress(priv.publicKey, Block.RegtestGenesisBlock.hash) -> 100000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw, lockUtxos = false)).pipeTo(sender.ref)
+    bitcoinClient.fundPsbt(Seq(computeP2WpkhAddress(priv.publicKey, Block.RegtestGenesisBlock.hash) -> 100000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw, lockUtxos = false)).pipeTo(sender.ref)
     val FundPsbtResponse(psbt, _, _) = sender.expectMsgType[FundPsbtResponse]
 
     // add our non-wallet input to the PSBT
