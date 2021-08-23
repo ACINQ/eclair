@@ -154,6 +154,7 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Cha
     val u = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(u.previousChannelUpdate_opt.nonEmpty)
     assert(Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, u.channelUpdate))
+    assert(Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, oldStateData.channelUpdate))
   }
 
   test("restore channel with configuration change") { f =>

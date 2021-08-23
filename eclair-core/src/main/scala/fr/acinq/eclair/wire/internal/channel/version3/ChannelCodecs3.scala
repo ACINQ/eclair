@@ -24,7 +24,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.UpdateMessage
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, UpdateMessage}
 import fr.acinq.eclair.{FeatureSupport, Features, MilliSatoshi}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -302,6 +302,7 @@ private[channel] object ChannelCodecs3 {
         ("buried" | bool8) ::
         ("channelAnnouncement" | optional(bool8, lengthDelimited(channelAnnouncementCodec))) ::
         ("channelUpdate" | lengthDelimited(channelUpdateCodec)) ::
+        ("channelUpdateBeforeRestore_opt" | provide[Option[ChannelUpdate]](None)) ::
         ("localShutdown" | optional(bool8, lengthDelimited(shutdownCodec))) ::
         ("remoteShutdown" | optional(bool8, lengthDelimited(shutdownCodec)))).as[DATA_NORMAL]
 

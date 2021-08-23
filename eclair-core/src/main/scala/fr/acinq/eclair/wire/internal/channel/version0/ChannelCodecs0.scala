@@ -26,7 +26,7 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, PublishableTxs}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.UpdateMessage
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, UpdateMessage}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -309,6 +309,7 @@ private[channel] object ChannelCodecs0 {
         ("buried" | bool) ::
         ("channelAnnouncement" | optional(bool, variableSizeBytes(noUnknownFieldsChannelAnnouncementSizeCodec, channelAnnouncementCodec))) ::
         ("channelUpdate" | variableSizeBytes(noUnknownFieldsChannelUpdateSizeCodec, channelUpdateCodec)) ::
+        ("channelUpdateBeforeRestore_opt" | provide[Option[ChannelUpdate]](None)) ::
         ("localShutdown" | optional(bool, shutdownCodec)) ::
         ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
 
@@ -318,6 +319,7 @@ private[channel] object ChannelCodecs0 {
         ("buried" | bool) ::
         ("channelAnnouncement" | optional(bool, variableSizeBytes(uint16, channelAnnouncementCodec))) ::
         ("channelUpdate" | variableSizeBytes(uint16, channelUpdateCodec)) ::
+        ("channelUpdateBeforeRestore_opt" | provide[Option[ChannelUpdate]](None)) ::
         ("localShutdown" | optional(bool, shutdownCodec)) ::
         ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
 

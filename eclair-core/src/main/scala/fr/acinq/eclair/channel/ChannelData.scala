@@ -421,6 +421,7 @@ final case class DATA_NORMAL(commitments: Commitments,
                              buried: Boolean,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
+                             channelUpdateBeforeRestore_opt: Option[ChannelUpdate],
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown]) extends ChannelData with HasCommitments
 final case class DATA_SHUTDOWN(commitments: Commitments,
