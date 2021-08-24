@@ -75,21 +75,26 @@ class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with Channe
   }
 
   test("create channel type from features") {
-    val testCases = Seq(
-      Features.empty -> Some(ChannelTypes.Standard),
-      Features(Wumbo -> Optional) -> None,
-      Features(StaticRemoteKey -> Optional) -> None,
-      Features(StaticRemoteKey -> Mandatory, Wumbo -> Optional) -> None,
-      Features(StaticRemoteKey -> Mandatory) -> Some(ChannelTypes.StaticRemoteKey),
-      Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional) -> None,
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional) -> None,
-      Features(StaticRemoteKey -> Optional, AnchorOutputs -> Mandatory) -> None,
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, Wumbo -> Optional) -> None,
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory) -> Some(ChannelTypes.AnchorOutputs),
+    val validChannelTypes = Seq(
+      Features.empty -> ChannelTypes.Standard,
+      Features(StaticRemoteKey -> Mandatory) -> ChannelTypes.StaticRemoteKey,
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory) -> ChannelTypes.AnchorOutputs,
     )
-
-    for ((features, expected) <- testCases) {
+    for ((features, expected) <- validChannelTypes) {
       assert(ChannelTypes.fromFeatures(features) === expected)
+    }
+
+    val invalidChannelTypes = Seq(
+      Features(Wumbo -> Optional),
+      Features(StaticRemoteKey -> Optional),
+      Features(StaticRemoteKey -> Mandatory, Wumbo -> Optional),
+      Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional),
+      Features(StaticRemoteKey -> Optional, AnchorOutputs -> Mandatory),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, Wumbo -> Optional),
+    )
+    for (features <- invalidChannelTypes) {
+      assert(ChannelTypes.fromFeatures(features) === ChannelTypes.UnsupportedChannelType(features))
     }
   }
 

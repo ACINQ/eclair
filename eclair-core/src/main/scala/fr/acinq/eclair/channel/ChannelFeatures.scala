@@ -40,7 +40,7 @@ case class ChannelFeatures(activated: Set[Feature]) {
     }
   }
 
-  val channelType: ChannelType = {
+  val channelType: SupportedChannelType = {
     if (hasFeature(AnchorOutputs)) {
       ChannelTypes.AnchorOutputs
     } else if (hasFeature(StaticRemoteKey)) {
@@ -67,7 +67,7 @@ object ChannelFeatures {
     // NB: we don't include features that can be safely activated/deactivated without impacting the channel's operation,
     // such as option_dataloss_protect or option_shutdown_anysegwit.
     val availableFeatures: Seq[Feature] = Seq(Wumbo, OptionUpfrontShutdownScript).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
-    val allFeatures = channelType.features.activated.keys.toSeq ++ availableFeatures
+    val allFeatures = channelType.features.toSeq ++ availableFeatures
     ChannelFeatures(allFeatures: _*)
   }
 
@@ -75,44 +75,49 @@ object ChannelFeatures {
 
 /** A channel type is a specific set of even feature bits that represent persistent channel features as defined in Bolt 2. */
 sealed trait ChannelType {
-  // @formatter:off
   /** Features representing that channel type. */
-  def features: Features
+  def features: Set[Feature]
+}
+
+sealed trait SupportedChannelType extends ChannelType {
   /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
   def paysDirectlyToWallet: Boolean
-  // @formatter:on
 }
 
 object ChannelTypes {
 
   // @formatter:off
-  case object Standard extends ChannelType {
-    override def features: Features = Features.empty
+  case object Standard extends SupportedChannelType {
+    override def features: Set[Feature] = Set.empty
     override def paysDirectlyToWallet: Boolean = false
     override def toString: String = "standard"
   }
-  case object StaticRemoteKey extends ChannelType {
-    override def features: Features = Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory)
+  case object StaticRemoteKey extends SupportedChannelType {
+    override def features: Set[Feature] = Set(Features.StaticRemoteKey)
     override def paysDirectlyToWallet: Boolean = true
     override def toString: String = "static_remotekey"
   }
-  case object AnchorOutputs extends ChannelType {
-    override def features: Features = Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory)
+  case object AnchorOutputs extends SupportedChannelType {
+    override def features: Set[Feature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
     override def paysDirectlyToWallet: Boolean = false
     override def toString: String = "anchor_outputs"
+  }
+  case class UnsupportedChannelType(featureBits: Features) extends ChannelType {
+    override def features: Set[Feature] = featureBits.activated.keySet
+    override def toString: String = s"0x${featureBits.toByteVector.toHex}"
   }
   // @formatter:on
 
   // NB: Bolt 2: features must exactly match in order to identify a channel type.
-  def fromFeatures(features: Features): Option[ChannelType] = features match {
-    case f if f == AnchorOutputs.features => Some(AnchorOutputs)
-    case f if f == StaticRemoteKey.features => Some(StaticRemoteKey)
-    case f if f == Standard.features => Some(Standard)
-    case _ => None
+  def fromFeatures(features: Features): ChannelType = features match {
+    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory) => AnchorOutputs
+    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory) => StaticRemoteKey
+    case f if f == Features.empty => Standard
+    case _ => UnsupportedChannelType(features)
   }
 
   /** Pick the channel type based on local and remote feature bits. */
-  def pickChannelType(localFeatures: Features, remoteFeatures: Features): ChannelType = {
+  def pickChannelType(localFeatures: Features, remoteFeatures: Features): SupportedChannelType = {
     if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
       AnchorOutputs
     } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.StaticRemoteKey)) {

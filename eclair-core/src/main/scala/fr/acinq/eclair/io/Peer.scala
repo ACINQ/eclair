@@ -29,6 +29,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
@@ -153,27 +154,30 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case None =>
             val channelConfig = ChannelConfig.standard
-            val channelType_opt = msg.channelType_opt match {
-              case Some(proposedFeatures) =>
+            val defaultChannelType = ChannelTypes.pickChannelType(d.localFeatures, d.remoteFeatures)
+            val chosenChannelType: Either[InvalidChannelType, SupportedChannelType] = msg.channelType_opt match {
+              case None => Right(defaultChannelType)
+              case Some(proposedChannelType: UnsupportedChannelType) => Left(InvalidChannelType(msg.temporaryChannelId, defaultChannelType, proposedChannelType))
+              case Some(proposedChannelType: SupportedChannelType) =>
                 // We ensure that we support the features necessary for this channel type.
-                val featuresSupported = proposedFeatures.unknown.isEmpty && proposedFeatures.activated.forall { case (f, _) => d.localFeatures.hasFeature(f) }
-                if (featuresSupported) ChannelTypes.fromFeatures(proposedFeatures) else None
-              case None => Some(ChannelTypes.pickChannelType(d.localFeatures, d.remoteFeatures))
+                val featuresSupported = proposedChannelType.features.forall(f => d.localFeatures.hasFeature(f))
+                if (featuresSupported) {
+                  Right(proposedChannelType)
+                } else {
+                  Left(InvalidChannelType(msg.temporaryChannelId, defaultChannelType, proposedChannelType))
+                }
             }
-            channelType_opt match {
-              case Some(channelType) =>
+            chosenChannelType match {
+              case Right(channelType) =>
                 val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
                 val temporaryChannelId = msg.temporaryChannelId
                 log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
                 channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
                 channel ! msg
                 stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
-              case None =>
-                msg.channelType_opt.foreach(proposedChannelType => {
-                  log.warning(s"ignoring open_channel with invalid channel type=$proposedChannelType")
-                  val ourDefaultChannelType = ChannelTypes.pickChannelType(d.localFeatures, d.localFeatures)
-                  d.peerConnection ! Error(msg.temporaryChannelId, InvalidChannelType(msg.temporaryChannelId, ourDefaultChannelType.features, proposedChannelType).getMessage)
-                })
+              case Left(ex) =>
+                log.warning(s"ignoring open_channel: ${ex.getMessage}")
+                d.peerConnection ! Error(msg.temporaryChannelId, ex.getMessage)
                 stay()
             }
           case Some(_) =>
@@ -317,7 +321,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
       s(e)
   }
 
-  def createNewChannel(nodeParams: NodeParams, initFeatures: Features, channelType: ChannelType, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
+  def createNewChannel(nodeParams: NodeParams, initFeatures: Features, channelType: SupportedChannelType, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val (finalScript, walletStaticPaymentBasepoint) = if (channelType.paysDirectlyToWallet) {
       val walletKey = Helpers.getWalletPaymentBasepoint(wallet)
       (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
@@ -426,7 +430,7 @@ object Peer {
   }
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful
-  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelType_opt: Option[ChannelType], fundingTxFeeratePerKw_opt: Option[FeeratePerKw], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) extends PossiblyHarmful {
+  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelType_opt: Option[SupportedChannelType], fundingTxFeeratePerKw_opt: Option[FeeratePerKw], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) extends PossiblyHarmful {
     require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis >= 0.sat, s"fundingSatoshis must be positive")
     require(pushMsat >= 0.msat, s"pushMsat must be positive")

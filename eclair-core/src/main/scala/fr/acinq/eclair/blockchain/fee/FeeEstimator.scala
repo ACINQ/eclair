@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.fee
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.blockchain.CurrentFeerates
-import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
+import fr.acinq.eclair.channel.{ChannelType, ChannelTypes, SupportedChannelType}
 
 trait FeeEstimator {
   // @formatter:off
@@ -37,7 +37,7 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
    * @param proposedFeerate fee rate proposed (new proposal through update_fee or previous proposal used in our current commit tx)
    * @return true if the difference between proposed and reference fee rates is too high.
    */
-  def isFeeDiffTooHigh(channelType: ChannelType, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
+  def isFeeDiffTooHigh(channelType: SupportedChannelType, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
     channelType match {
       case ChannelTypes.Standard =>
         proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate

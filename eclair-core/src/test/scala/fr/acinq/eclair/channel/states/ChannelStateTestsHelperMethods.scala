@@ -114,7 +114,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
-  def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, LocalParams, ChannelType) = {
+  def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, LocalParams, SupportedChannelType) = {
     import setup._
 
     val aliceInitFeatures = Alice.nodeParams.features

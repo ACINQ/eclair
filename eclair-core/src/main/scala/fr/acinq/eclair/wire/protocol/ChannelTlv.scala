@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.wire.protocol
 
+import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
-import fr.acinq.eclair.{Features, UInt64}
+import fr.acinq.eclair.{FeatureSupport, Features, UInt64}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -30,18 +31,18 @@ sealed trait AcceptChannelTlv extends Tlv
 object ChannelTlv {
 
   /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
-  case class UpfrontShutdownScript(script: ByteVector) extends OpenChannelTlv with AcceptChannelTlv {
+  case class UpfrontShutdownScriptTlv(script: ByteVector) extends OpenChannelTlv with AcceptChannelTlv {
     val isEmpty: Boolean = script.isEmpty
   }
 
-  val upfrontShutdownScriptCodec: Codec[UpfrontShutdownScript] = variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript]
+  val upfrontShutdownScriptCodec: Codec[UpfrontShutdownScriptTlv] = variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScriptTlv]
 
   /** A channel type is a set of even feature bits that represent persistent features which affect channel operations. */
-  case class ChannelType(features: Features) extends OpenChannelTlv with AcceptChannelTlv
+  case class ChannelTypeTlv(channelType: ChannelType) extends OpenChannelTlv with AcceptChannelTlv
 
-  val channelTypeCodec: Codec[ChannelType] = variableSizeBytesLong(varintoverflow, bytes).xmap(
-    b => ChannelType(Features(b)),
-    ct => ct.features.toByteVector
+  val channelTypeCodec: Codec[ChannelTypeTlv] = variableSizeBytesLong(varintoverflow, bytes).xmap(
+    b => ChannelTypeTlv(ChannelTypes.fromFeatures(Features(b))),
+    tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
   )
 
 }

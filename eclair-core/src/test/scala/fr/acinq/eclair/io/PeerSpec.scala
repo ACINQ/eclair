@@ -28,6 +28,7 @@ import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
+import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
@@ -311,24 +312,24 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     // They only support anchor outputs and we don't.
     {
-      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelType(ChannelTypes.AnchorOutputs.features))
+      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs))
       val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
       peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x101000, expected 0x"))
+      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
     }
     // They want to use a channel type that doesn't exist in the spec.
     {
-      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelType(Features(AnchorOutputs -> Optional)))
+      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(AnchorOutputs -> Optional))))
       val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
       peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x200000, expected 0x"))
+      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x200000, expected channel_type=standard"))
     }
     // They want to use a channel type we don't support yet.
     {
-      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelType(Features(Map[Feature, FeatureSupport](StaticRemoteKey -> Mandatory), Set(UnknownFeature(22)))))
+      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map[Feature, FeatureSupport](StaticRemoteKey -> Mandatory), Set(UnknownFeature(22))))))
       val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
       peerConnection.send(peer, open)
-      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected 0x"))
+      peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"))
     }
   }
 
@@ -338,7 +339,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     // We both support option_static_remotekey but they want to open a standard channel.
     connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
     assert(peer.stateData.channels.isEmpty)
-    val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelType(Features.empty))
+    val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard))
     val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)

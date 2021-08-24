@@ -87,13 +87,13 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              remoteInit: Init,
                              channelFlags: Byte,
                              channelConfig: ChannelConfig,
-                             channelType: ChannelType)
+                             channelType: SupportedChannelType)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
                              localParams: LocalParams,
                              remote: ActorRef,
                              remoteInit: Init,
                              channelConfig: ChannelConfig,
-                             channelType: ChannelType)
+                             channelType: SupportedChannelType)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)

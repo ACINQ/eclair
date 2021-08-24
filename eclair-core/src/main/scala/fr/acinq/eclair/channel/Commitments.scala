@@ -199,7 +199,7 @@ case class Commitments(channelId: ByteVector32,
 
   val commitmentFormat: CommitmentFormat = channelFeatures.commitmentFormat
 
-  val channelType: ChannelType = channelFeatures.channelType
+  val channelType: SupportedChannelType = channelFeatures.channelType
 
   val localNodeId: PublicKey = localParams.nodeId
 

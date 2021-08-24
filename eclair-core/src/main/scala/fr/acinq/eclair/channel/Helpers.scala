@@ -99,7 +99,7 @@ object Helpers {
   /**
    * Called by the fundee
    */
-  def validateParamsFundee(nodeParams: NodeParams, initFeatures: Features, channelType: ChannelType, open: OpenChannel, remoteNodeId: PublicKey, remoteFeatures: Features): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
+  def validateParamsFundee(nodeParams: NodeParams, channelType: SupportedChannelType, localFeatures: Features, open: OpenChannel, remoteNodeId: PublicKey, remoteFeatures: Features): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
     // BOLT #2: if the chain_hash value, within the open_channel, message is set to a hash of a chain that is unknown to the receiver:
     // MUST reject the channel.
     if (nodeParams.chainHash != open.chainHash) return Left(InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash))
@@ -107,7 +107,7 @@ object Helpers {
     if (open.fundingSatoshis < nodeParams.minFundingSatoshis || open.fundingSatoshis > nodeParams.maxFundingSatoshis) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, nodeParams.maxFundingSatoshis))
 
     // BOLT #2: Channel funding limits
-    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !initFeatures.hasFeature(Features.Wumbo)) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING))
+    if (open.fundingSatoshis >= Channel.MAX_FUNDING && !localFeatures.hasFeature(Features.Wumbo)) return Left(InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, nodeParams.minFundingSatoshis, Channel.MAX_FUNDING))
 
     // BOLT #2: The receiving node MUST fail the channel if: push_msat is greater than funding_satoshis * 1000.
     if (open.pushMsat > open.fundingSatoshis) return Left(InvalidPushAmount(open.temporaryChannelId, open.pushMsat, open.fundingSatoshis.toMilliSatoshi))
@@ -147,22 +147,22 @@ object Helpers {
     val reserveToFundingRatio = open.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    val channelFeatures = ChannelFeatures(channelType, initFeatures, remoteFeatures)
-    extractShutdownScript(open.temporaryChannelId, initFeatures, remoteFeatures, open.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
+    val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures)
+    extractShutdownScript(open.temporaryChannelId, localFeatures, remoteFeatures, open.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
   /**
    * Called by the funder
    */
-  def validateParamsFunder(nodeParams: NodeParams, channelType: ChannelType, initFeatures: Features, remoteFeatures: Features, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
+  def validateParamsFunder(nodeParams: NodeParams, channelType: SupportedChannelType, localFeatures: Features, remoteFeatures: Features, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
     accept.channelType_opt match {
-      case None if channelType != ChannelTypes.pickChannelType(initFeatures, remoteFeatures) =>
+      case None if channelType != ChannelTypes.pickChannelType(localFeatures, remoteFeatures) =>
         // If we have overridden the default channel type, but they didn't support explicit channel type negotiation,
         // we need to abort because they expect a different channel type than what we offered.
-        return Left(InvalidChannelType(open.temporaryChannelId, channelType.features, ChannelTypes.pickChannelType(initFeatures, remoteFeatures).features))
+        return Left(InvalidChannelType(open.temporaryChannelId, channelType, ChannelTypes.pickChannelType(localFeatures, remoteFeatures)))
       case Some(theirChannelType) if accept.channelType_opt != open.channelType_opt =>
         // if channel_type is set, and channel_type was set in open_channel, and they are not equal types: MUST reject the channel.
-        return Left(InvalidChannelType(open.temporaryChannelId, channelType.features, theirChannelType))
+        return Left(InvalidChannelType(open.temporaryChannelId, channelType, theirChannelType))
       case _ => // we agree on channel type
     }
 
@@ -192,8 +192,8 @@ object Helpers {
     val reserveToFundingRatio = accept.channelReserveSatoshis.toLong.toDouble / Math.max(open.fundingSatoshis.toLong, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) return Left(ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio))
 
-    val channelFeatures = ChannelFeatures(channelType, initFeatures, remoteFeatures)
-    extractShutdownScript(accept.temporaryChannelId, initFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
+    val channelFeatures = ChannelFeatures(channelType, localFeatures, remoteFeatures)
+    extractShutdownScript(accept.temporaryChannelId, localFeatures, remoteFeatures, accept.upfrontShutdownScript_opt).map(script_opt => (channelFeatures, script_opt))
   }
 
   /**
