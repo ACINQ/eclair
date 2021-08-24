@@ -394,42 +394,6 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(error === Error(channelId(alice), InvalidRevokedCommitProof(channelId(alice), 0, 42, invalidReestablish.yourLastPerCommitmentSecret).getMessage))
   }
 
-  test("change relay fee while offline") { f =>
-    import f._
-    val sender = TestProbe()
-
-    // we simulate a disconnection
-    disconnect(alice, bob)
-
-    // alice and bob will not announce that their channel is OFFLINE
-    channelUpdateListener.expectNoMessage(300 millis)
-
-    // we make alice update here relay fee
-    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, 4200 msat, 123456)
-    sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
-
-    // alice doesn't broadcast the new channel_update yet
-    channelUpdateListener.expectNoMessage(300 millis)
-
-    // then we reconnect them
-    reconnect(alice, bob, alice2bob, bob2alice)
-
-    // peers exchange channel_reestablish messages
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
-    // note that we don't forward the channel_reestablish so that only alice reaches NORMAL state, it facilitates the test below
-    bob2alice.forward(alice)
-
-    // then alice reaches NORMAL state, and after a delay she broadcasts the channel_update
-    val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
-    assert(channelUpdate.feeBaseMsat === 4200.msat)
-    assert(channelUpdate.feeProportionalMillionths === 123456)
-    assert(Announcements.isEnabled(channelUpdate.channelFlags))
-
-    // no more messages
-    channelUpdateListener.expectNoMessage(300 millis)
-  }
-
   test("broadcast disabled channel_update while offline") { f =>
     import f._
     val sender = TestProbe()

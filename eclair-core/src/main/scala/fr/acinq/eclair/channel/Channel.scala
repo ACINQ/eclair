@@ -283,33 +283,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case normal: DATA_NORMAL =>
           watchFundingTx(data.commitments)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId, None))
-
-          // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
-          val fees = getRelayFees(nodeParams, remoteNodeId, data.commitments)
-          val candidateChannelUpdate = Announcements.makeChannelUpdate(
-            nodeParams.chainHash,
-            nodeParams.privateKey,
-            remoteNodeId,
-            normal.channelUpdate.shortChannelId,
-            nodeParams.expiryDelta,
-            normal.commitments.remoteParams.htlcMinimum,
-            fees.feeBase,
-            fees.feeProportionalMillionths,
-            normal.commitments.capacity.toMilliSatoshi,
-            enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
-          val channelUpdate1 = if (Announcements.areSame(candidateChannelUpdate, normal.channelUpdate)) {
-            // if there was no configuration change we keep the existing channel update
-            normal.channelUpdate
-          } else {
-            log.info("refreshing channel_update due to configuration changes old={} new={}", normal.channelUpdate, candidateChannelUpdate)
-            candidateChannelUpdate
-          }
-          // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
-          // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
-          val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(channelUpdate1.timestamp)
-          context.system.scheduler.scheduleWithFixedDelay(initialDelay = periodicRefreshInitialDelay, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
-
-          goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1, channelUpdateBeforeRestore_opt = Some(normal.channelUpdate))
+          goto(OFFLINE) using normal
 
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
           watchFundingTx(funding.commitments)
@@ -666,7 +640,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDelta, d.commitments.remoteParams.htlcMinimum, fees.feeBase, fees.feeProportionalMillionths, commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
       context.system.scheduler.scheduleWithFixedDelay(initialDelay = REFRESH_CHANNEL_UPDATE_INTERVAL, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
-      goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None, None) storing()
+      goto(NORMAL) using DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None) storing()
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_LOCKED) if d.commitments.announceChannel =>
       log.debug("received remote announcement signatures, delaying")
@@ -1549,11 +1523,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
       log.info(s"updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
-      // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
-      stay() using d.copy(channelUpdate = channelUpdate) storing()
+      // we're in OFFLINE state, there is nothing to do, the channel update will be recomputed when SYNCING
+      stay()
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSinceBlock, d.fundingTx)
 
@@ -1665,6 +1638,32 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             }
           }
 
+          // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
+          val fees = getRelayFees(nodeParams, remoteNodeId, d.commitments)
+          val candidateChannelUpdate = Announcements.makeChannelUpdate(
+            nodeParams.chainHash,
+            nodeParams.privateKey,
+            remoteNodeId,
+            d.channelUpdate.shortChannelId,
+            nodeParams.expiryDelta,
+            d.commitments.remoteParams.htlcMinimum,
+            fees.feeBase,
+            fees.feeProportionalMillionths,
+            d.commitments.capacity.toMilliSatoshi,
+            enable = Announcements.isEnabled(d.channelUpdate.channelFlags))
+          val channelUpdate1 = if (Announcements.areSame(candidateChannelUpdate, d.channelUpdate)) {
+            // if there was no configuration change we keep the existing channel update
+            d.channelUpdate
+          } else {
+            log.info("refreshing channel_update due to configuration changes old={} new={}", d.channelUpdate, candidateChannelUpdate)
+            candidateChannelUpdate
+          }
+          // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
+          // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
+          val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(channelUpdate1.timestamp)
+          context.system.scheduler.scheduleWithFixedDelay(initialDelay = periodicRefreshInitialDelay, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
+
+
           if (d.commitments.announceChannel) {
             // we will re-enable the channel after some delay to prevent flappy updates in case the connection is unstable
             startSingleTimer(Reconnected.toString, BroadcastChannelUpdate(Reconnected), 10 seconds)
@@ -1687,7 +1686,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             }
           }
 
-          goto(NORMAL) using d.copy(commitments = commitments1) sending sendQueue
+          goto(NORMAL) using d.copy(commitments = commitments1, channelUpdate = channelUpdate1) sending sendQueue
       }
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
@@ -1885,7 +1884,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
             log.debug("re-emitting channel_update={} enabled={} ", normal.channelUpdate, Announcements.isEnabled(normal.channelUpdate.channelFlags))
           }
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.channelUpdateBeforeRestore_opt, normal.commitments))
+          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, Some(normal.channelUpdate), normal.commitments))
         case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
           // don't do anything if neither the channel_update nor the channel_announcement didn't change
           ()

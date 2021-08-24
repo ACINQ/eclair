@@ -148,13 +148,13 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Cha
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
-    alice2bob.forward(bob)
     bob2alice.forward(newAlice)
     awaitCond(newAlice.stateName == NORMAL)
     val u = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(u.previousChannelUpdate_opt.nonEmpty)
     assert(Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, u.channelUpdate))
     assert(Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, oldStateData.channelUpdate))
+    channelUpdateListener.expectNoMessage(1 second)
   }
 
   test("restore channel with configuration change") { f =>
@@ -180,12 +180,17 @@ class RecoverySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Cha
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
     alice2bob.expectMsgType[ChannelReestablish]
     bob2alice.expectMsgType[ChannelReestablish]
-    alice2bob.forward(bob)
     bob2alice.forward(newAlice)
     awaitCond(newAlice.stateName == NORMAL)
-    val u = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(u.previousChannelUpdate_opt.nonEmpty)
-    assert(!Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, u.channelUpdate))
-    assert(Announcements.areSameWithoutFlags(u.previousChannelUpdate_opt.get, oldStateData.channelUpdate))
+    // First LocalChannelUpdate is outdated
+    val u1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(u1.previousChannelUpdate_opt.nonEmpty)
+    assert(Announcements.areSameWithoutFlags(u1.previousChannelUpdate_opt.get, u1.channelUpdate))
+    assert(Announcements.areSameWithoutFlags(u1.previousChannelUpdate_opt.get, oldStateData.channelUpdate))
+    // Second LocalChannelUpdate is the right one
+    val u2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    assert(u2.previousChannelUpdate_opt.nonEmpty)
+    assert(!Announcements.areSameWithoutFlags(u2.previousChannelUpdate_opt.get, u2.channelUpdate))
+    assert(Announcements.areSameWithoutFlags(u2.previousChannelUpdate_opt.get, oldStateData.channelUpdate))
   }
 }

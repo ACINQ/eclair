@@ -309,7 +309,6 @@ private[channel] object ChannelCodecs0 {
         ("buried" | bool) ::
         ("channelAnnouncement" | optional(bool, variableSizeBytes(noUnknownFieldsChannelAnnouncementSizeCodec, channelAnnouncementCodec))) ::
         ("channelUpdate" | variableSizeBytes(noUnknownFieldsChannelUpdateSizeCodec, channelUpdateCodec)) ::
-        ("channelUpdateBeforeRestore_opt" | provide[Option[ChannelUpdate]](None)) ::
         ("localShutdown" | optional(bool, shutdownCodec)) ::
         ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
 
@@ -319,7 +318,6 @@ private[channel] object ChannelCodecs0 {
         ("buried" | bool) ::
         ("channelAnnouncement" | optional(bool, variableSizeBytes(uint16, channelAnnouncementCodec))) ::
         ("channelUpdate" | variableSizeBytes(uint16, channelUpdateCodec)) ::
-        ("channelUpdateBeforeRestore_opt" | provide[Option[ChannelUpdate]](None)) ::
         ("localShutdown" | optional(bool, shutdownCodec)) ::
         ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL].decodeOnly
 
