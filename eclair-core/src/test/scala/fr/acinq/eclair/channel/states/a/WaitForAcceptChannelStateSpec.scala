@@ -80,7 +80,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // Since https://github.com/lightningnetwork/lightning-rfc/pull/714 we must include an empty upfront_shutdown_script.
-    assert(accept.tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv] === Some(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty)))
+    assert(accept.upfrontShutdownScript_opt === Some(ByteVector.empty))
     assert(accept.channelType_opt === Some(ChannelTypes.Standard))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
@@ -92,6 +92,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.channelType_opt === Some(ChannelTypes.AnchorOutputs))
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelFeatures.channelType === ChannelTypes.AnchorOutputs)
   }
 
   test("recv AcceptChannel (channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
@@ -102,6 +103,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     // they both activated anchor outputs so it is the default choice anyway.
     bob2alice.forward(alice, accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))))
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelFeatures.channelType === ChannelTypes.AnchorOutputs)
   }
 
   test("recv AcceptChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag("standard-channel-type")) { f =>
@@ -111,6 +113,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(accept.channelType_opt === Some(ChannelTypes.Standard))
     bob2alice.forward(alice, accept)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelFeatures.channelType === ChannelTypes.Standard)
   }
 
   test("recv AcceptChannel (non-default channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag("standard-channel-type")) { f =>
