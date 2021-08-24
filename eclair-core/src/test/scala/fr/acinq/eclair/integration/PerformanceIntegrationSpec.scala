@@ -82,7 +82,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val sender = TestProbe()
     val amountMsat = 100_000.msat
     // first we retrieve a payment hash from B
-    sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
+    sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPayment(amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1))

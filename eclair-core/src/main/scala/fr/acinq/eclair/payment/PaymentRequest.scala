@@ -130,7 +130,7 @@ object PaymentRequest {
             amount: Option[MilliSatoshi],
             paymentHash: ByteVector32,
             privateKey: PrivateKey,
-            description: String,
+            description: Either[String, ByteVector32],
             minFinalCltvExpiryDelta: CltvExpiryDelta,
             fallbackAddress: Option[String] = None,
             expirySeconds: Option[Long] = None,
@@ -143,7 +143,7 @@ object PaymentRequest {
     val tags = {
       val defaultTags = List(
         Some(PaymentHash(paymentHash)),
-        Some(Description(description)),
+        Some(description.fold(Description, DescriptionHash)),
         Some(PaymentSecret(paymentSecret)),
         fallbackAddress.map(FallbackAddress(_)),
         expirySeconds.map(Expiry(_)),

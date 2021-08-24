@@ -319,7 +319,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(field1 == field)
 
     // Now with a payment request
-    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = "Some invoice", minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345)
+    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = Left("Some invoice"), minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345)
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(18)))
     val serialized = PaymentRequest.write(pr)
     val pr1 = PaymentRequest.read(serialized)
@@ -405,7 +405,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     )
 
     for ((features, res) <- featureBits) {
-      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = features)
+      val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features)
       assert(Result(pr.features.allowMultiPart, pr.features.requirePaymentSecret, pr.features.areSupported(nodeParams)) === res)
       assert(PaymentRequest.read(PaymentRequest.write(pr)) === pr)
     }
@@ -429,7 +429,7 @@ class PaymentRequestSpec extends AnyFunSuite {
   }
 
   test("payment secret") {
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18))
     assert(pr.paymentSecret.isDefined)
     assert(pr.features === PaymentRequestFeatures(PaymentSecret.mandatory, VariableLengthOnion.mandatory))
     assert(pr.features.requirePaymentSecret)
@@ -448,19 +448,19 @@ class PaymentRequestSpec extends AnyFunSuite {
 
     // A multi-part invoice must use a payment secret.
     assertThrows[IllegalArgumentException](
-      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "MPP without secrets", CltvExpiryDelta(18), features = PaymentRequestFeatures(BasicMultiPartPayment.optional, VariableLengthOnion.optional))
+      PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("MPP without secrets"), CltvExpiryDelta(18), features = PaymentRequestFeatures(BasicMultiPartPayment.optional, VariableLengthOnion.optional))
     )
   }
 
   test("trampoline") {
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18))
     assert(!pr.features.allowTrampoline)
 
-    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, TrampolinePayment.optional))
+    val pr1 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, TrampolinePayment.optional))
     assert(!pr1.features.allowMultiPart)
     assert(pr1.features.allowTrampoline)
 
-    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, "Some invoice", CltvExpiryDelta(18), features = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional, TrampolinePayment.optional))
+    val pr2 = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional, TrampolinePayment.optional))
     assert(pr2.features.allowMultiPart)
     assert(pr2.features.allowTrampoline)
 
