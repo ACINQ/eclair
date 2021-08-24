@@ -367,7 +367,8 @@ object PaymentLifecycle {
     require(finalPayload.amount > 0.msat, s"amount must be > 0")
 
     def getMaxFee(nodeParams: NodeParams): MilliSatoshi =
-      routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf)).getMaxFee(finalPayload.amount)
+      routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf.pathFindingConf)).getMaxFee(finalPayload.amount)
+
   }
 
   // @formatter:off

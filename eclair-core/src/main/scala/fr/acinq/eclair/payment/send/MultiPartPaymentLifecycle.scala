@@ -296,7 +296,7 @@ object MultiPartPaymentLifecycle {
     require(totalAmount > 0.msat, s"total amount must be > 0")
 
     def getRouteParams(nodeParams: NodeParams, randomize: Boolean): RouteParams =
-      routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf)).copy(randomize = randomize)
+      routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf.pathFindingConf)).copy(randomize = randomize)
   }
 
   /**

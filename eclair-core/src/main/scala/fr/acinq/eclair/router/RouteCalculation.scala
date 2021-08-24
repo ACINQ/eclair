@@ -105,7 +105,7 @@ object RouteCalculation {
         GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
       ).toSet
       val ignoredEdges = r.ignore.channels ++ d.excludedChannels
-      val params = r.routeParams.getOrElse(getDefaultRouteParams(routerConf))
+      val params = r.routeParams.getOrElse(getDefaultRouteParams(routerConf.pathFindingConf))
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
       log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
@@ -183,21 +183,21 @@ object RouteCalculation {
   /** The default number of routes we'll search for when findRoute is called with randomize = true */
   val DEFAULT_ROUTES_COUNT = 3
 
-  def getDefaultRouteParams(routerConf: RouterConf): RouteParams = RouteParams(
-    randomize = routerConf.randomizeRouteSelection,
-    maxFeeBase = routerConf.searchMaxFeeBase.toMilliSatoshi,
-    maxFeePct = routerConf.searchMaxFeePct,
-    routeMaxLength = routerConf.searchMaxRouteLength,
-    routeMaxCltv = routerConf.searchMaxCltv,
+  def getDefaultRouteParams(pathFindingConf: PathFindingConf): RouteParams = RouteParams(
+    randomize = pathFindingConf.randomizeRouteSelection,
+    maxFeeBase = pathFindingConf.searchMaxFeeBase.toMilliSatoshi,
+    maxFeePct = pathFindingConf.searchMaxFeePct,
+    routeMaxLength = pathFindingConf.searchMaxRouteLength,
+    routeMaxCltv = pathFindingConf.searchMaxCltv,
     ratios = WeightRatios(
-      baseFactor = routerConf.searchRatioBase,
-      cltvDeltaFactor = routerConf.searchRatioCltv,
-      ageFactor = routerConf.searchRatioChannelAge,
-      capacityFactor = routerConf.searchRatioChannelCapacity,
-      hopCostBase = routerConf.searchHopCostBase,
-      hopCostMillionths = routerConf.searchHopCostMillionths
+      baseFactor = pathFindingConf.searchRatioBase,
+      cltvDeltaFactor = pathFindingConf.searchRatioCltv,
+      ageFactor = pathFindingConf.searchRatioChannelAge,
+      capacityFactor = pathFindingConf.searchRatioChannelCapacity,
+      hopCostBase = pathFindingConf.searchHopCostBase,
+      hopCostMillionths = pathFindingConf.searchHopCostMillionths
     ),
-    mpp = MultiPartParams(routerConf.mppMinPartAmount, routerConf.mppMaxParts),
+    mpp = MultiPartParams(pathFindingConf.mppMinPartAmount, pathFindingConf.mppMaxParts),
     includeLocalChannelCost = false,
   )
 

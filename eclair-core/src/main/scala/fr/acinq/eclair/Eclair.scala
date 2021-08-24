@@ -284,7 +284,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, assistedRoutes)
 
   override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty)(implicit timeout: Timeout): Future[RouteResponse] = {
-    val maxFee = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf).getMaxFee(amount)
+    val maxFee = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf.pathFindingConf).getMaxFee(amount)
     (appKit.router ? RouteRequest(sourceNodeId, targetNodeId, amount, maxFee, assistedRoutes)).mapTo[RouteResponse]
   }
 
@@ -308,7 +308,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   private def createPaymentRequest(externalId_opt: Option[String], amount: MilliSatoshi, invoice: PaymentRequest, maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double]): Either[IllegalArgumentException, SendPayment] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
-    val defaultRouteParams = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf)
+    val defaultRouteParams = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf.pathFindingConf)
     val routeParams = defaultRouteParams.copy(
       maxFeePct = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeePct),
       maxFeeBase = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeBase)
@@ -343,7 +343,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32, maxAttempts_opt: Option[Int], feeThreshold_opt: Option[Satoshi], maxFeePct_opt: Option[Double])(implicit timeout: Timeout): Future[UUID] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
-    val defaultRouteParams = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf)
+    val defaultRouteParams = RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf.pathFindingConf)
     val routeParams = defaultRouteParams.copy(
       maxFeePct = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeePct),
       maxFeeBase = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeBase)
