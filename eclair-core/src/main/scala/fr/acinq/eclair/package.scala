@@ -95,29 +95,35 @@ package object eclair {
     }
   }
 
+  /**
+   *
+   * @param scriptPubKey public key script
+   * @param chainHash    hash of the chain we're on
+   * @return the address the this public key script on this chain
+   */
   def publicKeyScriptToAddress(scriptPubKey: Seq[ScriptElt], chainHash: ByteVector32): String = {
     val base58PubkeyPrefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => Base58.Prefix.PubkeyAddress
       case Block.TestnetGenesisBlock.hash | Block.RegtestGenesisBlock.hash => Base58.Prefix.PubkeyAddressTestnet
-      case _ => ???
+      case _ => throw new IllegalArgumentException(s"invalid chain hash $chainHash")
     }
     val base58ScriptPrefix = chainHash match {
       case Block.LivenetGenesisBlock.hash => Base58.Prefix.ScriptAddress
       case Block.TestnetGenesisBlock.hash | Block.RegtestGenesisBlock.hash => Base58.Prefix.ScriptAddressTestnet
-      case _ => ???
+      case _ => throw new IllegalArgumentException(s"invalid chain hash $chainHash")
     }
     val hrp = chainHash match {
       case Block.LivenetGenesisBlock.hash => "bc"
       case Block.TestnetGenesisBlock.hash => "tb"
       case Block.RegtestGenesisBlock.hash => "bcrt"
-      case _ => ???
+      case _ => throw new IllegalArgumentException(s"invalid chain hash $chainHash")
     }
     scriptPubKey match {
       case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil => Base58Check.encode(base58PubkeyPrefix, pubKeyHash)
       case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil => Base58Check.encode(base58ScriptPrefix, scriptHash)
       case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress(hrp, 0, pubKeyHash)
       case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress(hrp, 0, scriptHash)
-      case _ => ???
+      case _ => throw new IllegalArgumentException(s"invalid pubkey script $scriptPubKey")
     }
   }
 
