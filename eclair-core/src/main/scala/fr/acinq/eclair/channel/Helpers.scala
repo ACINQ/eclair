@@ -498,12 +498,12 @@ object Helpers {
       val allowAnySegwit = Features.canUseFeature(commitments.localParams.initFeatures, commitments.remoteParams.initFeatures, Features.ShutdownAnySegwit)
       require(isValidFinalScriptPubkey(actualLocalScript, allowAnySegwit), "invalid localScriptPubkey")
       require(isValidFinalScriptPubkey(actualRemoteScript, allowAnySegwit), "invalid remoteScriptPubkey")
-      log.debug("making closing tx with closing fees={} and commitments:\n{}", closingFees.preferred, Commitments.specs2String(commitments))
+      log.debug("making closing tx with closing fee={} and commitments:\n{}", closingFees.preferred, Commitments.specs2String(commitments))
       val dustLimit = localParams.dustLimit.max(remoteParams.dustLimit)
       val closingTx = Transactions.makeClosingTx(commitInput, actualLocalScript, actualRemoteScript, localParams.isFunder, dustLimit, closingFees.preferred, localCommit.spec)
       val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
       val closingSigned = ClosingSigned(channelId, closingFees.preferred, localClosingSig, TlvStream(ClosingSignedTlv.FeeRange(closingFees.min, closingFees.max)))
-      log.info(s"signed closing txid=${closingTx.tx.txid} with closing fees=${closingSigned.feeSatoshis}")
+      log.info(s"signed closing txid=${closingTx.tx.txid} with closing fee=${closingSigned.feeSatoshis}")
       log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
       (closingTx, closingSigned)
     }
@@ -512,7 +512,7 @@ object Helpers {
       import commitments._
       val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount - commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.map(_.amount).sum
       if (remoteClosingFee > lastCommitFeeSatoshi && !commitments.channelFeatures.hasFeature(Features.AnchorOutputs)) {
-        log.error(s"remote proposed a commit fee higher than the last commitment fee: remote closing fees=${remoteClosingFee.toLong} last commit fees=$lastCommitFeeSatoshi")
+        log.error(s"remote proposed a commit fee higher than the last commitment fee: remote closing fee=${remoteClosingFee.toLong} last commit fees=$lastCommitFeeSatoshi")
         Left(InvalidCloseFee(commitments.channelId, remoteClosingFee))
       } else {
         val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee, remoteClosingFee, remoteClosingFee))

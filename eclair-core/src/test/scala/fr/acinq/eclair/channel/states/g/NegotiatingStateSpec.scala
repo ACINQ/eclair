@@ -508,7 +508,11 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     bob2alice.expectNoMessage(100 millis)
     // Alice offered a fee range that was too low: she notices the warning sent by Bob and retries with higher fees.
     val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, None, Some(ClosingFeerates(FeeratePerKw(1000 sat), FeeratePerKw(500 sat), FeeratePerKw(2000 sat))))
+    val closingScript = alice.stateData.asInstanceOf[DATA_NEGOTIATING].localShutdown.scriptPubKey
+    val closingFeerates = ClosingFeerates(FeeratePerKw(1000 sat), FeeratePerKw(500 sat), FeeratePerKw(2000 sat))
+    alice ! CMD_CLOSE(sender.ref, Some(closingScript.reverse), Some(closingFeerates))
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
+    alice ! CMD_CLOSE(sender.ref, Some(closingScript), Some(closingFeerates))
     sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
     val aliceClosing2 = alice2bob.expectMsgType[ClosingSigned]
     assert(aliceClosing2.feeSatoshis > aliceClosing1.feeSatoshis)

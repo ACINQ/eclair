@@ -1239,8 +1239,13 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_CLOSE, d: DATA_SHUTDOWN) =>
       c.feerates match {
         case Some(feerates) if c.feerates != d.closingFeerates =>
-          log.info("updating our closing feerates: {}", feerates)
-          handleCommandSuccess(c, d.copy(closingFeerates = c.feerates)) storing()
+          if (c.scriptPubKey.nonEmpty && !c.scriptPubKey.contains(d.localShutdown.scriptPubKey)) {
+            log.warning("cannot update closing script when closing is already in progress")
+            handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
+          } else {
+            log.info("updating our closing feerates: {}", feerates)
+            handleCommandSuccess(c, d.copy(closingFeerates = c.feerates)) storing()
+          }
         case _ =>
           handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
       }
@@ -1258,8 +1263,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
       stay()
 
-    case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig, _), d: DATA_NEGOTIATING) =>
-      log.info("received closing fees={}", remoteClosingFee)
+    case Event(c: ClosingSigned, d: DATA_NEGOTIATING) =>
+      log.info("received closing fee={}", c.feeSatoshis)
+      val (remoteClosingFee, remoteSig) = (c.feeSatoshis, c.signature)
       Closing.checkClosingSignature(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, remoteClosingFee, remoteSig) match {
         case Right((signedClosingTx, closingSignedRemoteFees)) =>
           val lastLocalClosingSigned_opt = d.closingTxProposed.last.lastOption
@@ -1272,6 +1278,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
             handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSignedRemoteFees
           } else if (lastLocalClosingSigned_opt.flatMap(_.localClosingSigned.feeRange_opt).exists(r => r.min <= remoteClosingFee && remoteClosingFee <= r.max)) {
             // they chose a fee inside our proposed fee range, so we close and send a closing_signed for that fee
+            val localFeeRange = lastLocalClosingSigned_opt.flatMap(_.localClosingSigned.feeRange_opt).get
+            log.info("they chose a closing fee={} within our fee range (min={} max={})", remoteClosingFee, localFeeRange.min, localFeeRange.max)
             handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSignedRemoteFees
           } else if (d.commitments.localCommit.spec.toLocal == 0.msat) {
             // we have nothing at stake so there is no need to negotiate, we accept their fee right away
@@ -1282,7 +1290,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                 // if we are fundee and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
                 // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
                 // but we need to ensure it's high enough to at least propagate across the network
-                val txPropagationFeerate = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(1008) * 2
+                val txPropagationFeerate = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(1008)
                 val txPropagationMinFee = Transactions.weight2fee(txPropagationFeerate, signedClosingTx.tx.weight())
                 if (maxFee < txPropagationMinFee) {
                   log.warning("their highest closing fee is below our tx propagation threshold (feerate={}): {} < {}", txPropagationFeerate, maxFee, txPropagationMinFee)
@@ -1295,11 +1303,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                     case ClosingFees(preferred, _, _) => preferred
                   }
                   if (closingFee == remoteClosingFee) {
-                    log.info("accepting their closing fees={}", remoteClosingFee)
+                    log.info("accepting their closing fee={}", remoteClosingFee)
                     handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSignedRemoteFees
                   } else {
                     val (closingTx, closingSigned) = Closing.makeClosingTx(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, ClosingFees(closingFee, minFee, maxFee))
-                    log.info("proposing closing fees={} in their fee range (min={} max={})", closingSigned.feeSatoshis, minFee, maxFee)
+                    log.info("proposing closing fee={} in their fee range (min={} max={})", closingSigned.feeSatoshis, minFee, maxFee)
                     val closingTxProposed1 = (d.closingTxProposed: @unchecked) match {
                       case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx, closingSigned))
                     }
@@ -1322,10 +1330,10 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
                   handleMutualClose(signedClosingTx, Left(d.copy(bestUnpublishedClosingTx_opt = Some(signedClosingTx))))
                 } else if (closingSigned.feeSatoshis == remoteClosingFee) {
                   // we have converged!
-                  log.info("accepting their closing fees={}", remoteClosingFee)
+                  log.info("accepting their closing fee={}", remoteClosingFee)
                   handleMutualClose(signedClosingTx, Left(d.copy(closingTxProposed = closingTxProposed1, bestUnpublishedClosingTx_opt = Some(signedClosingTx)))) sending closingSigned
                 } else {
-                  log.info("proposing closing fees={}", closingSigned.feeSatoshis)
+                  log.info("proposing closing fee={}", closingSigned.feeSatoshis)
                   stay() using d.copy(closingTxProposed = closingTxProposed1, bestUnpublishedClosingTx_opt = Some(signedClosingTx)) storing() sending closingSigned
                 }
             }
@@ -1346,13 +1354,18 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     case Event(c: CMD_CLOSE, d: DATA_NEGOTIATING) =>
       c.feerates match {
         case Some(feerates) =>
-          log.info("updating our closing feerates: {}", feerates)
-          val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, Some(feerates))
-          val closingTxProposed1 = d.closingTxProposed match {
-            case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx, closingSigned))
-            case previousNegotiations => previousNegotiations :+ List(ClosingTxProposed(closingTx, closingSigned))
+          if (c.scriptPubKey.nonEmpty && !c.scriptPubKey.contains(d.localShutdown.scriptPubKey)) {
+            log.warning("cannot update closing script when closing is already in progress")
+            handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
+          } else {
+            log.info("updating our closing feerates: {}", feerates)
+            val (closingTx, closingSigned) = Closing.makeFirstClosingTx(keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets, Some(feerates))
+            val closingTxProposed1 = d.closingTxProposed match {
+              case previousNegotiations :+ currentNegotiation => previousNegotiations :+ (currentNegotiation :+ ClosingTxProposed(closingTx, closingSigned))
+              case previousNegotiations => previousNegotiations :+ List(ClosingTxProposed(closingTx, closingSigned))
+            }
+            handleCommandSuccess(c, d.copy(closingTxProposed = closingTxProposed1)) storing() sending closingSigned
           }
-          handleCommandSuccess(c, d.copy(closingTxProposed = closingTxProposed1)) storing() sending closingSigned
         case _ =>
           handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
       }
