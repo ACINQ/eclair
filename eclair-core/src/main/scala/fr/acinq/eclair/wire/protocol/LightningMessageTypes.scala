@@ -248,6 +248,8 @@ case class ChannelUpdate(signature: ByteVector64,
   require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 
   def isNode1 = Announcements.isNode1(channelFlags)
+
+  def toStringShort: String = s"cltvExpiryDelta=$cltvExpiryDelta,feeBase=$feeBaseMsat,feeProportionalMillionths=$feeProportionalMillionths"
 }
 
 // @formatter:off

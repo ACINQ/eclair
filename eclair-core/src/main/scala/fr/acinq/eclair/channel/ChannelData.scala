@@ -173,7 +173,7 @@ final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptio
 sealed trait CloseCommand extends HasReplyToCommand
 final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector]) extends CloseCommand
 final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
-final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends HasReplyToCommand
+final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta_opt: Option[CltvExpiryDelta]) extends HasReplyToCommand
 final case class CMD_GETSTATE(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GETSTATEDATA(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GETINFO(replyTo: ActorRef)extends HasReplyToCommand
