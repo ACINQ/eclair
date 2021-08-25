@@ -290,13 +290,13 @@ object MultiPartPaymentLifecycle {
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
                                   assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                                  routeParams: Option[RouteParams] = None,
+                                  routeParams: RouteParams,
                                   additionalTlvs: Seq[OnionTlv] = Nil,
                                   userCustomTlvs: Seq[GenericTlv] = Nil) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
 
     def getRouteParams(nodeParams: NodeParams, randomize: Boolean): RouteParams =
-      routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf.pathFindingConf)).copy(randomize = randomize)
+      routeParams.copy(randomize = randomize)
   }
 
   /**
@@ -368,7 +368,7 @@ object MultiPartPaymentLifecycle {
       maxFee,
       d.request.assistedRoutes,
       d.ignore,
-      Some(routeParams),
+      routeParams,
       allowMultiPart = true,
       d.pending.values.toSeq,
       Some(cfg.paymentContext))

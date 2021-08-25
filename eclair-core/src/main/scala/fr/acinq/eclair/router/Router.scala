@@ -471,7 +471,7 @@ object Router {
                           maxFee: MilliSatoshi,
                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                           ignore: Ignore = Ignore.empty,
-                          routeParams: Option[RouteParams] = None,
+                          routeParams: RouteParams,
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None)

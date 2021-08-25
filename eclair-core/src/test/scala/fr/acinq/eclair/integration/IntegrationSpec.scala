@@ -49,7 +49,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
   var nodes: Map[String, Kit] = Map()
 
   // we override the default because these test were designed to use cost-optimized routes
-  val integrationTestRouteParams = Some(RouteParams(
+  val integrationTestRouteParams = RouteParams(
     randomize = false,
     maxFeeBase = 21000 msat,
     maxFeePct = 0.03,
@@ -65,7 +65,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     ),
     mpp = MultiPartParams(15000000 msat, 6),
     includeLocalChannelCost = false,
-  ))
+  )
 
   // we need to provide a value higher than every node's fulfill-safety-before-timeout
   val finalCltvExpiryDelta = CltvExpiryDelta(36)
