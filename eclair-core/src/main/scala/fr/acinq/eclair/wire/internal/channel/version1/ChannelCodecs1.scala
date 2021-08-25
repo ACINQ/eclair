@@ -18,7 +18,6 @@ package fr.acinq.eclair.wire.internal.channel.version1
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -78,15 +77,6 @@ private[channel] object ChannelCodecs1 {
         ("shutdownScript" | provide[Option[ByteVector]](None))).as[RemoteParams]
 
     def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
-
-    val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
-      ("channelId" | bytes32) ::
-        ("id" | uint64overflow) ::
-        ("amountMsat" | millisatoshi) ::
-        ("paymentHash" | bytes32) ::
-        ("expiry" | cltvExpiry) ::
-        ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec) ::
-        ("tlvStream" | provide(TlvStream.empty[UpdateAddHtlcTlv]))).as[UpdateAddHtlc]
 
     val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool8)
       .typecase(true, lengthDelimited(updateAddHtlcCodec).as[IncomingHtlc])
