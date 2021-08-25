@@ -22,7 +22,7 @@ import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -111,7 +111,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         // It's up to the node operator to decide what to do to address the warning.
         stay()
 
-      case Event(err@Error(channelId, reason), d: ConnectedData) if channelId == CHANNELID_ZERO =>
+      case Event(err@Error(channelId, reason, _), d: ConnectedData) if channelId == CHANNELID_ZERO =>
         log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
         d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         d.peerConnection ! PeerConnection.Kill(KillReason.AllChannelsFail)

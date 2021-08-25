@@ -17,8 +17,8 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -53,4 +53,46 @@ object AcceptChannelTlv {
   val acceptTlvCodec: Codec[TlvStream[AcceptChannelTlv]] = tlvStream(discriminated[AcceptChannelTlv].by(varint)
     .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript])
   )
+}
+
+sealed trait FundingCreatedTlv extends Tlv
+
+object FundingCreatedTlv {
+  val fundingCreatedTlvCodec: Codec[TlvStream[FundingCreatedTlv]] = tlvStream(discriminated[FundingCreatedTlv].by(varint))
+}
+
+sealed trait FundingSignedTlv extends Tlv
+
+object FundingSignedTlv {
+  val fundingSignedTlvCodec: Codec[TlvStream[FundingSignedTlv]] = tlvStream(discriminated[FundingSignedTlv].by(varint))
+}
+
+sealed trait FundingLockedTlv extends Tlv
+
+object FundingLockedTlv {
+  val fundingLockedTlvCodec: Codec[TlvStream[FundingLockedTlv]] = tlvStream(discriminated[FundingLockedTlv].by(varint))
+}
+
+sealed trait ChannelReestablishTlv extends Tlv
+
+object ChannelReestablishTlv {
+  val channelReestablishTlvCodec: Codec[TlvStream[ChannelReestablishTlv]] = tlvStream(discriminated[ChannelReestablishTlv].by(varint))
+}
+
+sealed trait UpdateFeeTlv extends Tlv
+
+object UpdateFeeTlv {
+  val updateFeeTlvCodec: Codec[TlvStream[UpdateFeeTlv]] = tlvStream(discriminated[UpdateFeeTlv].by(varint))
+}
+
+sealed trait ShutdownTlv extends Tlv
+
+object ShutdownTlv {
+  val shutdownTlvCodec: Codec[TlvStream[ShutdownTlv]] = tlvStream(discriminated[ShutdownTlv].by(varint))
+}
+
+sealed trait ClosingSignedTlv extends Tlv
+
+object ClosingSignedTlv {
+  val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint))
 }

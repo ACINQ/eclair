@@ -187,7 +187,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         }
         stay()
 
-      case Event(ping@Ping(pongLength, _), d: ConnectedData) =>
+      case Event(ping@Ping(pongLength, _, _), d: ConnectedData) =>
         d.transport ! TransportHandler.ReadAck(ping)
         if (pongLength <= 65532) {
           // see BOLT 1: we reply only if requested pong length is acceptable
@@ -198,7 +198,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         }
         stay()
 
-      case Event(pong@Pong(data), d: ConnectedData) =>
+      case Event(pong@Pong(data, _), d: ConnectedData) =>
         d.transport ! TransportHandler.ReadAck(pong)
         d.expectedPong_opt match {
           case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
@@ -563,7 +563,7 @@ object PeerConnection {
     // Otherwise we check if this message has a timestamp that matches the timestamp filter.
     val matchesFilter = (msg, gossipTimestampFilter_opt) match {
       case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
-      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
+      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange, _))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
       case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
     isOurGossip || matchesFilter
