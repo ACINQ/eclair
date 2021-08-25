@@ -1289,14 +1289,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               case Some(ClosingSignedTlv.FeeRange(minFee, maxFee)) if !d.commitments.localParams.isFunder =>
                 // if we are fundee and they proposed a fee range, we pick a value in that range and they should accept it without further negotiation
                 // we don't care much about the closing fee since they're paying it (not us) and we can use CPFP if we want to speed up confirmation
-                // but we need to ensure it's high enough to at least propagate across the network
-                val txPropagationFeerate = nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(1008)
-                val txPropagationMinFee = Transactions.weight2fee(txPropagationFeerate, signedClosingTx.tx.weight())
-                if (maxFee < txPropagationMinFee) {
-                  log.warning("their highest closing fee is below our tx propagation threshold (feerate={}): {} < {}", txPropagationFeerate, maxFee, txPropagationMinFee)
-                  stay() sending Warning(d.channelId, s"closing fee range must not be below $txPropagationMinFee ($txPropagationFeerate)")
+                val localClosingFees = Closing.firstClosingFee(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
+                if (maxFee < localClosingFees.min) {
+                  log.warning("their highest closing fee is below our minimum fee: {} < {}", maxFee, localClosingFees.min)
+                  stay() sending Warning(d.channelId, s"closing fee range must not be below ${localClosingFees.min}")
                 } else {
-                  val closingFee = Closing.firstClosingFee(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets) match {
+                  val closingFee = localClosingFees match {
                     case ClosingFees(preferred, _, _) if preferred > maxFee => maxFee
                     // if we underestimate the fee, then we're happy with whatever they propose (it will confirm more quickly and we're not paying it)
                     case ClosingFees(preferred, _, _) if preferred < remoteClosingFee => remoteClosingFee

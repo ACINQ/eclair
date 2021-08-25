@@ -478,7 +478,10 @@ object Helpers {
         // we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
         requestedFeerate.min(commitments.localCommit.spec.feeratePerKw)
       }
-      firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, ClosingFeerates(preferredFeerate, preferredFeerate / 2, preferredFeerate * 2))
+      // NB: we choose a minimum fee that ensures the tx will easily propagate while allowing low fees since we can
+      // always use CPFP to speed up confirmation if necessary.
+      val closingFeerates = ClosingFeerates(preferredFeerate, preferredFeerate.min(feeEstimator.getFeeratePerKw(1008)), preferredFeerate * 2)
+      firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey, closingFeerates)
     }
 
     def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
