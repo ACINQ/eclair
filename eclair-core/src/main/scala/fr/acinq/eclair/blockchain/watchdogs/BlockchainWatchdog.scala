@@ -19,16 +19,13 @@ package fr.acinq.eclair.blockchain.watchdogs
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
-import com.softwaremill.sttp.{SttpBackend, SttpBackendOptions}
-import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
-import fr.acinq.eclair.{NodeParams, randomBytes}
+import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 
 import java.util.UUID
-import scala.concurrent.Future
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.Random
 
@@ -65,14 +62,36 @@ object BlockchainWatchdog {
   // @formatter:on
 
   /**
-   * @param chainHash      chain we're interested in.
+   * @param nodeParams     provides the chain we're interested in, connection parameters and the list of enabled sources
    * @param maxRandomDelay to avoid the herd effect whenever a block is created, we add a random delay before we query
    *                       secondary blockchain sources. This parameter specifies the maximum delay we'll allow.
    */
   def apply(nodeParams: NodeParams, maxRandomDelay: FiniteDuration, blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
       implicit val sttpBackend = ExplorerApi.createSttpBackend(nodeParams.socksProxy_opt)
+
+      val chainHash = nodeParams.chainHash
+      val socksProxy_opt = nodeParams.socksProxy_opt
+      val sources = nodeParams.blockchainWatchdogSources
+
+      val explorers = Seq(
+        ExplorerApi.BlockstreamExplorer(socksProxy_opt),
+        ExplorerApi.BlockcypherExplorer(socksProxy_opt),
+        ExplorerApi.MempoolSpaceExplorer(socksProxy_opt)).filter { e =>
+        val enabled = sources.contains(e.name)
+        if (!enabled) {
+          context.log.warn(s"blockchain watchdog ${e.name} is disabled")
+        }
+        enabled
+      }
+
+      val headersOverDnsEnabled = socksProxy_opt.isEmpty && sources.contains(HeadersOverDns.Source)
+      if (!headersOverDnsEnabled) {
+        context.log.warn(s"blockchain watchdog ${HeadersOverDns.Source} is disabled")
+      }
+
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
+
       Behaviors.withTimers { timers =>
         // We start a timer to check blockchain watchdogs regularly even when we don't receive any block.
         timers.startSingleTimer(NoBlockReceivedTimer, NoBlockReceivedSince(0), blockTimeout)
@@ -88,23 +107,9 @@ object BlockchainWatchdog {
             Behaviors.same
           case CheckLatestHeaders(blockCount) =>
             val id = UUID.randomUUID()
-            val chainHash = nodeParams.chainHash
-            val socksProxy_opt = nodeParams.socksProxy_opt
-            val sources = nodeParams.blockchainWatchdogSources
-            if (socksProxy_opt.isEmpty && sources.contains(HeadersOverDns.Source)) {
+            if (headersOverDnsEnabled) {
               context.spawn(HeadersOverDns(chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
-            } else {
-              context.log.warn(s"blockchain watchdog ${HeadersOverDns.Source} is disabled")
             }
-            val explorers = Seq(ExplorerApi.BlockstreamExplorer(socksProxy_opt), ExplorerApi.BlockcypherExplorer(socksProxy_opt), ExplorerApi.MempoolSpaceExplorer(socksProxy_opt))
-              .foldLeft(Seq.empty[ExplorerApi.Explorer]) { (acc, w) =>
-                if (sources.contains(w.name)) {
-                  acc :+ w
-                } else {
-                  context.log.warn(s"blockchain watchdog ${w.name} is disabled")
-                  acc
-                }
-              }
             explorers.foreach { explorer =>
               context.spawn(ExplorerApi(chainHash, blockCount, explorer), s"${explorer.name}-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
             }
