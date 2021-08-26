@@ -24,9 +24,9 @@ class ChannelsListenerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load(
     }
 
     val channel1 = TestProbe[Any]()
-    system.eventStream ! EventStream.Publish(ChannelRestored(channel1.ref.toClassic, randomBytes32(), null, randomKey().publicKey, ChannelCodecsSpec.normal))
+    system.eventStream ! EventStream.Publish(ChannelRestored(channel1.ref.toClassic, randomBytes32(), null, randomKey().publicKey, Left(ChannelCodecsSpec.normal)))
     val channel2 = TestProbe[Any]()
-    system.eventStream ! EventStream.Publish(ChannelRestored(channel2.ref.toClassic, randomBytes32(), null, randomKey().publicKey, ChannelCodecsSpec.normal))
+    system.eventStream ! EventStream.Publish(ChannelRestored(channel2.ref.toClassic, randomBytes32(), null, randomKey().publicKey, Left(ChannelCodecsSpec.normal)))
 
     val probe = TestProbe[GetChannelsResponse]()
 

@@ -9,7 +9,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.balance.ChannelsListener._
 import fr.acinq.eclair.channel.Helpers.Closing
-import fr.acinq.eclair.channel.{ChannelPersisted, ChannelRestored, HasCommitments}
+import fr.acinq.eclair.channel.{AbstractCommitments, ChannelPersisted, ChannelRestored, HasCommitments}
 
 import scala.concurrent.Promise
 import scala.concurrent.duration.DurationInt
@@ -18,7 +18,7 @@ object ChannelsListener {
 
   // @formatter:off
   sealed trait Command
-  private final case class ChannelData(channelId: ByteVector32, channel: akka.actor.ActorRef, data: HasCommitments) extends Command
+  private final case class ChannelData(channelId: ByteVector32, channel: akka.actor.ActorRef, data: Either[HasCommitments, AbstractCommitments]) extends Command
   private final case class ChannelDied(channelId: ByteVector32) extends Command
   final case class GetChannels(replyTo: typed.ActorRef[GetChannelsResponse]) extends Command
   final case object SendDummyEvent extends Command
@@ -30,7 +30,7 @@ object ChannelsListener {
   def apply(ready: Promise[Done]): Behavior[Command] =
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelRestored](e => ChannelData(e.channelId, e.channel, e.data)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelPersisted](e => ChannelData(e.channelId, e.channel, e.data)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelPersisted](e => ChannelData(e.channelId, e.channel, Left(e.data))))
       context.system.eventStream ! EventStream.Subscribe(context.self.narrow[DummyEvent.type])
       Behaviors.withTimers { timers =>
         // since subscription is asynchronous, we send a fake event so we know when we are subscribed
@@ -57,7 +57,7 @@ private class ChannelsListener(context: ActorContext[Command]) {
 
   def running(channels: Map[ByteVector32, HasCommitments]): Behavior[Command] =
     Behaviors.receiveMessage {
-      case ChannelData(channelId, channel, data) =>
+      case ChannelData(channelId, channel, Left(data)) =>
         Closing.isClosed(data, additionalConfirmedTx_opt = None) match {
           case None =>
             context.watchWith(channel.toTyped, ChannelDied(channelId))
@@ -70,6 +70,9 @@ private class ChannelsListener(context: ActorContext[Command]) {
             context.unwatch(channel.toTyped)
             running(channels - channelId)
         }
+      case _: ChannelData =>
+        // Non-standard channels are omitted for now
+        Behaviors.same
       case ChannelDied(channelId) =>
         log.debug("remove channel={} from list (died)", channelId)
         running(channels - channelId)
