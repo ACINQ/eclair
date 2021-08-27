@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
 import fr.acinq.eclair.channel.{Commitments, HtlcTxAndRemoteSig}
 import fr.acinq.eclair.transactions.Transactions
@@ -195,45 +195,46 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def checkAnchorPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
-    val commitFeerate = cmd.commitments.localCommit.spec.feeratePerKw
-    if (targetFeerate <= commitFeerate) {
-      log.info("skipping {}: commit feerate is high enough (feerate={})", cmd.desc, commitFeerate)
-      // We set retry = true in case the on-chain feerate rises before the commit tx is confirmed: if that happens we'll
-      // want to claim our anchor to raise the feerate of the commit tx and get it confirmed faster.
-      sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
-    } else {
-      // We verify that:
-      //  - our commit is not confirmed (if it is, no need to claim our anchor)
-      //  - their commit is not confirmed (if it is, no need to claim our anchor either)
-      //  - our commit tx is in the mempool (otherwise we can't claim our anchor)
-      val commitTx = cmd.commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
-      val fundingOutpoint = cmd.commitments.commitInput.outPoint
-      context.pipeToSelf(bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
-        case false => Future.failed(CommitTxAlreadyConfirmed)
-        case true =>
-          // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
-          // If it's already published, this call will be a no-op.
-          bitcoinClient.publishTransaction(commitTx)
-      }) {
-        case Success(_) => PreconditionsOk
-        case Failure(CommitTxAlreadyConfirmed) => CommitTxAlreadyConfirmed
-        case Failure(reason) if reason.getMessage.contains("rejecting replacement") => RemoteCommitTxPublished
-        case Failure(reason) => UnknownFailure(reason)
-      }
-      Behaviors.receiveMessagePartial {
-        case PreconditionsOk => fund(replyTo, cmd, targetFeerate)
-        case CommitTxAlreadyConfirmed =>
-          log.debug("commit tx is already confirmed, no need to claim our anchor")
-          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
-        case RemoteCommitTxPublished =>
-          log.warn("cannot publish commit tx: there is a conflicting tx in the mempool")
-          // We retry until that conflicting commit tx is confirmed or we're able to publish our local commit tx.
+    // We verify that:
+    //  - our commit is not confirmed (if it is, no need to claim our anchor)
+    //  - their commit is not confirmed (if it is, no need to claim our anchor either)
+    //  - our commit tx is in the mempool (otherwise we can't claim our anchor)
+    val commitTx = cmd.commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
+    val fundingOutpoint = cmd.commitments.commitInput.outPoint
+    context.pipeToSelf(bitcoinClient.isTransactionOutputSpendable(fundingOutpoint.txid, fundingOutpoint.index.toInt, includeMempool = false).flatMap {
+      case false => Future.failed(CommitTxAlreadyConfirmed)
+      case true =>
+        // We must ensure our local commit tx is in the mempool before publishing the anchor transaction.
+        // If it's already published, this call will be a no-op.
+        bitcoinClient.publishTransaction(commitTx)
+    }) {
+      case Success(_) => PreconditionsOk
+      case Failure(CommitTxAlreadyConfirmed) => CommitTxAlreadyConfirmed
+      case Failure(reason) if reason.getMessage.contains("rejecting replacement") => RemoteCommitTxPublished
+      case Failure(reason) => UnknownFailure(reason)
+    }
+    Behaviors.receiveMessagePartial {
+      case PreconditionsOk =>
+        val commitFeerate = cmd.commitments.localCommit.spec.feeratePerKw
+        if (targetFeerate <= commitFeerate) {
+          log.info("skipping {}: commit feerate is high enough (feerate={})", cmd.desc, commitFeerate)
+          // We set retry = true in case the on-chain feerate rises before the commit tx is confirmed: if that happens we'll
+          // want to claim our anchor to raise the feerate of the commit tx and get it confirmed faster.
           sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
-        case UnknownFailure(reason) =>
-          log.error(s"could not check ${cmd.desc} preconditions", reason)
-          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
-        case Stop => Behaviors.stopped
-      }
+        } else {
+          fund(replyTo, cmd, targetFeerate)
+        }
+      case CommitTxAlreadyConfirmed =>
+        log.debug("commit tx is already confirmed, no need to claim our anchor")
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
+      case RemoteCommitTxPublished =>
+        log.warn("cannot publish commit tx: there is a conflicting tx in the mempool")
+        // We retry until that conflicting commit tx is confirmed or we're able to publish our local commit tx.
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
+      case UnknownFailure(reason) =>
+        log.error(s"could not check ${cmd.desc} preconditions", reason)
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure))
+      case Stop => Behaviors.stopped
     }
   }
 
@@ -328,6 +329,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, tx))
       case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) =>
+        reason match {
+          case TxRejectedReason.WalletInputGone =>
+            // The transaction now has an unknown input from bitcoind's point of view, so it will keep it in the wallet in
+            // case that input appears later in the mempool or the blockchain. In our case, we know it won't happen so we
+            // abandon that transaction and will retry with a different set of inputs (if it still makes sense to publish).
+            bitcoinClient.abandonTransaction(tx.txid)
+          case _ => // nothing to do
+        }
         replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
         // We wait for our parent to stop us: when that happens we will unlock utxos.
         Behaviors.same

@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, ScriptFlags, Transac
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.blockchain.fee.FeeTargets
+import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher
@@ -268,6 +268,21 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 1)
       awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
     }
+  }
+
+  def updateFee(feerate: FeeratePerKw, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): Unit = {
+    s ! CMD_UPDATE_FEE(feerate, commit = true)
+    s2r.expectMsgType[UpdateFee]
+    s2r.forward(r)
+    s2r.expectMsgType[CommitSig]
+    s2r.forward(r)
+    r2s.expectMsgType[RevokeAndAck]
+    r2s.forward(s)
+    r2s.expectMsgType[CommitSig]
+    r2s.forward(s)
+    s2r.expectMsgType[RevokeAndAck]
+    s2r.forward(r)
+    awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.spec.feeratePerKw == feerate)
   }
 
   def mutualClose(s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, s2blockchain: TestProbe, r2blockchain: TestProbe): Unit = {
