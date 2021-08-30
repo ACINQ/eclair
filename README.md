@@ -65,7 +65,7 @@ server=1
 rpcuser=foo
 rpcpassword=bar
 txindex=1
-zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubhashblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```
 
@@ -255,12 +255,12 @@ txindex=1
 [main]
 rpcuser=<your-mainnet-rpc-user-here>
 rpcpassword=<your-mainnet-rpc-password-here>
-zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubhashblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 [test]
 rpcuser=<your-testnet-rpc-user-here>
 rpcpassword=<your-testnet-rpc-password-here>
-zmqpubrawblock=tcp://127.0.0.1:29001
+zmqpubhashblock=tcp://127.0.0.1:29001
 zmqpubrawtx=tcp://127.0.0.1:29001
 ```
 

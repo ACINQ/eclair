@@ -51,7 +51,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     waitForBitcoindReady()
     logger.info("starting zmq actors")
     val (zmqBlockConnected, zmqTxConnected) = (Promise[Done](), Promise[Done]())
-    zmqBlock = system.actorOf(Props(new ZMQActor(s"tcp://127.0.0.1:$bitcoindZmqBlockPort", ZMQActor.Topics.RawBlock, Some(zmqBlockConnected))))
+    zmqBlock = system.actorOf(Props(new ZMQActor(s"tcp://127.0.0.1:$bitcoindZmqBlockPort", ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))))
     zmqTx = system.actorOf(Props(new ZMQActor(s"tcp://127.0.0.1:$bitcoindZmqTxPort", ZMQActor.Topics.RawTx, Some(zmqTxConnected))))
     awaitCond(zmqBlockConnected.isCompleted && zmqTxConnected.isCompleted)
     super.beforeAll()
