@@ -24,6 +24,7 @@ import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
+import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{PathFindingConf, RouterConf}
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
@@ -166,7 +167,7 @@ object TestConstants {
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingConf = PathFindingConf(
+        pathFindingExperimentConf = PathFindingExperimentConf(List(PathFindingConf(
           randomizeRouteSelection = false,
           searchMaxFeeBase = 21 sat,
           searchMaxFeePct = 0.03,
@@ -179,7 +180,9 @@ object TestConstants {
           searchHopCostBase = 0 msat,
           searchHopCostMillionths = 0,
           mppMinPartAmount = 15000000 msat,
-          mppMaxParts = 10)
+          mppMaxParts = 10,
+          experimentName = "",
+          experimentPercentage = 100)))
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -285,7 +288,7 @@ object TestConstants {
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingConf = PathFindingConf(
+        pathFindingExperimentConf = PathFindingExperimentConf(List(PathFindingConf(
           randomizeRouteSelection = false,
           searchMaxFeeBase = 21 sat,
           searchMaxFeePct = 0.03,
@@ -298,7 +301,9 @@ object TestConstants {
           searchHopCostBase = 0 msat,
           searchHopCostMillionths = 0,
           mppMinPartAmount = 15000000 msat,
-          mppMaxParts = 10)
+          mppMaxParts = 10,
+          experimentName = "",
+          experimentPercentage = 100)))
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,

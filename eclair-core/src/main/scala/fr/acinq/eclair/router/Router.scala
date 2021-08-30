@@ -309,7 +309,9 @@ object Router {
                              searchHopCostBase: MilliSatoshi,
                              searchHopCostMillionths: Long,
                              mppMinPartAmount: MilliSatoshi,
-                             mppMaxParts: Int) {
+                             mppMaxParts: Int,
+                             experimentName: String,
+                             experimentPercentage: Int) {
     require(searchRatioBase >= 0.0, "ratio-base must be nonnegative")
     require(searchRatioCltv >= 0.0, "ratio-cltv must be nonnegative")
     require(searchRatioChannelAge >= 0.0, "ratio-channel-age must be nonnegative")
@@ -326,7 +328,7 @@ object Router {
                         encodingType: EncodingType,
                         channelRangeChunkSize: Int,
                         channelQueryChunkSize: Int,
-                        pathFindingConf: PathFindingConf)
+                        pathFindingExperimentConf: PathFindingExperimentConf)
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)

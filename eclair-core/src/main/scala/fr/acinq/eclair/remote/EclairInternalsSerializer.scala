@@ -59,7 +59,13 @@ object EclairInternalsSerializer {
       ("searchHopCostBase" | millisatoshi) ::
       ("searchHopCostMillionths" | int64) ::
       ("mppMinPartAmount" | millisatoshi) ::
-      ("mppMaxParts" | int32)).as[PathFindingConf]
+      ("mppMaxParts" | int32) ::
+      ("experimentName" | utf8_32) ::
+      ("experimentPercentage" | int32)).as[PathFindingConf]
+
+  val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
+    ("experiments" | listOfN(int32, pathFindingConfCodec))
+    ).as[PathFindingExperimentConf]
 
   val routerConfCodec: Codec[RouterConf] = (
     ("channelExcludeDuration" | finiteDurationCodec) ::
@@ -71,7 +77,7 @@ object EclairInternalsSerializer {
         .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
-      ("pathFindingConf" | pathFindingConfCodec)).as[RouterConf]
+      ("pathFindingExperimentConf" | pathFindingExperimentConfCodec)).as[RouterConf]
 
   val overrideFeaturesListCodec: Codec[List[(PublicKey, Features)]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
 

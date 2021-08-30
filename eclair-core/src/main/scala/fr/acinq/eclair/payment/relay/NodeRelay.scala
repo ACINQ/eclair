@@ -122,7 +122,7 @@ object NodeRelay {
   def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
     val routeMaxCltv = expiryIn - expiryOut
     val routeMaxFee = amountIn - amountOut
-    RouteCalculation.getDefaultRouteParams(nodeParams.routerConf.pathFindingConf).copy(
+    RouteCalculation.getDefaultRouteParams(nodeParams.routerConf.pathFindingExperimentConf.get()).copy(
       maxFeeBase = routeMaxFee,
       routeMaxCltv = routeMaxCltv,
       maxFeePct = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee

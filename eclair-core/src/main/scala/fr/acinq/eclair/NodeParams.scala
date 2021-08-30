@@ -27,6 +27,7 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
+import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{PathFindingConf, RouterConf}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
@@ -305,7 +306,7 @@ object NodeParams extends Logging {
       RelayFees(feeBase, relayFeesConfig.getInt("fee-proportional-millionths"))
     }
 
-    def getPathFindingConf(config: Config): PathFindingConf = {
+    def getPathFindingConf(config: Config, name: String): PathFindingConf = {
       PathFindingConf(
         randomizeRouteSelection = config.getBoolean("randomize-route-selection"),
         searchMaxRouteLength = config.getInt("max-route-length"),
@@ -319,7 +320,17 @@ object NodeParams extends Logging {
         searchHopCostBase = MilliSatoshi(config.getLong("hop-cost-base-msat")),
         searchHopCostMillionths = config.getLong("hop-cost-millionths"),
         mppMinPartAmount = Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
-        mppMaxParts = config.getInt("mpp.max-parts"))
+        mppMaxParts = config.getInt("mpp.max-parts"),
+        experimentName = name,
+        experimentPercentage = config.getInt("percentage"))
+    }
+
+    def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
+      val experiments = for ((name -> c) <- config.getConfig("ab-testing").root.asScala;
+                             experimentConfig = c.atKey("Foo").getConfig("Foo"))
+      yield getPathFindingConf(experimentConfig.withFallback(config), name)
+
+      new PathFindingExperimentConf(experiments.toList)
     }
 
     val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
@@ -407,7 +418,7 @@ object NodeParams extends Logging {
         encodingType = routerSyncEncodingType,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
-        pathFindingConf = getPathFindingConf(config.getConfig("router.path-finding.ab-testing.control").withFallback(config.getConfig("router.path-finding")))
+        pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding"))
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
