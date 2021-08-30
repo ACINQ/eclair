@@ -23,7 +23,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
-import fr.acinq.eclair.router.Router.{GossipDecision, RouterConf, SendChannelQuery}
+import fr.acinq.eclair.router.Router.{GossipDecision, PathFindingConf, RouterConf, SendChannelQuery}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -46,17 +46,8 @@ object EclairInternalsSerializer {
 
   def iterable[A](codec: Codec[A]): Codec[Iterable[A]] = listOfN(uint16, codec).xmap(_.toIterable, _.toList)
 
-  val routerConfCodec: Codec[RouterConf] = (
+  val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomizeRouteSelection" | bool(8)) ::
-      ("channelExcludeDuration" | finiteDurationCodec) ::
-      ("routerBroadcastInterval" | finiteDurationCodec) ::
-      ("networkStatsRefreshInterval" | finiteDurationCodec) ::
-      ("requestNodeAnnouncements" | bool(8)) ::
-      ("encodingType" | discriminated[EncodingType].by(uint8)
-        .typecase(0, provide(EncodingType.UNCOMPRESSED))
-        .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
-      ("channelRangeChunkSize" | int32) ::
-      ("channelQueryChunkSize" | int32) ::
       ("searchMaxFeeBase" | satoshi) ::
       ("searchMaxFeePct" | double) ::
       ("searchMaxRouteLength" | int32) ::
@@ -68,7 +59,19 @@ object EclairInternalsSerializer {
       ("searchHopCostBase" | millisatoshi) ::
       ("searchHopCostMillionths" | int64) ::
       ("mppMinPartAmount" | millisatoshi) ::
-      ("mppMaxParts" | int32)).as[RouterConf]
+      ("mppMaxParts" | int32)).as[PathFindingConf]
+
+  val routerConfCodec: Codec[RouterConf] = (
+    ("channelExcludeDuration" | finiteDurationCodec) ::
+      ("routerBroadcastInterval" | finiteDurationCodec) ::
+      ("networkStatsRefreshInterval" | finiteDurationCodec) ::
+      ("requestNodeAnnouncements" | bool(8)) ::
+      ("encodingType" | discriminated[EncodingType].by(uint8)
+        .typecase(0, provide(EncodingType.UNCOMPRESSED))
+        .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
+      ("channelRangeChunkSize" | int32) ::
+      ("channelQueryChunkSize" | int32) ::
+      ("pathFindingConf" | pathFindingConfCodec)).as[RouterConf]
 
   val overrideFeaturesListCodec: Codec[List[(PublicKey, Features)]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
 

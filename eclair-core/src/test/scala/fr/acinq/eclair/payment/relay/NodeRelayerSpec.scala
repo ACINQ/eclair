@@ -486,7 +486,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     nodeRelayer ! NodeRelay.Relay(incomingSinglePart)
 
     val routeRequest = router.expectMessageType[RouteRequest]
-    val routeParams = routeRequest.routeParams.get
+    val routeParams = routeRequest.routeParams
     assert(routeParams.maxFeePct === 0) // should be disabled
     assert(routeParams.maxFeeBase === incomingAmount - outgoingAmount)
     assert(routeParams.routeMaxCltv === incomingSinglePart.add.cltvExpiry - outgoingExpiry)
@@ -582,7 +582,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetExpiry === outgoingExpiry)
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
     assert(outgoingPayment.additionalTlvs === Nil)
-    assert(outgoingPayment.routeParams.isDefined)
     assert(outgoingPayment.assistedRoutes === hints)
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
@@ -622,7 +621,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.finalPayload.amount === outgoingAmount)
     assert(outgoingPayment.finalPayload.expiry === outgoingExpiry)
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
-    assert(outgoingPayment.routeParams.isDefined)
     assert(outgoingPayment.assistedRoutes === hints)
     // those are adapters for pay-fsm messages
     val nodeRelayerAdapters = outgoingPayment.replyTo
@@ -679,7 +677,6 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     assert(outgoingPayment.targetExpiry === outgoingExpiry)
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
     assert(outgoingPayment.additionalTlvs === Seq(OnionTlv.TrampolineOnion(nextTrampolinePacket)))
-    assert(outgoingPayment.routeParams.isDefined)
     assert(outgoingPayment.assistedRoutes === Nil)
   }
 
