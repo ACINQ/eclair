@@ -168,9 +168,9 @@ object ZmqWatcher {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
       Behaviors.withTimers { timers =>
         // we initialize block count
-        timers.startSingleTimer(TickNewBlock, TickNewBlock, 1 second)
+        timers.startSingleTimer(TickNewBlock, 1 second)
         // we start a timer in case we don't receive ZMQ block events
-        timers.startSingleTimer(TickBlockTimeout, TickBlockTimeout, blockTimeout)
+        timers.startSingleTimer(TickBlockTimeout, blockTimeout)
         new ZmqWatcher(chainHash, blockCount, client, context, timers).watching(Set.empty[GenericWatch], Map.empty[OutPoint, Set[GenericWatch]])
       }
     }
@@ -238,14 +238,14 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
         log.debug("received blockhash={}", blockHash)
         log.debug("scheduling a new task to check on tx confirmations")
         // we have received a block, so we can reset the block timeout timer
-        timers.startSingleTimer(TickBlockTimeout, TickBlockTimeout, blockTimeout)
+        timers.startSingleTimer(TickBlockTimeout, blockTimeout)
         // we do this to avoid herd effects in testing when generating a lots of blocks in a row
-        timers.startSingleTimer(TickNewBlock, TickNewBlock, 2 seconds)
+        timers.startSingleTimer(TickNewBlock, 2 seconds)
         Behaviors.same
 
       case TickBlockTimeout =>
         // we haven't received a block in a while, we check whether we're behind and restart the timer.
-        timers.startSingleTimer(TickBlockTimeout, TickBlockTimeout, blockTimeout)
+        timers.startSingleTimer(TickBlockTimeout, blockTimeout)
         val currentBlockCount = blockCount.get()
         client.getBlockCount.map { count =>
           if (count > currentBlockCount) {
