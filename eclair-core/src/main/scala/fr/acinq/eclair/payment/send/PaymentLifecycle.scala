@@ -54,7 +54,6 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPaymentToRoute, WaitingForRequest) =>
       log.debug("sending {} to route {}", c.finalPayload.amount, c.printRoute())
-      val send = SendPayment(c.replyTo, c.targetNodeId, c.finalPayload, maxAttempts = 1, assistedRoutes = c.assistedRoutes)
       c.route.fold(
         hops => router ! FinalizeRoute(c.finalPayload.amount, hops, c.assistedRoutes, paymentContext = Some(cfg.paymentContext)),
         route => self ! RouteResponse(route :: Nil)
@@ -62,9 +61,9 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       if (cfg.storeInDb) {
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
-      goto(WAITING_FOR_ROUTE) using WaitingForRoute(send, Nil, Ignore.empty)
+      goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
 
-    case Event(c: SendPayment, WaitingForRequest) =>
+    case Event(c: SendPaymentToNode, WaitingForRequest) =>
       log.debug("sending {} to {}", c.finalPayload.amount, c.targetNodeId)
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), c.assistedRoutes, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
@@ -130,9 +129,15 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   }
 
   private def retry(failure: PaymentFailure, data: WaitingForComplete): FSM.State[PaymentLifecycle.State, PaymentLifecycle.Data] = {
-    val ignore1 = PaymentFailure.updateIgnored(failure, data.ignore)
-    router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.finalPayload.amount, data.c.getMaxFee(nodeParams), data.c.assistedRoutes, ignore1, data.c.routeParams, paymentContext = Some(cfg.paymentContext))
-    goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.c, data.failures :+ failure, ignore1)
+    data.c match {
+      case (sendPaymentToNode: SendPaymentToNode) =>
+        val ignore1 = PaymentFailure.updateIgnored(failure, data.ignore)
+        router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.finalPayload.amount, sendPaymentToNode.getMaxFee(nodeParams), data.c.assistedRoutes, ignore1, sendPaymentToNode.routeParams, paymentContext = Some(cfg.paymentContext))
+        goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.c, data.failures :+ failure, ignore1)
+      case (_: SendPaymentToRoute) =>
+        log.error("unexpected retry during SendPaymentToRoute")
+        stop(FSM.Normal)
+    }
   }
 
   /**
@@ -198,19 +203,30 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
         log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
         val failure = RemoteFailure(cfg.fullRoute(route), e)
-        val ignore1 = if (Announcements.checkSig(failureMessage.update, nodeId)) {
+        if (Announcements.checkSig(failureMessage.update, nodeId)) {
           val assistedRoutes1 = handleUpdate(nodeId, failureMessage, d)
           val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
           // let's try again, router will have updated its state
-          router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
-          ignore1
+          c match {
+            case (_: SendPaymentToRoute) =>
+              log.error("unexpected retry during SendPaymentToRoute")
+              stop(FSM.Normal)
+            case (c: SendPaymentToNode) =>
+              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
+              goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
+          }
         } else {
           // this node is fishy, it gave us a bad sig!! let's filter it out
           log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
-          router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
-          ignore + nodeId
+          c match {
+            case (_: SendPaymentToRoute) =>
+              log.error("unexpected retry during SendPaymentToRoute")
+              stop(FSM.Normal)
+            case (c: SendPaymentToNode) =>
+              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(nodeParams), c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
+              goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore + nodeId)
+          }
         }
-        goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
         log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
         val failure = RemoteFailure(cfg.fullRoute(route), e)
@@ -297,16 +313,33 @@ object PaymentLifecycle {
 
   def props(nodeParams: NodeParams, cfg: SendPaymentConfig, router: ActorRef, register: ActorRef) = Props(new PaymentLifecycle(nodeParams, cfg, router, register))
 
+  sealed trait SendPayment {
+    def replyTo: ActorRef
+
+    def finalPayload: FinalPayload
+
+    def assistedRoutes: Seq[Seq[ExtraHop]]
+
+    def targetNodeId: PublicKey
+
+    def maxAttempts: Int
+  }
+
   /**
    * Send a payment to a given route.
    *
    * @param route        payment route to use.
    * @param finalPayload onion payload for the target node.
    */
-  case class SendPaymentToRoute(replyTo: ActorRef, route: Either[PredefinedRoute, Route], finalPayload: FinalPayload, assistedRoutes: Seq[Seq[ExtraHop]] = Nil) {
+  case class SendPaymentToRoute(replyTo: ActorRef,
+                                route: Either[PredefinedRoute, Route],
+                                finalPayload: FinalPayload,
+                                assistedRoutes: Seq[Seq[ExtraHop]] = Nil) extends SendPayment {
     require(route.fold(!_.isEmpty, _.hops.nonEmpty), "payment route must not be empty")
 
-    val targetNodeId = route.fold(_.targetNodeId, _.hops.last.nextNodeId)
+    val targetNodeId: PublicKey = route.fold(_.targetNodeId, _.hops.last.nextNodeId)
+
+    override def maxAttempts: Int = 1
 
     def printRoute(): String = route match {
       case Left(PredefinedChannelRoute(_, channels)) => channels.mkString("->")
@@ -325,17 +358,16 @@ object PaymentLifecycle {
    * @param assistedRoutes routing hints (usually from a Bolt 11 invoice).
    * @param routeParams    parameters to fine-tune the routing algorithm.
    */
-  case class SendPayment(replyTo: ActorRef,
-                         targetNodeId: PublicKey,
-                         finalPayload: FinalPayload,
-                         maxAttempts: Int,
-                         assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                         routeParams: Option[RouteParams] = None) {
+  case class SendPaymentToNode(replyTo: ActorRef,
+                               targetNodeId: PublicKey,
+                               finalPayload: FinalPayload,
+                               maxAttempts: Int,
+                               assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                               routeParams: Option[RouteParams] = None) extends SendPayment {
     require(finalPayload.amount > 0.msat, s"amount must be > 0")
 
     def getMaxFee(nodeParams: NodeParams): MilliSatoshi =
       routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf)).getMaxFee(finalPayload.amount)
-
   }
 
   // @formatter:off

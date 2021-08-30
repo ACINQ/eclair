@@ -33,7 +33,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.NodeRelayer.PaymentKey
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
-import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPayment
+import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
@@ -618,7 +618,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     val outgoingCfg = mockPayFSM.expectMessageType[SendPaymentConfig]
     validateOutgoingCfg(outgoingCfg, Upstream.Trampoline(incomingMultiPart.map(_.add)))
-    val outgoingPayment = mockPayFSM.expectMessageType[SendPayment]
+    val outgoingPayment = mockPayFSM.expectMessageType[SendPaymentToNode]
     assert(outgoingPayment.finalPayload.amount === outgoingAmount)
     assert(outgoingPayment.finalPayload.expiry === outgoingExpiry)
     assert(outgoingPayment.targetNodeId === outgoingNodeId)
