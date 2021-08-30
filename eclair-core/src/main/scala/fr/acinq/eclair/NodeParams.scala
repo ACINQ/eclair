@@ -197,6 +197,7 @@ object NodeParams extends Logging {
       // v0.6.1
       "enable-db-backup" -> "file-backup.enabled",
       "backup-notify-script" -> "file-backup.notify-script",
+      // v0.6.2
       "router.randomize-route-selection" -> "router.path-finding.randomize-route-selection",
     )
     deprecatedKeyPaths.foreach {
