@@ -54,7 +54,7 @@ object ZmqWatcher {
   case class ListWatches(replyTo: ActorRef[Set[GenericWatch]]) extends Command
 
   private case object TickNewBlock extends Command
-  private case class ProcessNewBlock(block: Block) extends Command
+  private case class ProcessNewBlock(blockHash: ByteVector32) extends Command
   private case class ProcessNewTransaction(tx: Transaction) extends Command
 
   final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
@@ -161,7 +161,7 @@ object ZmqWatcher {
 
   def apply(chainHash: ByteVector32, blockCount: AtomicLong, client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.block)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockHash)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
       Behaviors.withTimers { timers =>
         // we initialize block count
@@ -229,8 +229,8 @@ private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client
           }
         Behaviors.same
 
-      case ProcessNewBlock(block) =>
-        log.debug("received blockid={}", block.blockId)
+      case ProcessNewBlock(blockHash) =>
+        log.debug("received blockhash={}", blockHash)
         log.debug("scheduling a new task to check on tx confirmations")
         // we do this to avoid herd effects in testing when generating a lots of blocks in a row
         timers.startSingleTimer(TickNewBlock, TickNewBlock, 2 seconds)
