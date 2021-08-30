@@ -196,7 +196,8 @@ object NodeParams extends Logging {
       "feerate-provider-timeout" -> "on-chain-fees.provider-timeout",
       // v0.6.1
       "enable-db-backup" -> "file-backup.enabled",
-      "backup-notify-script" -> "file-backup.notify-script"
+      "backup-notify-script" -> "file-backup.notify-script",
+      "router.randomize-route-selection" -> "router.path-finding.randomize-route-selection",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")

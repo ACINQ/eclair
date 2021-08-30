@@ -211,7 +211,8 @@ object PaymentInitiator {
     def paymentHash: ByteVector32 = paymentRequest.paymentHash
     def fallbackFinalExpiryDelta: CltvExpiryDelta
     // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: Long) = paymentRequest.minFinalCltvExpiryDelta.getOrElse(fallbackFinalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
+    def finalExpiry(currentBlockHeight: Long): CltvExpiry =
+      paymentRequest.minFinalCltvExpiryDelta.getOrElse(fallbackFinalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
   }
 
   /**

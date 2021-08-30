@@ -65,7 +65,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
     case Event(c: SendPaymentToNode, WaitingForRequest) =>
       log.debug("sending {} to {}", c.finalPayload.amount, c.targetNodeId)
-      router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(), c.assistedRoutes, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
+      router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
         paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
@@ -132,7 +132,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     data.c match {
       case (sendPaymentToNode: SendPaymentToNode) =>
         val ignore1 = PaymentFailure.updateIgnored(failure, data.ignore)
-        router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.finalPayload.amount, sendPaymentToNode.getMaxFee(), data.c.assistedRoutes, ignore1, sendPaymentToNode.routeParams, paymentContext = Some(cfg.paymentContext))
+        router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.finalPayload.amount, sendPaymentToNode.maxFee, data.c.assistedRoutes, ignore1, sendPaymentToNode.routeParams, paymentContext = Some(cfg.paymentContext))
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.c, data.failures :+ failure, ignore1)
       case (_: SendPaymentToRoute) =>
         log.error("unexpected retry during SendPaymentToRoute")
@@ -212,7 +212,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
             case (c: SendPaymentToNode) =>
-              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(), assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
+              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
           }
         } else {
@@ -223,7 +223,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
             case (c: SendPaymentToNode) =>
-              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.getMaxFee(), c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
+              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore + nodeId)
           }
         }
@@ -366,8 +366,7 @@ object PaymentLifecycle {
                                routeParams: RouteParams) extends SendPayment {
     require(finalPayload.amount > 0.msat, s"amount must be > 0")
 
-    def getMaxFee(): MilliSatoshi =
-      routeParams.getMaxFee(finalPayload.amount)
+    val maxFee: MilliSatoshi = routeParams.getMaxFee(finalPayload.amount)
 
   }
 
