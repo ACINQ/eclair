@@ -231,3 +231,5 @@ object PaymentFailure {
   }
 
 }
+
+case class ExperimentMetrics(amount: MilliSatoshi, fees: MilliSatoshi, success: Boolean, duration: Long, timestamp: Long, experimentName: String)
