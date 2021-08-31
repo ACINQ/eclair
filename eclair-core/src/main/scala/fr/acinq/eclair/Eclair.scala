@@ -458,7 +458,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage = {
     val signedBytes = SignedMessage.signedBytes(message)
     val signature = ByteVector64(recoverableSignature.tail)
-    val recoveryId = recoverableSignature.head.toInt - 31
+    val recoveryId = recoverableSignature.head.toInt match {
+      case lndFormat if (lndFormat - 31) >= 0 && (lndFormat - 31) <= 3 => lndFormat - 31
+      case normalFormat if normalFormat >= 0 && normalFormat <= 3 => normalFormat
+      case invalidFormat => throw new RuntimeException(s"invalid recid prefix $invalidFormat")
+    }
     val pubKeyFromSignature = Crypto.recoverPublicKey(signature, signedBytes, recoveryId)
     VerifiedMessage(valid = true, pubKeyFromSignature)
   }
