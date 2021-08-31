@@ -64,12 +64,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     if (unconfirmedFundingTx) {
       within(30 seconds) {
         val channelConfig = ChannelConfig.standard
-        val (aliceParams, aliceChannelFeatures, bobParams, bobChannelFeatures) = computeFeatures(setup, test.tags)
+        val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)
         val aliceInit = Init(aliceParams.initFeatures)
         val bobInit = Init(bobParams.initFeatures)
-        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, aliceChannelFeatures)
+        alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, channelType)
         alice2blockchain.expectMsgType[SetChannelId]
-        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, bobChannelFeatures)
+        bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
         bob2blockchain.expectMsgType[SetChannelId]
         alice2bob.expectMsgType[OpenChannel]
         alice2bob.forward(bob)
