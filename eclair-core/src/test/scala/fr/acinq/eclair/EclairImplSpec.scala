@@ -469,6 +469,16 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
 
+  test("verify a signature with different recid formats") { f =>
+    import f._
+    val eclair = new EclairImpl(kit)
+
+    val bytesMsg = ByteVector("hello, world".getBytes)
+    val sig = hex"730dce842c31b692dc041c2d0f00423d2a2a67b0c63c1a905d500f09652a5b1a036763a1603333fa589ae92d1f7963428ff170e976d0966a113f4b9f9d0efc7f"
+    assert(eclair.verifyMessage(bytesMsg, hex"1f" ++ sig).valid) // 0x1f = 31, format used by lnd (spec: https://twitter.com/rusty_twit/status/1182102005914800128)
+    assert(eclair.verifyMessage(bytesMsg, hex"00" ++ sig).valid)
+  }
+
   test("ensure that an invalid recoveryId cause the signature verification to fail") { f =>
     import f._
 
