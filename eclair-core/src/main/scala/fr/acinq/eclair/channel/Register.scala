@@ -29,7 +29,7 @@ import fr.acinq.eclair.channel.Register._
 class Register extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[ChannelCreated])
-  context.system.eventStream.subscribe(self, classOf[ChannelRestored])
+  context.system.eventStream.subscribe(self, classOf[ChannelAvailable])
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
 
@@ -40,9 +40,9 @@ class Register extends Actor with ActorLogging {
       context.watch(channel)
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
 
-    case ChannelRestored(channel, channelId, _, remoteNodeId, _) =>
-      context.watch(channel)
-      context become main(channels + (channelId -> channel), shortIds, channelsTo + (channelId -> remoteNodeId))
+    case event: ChannelAvailable =>
+      context.watch(event.channel)
+      context become main(channels + (event.channelId -> event.channel), shortIds, channelsTo + (event.channelId -> event.remoteNodeId))
 
     case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
       context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId)
