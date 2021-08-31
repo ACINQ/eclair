@@ -31,7 +31,7 @@ trait Invoice {
     formFields("description".as[String].?, "descriptionHash".as[ByteVector32].?, amountMsatFormParam.?, "expireIn".as[Long].?, "fallbackAddress".as[String].?, "paymentPreimage".as[ByteVector32](sha256HashUnmarshaller).?) {
       case (Some(desc), None, amountMsat, expire, fallBackAddress, paymentPreimage_opt) => complete(eclairApi.receive(Left(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt))
       case (None, Some(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt) => complete(eclairApi.receive(Right(desc), amountMsat, expire, fallBackAddress, paymentPreimage_opt))
-      case _ => failWith(new RuntimeException("Either description (string) or descriptionHash (sha256 hash of description string) must be supplied"))
+      case _ => failWith(new RuntimeException("Either 'description' (string) or 'descriptionHash' (sha256 hash of description string) must be supplied"))
     }
   }
 
