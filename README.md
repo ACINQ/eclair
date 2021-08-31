@@ -10,22 +10,24 @@
 This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning), [lnd](https://github.com/LightningNetwork/lnd), [electrum](https://github.com/spesmilo/electrum/), and [rust-lightning](https://github.com/rust-bitcoin/rust-lightning).
 
 ---
-  * [Lightning Network Specification Compliance](#lightning-network-specification-compliance)
-  * [JSON API](#json-api)
-  * [Documentation](#documentation)
-  * [Installation](#installation)
-    * [Prerequisite: Bitcoin Core](#prerequisite-bitcoin-core)
-    * [Installing Eclair](#installing-eclair)
-  * [Configuration](#configuration)
-    * [Configuration file](#configuration-file)
-    * [Configure Bitcoin Core wallet](#configure-bitcoin-core-wallet)
-    * [Java Environment Variables](#java-environment-variables)
-    * [Logging](#logging)
-    * [Backup](#backup)
-  * [Docker](#docker)
-  * [Plugins](#plugins)
-  * [Testnet usage](#testnet-usage)
-  * [Resources](#resources)
+
+* [Lightning Network Specification Compliance](#lightning-network-specification-compliance)
+* [JSON API](#json-api)
+* [Documentation](#documentation)
+* [Installation](#installation)
+  * [Prerequisite: Bitcoin Core](#prerequisite-bitcoin-core)
+  * [Installing Eclair](#installing-eclair)
+* [Configuration](#configuration)
+  * [Configuration file](#configuration-file)
+  * [Configure Bitcoin Core wallet](#configure-bitcoin-core-wallet)
+  * [Java Environment Variables](#java-environment-variables)
+  * [Logging](#logging)
+  * [Backup](#backup)
+* [Docker](#docker)
+* [Plugins](#plugins)
+* [Testnet usage](#testnet-usage)
+* [Resources](#resources)
+
 ---
 
 ## Lightning Network Specification Compliance
@@ -69,7 +71,7 @@ zmqpubhashblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```
 
-Depending on the actual hardware configuration, it may be useful to provide increased `dbcache` parameter value for faster verification and `rpcworkqueue` parameter value for better handling of API requests on `bitcoind` side. 
+Depending on the actual hardware configuration, it may be useful to provide increased `dbcache` parameter value for faster verification and `rpcworkqueue` parameter value for better handling of API requests on `bitcoind` side.
 
 ```conf
 # UTXO database cache size, in MiB
@@ -81,7 +83,6 @@ rpcworkqueue=128
 # after the HTTP connection is established.
 rpcclienttimeout=30
 ```
-
 
 ### Installing Eclair
 
@@ -96,6 +97,10 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 ```
 
 You can then control your node via the [eclair-cli](https://github.com/ACINQ/eclair/wiki/Usage) or the [API](https://github.com/ACINQ/eclair/wiki/API).
+
+This repository also contains a sample GUI ([eclair-node-gui](https://github.com/ACINQ/eclair/tree/master/eclair-node-gui)).
+
+:warning: The sample GUI should only be used for prototyping and demo purposes: it is unsafe to use it on mainnet.
 
 ## Configuration
 
@@ -220,8 +225,7 @@ docker exec <container_name> eclair-cli -p foobar getinfo
 
 For advanced usage, Eclair supports plugins written in Scala, Java, or any JVM-compatible language.
 
-A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface, and 
-a manifest entry for `Main-Class` with the FQDN of the implementation.
+A valid plugin is a jar that contains an implementation of the [Plugin](eclair-node/src/main/scala/fr/acinq/eclair/Plugin.scala) interface, and a manifest entry for `Main-Class` with the FQDN of the implementation.
 
 Here is how to run Eclair with plugins:
 
@@ -234,7 +238,7 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh <plugin1.jar> <plugin2.jar>
 Here are some plugins created by the eclair community.
 If you need support for these plugins, head over to their respective github repository.
 
-- [Telegram Bot for eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
+* [Telegram Bot for eclair alerts](https://github.com/engenegr/eclair-alarmbot-plugin)
 
 ## Testnet usage
 
