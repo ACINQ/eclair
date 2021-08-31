@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
-import fr.acinq.eclair.router.Router.RouterConf
+import fr.acinq.eclair.router.Router.{PathFindingConf, RouterConf}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import grizzled.slf4j.Logging
@@ -196,7 +196,9 @@ object NodeParams extends Logging {
       "feerate-provider-timeout" -> "on-chain-fees.provider-timeout",
       // v0.6.1
       "enable-db-backup" -> "file-backup.enabled",
-      "backup-notify-script" -> "file-backup.notify-script"
+      "backup-notify-script" -> "file-backup.notify-script",
+      // v0.6.2
+      "router.randomize-route-selection" -> "router.path-finding.randomize-route-selection",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -302,6 +304,23 @@ object NodeParams extends Logging {
       RelayFees(feeBase, relayFeesConfig.getInt("fee-proportional-millionths"))
     }
 
+    def getPathFindingConf(config: Config): PathFindingConf = {
+      PathFindingConf(
+        randomizeRouteSelection = config.getBoolean("randomize-route-selection"),
+        searchMaxRouteLength = config.getInt("max-route-length"),
+        searchMaxCltv = CltvExpiryDelta(config.getInt("max-cltv")),
+        searchMaxFeeBase = Satoshi(config.getLong("fee-threshold-sat")),
+        searchMaxFeePct = config.getDouble("max-fee-pct"),
+        searchRatioBase = config.getDouble("ratio-base"),
+        searchRatioCltv = config.getDouble("ratio-cltv"),
+        searchRatioChannelAge = config.getDouble("ratio-channel-age"),
+        searchRatioChannelCapacity = config.getDouble("ratio-channel-capacity"),
+        searchHopCostBase = MilliSatoshi(config.getLong("hop-cost-base-msat")),
+        searchHopCostMillionths = config.getLong("hop-cost-millionths"),
+        mppMinPartAmount = Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
+        mppMaxParts = config.getInt("mpp.max-parts"))
+    }
+
     val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
       case "uncompressed" => EncodingType.UNCOMPRESSED
       case "zlib" => EncodingType.COMPRESSED_ZLIB
@@ -383,23 +402,11 @@ object NodeParams extends Logging {
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         networkStatsRefreshInterval = FiniteDuration(config.getDuration("router.network-stats-interval").getSeconds, TimeUnit.SECONDS),
-        randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
         encodingType = routerSyncEncodingType,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
-        searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
-        searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
-        searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
-        searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
-        searchRatioBase = config.getDouble("router.path-finding.ratio-base"),
-        searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),
-        searchRatioChannelAge = config.getDouble("router.path-finding.ratio-channel-age"),
-        searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity"),
-        searchHopCostBase = MilliSatoshi(config.getLong("router.path-finding.hop-cost-base-msat")),
-        searchHopCostMillionths = config.getLong("router.path-finding.hop-cost-millionths"),
-        mppMinPartAmount = Satoshi(config.getLong("router.path-finding.mpp.min-amount-satoshis")).toMilliSatoshi,
-        mppMaxParts = config.getInt("router.path-finding.mpp.max-parts")
+        pathFindingConf = getPathFindingConf(config.getConfig("router.path-finding"))
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),

@@ -24,6 +24,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.DecodeResult
 import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.net.{Inet4Address, InetAddress}
@@ -90,6 +91,46 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     for ((warning, expected) <- testCases) {
       assert(lightningMessageCodec.encode(warning).require.bytes === expected)
       assert(lightningMessageCodec.decode(expected.bits).require.value === warning)
+    }
+  }
+
+  test("nonreg generic tlv") {
+    val channelId = randomBytes32()
+    val signature = randomBytes64()
+    val key = randomKey()
+    val point = randomKey().publicKey
+    val randomData = randomBytes(42)
+    val tlvTag = UInt64(hex"47010000")
+
+    val refs = Map(
+      (hex"0023" ++ channelId ++ signature, hex"") -> FundingSigned(channelId, signature),
+      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 00", hex"") -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
+      (hex"0023" ++ channelId ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"") -> FundingSigned(channelId, signature, TlvStream[FundingSignedTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value, hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 00", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
+      (hex"0088" ++ channelId ++ hex"0001020304050607 0809aabbccddeeff" ++ key.value ++ point.value ++ hex"fe47010000 07 bbbbbbbbbbbbbb", hex"") -> ChannelReestablish(channelId, 0x01020304050607L, 0x0809aabbccddeeffL, key, point, TlvStream[ChannelReestablishTlv](Nil, GenericTlv(tlvTag, hex"bbbbbbbbbbbbbb") :: Nil)),
+
+      (hex"0084" ++ channelId ++ signature ++ hex"0000", hex"") -> CommitSig(channelId, signature, Nil),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 00", hex"") -> CommitSig(channelId, signature, Nil, TlvStream[CommitSigTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
+      (hex"0084" ++ channelId ++ signature ++ hex"0000 fe47010000 07 cccccccccccccc", hex"") -> CommitSig(channelId, signature, Nil, TlvStream[CommitSigTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+
+      (hex"0085" ++ channelId ++ key.value ++ point.value, hex"") -> RevokeAndAck(channelId, key, point),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 00", hex"") -> RevokeAndAck(channelId, key, point, TlvStream[RevokeAndAckTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
+      (hex"0085" ++ channelId ++ key.value ++ point.value ++ hex" fe47010000 07 cccccccccccccc", hex"") -> RevokeAndAck(channelId, key, point, TlvStream[RevokeAndAckTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData, hex"") -> Shutdown(channelId, randomData),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 00", hex"") -> Shutdown(channelId, randomData, TlvStream[ShutdownTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
+      (hex"0026" ++ channelId ++ hex"002a" ++ randomData ++ hex"fe47010000 07 cccccccccccccc", hex"") -> Shutdown(channelId, randomData, TlvStream[ShutdownTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature, hex"") -> ClosingSigned(channelId, 123456789.sat, signature),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 00", hex"") -> ClosingSigned(channelId, 123456789.sat, signature, TlvStream[ClosingSignedTlv](Nil, GenericTlv(tlvTag, ByteVector.empty) :: Nil)),
+      (hex"0027" ++ channelId ++ hex"00000000075bcd15" ++ signature ++ hex"fe47010000 07 cccccccccccccc", hex"") -> ClosingSigned(channelId, 123456789.sat, signature, TlvStream[ClosingSignedTlv](Nil, GenericTlv(tlvTag, hex"cccccccccccccc") :: Nil)),
+    )
+
+    refs.foreach { case ((bin, remainder), msg) =>
+      assert(lightningMessageCodec.decode(bin.bits ++ remainder.bits).require === DecodeResult(msg, remainder.bits))
+      assert(lightningMessageCodec.encode(msg).require === bin.bits)
     }
   }
 

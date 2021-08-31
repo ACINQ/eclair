@@ -18,18 +18,17 @@ package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSigs, PublishableTxs}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
-import fr.acinq.eclair.wire.protocol.UpdateMessage
+import fr.acinq.eclair.wire.protocol.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, combinedFeaturesCodec}
+import fr.acinq.eclair.wire.protocol._
+import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -90,6 +89,15 @@ private[channel] object ChannelCodecs0 {
         ("htlcBasepoint" | publicKey) ::
         ("features" | combinedFeaturesCodec) ::
         ("shutdownScript" | provide[Option[ByteVector]](None))).as[RemoteParams].decodeOnly
+
+    val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
+      ("channelId" | bytes32) ::
+        ("id" | uint64overflow) ::
+        ("amountMsat" | millisatoshi) ::
+        ("paymentHash" | bytes32) ::
+        ("expiry" | cltvExpiry) ::
+        ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec) ::
+        ("tlvStream" | provide(TlvStream.empty[UpdateAddHtlcTlv]))).as[UpdateAddHtlc]
 
     val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool)
       .typecase(true, updateAddHtlcCodec.as[IncomingHtlc])
@@ -165,7 +173,36 @@ private[channel] object ChannelCodecs0 {
         ("txid" | bytes32) ::
         ("remotePerCommitmentPoint" | publicKey)).as[RemoteCommit].decodeOnly
 
-    val updateMessageCodec: Codec[UpdateMessage] = lightningMessageCodec.narrow(f => Attempt.successful(f.asInstanceOf[UpdateMessage]), g => g)
+    val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
+      ("channelId" | bytes32) ::
+        ("id" | uint64overflow) ::
+        ("paymentPreimage" | bytes32) ::
+        ("tlvStream" | provide(TlvStream.empty[UpdateFulfillHtlcTlv]))).as[UpdateFulfillHtlc]
+
+    val updateFailHtlcCodec: Codec[UpdateFailHtlc] = (
+      ("channelId" | bytes32) ::
+        ("id" | uint64overflow) ::
+        ("reason" | varsizebinarydata) ::
+        ("tlvStream" | provide(TlvStream.empty[UpdateFailHtlcTlv]))).as[UpdateFailHtlc]
+
+    val updateFailMalformedHtlcCodec: Codec[UpdateFailMalformedHtlc] = (
+      ("channelId" | bytes32) ::
+        ("id" | uint64overflow) ::
+        ("onionHash" | bytes32) ::
+        ("failureCode" | uint16) ::
+        ("tlvStream" | provide(TlvStream.empty[UpdateFailMalformedHtlcTlv]))).as[UpdateFailMalformedHtlc]
+
+    val updateFeeCodec: Codec[UpdateFee] = (
+      ("channelId" | bytes32) ::
+        ("feeratePerKw" | feeratePerKw) ::
+        ("tlvStream" | provide(TlvStream.empty[UpdateFeeTlv]))).as[UpdateFee]
+
+    val updateMessageCodec: Codec[UpdateMessage] = discriminated[UpdateMessage].by(uint16)
+      .typecase(128, updateAddHtlcCodec)
+      .typecase(130, updateFulfillHtlcCodec)
+      .typecase(131, updateFailHtlcCodec)
+      .typecase(134, updateFeeCodec)
+      .typecase(135, updateFailMalformedHtlcCodec)
 
     val localChangesCodec: Codec[LocalChanges] = (
       ("proposed" | listOfN(uint16, updateMessageCodec)) ::
@@ -176,6 +213,12 @@ private[channel] object ChannelCodecs0 {
       ("proposed" | listOfN(uint16, updateMessageCodec)) ::
         ("acked" | listOfN(uint16, updateMessageCodec)) ::
         ("signed" | listOfN(uint16, updateMessageCodec))).as[RemoteChanges].decodeOnly
+
+    val commitSigCodec: Codec[CommitSig] = (
+      ("channelId" | bytes32) ::
+        ("signature" | bytes64) ::
+        ("htlcSignatures" | listofsignatures) ::
+        ("tlvStream" | provide(TlvStream.empty[CommitSigTlv]))).as[CommitSig]
 
     val waitingForRevocationCodec: Codec[WaitingForRevocation] = (
       ("nextRemoteCommit" | remoteCommitCodec) ::
@@ -240,6 +283,12 @@ private[channel] object ChannelCodecs0 {
           ("channelId" | bytes32)
       }).as[ChannelTypes0.Commitments].decodeOnly.map[Commitments](_.migrate()).decodeOnly
 
+    val closingSignedCodec: Codec[ClosingSigned] = (
+      ("channelId" | bytes32) ::
+        ("feeSatoshis" | satoshi) ::
+        ("signature" | bytes64) ::
+        ("tlvStream" | provide(TlvStream.empty[ClosingSignedTlv]))).as[ClosingSigned]
+
     val closingTxProposedCodec: Codec[ClosingTxProposed] = (
       ("unsignedTx" | closingTxCodec) ::
         ("localClosingSigned" | closingSignedCodec)).as[ClosingTxProposed].decodeOnly
@@ -282,6 +331,23 @@ private[channel] object ChannelCodecs0 {
       .map(messageFlags => if ((messageFlags & 1) != 0) 136 else 128) // depending on the value of option_channel_htlc_max, size will be 128B or 136B
       .decodeOnly // this is for compat, we only need to decode
 
+    val fundingCreatedCodec: Codec[FundingCreated] = (
+      ("temporaryChannelId" | bytes32) ::
+        ("fundingTxid" | bytes32) ::
+        ("fundingOutputIndex" | uint16) ::
+        ("signature" | bytes64) ::
+        ("tlvStream" | provide(TlvStream.empty[FundingCreatedTlv]))).as[FundingCreated]
+
+    val fundingSignedCodec: Codec[FundingSigned] = (
+      ("channelId" | bytes32) ::
+        ("signature" | bytes64) ::
+        ("tlvStream" | provide(TlvStream.empty[FundingSignedTlv]))).as[FundingSigned]
+
+    val fundingLockedCodec: Codec[FundingLocked] = (
+      ("channelId" | bytes32) ::
+        ("nextPerCommitmentPoint" | publicKey) ::
+        ("tlvStream" | provide(TlvStream.empty[FundingLockedTlv]))).as[FundingLocked]
+
     // this is a decode-only codec compatible with versions 997acee and below, with placeholders for new fields
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
@@ -301,6 +367,11 @@ private[channel] object ChannelCodecs0 {
       ("commitments" | commitmentsCodec) ::
         ("shortChannelId" | shortchannelid) ::
         ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED].decodeOnly
+
+    val shutdownCodec: Codec[Shutdown] = (
+      ("channelId" | bytes32) ::
+        ("scriptPubKey" | varsizebinarydata) ::
+        ("tlvStream" | provide(TlvStream.empty[ShutdownTlv]))).as[Shutdown]
 
     // this is a decode-only codec compatible with versions 9afb26e and below
     val DATA_NORMAL_COMPAT_03_Codec: Codec[DATA_NORMAL] = (
@@ -357,6 +428,14 @@ private[channel] object ChannelCodecs0 {
         ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
         ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING].decodeOnly
+
+    val channelReestablishCodec: Codec[ChannelReestablish] = (
+      ("channelId" | bytes32) ::
+        ("nextLocalCommitmentNumber" | uint64overflow) ::
+        ("nextRemoteRevocationNumber" | uint64overflow) ::
+        ("yourLastPerCommitmentSecret" | privateKey) ::
+        ("myCurrentPerCommitmentPoint" | publicKey) ::
+        ("tlvStream" | provide(TlvStream.empty[ChannelReestablishTlv]))).as[ChannelReestablish]
 
     val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
       ("commitments" | commitmentsCodec) ::

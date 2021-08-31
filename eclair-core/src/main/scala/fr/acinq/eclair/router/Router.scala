@@ -297,26 +297,19 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
-  case class RouterConf(randomizeRouteSelection: Boolean,
-                        channelExcludeDuration: FiniteDuration,
-                        routerBroadcastInterval: FiniteDuration,
-                        networkStatsRefreshInterval: FiniteDuration,
-                        requestNodeAnnouncements: Boolean,
-                        encodingType: EncodingType,
-                        channelRangeChunkSize: Int,
-                        channelQueryChunkSize: Int,
-                        searchMaxFeeBase: Satoshi,
-                        searchMaxFeePct: Double,
-                        searchMaxRouteLength: Int,
-                        searchMaxCltv: CltvExpiryDelta,
-                        searchRatioBase: Double,
-                        searchRatioCltv: Double,
-                        searchRatioChannelAge: Double,
-                        searchRatioChannelCapacity: Double,
-                        searchHopCostBase: MilliSatoshi,
-                        searchHopCostMillionths: Long,
-                        mppMinPartAmount: MilliSatoshi,
-                        mppMaxParts: Int) {
+  case class PathFindingConf(randomizeRouteSelection: Boolean,
+                             searchMaxFeeBase: Satoshi,
+                             searchMaxFeePct: Double,
+                             searchMaxRouteLength: Int,
+                             searchMaxCltv: CltvExpiryDelta,
+                             searchRatioBase: Double,
+                             searchRatioCltv: Double,
+                             searchRatioChannelAge: Double,
+                             searchRatioChannelCapacity: Double,
+                             searchHopCostBase: MilliSatoshi,
+                             searchHopCostMillionths: Long,
+                             mppMinPartAmount: MilliSatoshi,
+                             mppMaxParts: Int) {
     require(searchRatioBase >= 0.0, "ratio-base must be nonnegative")
     require(searchRatioCltv >= 0.0, "ratio-cltv must be nonnegative")
     require(searchRatioChannelAge >= 0.0, "ratio-channel-age must be nonnegative")
@@ -325,6 +318,15 @@ object Router {
     require(searchHopCostBase.toLong >= 0.0, "hop-cost-base-msat must be nonnegative")
     require(searchHopCostMillionths >= 0.0, "hop-cost-millionths must be nonnegative")
   }
+
+  case class RouterConf(channelExcludeDuration: FiniteDuration,
+                        routerBroadcastInterval: FiniteDuration,
+                        networkStatsRefreshInterval: FiniteDuration,
+                        requestNodeAnnouncements: Boolean,
+                        encodingType: EncodingType,
+                        channelRangeChunkSize: Int,
+                        channelQueryChunkSize: Int,
+                        pathFindingConf: PathFindingConf)
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
@@ -469,7 +471,7 @@ object Router {
                           maxFee: MilliSatoshi,
                           assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                           ignore: Ignore = Ignore.empty,
-                          routeParams: Option[RouteParams] = None,
+                          routeParams: RouteParams,
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil,
                           paymentContext: Option[PaymentContext] = None)

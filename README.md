@@ -65,9 +65,23 @@ server=1
 rpcuser=foo
 rpcpassword=bar
 txindex=1
-zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubhashblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```
+
+Depending on the actual hardware configuration, it may be useful to provide increased `dbcache` parameter value for faster verification and `rpcworkqueue` parameter value for better handling of API requests on `bitcoind` side. 
+
+```conf
+# UTXO database cache size, in MiB
+dbcache=2048
+# Number of allowed pending RPC requests (default is 16)
+rpcworkqueue=128
+
+# How many seconds bitcoin will wait for a complete RPC HTTP request.
+# after the HTTP connection is established.
+rpcclienttimeout=30
+```
+
 
 ### Installing Eclair
 
@@ -128,6 +142,14 @@ Any BTC found in the wallet can be used to fund the channels you choose to open.
 ### Java Environment Variables
 
 Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section.
+
+However, if you're seeing Java heap size errors, you can try increasing the maximum memory allocated to the JVM with the `-Xmx` parameter.
+
+You can for example set it to use up to 512 MB (or any value that fits the amount of RAM on your machine) with:
+
+```shell
+export JAVA_OPTS=-Xmx512m
+```
 
 :warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in `eclair.conf` (see above).
 
@@ -233,12 +255,12 @@ txindex=1
 [main]
 rpcuser=<your-mainnet-rpc-user-here>
 rpcpassword=<your-mainnet-rpc-password-here>
-zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubhashblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 [test]
 rpcuser=<your-testnet-rpc-user-here>
 rpcpassword=<your-testnet-rpc-password-here>
-zmqpubrawblock=tcp://127.0.0.1:29001
+zmqpubhashblock=tcp://127.0.0.1:29001
 zmqpubrawtx=tcp://127.0.0.1:29001
 ```
 

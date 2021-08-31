@@ -18,10 +18,11 @@ package fr.acinq.eclair.blockchain.bitcoind.zmq
 
 import akka.Done
 import akka.actor.{Actor, ActorLogging}
-import fr.acinq.bitcoin.{Block, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
 import org.zeromq.{SocketType, ZContext, ZMQ, ZMsg}
+import scodec.bits.ByteVector
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
@@ -39,9 +40,10 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
 
   val subscriber = ctx.createSocket(SocketType.SUB)
   subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
-  subscriber.connect(address)
+  subscriber.setRcvHWM(0) // disable high watermark to ensure we never drop messages
+  subscriber.setTCPKeepAlive(1) // enable tcp keep-alive
   subscriber.subscribe(topic.getBytes(ZMQ.CHARSET))
-  subscriber.setTCPKeepAlive(1)
+  subscriber.connect(address)
 
   val monitor = ctx.createSocket(SocketType.PAIR)
   monitor.connect("inproc://events")
@@ -89,10 +91,10 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
     }
 
     case msg: ZMsg => msg.popString() match {
-      case "rawblock" =>
-        val block = Block.read(msg.pop().getData)
-        log.debug("received blockid={}", block.blockId)
-        context.system.eventStream.publish(NewBlock(block))
+      case "hashblock" =>
+        val blockHash = ByteVector32(ByteVector(msg.pop().getData))
+        log.debug("received blockhash={}", blockHash)
+        context.system.eventStream.publish(NewBlock(blockHash))
       case "rawtx" =>
         val tx = Transaction.read(msg.pop().getData)
         log.debug("received txid={}", tx.txid)
@@ -115,7 +117,7 @@ object ZMQActor {
   // @formatter:on
 
   object Topics {
-    val RawBlock: String = "rawblock"
+    val HashBlock: String = "hashblock"
     val RawTx: String = "rawtx"
   }
 
