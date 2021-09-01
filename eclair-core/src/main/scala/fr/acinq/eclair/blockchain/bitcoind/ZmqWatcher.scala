@@ -24,8 +24,9 @@ import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
+import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
-import fr.acinq.eclair.{KamonExt, ShortChannelId}
+import fr.acinq.eclair.{KamonExt, NodeParams, ShortChannelId}
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
@@ -162,7 +163,7 @@ object ZmqWatcher {
   private case object Ignore extends AddWatchResult
   // @formatter:on
 
-  def apply(chainHash: ByteVector32, blockCount: AtomicLong, client: ExtendedBitcoinClient): Behavior[Command] =
+  def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockHash)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
@@ -171,7 +172,7 @@ object ZmqWatcher {
         timers.startSingleTimer(TickNewBlock, 1 second)
         // we start a timer in case we don't receive ZMQ block events
         timers.startSingleTimer(TickBlockTimeout, blockTimeout)
-        new ZmqWatcher(chainHash, blockCount, client, context, timers).watching(Set.empty[GenericWatch], Map.empty[OutPoint, Set[GenericWatch]])
+        new ZmqWatcher(nodeParams, blockCount, client, context, timers).watching(Set.empty[GenericWatch], Map.empty[OutPoint, Set[GenericWatch]])
       }
     }
 
@@ -209,13 +210,13 @@ object ZmqWatcher {
 
 }
 
-private class ZmqWatcher(chainHash: ByteVector32, blockCount: AtomicLong, client: ExtendedBitcoinClient, context: ActorContext[ZmqWatcher.Command], timers: TimerScheduler[ZmqWatcher.Command])(implicit ec: ExecutionContext = ExecutionContext.global) {
+private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client: ExtendedBitcoinClient, context: ActorContext[ZmqWatcher.Command], timers: TimerScheduler[ZmqWatcher.Command])(implicit ec: ExecutionContext = ExecutionContext.global) {
 
   import ZmqWatcher._
 
   private val log = context.log
 
-  private val watchdog = context.spawn(Behaviors.supervise(BlockchainWatchdog(chainHash, 150 seconds)).onFailure(SupervisorStrategy.resume), "blockchain-watchdog")
+  private val watchdog = context.spawn(Behaviors.supervise(BlockchainWatchdog(nodeParams, 150 seconds)).onFailure(SupervisorStrategy.resume), "blockchain-watchdog")
 
   private def watching(watches: Set[GenericWatch], watchedUtxos: Map[OutPoint, Set[GenericWatch]]): Behavior[Command] = {
     Behaviors.receiveMessage {

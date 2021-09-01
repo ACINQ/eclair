@@ -98,8 +98,8 @@ You can see what onion address is assigned using `eclair-cli`:
 ```shell
 eclair-cli getinfo
 ```
-Eclair saves the Tor endpoint's private key in `~/.eclair/tor_pk`, so that it can recreate the endpoint address after 
-a restart. If you remove the private key eclair will regenerate the endpoint address.   
+Eclair saves the Tor endpoint's private key in `~/.eclair/tor.dat`, so that it can recreate the endpoint address after 
+a restart. If you remove the private key Eclair will regenerate the endpoint address.   
 
 There are two possible values for `protocol-version`:
 
@@ -140,3 +140,30 @@ eclair.socks5.randomize-credentials = true
 features from using Tor, use both.
 
 Note, that bitcoind should be configured to use Tor as well (https://en.bitcoin.it/wiki/Setting_up_a_Tor_hidden_service).
+
+### Blockchain watchdogs
+
+Eclair version 0.5.0 introduced blockchain watchdogs, that fetch bitcoin headers from various sources in 
+order to detect whether the node is being eclipsed. Eclair supports four sources at the moment:
+
+* blockchainheaders.net
+* blockcypher.com
+* blockstream.info
+* mempool.space
+
+Once `eclair.socks5.enabled` is set to `true` blockchain watchdogs connect to their respective sources over Tor.
+
+The most Tor-friendly sources are `blockstream.info` and `mempool.space` since they have native onion endpoints for their APIs.
+
+Tor support for `blockchainheaders.net` is not implemented (yet), so it gets automatically disabled when `eclair.socks5.enabled = true` to protect user's privacy.
+
+`blockcypher.com` can be flaky when used over Tor. It imposes rate limits and sometimes (rather often in fact) requires solving CAPTCHA.
+If you experience similar troubles with `blockcypher.com` use this config parameter to disable it:
+
+```
+eclair.blockchain-watchdog.sources = [
+  "bitcoinheaders.net",
+  "blockstream.info",
+  "mempool.space"
+]
+```

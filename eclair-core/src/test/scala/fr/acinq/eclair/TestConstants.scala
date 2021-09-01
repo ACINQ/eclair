@@ -70,6 +70,14 @@ object TestConstants {
     // @formatter:on
   }
 
+  val blockchainWatchdogSources = Seq(
+    "bitcoinheaders.net",
+    "blockcypher.com",
+    "blockstream.info",
+    "mempool.space"
+  )
+
+
   object Alice {
     val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
@@ -119,7 +127,7 @@ object TestConstants {
       toRemoteDelay = CltvExpiryDelta(144),
       maxToLocalDelay = CltvExpiryDelta(1000),
       relayParams = RelayParams(
-         publicChannelFees = RelayFees(
+        publicChannelFees = RelayFees(
           feeBase = 546000 msat,
           feeProportionalMillionths = 10),
         privateChannelFees = RelayFees(
@@ -177,7 +185,8 @@ object TestConstants {
       maxPaymentAttempts = 5,
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-      balanceCheckInterval = 1 hour
+      balanceCheckInterval = 1 hour,
+      blockchainWatchdogSources = blockchainWatchdogSources
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -295,7 +304,8 @@ object TestConstants {
       maxPaymentAttempts = 5,
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
-      balanceCheckInterval = 1 hour
+      balanceCheckInterval = 1 hour,
+      blockchainWatchdogSources = blockchainWatchdogSources
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
