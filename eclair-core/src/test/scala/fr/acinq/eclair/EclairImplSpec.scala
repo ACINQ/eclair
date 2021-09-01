@@ -33,7 +33,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPayment, SendPaymentToRoute, SendSpontaneousPayment}
+import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendSpontaneousPayment}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
@@ -91,14 +91,15 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     // standard conversion
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), flags_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(5 sat)), flags_opt = None, openTimeout_opt = None)
     val open = switchboard.expectMsgType[OpenChannel]
     assert(open.fundingTxFeeratePerKw_opt === Some(FeeratePerKw(1250 sat)))
 
     // check that minimum fee rate of 253 sat/bw is used
-    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), flags_opt = None, openTimeout_opt = None)
+    eclair.open(nodeId, fundingAmount = 10000000L sat, pushAmount_opt = None, channelType_opt = Some(ChannelTypes.StaticRemoteKey), fundingFeeratePerByte_opt = Some(FeeratePerByte(1 sat)), flags_opt = None, openTimeout_opt = None)
     val open1 = switchboard.expectMsgType[OpenChannel]
     assert(open1.fundingTxFeeratePerKw_opt === Some(FeeratePerKw.MinimumFeeratePerKw))
+    assert(open1.channelType_opt === Some(ChannelTypes.StaticRemoteKey))
   }
 
   test("call send with passing correct arguments") { f =>
@@ -108,7 +109,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val nodePrivKey = randomKey()
     val invoice0 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, "description", CltvExpiryDelta(18))
     eclair.send(None, 123 msat, invoice0)
-    val send = paymentInitiator.expectMsgType[SendPayment]
+    val send = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send.externalId === None)
     assert(send.recipientNodeId === nodePrivKey.publicKey)
     assert(send.recipientAmount === 123.msat)
@@ -121,7 +122,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId("569178x2331x1"), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
     val invoice1 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, "description", CltvExpiryDelta(18), None, None, hints)
     eclair.send(Some(externalId1), 123 msat, invoice1)
-    val send1 = paymentInitiator.expectMsgType[SendPayment]
+    val send1 = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send1.externalId === Some(externalId1))
     assert(send1.recipientNodeId === nodePrivKey.publicKey)
     assert(send1.recipientAmount === 123.msat)
@@ -133,7 +134,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
     val invoice2 = PaymentRequest("lntb", Some(123 msat), System.currentTimeMillis() / 1000L, nodePrivKey.publicKey, List(PaymentRequest.MinFinalCltvExpiry(96), PaymentRequest.PaymentHash(ByteVector32.Zeroes), PaymentRequest.Description("description")), ByteVector.empty)
     eclair.send(Some(externalId2), 123 msat, invoice2)
-    val send2 = paymentInitiator.expectMsgType[SendPayment]
+    val send2 = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send2.externalId === Some(externalId2))
     assert(send2.recipientNodeId === nodePrivKey.publicKey)
     assert(send2.recipientAmount === 123.msat)
@@ -143,13 +144,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // with custom route fees parameters
     eclair.send(None, 123 msat, invoice0, feeThreshold_opt = Some(123 sat), maxFeePct_opt = Some(4.20))
-    val send3 = paymentInitiator.expectMsgType[SendPayment]
+    val send3 = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send3.externalId === None)
     assert(send3.recipientNodeId === nodePrivKey.publicKey)
     assert(send3.recipientAmount === 123.msat)
     assert(send3.paymentHash === ByteVector32.Zeroes)
-    assert(send3.routeParams.get.maxFeeBase === 123000.msat) // conversion sat -> msat
-    assert(send3.routeParams.get.maxFeePct === 4.20)
+    assert(send3.routeParams.maxFeeBase === 123000.msat) // conversion sat -> msat
+    assert(send3.routeParams.maxFeePct === 4.20)
 
     val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
     assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), 123 msat, invoice0), 50 millis))
@@ -466,6 +467,16 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val verifiedMessage: VerifiedMessage = eclair.verifyMessage(wrongMsg, signedMessage.signature)
     assert(verifiedMessage.valid)
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
+  }
+
+  test("verify a signature with different recid formats") { f =>
+    import f._
+    val eclair = new EclairImpl(kit)
+
+    val bytesMsg = ByteVector("hello, world".getBytes)
+    val sig = hex"730dce842c31b692dc041c2d0f00423d2a2a67b0c63c1a905d500f09652a5b1a036763a1603333fa589ae92d1f7963428ff170e976d0966a113f4b9f9d0efc7f"
+    assert(eclair.verifyMessage(bytesMsg, hex"1f" ++ sig).valid) // 0x1f = 31, format used by lnd (spec: https://twitter.com/rusty_twit/status/1182102005914800128)
+    assert(eclair.verifyMessage(bytesMsg, hex"00" ++ sig).valid)
   }
 
   test("ensure that an invalid recoveryId cause the signature verification to fail") { f =>

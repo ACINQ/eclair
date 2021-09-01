@@ -43,6 +43,8 @@ import scala.concurrent.{ExecutionContext, Future}
  */
 object ZmqWatcher {
 
+  val blockTimeout: FiniteDuration = 15 minutes
+
   // @formatter:off
   sealed trait Command
   sealed trait Watch[T <: WatchTriggered] extends Command {
@@ -55,7 +57,8 @@ object ZmqWatcher {
   case class ListWatches(replyTo: ActorRef[Set[GenericWatch]]) extends Command
 
   private case object TickNewBlock extends Command
-  private case class ProcessNewBlock(block: Block) extends Command
+  private case object TickBlockTimeout extends Command
+  private case class ProcessNewBlock(blockHash: ByteVector32) extends Command
   private case class ProcessNewTransaction(tx: Transaction) extends Command
 
   final case class ValidateRequest(replyTo: ActorRef[ValidateResult], ann: ChannelAnnouncement) extends Command
@@ -162,11 +165,13 @@ object ZmqWatcher {
 
   def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: ExtendedBitcoinClient): Behavior[Command] =
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.block)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockHash)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
       Behaviors.withTimers { timers =>
         // we initialize block count
-        timers.startSingleTimer(TickNewBlock, TickNewBlock, 1 second)
+        timers.startSingleTimer(TickNewBlock, 1 second)
+        // we start a timer in case we don't receive ZMQ block events
+        timers.startSingleTimer(TickBlockTimeout, blockTimeout)
         new ZmqWatcher(nodeParams, blockCount, client, context, timers).watching(Set.empty[GenericWatch], Map.empty[OutPoint, Set[GenericWatch]])
       }
     }
@@ -230,19 +235,32 @@ private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client:
           }
         Behaviors.same
 
-      case ProcessNewBlock(block) =>
-        log.debug("received blockid={}", block.blockId)
+      case ProcessNewBlock(blockHash) =>
+        log.debug("received blockhash={}", blockHash)
         log.debug("scheduling a new task to check on tx confirmations")
+        // we have received a block, so we can reset the block timeout timer
+        timers.startSingleTimer(TickBlockTimeout, blockTimeout)
         // we do this to avoid herd effects in testing when generating a lots of blocks in a row
-        timers.startSingleTimer(TickNewBlock, TickNewBlock, 2 seconds)
+        timers.startSingleTimer(TickNewBlock, 2 seconds)
+        Behaviors.same
+
+      case TickBlockTimeout =>
+        // we haven't received a block in a while, we check whether we're behind and restart the timer.
+        timers.startSingleTimer(TickBlockTimeout, blockTimeout)
+        val currentBlockCount = blockCount.get()
+        client.getBlockCount.map { count =>
+          if (count > currentBlockCount) {
+            context.log.warn("new block wasn't received via ZMQ, you should verify your bitcoind node")
+            context.self ! TickNewBlock
+          }
+        }
         Behaviors.same
 
       case TickNewBlock =>
-        client.getBlockCount.map {
-          count =>
-            log.debug("setting blockCount={}", count)
-            blockCount.set(count)
-            context.system.eventStream ! EventStream.Publish(CurrentBlockCount(count))
+        client.getBlockCount.map { count =>
+          log.debug("setting blockCount={}", count)
+          blockCount.set(count)
+          context.system.eventStream ! EventStream.Publish(CurrentBlockCount(count))
         }
         // TODO: beware of the herd effect
         KamonExt.timeFuture(Metrics.NewBlockCheckConfirmedDuration.withoutTags()) {

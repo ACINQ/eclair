@@ -44,7 +44,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
   override def receive: Receive = main(Map.empty)
 
   def main(pending: Map[UUID, PendingPayment]): Receive = {
-    case r: SendPayment =>
+    case r: SendPaymentToNode =>
       val paymentId = UUID.randomUUID()
       if (!r.blockUntilComplete) {
         // Immediately return the paymentId
@@ -63,7 +63,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         case Some(paymentSecret) =>
           val finalPayload = Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.userCustomTlvs)
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          fsm ! PaymentLifecycle.SendPayment(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
+          fsm ! PaymentLifecycle.SendPaymentToNode(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
       }
 
     case r: SendSpontaneousPayment =>
@@ -73,7 +73,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val finalExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1)
       val finalPayload = Onion.FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(r.recipientAmount), OnionTlv.OutgoingCltv(finalExpiry), OnionTlv.PaymentData(randomBytes32(), r.recipientAmount), OnionTlv.KeySend(r.paymentPreimage)), r.userCustomTlvs))
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-      fsm ! PaymentLifecycle.SendPayment(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, routeParams = r.routeParams)
+      fsm ! PaymentLifecycle.SendPaymentToNode(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, routeParams = r.routeParams)
 
     case r: SendTrampolinePayment =>
       val paymentId = UUID.randomUUID()
@@ -139,7 +139,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           val trampolineSecret = r.trampolineSecret.getOrElse(randomBytes32())
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(SendTrampolinePayment(r.recipientAmount, r.paymentRequest, trampoline, Seq((r.trampolineFees, r.trampolineExpiryDelta)), r.fallbackFinalExpiryDelta), r.trampolineFees, r.trampolineExpiryDelta)
+          val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, trampoline, r.trampolineFees, r.trampolineExpiryDelta)
           payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), Onion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, Seq(OnionTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
         case Nil =>
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
@@ -150,10 +150,10 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       }
   }
 
-  private def buildTrampolinePayment(r: SendTrampolinePayment, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): (MilliSatoshi, CltvExpiry, OnionRoutingPacket) = {
+  private def buildTrampolinePayment(r: SendRequestedPayment, trampolineNodeId : PublicKey, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): (MilliSatoshi, CltvExpiry, OnionRoutingPacket) = {
     val trampolineRoute = Seq(
-      NodeHop(nodeParams.nodeId, r.trampolineNodeId, nodeParams.expiryDelta, 0 msat),
-      NodeHop(r.trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
+      NodeHop(nodeParams.nodeId, trampolineNodeId, nodeParams.expiryDelta, 0 msat),
+      NodeHop(trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
     )
     val finalPayload = if (r.paymentRequest.features.allowMultiPart) {
       Onion.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
@@ -173,7 +173,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), Some(r.paymentRequest), storeInDb = true, publishEvent = false, Seq(NodeHop(r.trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees)))
     // We generate a random secret for this payment to avoid leaking the invoice secret to the first trampoline node.
     val trampolineSecret = randomBytes32()
-    val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, trampolineFees, trampolineExpiryDelta)
+    val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, r.trampolineNodeId, trampolineFees, trampolineExpiryDelta)
     val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
     fsm ! SendMultiPartPayment(self, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, nodeParams.maxPaymentAttempts, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionTlv.TrampolineOnion(trampolineOnion)))
   }
@@ -204,6 +204,17 @@ object PaymentInitiator {
 
   case class PendingPayment(sender: ActorRef, remainingAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)], r: SendTrampolinePayment)
 
+  sealed trait SendRequestedPayment{
+    def recipientAmount: MilliSatoshi
+    def paymentRequest: PaymentRequest
+    def recipientNodeId: PublicKey = paymentRequest.nodeId
+    def paymentHash: ByteVector32 = paymentRequest.paymentHash
+    def fallbackFinalExpiryDelta: CltvExpiryDelta
+    // We add one block in order to not have our htlcs fail when a new block has just been found.
+    def finalExpiry(currentBlockHeight: Long): CltvExpiry =
+      paymentRequest.minFinalCltvExpiryDelta.getOrElse(fallbackFinalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
+  }
+
   /**
    * We temporarily let the caller decide to use Trampoline (instead of a normal payment) and set the fees/cltv.
    * Once we have trampoline fee estimation built into the router, the decision to use Trampoline or not should be done
@@ -224,13 +235,7 @@ object PaymentInitiator {
                                    trampolineNodeId: PublicKey,
                                    trampolineAttempts: Seq[(MilliSatoshi, CltvExpiryDelta)],
                                    fallbackFinalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
-                                   routeParams: Option[RouteParams] = None) {
-    val recipientNodeId = paymentRequest.nodeId
-    val paymentHash = paymentRequest.paymentHash
-
-    // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: Long) = paymentRequest.minFinalCltvExpiryDelta.getOrElse(fallbackFinalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
-  }
+                                   routeParams: RouteParams) extends SendRequestedPayment
 
   /**
    * @param recipientAmount          amount that should be received by the final recipient (usually from a Bolt 11 invoice).
@@ -243,21 +248,15 @@ object PaymentInitiator {
    * @param userCustomTlvs           (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
    * @param blockUntilComplete       (optional) if true, wait until the payment completes before returning a result.
    */
-  case class SendPayment(recipientAmount: MilliSatoshi,
-                         paymentRequest: PaymentRequest,
-                         maxAttempts: Int,
-                         fallbackFinalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
-                         externalId: Option[String] = None,
-                         assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                         routeParams: Option[RouteParams] = None,
-                         userCustomTlvs: Seq[GenericTlv] = Nil,
-                         blockUntilComplete: Boolean = false) {
-    val recipientNodeId = paymentRequest.nodeId
-    val paymentHash = paymentRequest.paymentHash
-
-    // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: Long) = paymentRequest.minFinalCltvExpiryDelta.getOrElse(fallbackFinalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
-  }
+  case class SendPaymentToNode(recipientAmount: MilliSatoshi,
+                               paymentRequest: PaymentRequest,
+                               maxAttempts: Int,
+                               fallbackFinalExpiryDelta: CltvExpiryDelta = Channel.MIN_CLTV_EXPIRY_DELTA,
+                               externalId: Option[String] = None,
+                               assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
+                               routeParams: RouteParams,
+                               userCustomTlvs: Seq[GenericTlv] = Nil,
+                               blockUntilComplete: Boolean = false) extends SendRequestedPayment
 
   /**
    * @param recipientAmount amount that should be received by the final recipient.
@@ -273,7 +272,7 @@ object PaymentInitiator {
                                     paymentPreimage: ByteVector32,
                                     maxAttempts: Int,
                                     externalId: Option[String] = None,
-                                    routeParams: Option[RouteParams] = None,
+                                    routeParams: RouteParams,
                                     userCustomTlvs: Seq[GenericTlv] = Nil) {
     val paymentHash = Crypto.sha256(paymentPreimage)
   }
@@ -322,13 +321,7 @@ object PaymentInitiator {
                                 trampolineSecret: Option[ByteVector32],
                                 trampolineFees: MilliSatoshi,
                                 trampolineExpiryDelta: CltvExpiryDelta,
-                                trampolineNodes: Seq[PublicKey]) {
-    val recipientNodeId = paymentRequest.nodeId
-    val paymentHash = paymentRequest.paymentHash
-
-    // We add one block in order to not have our htlcs fail when a new block has just been found.
-    def finalExpiry(currentBlockHeight: Long) = paymentRequest.minFinalCltvExpiryDelta.getOrElse(fallbackFinalExpiryDelta).toCltvExpiry(currentBlockHeight + 1)
-  }
+                                trampolineNodes: Seq[PublicKey]) extends SendRequestedPayment
 
   /**
    * @param paymentId        id of the outgoing payment (mapped to a single outgoing HTLC).

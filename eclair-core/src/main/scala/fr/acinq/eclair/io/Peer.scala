@@ -29,6 +29,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
@@ -137,14 +138,15 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
           stay()
         } else {
           val channelConfig = ChannelConfig.standard
-          val channelFeatures = ChannelFeatures.pickChannelFeatures(d.localFeatures, d.remoteFeatures)
-          val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelFeatures, funder = true, c.fundingSatoshis, origin_opt = Some(sender()))
+          // If a channel type was provided, we directly use it instead of computing it based on local and remote features.
+          val channelType = c.channelType_opt.getOrElse(ChannelTypes.pickChannelType(d.localFeatures, d.remoteFeatures))
+          val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, funder = true, c.fundingSatoshis, origin_opt = Some(sender()))
           c.timeout_opt.map(openTimeout => context.system.scheduler.scheduleOnce(openTimeout.duration, channel, Channel.TickChannelOpenTimeout)(context.dispatcher))
           val temporaryChannelId = randomBytes32()
-          val channelFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelFeatures, c.fundingSatoshis, None)
+          val channelFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, channelType, c.fundingSatoshis, None)
           val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(nodeParams.onChainFeeConf.feeEstimator.getFeeratePerKw(target = nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))
-          log.info(s"requesting a new channel with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
-          channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelConfig, channelFeatures)
+          log.info(s"requesting a new channel with type=$channelType fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt} temporaryChannelId=$temporaryChannelId localParams=$localParams")
+          channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis, c.pushMsat, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, d.peerConnection, d.remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags), channelConfig, channelType)
           stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
         }
 
@@ -152,13 +154,32 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case None =>
             val channelConfig = ChannelConfig.standard
-            val channelFeatures = ChannelFeatures.pickChannelFeatures(d.localFeatures, d.remoteFeatures)
-            val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelFeatures, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
-            val temporaryChannelId = msg.temporaryChannelId
-            log.info(s"accepting a new channel with temporaryChannelId=$temporaryChannelId localParams=$localParams")
-            channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelFeatures)
-            channel ! msg
-            stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+            val defaultChannelType = ChannelTypes.pickChannelType(d.localFeatures, d.remoteFeatures)
+            val chosenChannelType: Either[InvalidChannelType, SupportedChannelType] = msg.channelType_opt match {
+              case None => Right(defaultChannelType)
+              case Some(proposedChannelType: UnsupportedChannelType) => Left(InvalidChannelType(msg.temporaryChannelId, defaultChannelType, proposedChannelType))
+              case Some(proposedChannelType: SupportedChannelType) =>
+                // We ensure that we support the features necessary for this channel type.
+                val featuresSupported = proposedChannelType.features.forall(f => d.localFeatures.hasFeature(f))
+                if (featuresSupported) {
+                  Right(proposedChannelType)
+                } else {
+                  Left(InvalidChannelType(msg.temporaryChannelId, defaultChannelType, proposedChannelType))
+                }
+            }
+            chosenChannelType match {
+              case Right(channelType) =>
+                val (channel, localParams) = createNewChannel(nodeParams, d.localFeatures, channelType, funder = false, fundingAmount = msg.fundingSatoshis, origin_opt = None)
+                val temporaryChannelId = msg.temporaryChannelId
+                log.info(s"accepting a new channel with type=$channelType temporaryChannelId=$temporaryChannelId localParams=$localParams")
+                channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, d.peerConnection, d.remoteInit, channelConfig, channelType)
+                channel ! msg
+                stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+              case Left(ex) =>
+                log.warning(s"ignoring open_channel: ${ex.getMessage}")
+                d.peerConnection ! Error(msg.temporaryChannelId, ex.getMessage)
+                stay()
+            }
           case Some(_) =>
             log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
             stay()
@@ -300,8 +321,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
       s(e)
   }
 
-  def createNewChannel(nodeParams: NodeParams, initFeatures: Features, channelFeatures: ChannelFeatures, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
-    val (finalScript, walletStaticPaymentBasepoint) = if (channelFeatures.paysDirectlyToWallet) {
+  def createNewChannel(nodeParams: NodeParams, initFeatures: Features, channelType: SupportedChannelType, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
+    val (finalScript, walletStaticPaymentBasepoint) = if (channelType.paysDirectlyToWallet) {
       val walletKey = Helpers.getWalletPaymentBasepoint(wallet)
       (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
     } else {
@@ -409,7 +430,7 @@ object Peer {
   }
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful
-  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[FeeratePerKw], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) extends PossiblyHarmful {
+  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelType_opt: Option[SupportedChannelType], fundingTxFeeratePerKw_opt: Option[FeeratePerKw], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) extends PossiblyHarmful {
     require(pushMsat <= fundingSatoshis, s"pushMsat must be less or equal to fundingSatoshis")
     require(fundingSatoshis >= 0.sat, s"fundingSatoshis must be positive")
     require(pushMsat >= 0.msat, s"pushMsat must be positive")

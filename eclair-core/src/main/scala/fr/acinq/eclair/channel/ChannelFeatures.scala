@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.eclair.Features.{AnchorOutputs, OptionUpfrontShutdownScript, StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
-import fr.acinq.eclair.{Feature, Features}
+import fr.acinq.eclair.{Feature, FeatureSupport, Features}
 
 /**
  * Created by t-bast on 24/06/2021.
@@ -31,11 +31,6 @@ import fr.acinq.eclair.{Feature, Features}
  */
 case class ChannelFeatures(activated: Set[Feature]) {
 
-  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
-  val paysDirectlyToWallet: Boolean = {
-    hasFeature(Features.StaticRemoteKey) && !hasFeature(Features.AnchorOutputs)
-  }
-
   /** Format of the channel transactions. */
   val commitmentFormat: CommitmentFormat = {
     if (hasFeature(AnchorOutputs)) {
@@ -44,6 +39,18 @@ case class ChannelFeatures(activated: Set[Feature]) {
       DefaultCommitmentFormat
     }
   }
+
+  val channelType: SupportedChannelType = {
+    if (hasFeature(AnchorOutputs)) {
+      ChannelTypes.AnchorOutputs
+    } else if (hasFeature(StaticRemoteKey)) {
+      ChannelTypes.StaticRemoteKey
+    } else {
+      ChannelTypes.Standard
+    }
+  }
+
+  val paysDirectlyToWallet: Boolean = channelType.paysDirectlyToWallet
 
   def hasFeature(feature: Feature): Boolean = activated.contains(feature)
 
@@ -55,18 +62,69 @@ object ChannelFeatures {
 
   def apply(features: Feature*): ChannelFeatures = ChannelFeatures(Set.from(features))
 
-  /** Pick the channel features that should be used based on local and remote feature bits. */
-  def pickChannelFeatures(localFeatures: Features, remoteFeatures: Features): ChannelFeatures = {
+  /** Enrich the channel type with other permanent features that will be applied to the channel. */
+  def apply(channelType: ChannelType, localFeatures: Features, remoteFeatures: Features): ChannelFeatures = {
     // NB: we don't include features that can be safely activated/deactivated without impacting the channel's operation,
     // such as option_dataloss_protect or option_shutdown_anysegwit.
-    val availableFeatures = Set[Feature](
-      StaticRemoteKey,
-      Wumbo,
-      AnchorOutputs,
-      OptionUpfrontShutdownScript
-    ).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
+    val availableFeatures: Seq[Feature] = Seq(Wumbo, OptionUpfrontShutdownScript).filter(f => Features.canUseFeature(localFeatures, remoteFeatures, f))
+    val allFeatures = channelType.features.toSeq ++ availableFeatures
+    ChannelFeatures(allFeatures: _*)
+  }
 
-    ChannelFeatures(availableFeatures)
+}
+
+/** A channel type is a specific set of even feature bits that represent persistent channel features as defined in Bolt 2. */
+sealed trait ChannelType {
+  /** Features representing that channel type. */
+  def features: Set[Feature]
+}
+
+sealed trait SupportedChannelType extends ChannelType {
+  /** True if our main output in the remote commitment is directly sent (without any delay) to one of our wallet addresses. */
+  def paysDirectlyToWallet: Boolean
+}
+
+object ChannelTypes {
+
+  // @formatter:off
+  case object Standard extends SupportedChannelType {
+    override def features: Set[Feature] = Set.empty
+    override def paysDirectlyToWallet: Boolean = false
+    override def toString: String = "standard"
+  }
+  case object StaticRemoteKey extends SupportedChannelType {
+    override def features: Set[Feature] = Set(Features.StaticRemoteKey)
+    override def paysDirectlyToWallet: Boolean = true
+    override def toString: String = "static_remotekey"
+  }
+  case object AnchorOutputs extends SupportedChannelType {
+    override def features: Set[Feature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
+    override def paysDirectlyToWallet: Boolean = false
+    override def toString: String = "anchor_outputs"
+  }
+  case class UnsupportedChannelType(featureBits: Features) extends ChannelType {
+    override def features: Set[Feature] = featureBits.activated.keySet
+    override def toString: String = s"0x${featureBits.toByteVector.toHex}"
+  }
+  // @formatter:on
+
+  // NB: Bolt 2: features must exactly match in order to identify a channel type.
+  def fromFeatures(features: Features): ChannelType = features match {
+    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory) => AnchorOutputs
+    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory) => StaticRemoteKey
+    case f if f == Features.empty => Standard
+    case _ => UnsupportedChannelType(features)
+  }
+
+  /** Pick the channel type based on local and remote feature bits. */
+  def pickChannelType(localFeatures: Features, remoteFeatures: Features): SupportedChannelType = {
+    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
+      AnchorOutputs
+    } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.StaticRemoteKey)) {
+      StaticRemoteKey
+    } else {
+      Standard
+    }
   }
 
 }

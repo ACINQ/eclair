@@ -51,7 +51,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     waitForBitcoindReady()
     logger.info("starting zmq actors")
     val (zmqBlockConnected, zmqTxConnected) = (Promise[Done](), Promise[Done]())
-    zmqBlock = system.actorOf(Props(new ZMQActor(s"tcp://127.0.0.1:$bitcoindZmqBlockPort", ZMQActor.Topics.RawBlock, Some(zmqBlockConnected))))
+    zmqBlock = system.actorOf(Props(new ZMQActor(s"tcp://127.0.0.1:$bitcoindZmqBlockPort", ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))))
     zmqTx = system.actorOf(Props(new ZMQActor(s"tcp://127.0.0.1:$bitcoindZmqTxPort", ZMQActor.Topics.RawTx, Some(zmqTxConnected))))
     awaitCond(zmqBlockConnected.isCompleted && zmqTxConnected.isCompleted)
     super.beforeAll()
@@ -244,24 +244,13 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       probe.expectMsg(tx2.txid)
       listener.expectNoMessage(1 second)
 
-      // We must unsubscribe the watcher from ZMQ tx subscriptions, otherwise this test has a race condition because
-      // bitcoind sends us a NewTransaction event for each transaction inside a new block. If these are delayed and are
-      // received after we registered our watch, we will receive the watch-triggered event twice.
-      system.eventStream.unsubscribe(watcher.ref.toClassic, classOf[NewTransaction])
-
       system.eventStream.subscribe(probe.ref, classOf[CurrentBlockCount])
       generateBlocks(1)
       awaitCond(probe.expectMsgType[CurrentBlockCount].blockCount >= initialBlockCount + 2)
 
-      watcher ! WatchExternalChannelSpent(listener.ref, tx1.txid, 0, ShortChannelId(1))
-      listener.expectMsg(WatchExternalChannelSpentTriggered(ShortChannelId(1)))
-      watcher ! WatchFundingSpent(listener.ref, tx1.txid, 0, Set.empty)
-      listener.expectMsg(WatchFundingSpentTriggered(tx2))
-      listener.expectNoMessage(1 second)
-
       watcher ! ListWatches(listener.ref)
       val watches2 = listener.expectMsgType[Set[Watch[_]]]
-      assert(watches2.size === 2)
+      assert(watches2.size === 1)
       assert(watches2.forall(_.isInstanceOf[WatchFundingSpent]))
       watcher ! StopWatching(listener.ref)
 
@@ -278,6 +267,12 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       // We should find txs that have already been confirmed
       watcher ! WatchOutputSpent(listener.ref, tx.txid, outputIndex, Set.empty)
       listener.expectMsg(WatchOutputSpentTriggered(tx1))
+      watcher ! StopWatching(listener.ref)
+
+      watcher ! WatchExternalChannelSpent(listener.ref, tx1.txid, 0, ShortChannelId(1))
+      listener.expectMsg(WatchExternalChannelSpentTriggered(ShortChannelId(1)))
+      watcher ! WatchFundingSpent(listener.ref, tx1.txid, 0, Set.empty)
+      listener.expectMsg(WatchFundingSpentTriggered(tx2))
     })
   }
 
