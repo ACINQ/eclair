@@ -199,6 +199,7 @@ object RouteCalculation {
     ),
     mpp = MultiPartParams(pathFindingConf.mppMinPartAmount, pathFindingConf.mppMaxParts),
     includeLocalChannelCost = false,
+    experimentName = pathFindingConf.experimentName,
   )
 
   /**

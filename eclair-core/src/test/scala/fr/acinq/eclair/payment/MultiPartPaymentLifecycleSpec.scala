@@ -63,7 +63,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
   override def withFixture(test: OneArgTest): Outcome = {
     val id = UUID.randomUUID()
-    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, finalAmount, finalRecipient, Upstream.Local(id), None, storeInDb = true, publishEvent = true, Nil)
+    val cfg = SendPaymentConfig(id, id, Some("42"), paymentHash, finalAmount, finalRecipient, Upstream.Local(id), None, storeInDb = true, publishEvent = true, recordMetrics = true, Nil)
     val nodeParams = TestConstants.Alice.nodeParams
     val (childPayFsm, router, sender, eventListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val paymentHandler = TestFSMRef(new MultiPartPaymentLifecycle(nodeParams, cfg, router.ref, FakePaymentFactory(childPayFsm)))
@@ -588,7 +588,7 @@ object MultiPartPaymentLifecycleSpec {
   val expiry = CltvExpiry(1105)
   val finalAmount = 1000000 msat
   val finalRecipient = randomKey().publicKey
-  val routeParams = RouteParams(randomize = false, 15000 msat, 0.01, 6, CltvExpiryDelta(1008), WeightRatios(1, 0, 0, 0, 0 msat, 0), MultiPartParams(1000 msat, 5), includeLocalChannelCost = false)
+  val routeParams = RouteParams(randomize = false, 15000 msat, 0.01, 6, CltvExpiryDelta(1008), WeightRatios(1, 0, 0, 0, 0 msat, 0), MultiPartParams(1000 msat, 5), includeLocalChannelCost = false, experimentName = "")
   val maxFee = 15000 msat // max fee for the defaultAmount
 
   /**

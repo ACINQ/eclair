@@ -32,7 +32,6 @@ import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
-import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams}
@@ -161,7 +160,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val failures = d.failures ++ pf.failures
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.request.replyTo, Left(PaymentFailed(id, paymentHash, failures)))
+        myStop(d.request, Left(PaymentFailed(id, paymentHash, failures)))
       } else {
         stay() using d.copy(failures = failures, pending = pending)
       }
@@ -183,7 +182,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val parts = d.parts ++ ps.parts
       val pending = d.pending - ps.parts.head.id
       if (pending.isEmpty) {
-        myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, parts)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.preimage, parts)))
       } else {
         stay() using d.copy(parts = parts, pending = pending)
       }
@@ -194,7 +193,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment succeeded but partial payment failed (id=${pf.id})")
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, d.parts)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.preimage, d.parts)))
       } else {
         stay() using d.copy(pending = pending)
       }
@@ -208,13 +207,13 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       case Upstream.Local(_) => Upstream.Local(childId)
       case _ => cfg.upstream
     }
-    val childCfg = cfg.copy(id = childId, publishEvent = false, upstream = upstream)
+    val childCfg = cfg.copy(id = childId, publishEvent = false, recordMetrics = false, upstream = upstream)
     paymentFactory.spawnOutgoingPayment(context, childCfg)
   }
 
   private def gotoAbortedOrStop(d: PaymentAborted): State = {
     if (d.pending.isEmpty) {
-      myStop(d.request.replyTo, Left(PaymentFailed(id, paymentHash, d.failures)))
+      myStop(d.request, Left(PaymentFailed(id, paymentHash, d.failures)))
     } else
       goto(PAYMENT_ABORTED) using d
   }
@@ -222,26 +221,36 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   private def gotoSucceededOrStop(d: PaymentSucceeded): State = {
     d.request.replyTo ! PreimageReceived(paymentHash, d.preimage)
     if (d.pending.isEmpty) {
-      myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, d.parts)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.preimage, d.parts)))
     } else
       goto(PAYMENT_SUCCEEDED) using d
   }
 
-  def myStop(origin: ActorRef, event: Either[PaymentFailed, PaymentSent]): State = {
+  def myStop(request: SendMultiPartPayment, event: Either[PaymentFailed, PaymentSent]): State = {
     event match {
       case Left(paymentFailed) =>
         log.warning("multi-part payment failed")
-        reply(origin, paymentFailed)
+        reply(request.replyTo, paymentFailed)
       case Right(paymentSent) =>
         log.info("multi-part payment succeeded")
-        reply(origin, paymentSent)
+        reply(request.replyTo, paymentSent)
     }
-    Metrics.SentPaymentDuration
-      .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
-      .withTag(Tags.Success, value = event.isRight)
-      .record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
-    if (retriedFailedChannels) {
-      Metrics.RetryFailedChannelsResult.withTag(Tags.Success, event.isRight).increment()
+    if (cfg.recordMetrics) {
+      val fees = event match {
+        case Left(paymentFailed) => 0 msat
+        case Right(paymentSent) => paymentSent.feesPaid
+      }
+      val success = event.isRight
+      val now = System.currentTimeMillis
+      val duration = now - start
+      context.system.eventStream.publish(ExperimentMetrics(request.totalAmount, fees, success, duration, now, request.routeParams.experimentName))
+      Metrics.SentPaymentDuration
+        .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
+        .withTag(Tags.Success, value = success)
+        .record(duration, TimeUnit.MILLISECONDS)
+      if (retriedFailedChannels) {
+        Metrics.RetryFailedChannelsResult.withTag(Tags.Success, event.isRight).increment()
+      }
     }
     stop(FSM.Normal)
   }

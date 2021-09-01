@@ -446,7 +446,7 @@ object Router {
 
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
-  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: WeightRatios, mpp: MultiPartParams, includeLocalChannelCost: Boolean) {
+  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: WeightRatios, mpp: MultiPartParams, includeLocalChannelCost: Boolean, experimentName: String) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
       maxFeeBase.max(amount * maxFeePct)
