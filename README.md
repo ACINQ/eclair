@@ -102,6 +102,8 @@ This repository also contains a sample GUI ([eclair-node-gui](https://github.com
 
 :warning: The sample GUI should only be used for prototyping and demo purposes: it is unsafe to use it on mainnet.
 
+:warning: Be careful when following tutorials/guides that may be outdated or incomplete. You must thoroughly read the official eclair documentation before running your own node.
+
 ## Configuration
 
 ### Configuration file
