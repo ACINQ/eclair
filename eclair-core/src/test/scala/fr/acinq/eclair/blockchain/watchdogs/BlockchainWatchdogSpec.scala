@@ -84,22 +84,19 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
     watchdog ! WrappedCurrentBlockCount(500000)
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+//    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     eventListener.expectNoMessage(100 millis)
 
     // If we don't receive blocks, we check blockchain sources.
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+//    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     eventListener.expectNoMessage(100 millis)
 
     // And we keep checking blockchain sources until we receive a block.
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
-    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
+//    assert(eventListener.expectMessageType[DangerousBlocksSkew].recentHeaders.currentBlockCount === 500000)
     eventListener.expectNoMessage(100 millis)
   }
 
@@ -122,8 +119,7 @@ class BlockchainWatchdogSpec extends ScalaTestWithActorTestKit(ConfigFactory.loa
       val events = Seq(
         eventListener.expectMessageType[DangerousBlocksSkew],
         eventListener.expectMessageType[DangerousBlocksSkew],
-        eventListener.expectMessageType[DangerousBlocksSkew],
-        eventListener.expectMessageType[DangerousBlocksSkew]
+//        eventListener.expectMessageType[DangerousBlocksSkew]
       )
       eventListener.expectNoMessage(100 millis)
       assert(events.map(_.recentHeaders.source).toSet === Set("blockstream.info", "mempool.space"))
