@@ -38,16 +38,16 @@ trait Payment {
   }
 
   val payInvoice: Route = postRequest("payinvoice") { implicit t =>
-    formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "blocking".as[Boolean].?) {
-      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, blocking_opt) =>
+    formFields(invoiceFormParam, amountMsatFormParam.?, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "blocking".as[Boolean].?, "experimentName".as[String].?) {
+      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, blocking_opt, experimentName) =>
         blocking_opt match {
-          case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, amount, invoice, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
-          case _ => complete(eclairApi.send(externalId_opt, amount, invoice, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+          case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, amount, invoice, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, experimentName))
+          case _ => complete(eclairApi.send(externalId_opt, amount, invoice, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, experimentName))
         }
-      case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, blocking_opt) =>
+      case (invoice, Some(overrideAmount), maxAttempts, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, blocking_opt, experimentName) =>
         blocking_opt match {
-          case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, overrideAmount, invoice, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
-          case _ => complete(eclairApi.send(externalId_opt, overrideAmount, invoice, maxAttempts, feeThresholdSat_opt, maxFeePct_opt))
+          case Some(true) => complete(eclairApi.sendBlocking(externalId_opt, overrideAmount, invoice, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, experimentName))
+          case _ => complete(eclairApi.send(externalId_opt, overrideAmount, invoice, maxAttempts, feeThresholdSat_opt, maxFeePct_opt, experimentName))
         }
       case _ => reject(MalformedFormFieldRejection("invoice", "The invoice must have an amount or you need to specify one using the field 'amountMsat'"))
     }
@@ -72,9 +72,9 @@ trait Payment {
   }
 
   val sendToNode: Route = postRequest("sendtonode") { implicit t =>
-    formFields(amountMsatFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?) {
-      case (amountMsat, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt) =>
-        complete(eclairApi.sendWithPreimage(externalId_opt, nodeId, amountMsat, randomBytes32(), maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt))
+    formFields(amountMsatFormParam, nodeIdFormParam, "maxAttempts".as[Int].?, "feeThresholdSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "experimentName".as[String].?) {
+      case (amountMsat, nodeId, maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, externalId_opt, experimentName) =>
+        complete(eclairApi.sendWithPreimage(externalId_opt, nodeId, amountMsat, randomBytes32(), maxAttempts_opt, feeThresholdSat_opt, maxFeePct_opt, experimentName))
     }
   }
 

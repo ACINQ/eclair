@@ -23,4 +23,13 @@ case class PathFindingExperimentConf(experiments: List[PathFindingConf]) {
   def get(): PathFindingConf = {
     confByPercentile(rng.nextInt(100))
   }
+
+  def getByName(name: String): Option[PathFindingConf] = {
+    for (conf <- experiments) {
+      if(conf.experimentName == name) {
+        return Some(conf)
+      }
+    }
+    None
+  }
 }
