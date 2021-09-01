@@ -62,7 +62,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, defaultChannelType) = computeFeatures(setup, test.tags)
     val channelType = if (test.tags.contains("standard-channel-type")) ChannelTypes.Standard else defaultChannelType
-    val initialFeeratePerKw = if (channelType == ChannelTypes.AnchorOutputs) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val initialFeeratePerKw = if (channelType == ChannelTypes.AnchorOutputs || channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTxs) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
@@ -95,6 +95,15 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelFeatures.channelType === ChannelTypes.AnchorOutputs)
   }
 
+  test("recv AcceptChannel (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
+    import f._
+    val accept = bob2alice.expectMsgType[AcceptChannel]
+    assert(accept.channelType_opt === Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTxs))
+    bob2alice.forward(alice)
+    awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
+    assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelFeatures.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTxs)
+  }
+
   test("recv AcceptChannel (channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
@@ -106,7 +115,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelFeatures.channelType === ChannelTypes.AnchorOutputs)
   }
 
-  test("recv AcceptChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag("standard-channel-type")) { f =>
+  test("recv AcceptChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag("standard-channel-type")) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     // Alice asked for a standard channel whereas they both support anchor outputs.
@@ -116,14 +125,14 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_INTERNAL].channelFeatures.channelType === ChannelTypes.Standard)
   }
 
-  test("recv AcceptChannel (non-default channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputs), Tag("standard-channel-type")) { f =>
+  test("recv AcceptChannel (non-default channel type not set)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag("standard-channel-type")) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
     assert(accept.channelType_opt === Some(ChannelTypes.Standard))
     // Alice asked for a standard channel whereas they both support anchor outputs. Bob doesn't support explicit channel
     // type negotiation so Alice needs to abort because the channel types won't match.
     bob2alice.forward(alice, accept.copy(tlvStream = TlvStream(ChannelTlv.UpfrontShutdownScriptTlv(ByteVector.empty))))
-    alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
+    alice2bob.expectMsg(Error(accept.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
     awaitCond(alice.stateName == CLOSED)
   }
 

@@ -87,7 +87,14 @@ class FeaturesSpec extends AnyFunSuite {
       bin"001000000010000000000000" -> true,
       bin"001000000001000000000000" -> true,
       bin"000100000010000000000000" -> true,
-      bin"000100000001000000000000" -> true
+      bin"000100000001000000000000" -> true,
+      // option_anchors_zero_fee_htlc_tx depends on option_static_remotekey
+      bin"100000000000000000000000" -> false,
+      bin"010000000000000000000000" -> false,
+      bin"100000000010000000000000" -> true,
+      bin"100000000001000000000000" -> true,
+      bin"010000000010000000000000" -> true,
+      bin"010000000001000000000000" -> true,
     )
 
     for ((testCase, valid) <- testCases) {
@@ -191,10 +198,10 @@ class FeaturesSpec extends AnyFunSuite {
         compatible = false
       ),
       // nonreg testing of future features (needs to be updated with every new supported mandatory bit)
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(22))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(23))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
       TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(24))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
-      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true)
+      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(25))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
+      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(28))), oursSupportTheirs = false, theirsSupportOurs = true, compatible = false),
+      TestCase(Features.empty, Features(Map.empty[Feature, FeatureSupport], Set(UnknownFeature(29))), oursSupportTheirs = true, theirsSupportOurs = true, compatible = true),
     )
 
     for (testCase <- testCases) {

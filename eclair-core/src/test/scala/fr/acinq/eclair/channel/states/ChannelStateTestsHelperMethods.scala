@@ -62,6 +62,8 @@ object ChannelStateTestsTags {
   val StaticRemoteKey = "static_remotekey"
   /** If set, channels will use option_anchor_outputs. */
   val AnchorOutputs = "anchor_outputs"
+  /** If set, channels will use option_anchors_zero_fee_htlc_tx. */
+  val AnchorOutputsZeroFeeHtlcTxs = "anchor_outputs_zero_fee_htlc_tx"
   /** If set, channels will use option_shutdown_anysegwit. */
   val ShutdownAnySegwit = "shutdown_anysegwit"
   /** If set, channels will be public (otherwise we don't announce them by default). */
@@ -121,12 +123,14 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional).updated(Features.AnchorOutputsZeroFeeHtlcTxs, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionUpfrontShutdownScript))(_.updated(Features.OptionUpfrontShutdownScript, FeatureSupport.Optional))
     val bobInitFeatures = Bob.nodeParams.features
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.Wumbo))(_.updated(Features.Wumbo, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.StaticRemoteKey))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional))
+      .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs))(_.updated(Features.StaticRemoteKey, FeatureSupport.Optional).updated(Features.AnchorOutputs, FeatureSupport.Optional).updated(Features.AnchorOutputsZeroFeeHtlcTxs, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionUpfrontShutdownScript))(_.updated(Features.OptionUpfrontShutdownScript, FeatureSupport.Optional))
 
@@ -152,7 +156,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, tags)
     val channelFlags = if (tags.contains(ChannelStateTestsTags.ChannelsPublic)) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-    val initialFeeratePerKw = if (tags.contains(ChannelStateTestsTags.AnchorOutputs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val initialFeeratePerKw = if (tags.contains(ChannelStateTestsTags.AnchorOutputs) || tags.contains(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val (fundingSatoshis, pushMsat) = if (tags.contains(ChannelStateTestsTags.NoPushMsat)) {
       (TestConstants.fundingSatoshis, 0.msat)
     } else {

@@ -45,6 +45,8 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
         proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
       case ChannelTypes.AnchorOutputs =>
         proposedFeerate < networkFeerate * ratioLow || anchorOutputMaxCommitFeerate * ratioHigh < proposedFeerate
+      case ChannelTypes.AnchorOutputsZeroFeeHtlcTxs =>
+        proposedFeerate < networkFeerate * ratioLow || anchorOutputMaxCommitFeerate * ratioHigh < proposedFeerate
     }
   }
 }
@@ -71,7 +73,7 @@ case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, cl
       case Some(currentFeerates) => currentFeerates.feeratesPerKw.feePerBlock(feeTargets.commitmentBlockTarget)
       case None => feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
     }
-    if (channelType == ChannelTypes.AnchorOutputs) {
+    if (channelType == ChannelTypes.AnchorOutputs || channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTxs) {
       networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
     } else {
       networkFeerate
