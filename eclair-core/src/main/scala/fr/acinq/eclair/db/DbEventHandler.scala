@@ -26,6 +26,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.Monitoring.{Metrics => PaymentMetrics, Tags => PaymentTags}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.router.Announcements
 
 /**
  * This actor sits at the interface between our event stream and the database.
@@ -119,12 +120,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case u: LocalChannelUpdate =>
       u.previousChannelUpdate_opt match {
-        case Some(previous) if
-          u.channelUpdate.feeBaseMsat == previous.feeBaseMsat &&
-          u.channelUpdate.feeProportionalMillionths == previous.feeProportionalMillionths &&
-          u.channelUpdate.cltvExpiryDelta == previous.cltvExpiryDelta &&
-          u.channelUpdate.htlcMinimumMsat == previous.htlcMinimumMsat &&
-          u.channelUpdate.htlcMaximumMsat == previous.htlcMaximumMsat => ()
+        case Some(previous) if Announcements.areSameIgnoreFlags(previous, u.channelUpdate) => () // channel update hasn't changed => ()
         case _ => auditDb.addChannelUpdate(u)
       }
 

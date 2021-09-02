@@ -157,6 +157,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
 
+  private var previousChannelUpdate_opt: Option[ChannelUpdate] = None
+
   /*
           8888888 888b    888 8888888 88888888888
             888   8888b   888   888       888
@@ -312,6 +314,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(channelUpdate1.timestamp)
           context.system.scheduler.scheduleWithFixedDelay(initialDelay = periodicRefreshInitialDelay, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
 
+          previousChannelUpdate_opt = Some(normal.channelUpdate)
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1)
 
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
@@ -978,6 +981,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
       } else None
       // we use GOTO instead of stay() because we want to fire transitions
+      previousChannelUpdate_opt = Some(d.channelUpdate)
       goto(NORMAL) using d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate) storing() sending localAnnSigs_opt.toSeq
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
@@ -1022,6 +1026,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
       // we use GOTO instead of stay() because we want to fire transitions
+      previousChannelUpdate_opt = Some(d.channelUpdate)
       goto(NORMAL) using d.copy(channelUpdate = channelUpdate) storing()
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
@@ -1035,6 +1040,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case _ =>
           log.debug("refreshing channel_update announcement (reason={})", reason)
           // we use GOTO instead of stay() because we want to fire transitions
+          previousChannelUpdate_opt = Some(d.channelUpdate)
           goto(NORMAL) using d.copy(channelUpdate = channelUpdate1) storing()
       }
 
@@ -1059,6 +1065,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       } else {
         d
       }
+      previousChannelUpdate_opt = Some(d.channelUpdate)
       goto(OFFLINE) using d1
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
@@ -1557,6 +1564,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
       // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
+      previousChannelUpdate_opt = Some(d.channelUpdate)
       stay() using d.copy(channelUpdate = channelUpdate) storing()
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSinceBlock, d.fundingTx)
@@ -1883,11 +1891,6 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
         case _ => ()
       }
 
-      val previousChannelUpdate_opt = stateData match {
-        case data: DATA_NORMAL => Some(data.channelUpdate)
-        case _ => None
-      }
-
       (state, nextState, stateData, nextStateData) match {
         // ORDER MATTERS!
         case (WAIT_FOR_INIT_INTERNAL, OFFLINE, _, normal: DATA_NORMAL) =>
@@ -2144,6 +2147,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       // then we update the state and replay the request
       self forward c
       // we use goto to fire transitions
+      previousChannelUpdate_opt = Some(d.channelUpdate)
       goto(stateName) using d.copy(channelUpdate = channelUpdate)
     } else {
       // channel is already disabled, we reply to the request
