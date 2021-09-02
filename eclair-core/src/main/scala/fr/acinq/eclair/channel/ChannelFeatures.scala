@@ -31,8 +31,8 @@ import fr.acinq.eclair.{Feature, FeatureSupport, Features}
 case class ChannelFeatures(activated: Set[Feature]) {
 
   val channelType: SupportedChannelType = {
-    if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTxs)) {
-      ChannelTypes.AnchorOutputsZeroFeeHtlcTxs
+    if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
+      ChannelTypes.AnchorOutputsZeroFeeHtlcTx
     } else if (hasFeature(Features.AnchorOutputs)) {
       ChannelTypes.AnchorOutputs
     } else if (hasFeature(Features.StaticRemoteKey)) {
@@ -101,8 +101,8 @@ object ChannelTypes {
     override def commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs"
   }
-  case object AnchorOutputsZeroFeeHtlcTxs extends SupportedChannelType {
-    override def features: Set[Feature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTxs)
+  case object AnchorOutputsZeroFeeHtlcTx extends SupportedChannelType {
+    override def features: Set[Feature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
     override def paysDirectlyToWallet: Boolean = false
     override def commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs_zero_fee_htlc_tx"
@@ -115,7 +115,7 @@ object ChannelTypes {
 
   // NB: Bolt 2: features must exactly match in order to identify a channel type.
   def fromFeatures(features: Features): ChannelType = features match {
-    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputsZeroFeeHtlcTxs -> FeatureSupport.Mandatory) => AnchorOutputsZeroFeeHtlcTxs
+    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Mandatory) => AnchorOutputsZeroFeeHtlcTx
     case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory) => AnchorOutputs
     case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory) => StaticRemoteKey
     case f if f == Features.empty => Standard
@@ -124,8 +124,8 @@ object ChannelTypes {
 
   /** Pick the channel type based on local and remote feature bits. */
   def pickChannelType(localFeatures: Features, remoteFeatures: Features): SupportedChannelType = {
-    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTxs)) {
-      AnchorOutputsZeroFeeHtlcTxs
+    if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
+      AnchorOutputsZeroFeeHtlcTx
     } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
       AnchorOutputs
     } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.StaticRemoteKey)) {

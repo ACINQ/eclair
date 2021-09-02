@@ -629,15 +629,9 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
 }
 
-class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
+abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
-  test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29750, "eclair.api.port" -> 28095).asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29751, "eclair.api.port" -> 28096).asJava).withFallback(withAnchorOutputs).withFallback(withWumbo).withFallback(commonConfig))
-    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29753, "eclair.api.port" -> 28097).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
-  }
-
-  test("connect nodes") {
+  def connectNodes(expectedChannelType: SupportedChannelType): Unit = {
     // A --- C --- F
     val eventListener = TestProbe()
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged])
@@ -649,16 +643,21 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     within(60 seconds) {
       var count = 0
       while (count < 2) {
-        if (eventListener.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == NORMAL) count = count + 1
+        val stateEvent = eventListener.expectMsgType[ChannelStateChanged](max = 60 seconds)
+        if (stateEvent.currentState == NORMAL) {
+          assert(stateEvent.commitments_opt.nonEmpty)
+          assert(stateEvent.commitments_opt.get.asInstanceOf[Commitments].channelType === expectedChannelType)
+          count = count + 1
+        }
       }
     }
 
-    // generate more blocks so that all funding txes are buried under at least 6 blocks
+    // generate more blocks so that all funding txs are buried under at least 6 blocks
     generateBlocks(4)
     awaitAnnouncements(1)
   }
 
-  test("open channel C <-> F, send payments and close (option_anchor_outputs, option_static_remotekey)") {
+  def testOpenPayClose(expectedChannelType: SupportedChannelType): Unit = {
     connect(nodes("C"), nodes("F"), 5000000 sat, 0 msat)
     generateBlocks(6)
     awaitAnnouncements(2)
@@ -671,6 +670,7 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     sender.send(nodes("F").register, Register.Forward(sender.ref, channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
     val initialStateDataF = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
+    assert(initialStateDataF.commitments.channelType === expectedChannelType)
     val initialCommitmentIndex = initialStateDataF.commitments.localCommit.index
 
     // the 'to remote' address is a simple script spending to the remote payment basepoint with a 1-block CSV delay
@@ -745,23 +745,7 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     awaitAnnouncements(1)
   }
 
-  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs)") {
-    testDownstreamFulfillLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
-  }
-
-  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs)") {
-    testDownstreamFulfillRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
-  }
-
-  test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs)") {
-    testDownstreamTimeoutLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
-  }
-
-  test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs)") {
-    testDownstreamTimeoutRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
-  }
-
-  test("punish a node that has published a revoked commit tx (anchor outputs)") {
+  def testPunishRevokedCommit(): Unit = {
     val revokedCommitFixture = testRevokedCommit(Transactions.AnchorOutputsCommitmentFormat)
     import revokedCommitFixture._
 
@@ -788,6 +772,82 @@ class AnchorOutputChannelIntegrationSpec extends ChannelIntegrationSpec {
     // and we wait for C's channel to close
     awaitCond(stateListenerC.expectMsgType[ChannelStateChanged](max = 60 seconds).currentState == CLOSED, max = 60 seconds)
     awaitAnnouncements(1)
+  }
+
+}
+
+class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
+
+  test("start eclair nodes") {
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29750, "eclair.api.port" -> 28093).asJava).withFallback(commonFeatures).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29751, "eclair.api.port" -> 28094).asJava).withFallback(withAnchorOutputs).withFallback(withWumbo).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29753, "eclair.api.port" -> 28095).asJava).withFallback(withAnchorOutputs).withFallback(commonConfig))
+  }
+
+  test("connect nodes") {
+    connectNodes(ChannelTypes.StaticRemoteKey)
+  }
+
+  test("open channel C <-> F, send payments and close (anchor outputs)") {
+    testOpenPayClose(ChannelTypes.AnchorOutputs)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs)") {
+    testDownstreamFulfillLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs)") {
+    testDownstreamFulfillRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs)") {
+    testDownstreamTimeoutLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs)") {
+    testDownstreamTimeoutRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
+  }
+
+  test("punish a node that has published a revoked commit tx (anchor outputs)") {
+    testPunishRevokedCommit()
+  }
+
+}
+
+class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
+
+  test("start eclair nodes") {
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29760, "eclair.api.port" -> 28096).asJava).withFallback(commonFeatures).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29761, "eclair.api.port" -> 28097).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(withWumbo).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29763, "eclair.api.port" -> 28098).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
+  }
+
+  test("connect nodes") {
+    connectNodes(ChannelTypes.StaticRemoteKey)
+  }
+
+  test("open channel C <-> F, send payments and close (anchor outputs zero fee htlc txs)") {
+    testOpenPayClose(ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamFulfillLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
+  }
+
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamFulfillRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamTimeoutLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
+  }
+
+  test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs zero fee htlc txs)") {
+    testDownstreamTimeoutRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
+  }
+
+  test("punish a node that has published a revoked commit tx (anchor outputs)") {
+    testPunishRevokedCommit()
   }
 
 }

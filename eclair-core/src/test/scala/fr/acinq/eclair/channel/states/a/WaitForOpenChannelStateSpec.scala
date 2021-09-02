@@ -51,7 +51,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, defaultChannelType) = computeFeatures(setup, test.tags)
     val channelType = if (test.tags.contains("standard-channel-type")) ChannelTypes.Standard else defaultChannelType
-    val initialFeeratePerKw = if (channelType == ChannelTypes.AnchorOutputs || channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTxs) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
+    val initialFeeratePerKw = if (channelType == ChannelTypes.AnchorOutputs || channelType == ChannelTypes.AnchorOutputsZeroFeeHtlcTx) TestConstants.anchorOutputsFeeratePerKw else TestConstants.feeratePerKw
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
@@ -86,10 +86,10 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
   test("recv OpenChannel (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    assert(open.channelType_opt === Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTxs))
+    assert(open.channelType_opt === Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))
     alice2bob.forward(bob)
     awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTxs)
+    assert(bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CREATED].channelFeatures.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
   }
 
   test("recv OpenChannel (non-default channel type)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs), Tag("standard-channel-type")) { f =>

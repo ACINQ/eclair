@@ -24,7 +24,7 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -36,8 +36,10 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   // @formatter:off
   def filename: String
   def channelFeatures: ChannelFeatures
-  def commitmentFormat: CommitmentFormat
   // @formatter:on
+
+  val channelType = channelFeatures.channelType
+  val commitmentFormat = channelType.commitmentFormat
 
   val tests = {
     val tests = collection.mutable.HashMap.empty[String, Map[String, String]]
@@ -181,7 +183,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val spec = CommitmentSpec(specHtlcs, getFeerate(name), getToLocal(name), getToRemote(name))
     logger.info(s"to_local_msat: ${spec.toLocal}")
     logger.info(s"to_remote_msat: ${spec.toRemote}")
-    logger.info(s"local_feerate_per_kw: ${spec.feeratePerKw}")
+    logger.info(s"local_feerate_per_kw: ${spec.commitTxFeerate}")
 
     val outputs = Transactions.makeCommitTxOutputs(
       localIsFunder = true,
@@ -195,7 +197,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       localFundingPubkey = Local.funding_pubkey,
       remoteFundingPubkey = Remote.funding_pubkey,
       spec,
-      commitmentFormat)
+      channelType)
 
     val commitTx = {
       val tx = Transactions.makeCommitTx(
@@ -212,7 +214,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val baseFee = Transactions.commitTxFeeMsat(Local.dustLimit, spec, commitmentFormat)
+    val baseFee = Transactions.commitTxFeeMsat(Local.dustLimit, spec, channelType)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
@@ -235,7 +237,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       Local.dustLimit,
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
-      spec.feeratePerKw,
+      spec.htlcTxFeerate(channelType),
       outputs,
       commitmentFormat)
 
@@ -400,7 +402,6 @@ class DefaultCommitmentTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-default-commitment-format.txt"
   override def channelFeatures: ChannelFeatures = ChannelFeatures()
-  override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
   // @formatter:on
 }
 
@@ -408,7 +409,6 @@ class StaticRemoteKeyTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-static-remotekey-format.txt"
   override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey)
-  override def commitmentFormat: CommitmentFormat = DefaultCommitmentFormat
   // @formatter:on
 }
 
@@ -416,6 +416,5 @@ class AnchorOutputsTestVectorSpec extends TestVectorsSpec {
   // @formatter:off
   override def filename: String = "/bolt3-tx-test-vectors-anchor-outputs-format.txt"
   override def channelFeatures: ChannelFeatures = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
-  override def commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
   // @formatter:on
 }

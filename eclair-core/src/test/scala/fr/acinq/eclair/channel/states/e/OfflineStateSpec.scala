@@ -586,7 +586,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
     val aliceCommitTx = aliceStateData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
-    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.commitTxFeerate
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
@@ -612,7 +612,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     val aliceStateData = alice.stateData.asInstanceOf[DATA_NORMAL]
-    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.feeratePerKw
+    val currentFeeratePerKw = aliceStateData.commitments.localCommit.spec.commitTxFeerate
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Bob.nodeParams.nodeId).ratioLow)
@@ -630,7 +630,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // we simulate a disconnection
     disconnect(alice, bob)
 
-    val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.feeratePerKw
+    val localFeeratePerKw = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.commitTxFeerate
     val networkFeeratePerKw = localFeeratePerKw * 2
     val networkFeerate = FeeratesPerKw.single(networkFeeratePerKw)
 
@@ -695,7 +695,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobStateData = bob.stateData.asInstanceOf[DATA_NORMAL]
     val bobCommitTx = bobStateData.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
-    val currentFeeratePerKw = bobStateData.commitments.localCommit.spec.feeratePerKw
+    val currentFeeratePerKw = bobStateData.commitments.localCommit.spec.commitTxFeerate
     // we receive a feerate update that makes our current feerate too low compared to the network's (we multiply by 1.1
     // to ensure the network's feerate is 10% above our threshold).
     val networkFeeratePerKw = currentFeeratePerKw * (1.1 / bob.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(Alice.nodeParams.nodeId).ratioLow)

@@ -23,7 +23,7 @@ import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, Btc, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{AnchorOutputs, AnchorOutputsZeroFeeHtlcTxs, StaticRemoteKey, Wumbo}
+import fr.acinq.eclair.Features.{AnchorOutputs, AnchorOutputsZeroFeeHtlcTx, StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -68,7 +68,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
       .modify(_.features).setToIf(test.tags.contains("static_remotekey"))(Features(StaticRemoteKey -> Optional))
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
       .modify(_.features).setToIf(test.tags.contains("anchor_outputs"))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
-      .modify(_.features).setToIf(test.tags.contains("anchor_outputs_zero_fee_htlc_tx"))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Optional))
+      .modify(_.features).setToIf(test.tags.contains("anchor_outputs_zero_fee_htlc_tx"))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional))
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-satoshis"))(Btc(0.9))
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
@@ -320,7 +320,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     }
     // They only support anchor outputs with zero fee htlc txs and we don't.
     {
-      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTxs))
+      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))
       val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
@@ -396,7 +396,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional)))
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
@@ -404,7 +404,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     feeEstimator.setFeerate(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
-    assert(init.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTxs)
+    assert(init.channelType === ChannelTypes.AnchorOutputsZeroFeeHtlcTx)
     assert(init.fundingAmount === 15000.sat)
     assert(init.initialFeeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
     assert(init.fundingTxFeeratePerKw === feeEstimator.getFeeratePerKw(nodeParams.onChainFeeConf.feeTargets.fundingBlockTarget))

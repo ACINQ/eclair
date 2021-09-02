@@ -215,7 +215,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case PreconditionsOk =>
-        val commitFeerate = cmd.commitments.localCommit.spec.feeratePerKw
+        val commitFeerate = cmd.commitments.localCommit.spec.commitTxFeerate
         if (targetFeerate <= commitFeerate) {
           log.info("skipping {}: commit feerate is high enough (feerate={})", cmd.desc, commitFeerate)
           // We set retry = true in case the on-chain feerate rises before the commit tx is confirmed: if that happens we'll
@@ -239,11 +239,11 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def checkHtlcPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTx: HtlcTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
-    val commitFeerate = cmd.commitments.localCommit.spec.feeratePerKw
+    val htlcFeerate = cmd.commitments.localCommit.spec.htlcTxFeerate(cmd.commitments.channelType)
     // HTLC transactions have a 1-block relative delay when using anchor outputs, which ensures our commit tx has already
     // been confirmed (we don't need to check again here).
     HtlcTxAndWitnessData(htlcTx, cmd.commitments) match {
-      case Some(txWithWitnessData) if targetFeerate <= commitFeerate =>
+      case Some(txWithWitnessData) if targetFeerate <= htlcFeerate =>
         val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitments.localCommit.index)
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
@@ -376,7 +376,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   private def addInputs(txInfo: ClaimLocalAnchorOutputTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[ClaimLocalAnchorOutputTx] = {
     val dustLimit = commitments.localParams.dustLimit
-    val commitFeerate = commitments.localCommit.spec.feeratePerKw
+    val commitFeerate = commitments.localCommit.spec.commitTxFeerate
     val commitTx = commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
     // We want the feerate of the package (commit tx + tx spending anchor) to equal targetFeerate.
     // Thus we have: anchorFeerate = targetFeerate + (weight-commit-tx / weight-anchor-tx) * (targetFeerate - commitTxFeerate)

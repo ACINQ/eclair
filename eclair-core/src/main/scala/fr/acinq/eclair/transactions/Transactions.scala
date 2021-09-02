@@ -22,6 +22,7 @@ import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.SupportedChannelType
 import fr.acinq.eclair.transactions.CommitmentOutput._
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
@@ -187,22 +188,22 @@ object Transactions {
   def fee2rate(fee: Satoshi, weight: Int): FeeratePerKw = FeeratePerKw((fee * 1000L) / weight)
 
   /** Offered HTLCs below this amount will be trimmed. */
-  def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =
-    dustLimit + weight2fee(spec.feeratePerKw, commitmentFormat.htlcTimeoutWeight)
+  def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, channelType: SupportedChannelType): Satoshi =
+    dustLimit + weight2fee(spec.htlcTxFeerate(channelType), channelType.commitmentFormat.htlcTimeoutWeight)
 
-  def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Seq[OutgoingHtlc] = {
-    val threshold = offeredHtlcTrimThreshold(dustLimit, spec, commitmentFormat)
+  def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, channelType: SupportedChannelType): Seq[OutgoingHtlc] = {
+    val threshold = offeredHtlcTrimThreshold(dustLimit, spec, channelType)
     spec.htlcs
       .collect { case o: OutgoingHtlc if o.add.amountMsat >= threshold => o }
       .toSeq
   }
 
   /** Received HTLCs below this amount will be trimmed. */
-  def receivedHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =
-    dustLimit + weight2fee(spec.feeratePerKw, commitmentFormat.htlcSuccessWeight)
+  def receivedHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, channelType: SupportedChannelType): Satoshi =
+    dustLimit + weight2fee(spec.htlcTxFeerate(channelType), channelType.commitmentFormat.htlcSuccessWeight)
 
-  def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Seq[IncomingHtlc] = {
-    val threshold = receivedHtlcTrimThreshold(dustLimit, spec, commitmentFormat)
+  def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, channelType: SupportedChannelType): Seq[IncomingHtlc] = {
+    val threshold = receivedHtlcTrimThreshold(dustLimit, spec, channelType)
     spec.htlcs
       .collect { case i: IncomingHtlc if i.add.amountMsat >= threshold => i }
       .toSeq
@@ -212,11 +213,11 @@ object Transactions {
   def htlcOutputFee(feeratePerKw: FeeratePerKw, commitmentFormat: CommitmentFormat): MilliSatoshi = weight2feeMsat(feeratePerKw, commitmentFormat.htlcOutputWeight)
 
   /** Fee paid by the commit tx (depends on which HTLCs will be trimmed). */
-  def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
-    val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, commitmentFormat)
-    val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, commitmentFormat)
-    val weight = commitmentFormat.commitWeight + commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
-    weight2feeMsat(spec.feeratePerKw, weight)
+  def commitTxFeeMsat(dustLimit: Satoshi, spec: CommitmentSpec, channelType: SupportedChannelType): MilliSatoshi = {
+    val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec, channelType)
+    val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec, channelType)
+    val weight = channelType.commitmentFormat.commitWeight + channelType.commitmentFormat.htlcOutputWeight * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
+    weight2feeMsat(spec.commitTxFeerate, weight)
   }
 
   /**
@@ -225,19 +226,19 @@ object Transactions {
    * If you are adding multiple fees together for example, you should always add them in MilliSatoshi and then round
    * down to Satoshi.
    */
-  def commitTxTotalCostMsat(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): MilliSatoshi = {
+  def commitTxTotalCostMsat(dustLimit: Satoshi, spec: CommitmentSpec, channelType: SupportedChannelType): MilliSatoshi = {
     // The funder pays the on-chain fee by deducing it from its main output.
-    val txFee = commitTxFeeMsat(dustLimit, spec, commitmentFormat)
+    val txFee = commitTxFeeMsat(dustLimit, spec, channelType)
     // When using anchor outputs, the funder pays for *both* anchors all the time, even if only one anchor is present.
     // This is not technically a fee (it doesn't go to miners) but it also has to be deduced from the funder's main output.
-    val anchorsCost = commitmentFormat match {
+    val anchorsCost = channelType.commitmentFormat match {
       case DefaultCommitmentFormat => Satoshi(0)
       case AnchorOutputsCommitmentFormat => AnchorOutputsCommitmentFormat.anchorAmount * 2
     }
     txFee + anchorsCost
   }
 
-  def commitTxTotalCost(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi = commitTxTotalCostMsat(dustLimit, spec, commitmentFormat).truncateToSatoshi
+  def commitTxTotalCost(dustLimit: Satoshi, spec: CommitmentSpec, channelType: SupportedChannelType): Satoshi = commitTxTotalCostMsat(dustLimit, spec, channelType).truncateToSatoshi
 
   /**
    * @param commitTxNumber         commit tx number
@@ -325,25 +326,25 @@ object Transactions {
                           localFundingPubkey: PublicKey,
                           remoteFundingPubkey: PublicKey,
                           spec: CommitmentSpec,
-                          commitmentFormat: CommitmentFormat): CommitmentOutputs = {
+                          channelType: SupportedChannelType): CommitmentOutputs = {
     val outputs = collection.mutable.ArrayBuffer.empty[CommitmentOutputLink[CommitmentOutput]]
 
-    trimOfferedHtlcs(localDustLimit, spec, commitmentFormat).foreach { htlc =>
-      val redeemScript = htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), commitmentFormat)
+    trimOfferedHtlcs(localDustLimit, spec, channelType).foreach { htlc =>
+      val redeemScript = htlcOffered(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), channelType.commitmentFormat)
       outputs.append(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), redeemScript, OutHtlc(htlc)))
     }
 
-    trimReceivedHtlcs(localDustLimit, spec, commitmentFormat).foreach { htlc =>
-      val redeemScript = htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry, commitmentFormat)
+    trimReceivedHtlcs(localDustLimit, spec, channelType).foreach { htlc =>
+      val redeemScript = htlcReceived(localHtlcPubkey, remoteHtlcPubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash.bytes), htlc.add.cltvExpiry, channelType.commitmentFormat)
       outputs.append(CommitmentOutputLink(TxOut(htlc.add.amountMsat.truncateToSatoshi, pay2wsh(redeemScript)), redeemScript, InHtlc(htlc)))
     }
 
     val hasHtlcs = outputs.nonEmpty
 
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = if (localIsFunder) {
-      (spec.toLocal.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, commitmentFormat), spec.toRemote.truncateToSatoshi)
+      (spec.toLocal.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, channelType), spec.toRemote.truncateToSatoshi)
     } else {
-      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, commitmentFormat))
+      (spec.toLocal.truncateToSatoshi, spec.toRemote.truncateToSatoshi - commitTxTotalCost(localDustLimit, spec, channelType))
     } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
     if (toLocalAmount >= localDustLimit) {
@@ -354,7 +355,7 @@ object Transactions {
     }
 
     if (toRemoteAmount >= localDustLimit) {
-      commitmentFormat match {
+      channelType.commitmentFormat match {
         case DefaultCommitmentFormat => outputs.append(CommitmentOutputLink(
           TxOut(toRemoteAmount, pay2wpkh(remotePaymentPubkey)),
           pay2pkh(remotePaymentPubkey),
@@ -366,7 +367,7 @@ object Transactions {
       }
     }
 
-    if (commitmentFormat == AnchorOutputsCommitmentFormat) {
+    if (channelType.commitmentFormat == AnchorOutputsCommitmentFormat) {
       if (toLocalAmount >= localDustLimit || hasHtlcs) {
         outputs.append(CommitmentOutputLink(TxOut(AnchorOutputsCommitmentFormat.anchorAmount, pay2wsh(anchor(localFundingPubkey))), anchor(localFundingPubkey), ToLocalAnchor))
       }

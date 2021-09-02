@@ -16,8 +16,10 @@
 
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.SatoshiLong
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.channel.{ChannelTypes, SupportedChannelType}
 import fr.acinq.eclair.wire.protocol._
 
 /**
@@ -70,11 +72,17 @@ case class IncomingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
 case class OutgoingHtlc(add: UpdateAddHtlc) extends DirectedHtlc
 
-final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
+final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: FeeratePerKw, toLocal: MilliSatoshi, toRemote: MilliSatoshi) {
+
+  def htlcTxFeerate(channelType: SupportedChannelType): FeeratePerKw = channelType match {
+    case ChannelTypes.AnchorOutputsZeroFeeHtlcTx => FeeratePerKw(0 sat)
+    case _ => commitTxFeerate
+  }
 
   def findIncomingHtlcById(id: Long): Option[IncomingHtlc] = htlcs.collectFirst { case htlc: IncomingHtlc if htlc.add.id == id => htlc }
 
   def findOutgoingHtlcById(id: Long): Option[OutgoingHtlc] = htlcs.collectFirst { case htlc: OutgoingHtlc if htlc.add.id == id => htlc }
+
 }
 
 object CommitmentSpec {
@@ -140,7 +148,7 @@ object CommitmentSpec {
       case (spec, _) => spec
     }
     val spec5 = (localChanges ++ remoteChanges).foldLeft(spec4) {
-      case (spec, u: UpdateFee) => spec.copy(feeratePerKw = u.feeratePerKw)
+      case (spec, u: UpdateFee) => spec.copy(commitTxFeerate = u.feeratePerKw)
       case (spec, _) => spec
     }
     spec5

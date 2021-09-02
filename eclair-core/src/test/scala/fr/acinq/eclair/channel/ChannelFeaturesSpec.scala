@@ -29,7 +29,7 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
     val standardChannel = ChannelFeatures()
     val staticRemoteKeyChannel = ChannelFeatures(Features.StaticRemoteKey)
     val anchorOutputsChannel = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
-    val anchorOutputsZeroFeeHtlcsChannel = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTxs)
+    val anchorOutputsZeroFeeHtlcsChannel = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
 
     assert(!standardChannel.hasFeature(Features.StaticRemoteKey))
     assert(!standardChannel.hasFeature(Features.AnchorOutputs))
@@ -43,12 +43,12 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
 
     assert(anchorOutputsChannel.hasFeature(Features.StaticRemoteKey))
     assert(anchorOutputsChannel.hasFeature(Features.AnchorOutputs))
-    assert(!anchorOutputsChannel.hasFeature(Features.AnchorOutputsZeroFeeHtlcTxs))
+    assert(!anchorOutputsChannel.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx))
     assert(anchorOutputsChannel.commitmentFormat === Transactions.AnchorOutputsCommitmentFormat)
     assert(!anchorOutputsChannel.paysDirectlyToWallet)
 
     assert(anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.StaticRemoteKey))
-    assert(anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.AnchorOutputsZeroFeeHtlcTxs))
+    assert(anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx))
     assert(!anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.AnchorOutputs))
     assert(anchorOutputsZeroFeeHtlcsChannel.commitmentFormat === Transactions.AnchorOutputsCommitmentFormat)
     assert(!anchorOutputsZeroFeeHtlcsChannel.paysDirectlyToWallet)
@@ -66,12 +66,12 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
       TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Mandatory), ChannelTypes.StaticRemoteKey),
       TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Optional), Features(StaticRemoteKey -> Mandatory, Wumbo -> Mandatory), ChannelTypes.StaticRemoteKey),
       TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelTypes.StaticRemoteKey),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTxs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelTypes.StaticRemoteKey),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelTypes.StaticRemoteKey),
       TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelTypes.AnchorOutputs),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Optional), ChannelTypes.AnchorOutputs),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Optional), ChannelTypes.AnchorOutputsZeroFeeHtlcTxs),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Mandatory, AnchorOutputsZeroFeeHtlcTxs -> Optional), ChannelTypes.AnchorOutputsZeroFeeHtlcTxs),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTxs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Mandatory), ChannelTypes.AnchorOutputsZeroFeeHtlcTxs),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional), ChannelTypes.AnchorOutputs),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional), ChannelTypes.AnchorOutputsZeroFeeHtlcTx),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional), ChannelTypes.AnchorOutputsZeroFeeHtlcTx),
+      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Mandatory), ChannelTypes.AnchorOutputsZeroFeeHtlcTx),
     )
 
     for (testCase <- testCases) {
@@ -84,7 +84,7 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
       Features.empty -> ChannelTypes.Standard,
       Features(StaticRemoteKey -> Mandatory) -> ChannelTypes.StaticRemoteKey,
       Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory) -> ChannelTypes.AnchorOutputs,
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTxs -> Mandatory) -> ChannelTypes.AnchorOutputsZeroFeeHtlcTxs,
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Mandatory) -> ChannelTypes.AnchorOutputsZeroFeeHtlcTx,
     )
     for ((features, expected) <- validChannelTypes) {
       assert(ChannelTypes.fromFeatures(features) === expected)
@@ -97,11 +97,11 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
       Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional),
       Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional),
       Features(StaticRemoteKey -> Optional, AnchorOutputs -> Mandatory),
-      Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Optional),
-      Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Mandatory),
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTxs -> Optional),
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, AnchorOutputsZeroFeeHtlcTxs -> Mandatory),
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTxs -> Mandatory),
+      Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional),
+      Features(StaticRemoteKey -> Optional, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Optional),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
+      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Mandatory),
       Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, Wumbo -> Optional),
     )
     for (features <- invalidChannelTypes) {
@@ -117,8 +117,8 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
     assert(ChannelFeatures(ChannelTypes.StaticRemoteKey, Features(Wumbo -> Optional), Features(Wumbo -> Optional)).activated === Set(StaticRemoteKey, Wumbo))
     assert(ChannelFeatures(ChannelTypes.AnchorOutputs, Features.empty, Features(Wumbo -> Optional)).activated === Set(StaticRemoteKey, AnchorOutputs))
     assert(ChannelFeatures(ChannelTypes.AnchorOutputs, Features(Wumbo -> Optional), Features(Wumbo -> Mandatory)).activated === Set(StaticRemoteKey, AnchorOutputs, Wumbo))
-    assert(ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTxs, Features.empty, Features(Wumbo -> Optional)).activated === Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTxs))
-    assert(ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTxs, Features(Wumbo -> Optional), Features(Wumbo -> Mandatory)).activated === Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTxs, Wumbo))
+    assert(ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features.empty, Features(Wumbo -> Optional)).activated === Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx))
+    assert(ChannelFeatures(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, Features(Wumbo -> Optional), Features(Wumbo -> Mandatory)).activated === Set(StaticRemoteKey, AnchorOutputsZeroFeeHtlcTx, Wumbo))
   }
 
 }

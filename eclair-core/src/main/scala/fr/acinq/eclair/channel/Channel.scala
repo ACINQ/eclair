@@ -789,8 +789,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter
-              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.commitmentFormat) ++
-                Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.commitmentFormat)
+              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.channelType) ++
+                Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.channelType)
               trimmedHtlcs.map(_.add).foreach { htlc =>
                 log.info(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
@@ -1147,8 +1147,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
               val nextCommitNumber = nextRemoteCommit.index
               // we persist htlc data in order to be able to claim htlc outputs in case a revoked tx is published by our
               // counterparty, so only htlcs above remote's dust_limit matter
-              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.commitmentFormat) ++
-                Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.commitmentFormat)
+              val trimmedHtlcs = Transactions.trimOfferedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.channelType) ++
+                Transactions.trimReceivedHtlcs(d.commitments.remoteParams.dustLimit, nextRemoteCommit.spec, d.commitments.channelType)
               trimmedHtlcs.map(_.add).foreach { htlc =>
                 log.info(s"adding paymentHash=${htlc.paymentHash} cltvExpiry=${htlc.cltvExpiry} to htlcs db for commitNumber=$nextCommitNumber")
                 nodeParams.db.channels.addHtlcInfo(d.channelId, nextCommitNumber, htlc.paymentHash, htlc.cltvExpiry)
@@ -1488,8 +1488,8 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedOutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
-        case Some(c: Closing.LocalClose) => Closing.timedOutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
-        case Some(c: Closing.RemoteClose) => Closing.timedOutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
+        case Some(c: Closing.LocalClose) => Closing.timedOutHtlcs(d.commitments.channelType, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
+        case Some(c: Closing.RemoteClose) => Closing.timedOutHtlcs(d.commitments.channelType, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
         case _ => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarii (future remote commit)
       }
       timedOutHtlcs.foreach { add =>
@@ -1733,7 +1733,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           // we send it (if needed) when reconnected.
           val shutdownInProgress = d.localShutdown.nonEmpty || d.remoteShutdown.nonEmpty
           if (d.commitments.localParams.isFunder && !shutdownInProgress) {
-            val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
+            val currentFeeratePerKw = d.commitments.localCommit.spec.commitTxFeerate
             val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelType, d.commitments.capacity, None)
             if (nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)) {
               self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
@@ -2031,7 +2031,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
   private def handleCurrentFeerate(c: CurrentFeerates, d: HasCommitments) = {
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelType, d.commitments.capacity, Some(c))
-    val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
+    val currentFeeratePerKw = d.commitments.localCommit.spec.commitTxFeerate
     val shouldUpdateFee = d.commitments.localParams.isFunder && nodeParams.onChainFeeConf.shouldUpdateFee(currentFeeratePerKw, networkFeeratePerKw)
     val shouldClose = !d.commitments.localParams.isFunder &&
       nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.channelType, networkFeeratePerKw, currentFeeratePerKw) &&
@@ -2040,7 +2040,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
       stay()
     } else if (shouldClose) {
-      handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = networkFeeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d, Some(c))
+      handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = networkFeeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.commitTxFeerate), d, Some(c))
     } else {
       stay()
     }
@@ -2055,7 +2055,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    */
   private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: HasCommitments) = {
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelType, d.commitments.capacity, Some(c))
-    val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
+    val currentFeeratePerKw = d.commitments.localCommit.spec.commitTxFeerate
     // if the network fees are too high we risk to not be able to confirm our current commitment
     val shouldClose = networkFeeratePerKw > currentFeeratePerKw &&
       nodeParams.onChainFeeConf.feerateToleranceFor(d.commitments.remoteNodeId).isFeeDiffTooHigh(d.commitments.channelType, networkFeeratePerKw, currentFeeratePerKw) &&
