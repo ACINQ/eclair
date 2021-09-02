@@ -26,7 +26,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.Monitoring.{Metrics => PaymentMetrics, Tags => PaymentTags}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Announcements
 
 /**
  * This actor sits at the interface between our event stream and the database.
@@ -41,7 +40,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[ChannelClosed])
-  context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
+  context.system.eventStream.subscribe(self, classOf[ChannelUpdateParametersChanged])
 
   override def receive: Receive = {
 
@@ -118,11 +117,8 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
       auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
       channelsDb.updateChannelMeta(e.channelId, event)
 
-    case u: LocalChannelUpdate =>
-      u.previousChannelUpdate_opt match {
-        case Some(previous) if Announcements.areSameIgnoreFlags(previous, u.channelUpdate) => () // channel update hasn't changed => ()
-        case _ => auditDb.addChannelUpdate(u)
-      }
+    case u: ChannelUpdateParametersChanged =>
+      auditDb.addChannelUpdate(u)
 
   }
 
