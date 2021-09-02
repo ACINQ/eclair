@@ -287,32 +287,20 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
           watchFundingTx(data.commitments)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId, None))
 
-          // we rebuild a new channel_update with values from the configuration because they may have changed while eclair was down
+          // we check the configuration because the values for channel_update may have changed while eclair was down
           val fees = getRelayFees(nodeParams, remoteNodeId, data.commitments)
-          val candidateChannelUpdate = Announcements.makeChannelUpdate(
-            nodeParams.chainHash,
-            nodeParams.privateKey,
-            remoteNodeId,
-            normal.channelUpdate.shortChannelId,
-            nodeParams.expiryDelta,
-            normal.commitments.remoteParams.htlcMinimum,
-            fees.feeBase,
-            fees.feeProportionalMillionths,
-            normal.commitments.capacity.toMilliSatoshi,
-            enable = Announcements.isEnabled(normal.channelUpdate.channelFlags))
-          val channelUpdate1 = if (Announcements.areSame(candidateChannelUpdate, normal.channelUpdate)) {
-            // if there was no configuration change we keep the existing channel update
-            normal.channelUpdate
-          } else {
-            log.info("refreshing channel_update due to configuration changes old={} new={}", normal.channelUpdate, candidateChannelUpdate)
-            candidateChannelUpdate
+          if (fees.feeBase != normal.channelUpdate.feeBaseMsat ||
+            fees.feeProportionalMillionths != normal.channelUpdate.feeProportionalMillionths ||
+            nodeParams.expiryDelta != normal.channelUpdate.cltvExpiryDelta) {
+            log.info("refreshing channel_update due to configuration changes")
+            self ! CMD_UPDATE_RELAY_FEE(ActorRef.noSender, fees.feeBase, fees.feeProportionalMillionths, Some(nodeParams.expiryDelta))
           }
           // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
           // we take into account the date of the last update so that we don't send superfluous updates when we restart the app
-          val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(channelUpdate1.timestamp)
+          val periodicRefreshInitialDelay = Helpers.nextChannelUpdateRefresh(normal.channelUpdate.timestamp)
           context.system.scheduler.scheduleWithFixedDelay(initialDelay = periodicRefreshInitialDelay, delay = REFRESH_CHANNEL_UPDATE_INTERVAL, receiver = self, message = BroadcastChannelUpdate(PeriodicRefresh))
 
-          goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate1)
+          goto(OFFLINE) using normal
 
         case funding: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
           watchFundingTx(funding.commitments)
@@ -1017,12 +1005,12 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
-      log.info("updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
+      val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, c.cltvExpiryDelta_opt.getOrElse(d.channelUpdate.cltvExpiryDelta), d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
+      log.info(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
       // we use GOTO instead of stay() because we want to fire transitions
-      goto(NORMAL) using d.copy(channelUpdate = channelUpdate) storing()
+      goto(NORMAL) using d.copy(channelUpdate = channelUpdate1) storing()
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
       val age = System.currentTimeMillis.milliseconds - d.channelUpdate.timestamp.seconds
@@ -1546,18 +1534,11 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
     // -> in CLOSING we either have mutual closed (so no more htlcs), or already have unilaterally closed (so no action required), and we can't be in OFFLINE state anyway
     case Event(ProcessCurrentBlockCount(c), d: HasCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) =>
-      handleOfflineFeerate(c, d)
+    case Event(c: CurrentFeerates, d: HasCommitments) => handleCurrentFeerateDisconnected(c, d)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) => handleAddDisconnected(c, d)
 
-    case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) =>
-      log.info(s"updating relay fees: prevFeeBaseMsat={} nextFeeBaseMsat={} prevFeeProportionalMillionths={} nextFeeProportionalMillionths={}", d.channelUpdate.feeBaseMsat, c.feeBase, d.channelUpdate.feeProportionalMillionths, c.feeProportionalMillionths)
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
-      val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
-      replyTo ! RES_SUCCESS(c, d.channelId)
-      // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
-      stay() using d.copy(channelUpdate = channelUpdate) storing()
+    case Event(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) => handleUpdateRelayFeeDisconnected(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSinceBlock, d.fundingTx)
 
@@ -1738,8 +1719,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
 
     case Event(ProcessCurrentBlockCount(c), d: HasCommitments) => handleNewBlock(c, d)
 
-    case Event(c: CurrentFeerates, d: HasCommitments) =>
-      handleOfflineFeerate(c, d)
+    case Event(c: CurrentFeerates, d: HasCommitments) => handleCurrentFeerateDisconnected(c, d)
 
     case Event(getTxResponse: GetTxWithMetaResponse, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if getTxResponse.txid == d.commitments.commitInput.outPoint.txid => handleGetFundingTx(getTxResponse, d.waitingSinceBlock, d.fundingTx)
 
@@ -1815,6 +1795,9 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
     case Event(c: CMD_UPDATE_RELAY_FEE, d) => handleCommandError(CommandUnavailableInThisState(d.channelId, "updaterelayfee", stateName), c)
+
+    // at restore, if the configuration has changed, the channel will send a command to itself to update the relay fees
+    case Event(RES_SUCCESS(_: CMD_UPDATE_RELAY_FEE, channelId), d: DATA_NORMAL) if channelId == d.channelId => stay()
 
     // we only care about this event in NORMAL and SHUTDOWN state, and there may be cases where the task is not cancelled
     case Event(_: RevocationTimeout, _) => stay()
@@ -1999,7 +1982,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
    * @param d the channel commtiments
    * @return
    */
-  private def handleOfflineFeerate(c: CurrentFeerates, d: HasCommitments) = {
+  private def handleCurrentFeerateDisconnected(c: CurrentFeerates, d: HasCommitments) = {
     val networkFeeratePerKw = nodeParams.onChainFeeConf.getCommitmentFeerate(remoteNodeId, d.commitments.channelType, d.commitments.capacity, Some(c))
     val currentFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw
     // if the network fees are too high we risk to not be able to confirm our current commitment
@@ -2150,6 +2133,15 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       val error = ChannelUnavailable(d.channelId)
       handleAddHtlcCommandError(c, error, Some(d.channelUpdate)) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
     }
+  }
+
+  private def handleUpdateRelayFeeDisconnected(c: CMD_UPDATE_RELAY_FEE, d: DATA_NORMAL) = {
+    val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, c.cltvExpiryDelta_opt.getOrElse(d.channelUpdate.cltvExpiryDelta), d.channelUpdate.htlcMinimumMsat, c.feeBase, c.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = false)
+    log.info(s"updating relay fees: prev={} next={}", d.channelUpdate.toStringShort, channelUpdate1.toStringShort)
+    val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
+    replyTo ! RES_SUCCESS(c, d.channelId)
+    // we're in OFFLINE state, we don't broadcast the new update right away, we will do that when next time we go to NORMAL state
+    stay() using d.copy(channelUpdate = channelUpdate1) storing()
   }
 
   private def handleNewBlock(c: CurrentBlockCount, d: HasCommitments) = {
