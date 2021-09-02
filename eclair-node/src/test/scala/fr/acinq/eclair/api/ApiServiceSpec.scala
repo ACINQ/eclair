@@ -229,6 +229,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       network = "regtest",
       blockHeight = 9999,
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
+      onionAddress = None,
       instanceId = "01234567-0123-4567-89ab-0123456789ab"
     ))
 

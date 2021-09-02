@@ -52,6 +52,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
+                      torAddress_opt: Option[NodeAddress],
                       features: Features,
                       private val overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
@@ -285,10 +286,12 @@ object NodeParams extends Logging {
       None
     }
 
+    val publicTorAddress_opt = if (config.getBoolean("tor.publish-onion-address")) torAddress_opt else None
+
     val addresses = config.getStringList("server.public-ips")
       .asScala
       .toList
-      .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
+      .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ publicTorAddress_opt
 
     val feeTargets = FeeTargets(
       fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
@@ -335,6 +338,7 @@ object NodeParams extends Logging {
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
+      torAddress_opt = torAddress_opt,
       features = coreAndPluginFeatures,
       pluginParams = pluginParams,
       overrideFeatures = overrideFeatures,
