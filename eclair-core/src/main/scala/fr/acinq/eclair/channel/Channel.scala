@@ -1891,7 +1891,7 @@ class Channel(val nodeParams: NodeParams, val wallet: EclairWallet, remoteNodeId
       }
 
       (stateData, nextStateData) match {
-        // NORMAL->NORMAL, NORMAL->SYNCING, SYNCING->NORMAL
+        // NORMAL->NORMAL, NORMAL->OFFLINE, SYNCING->NORMAL
         case (d1: DATA_NORMAL, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = Some(d1.channelUpdate), d2)
         // WAIT_FOR_FUNDING_LOCKED->NORMAL
         case (_: DATA_WAIT_FOR_FUNDING_LOCKED, d2: DATA_NORMAL) => maybeEmitChannelUpdateChangedEvent(newUpdate = d2.channelUpdate, oldUpdate_opt = None, d2)
