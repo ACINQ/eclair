@@ -16,13 +16,12 @@ import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
-import fr.acinq.eclair.wire.protocol.{ChannelReestablish, CommitSig, Error, Init, RevokeAndAck}
+import fr.acinq.eclair.wire.protocol.{ChannelReestablish, CommitSig, Error, FundingLocked, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestKitBaseClass, _}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
-import scala.util.Random
 
 class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
@@ -204,30 +203,52 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     // and we terminate Alice
     alice.stop()
 
-    // we restart Alice with a random different configuration
-    val rand = Random.nextInt(3)
-    val newConfig = Alice.nodeParams
-      .modify(_.relayParams.privateChannelFees.feeBase).setToIf(rand == 0)(765 msat)
-      .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setToIf(rand == 1)(2345)
-      .modify(_.expiryDelta).setToIf(rand == 2)(CltvExpiryDelta(147))
-    val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
-    newAlice ! INPUT_RESTORED(oldStateData)
+    // we restart Alice with different configurations
+    Seq(
+      Alice.nodeParams
+        .modify(_.relayParams.privateChannelFees.feeBase).setTo(765 msat),
+      Alice.nodeParams
+        .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345),
+      Alice.nodeParams
+        .modify(_.expiryDelta).setTo(CltvExpiryDelta(147)),
+      Alice.nodeParams
+        .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345)
+        .modify(_.expiryDelta).setTo(CltvExpiryDelta(147)),
+    ) foreach { newConfig =>
 
-    val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
-    assert(!Announcements.areSameIgnoreFlags(u1.channelUpdate, oldStateData.channelUpdate))
-    assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.privateChannelFees.feeBase)
-    assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
-    assert(u1.channelUpdate.cltvExpiryDelta === newConfig.expiryDelta)
+      val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+      newAlice ! INPUT_RESTORED(oldStateData)
 
-    newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
-    bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
-    alice2bob.forward(bob)
-    bob2alice.forward(newAlice)
-    awaitCond(newAlice.stateName == NORMAL)
+      val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
+      assert(!Announcements.areSameIgnoreFlags(u1.channelUpdate, oldStateData.channelUpdate))
+      assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.privateChannelFees.feeBase)
+      assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
+      assert(u1.channelUpdate.cltvExpiryDelta === newConfig.expiryDelta)
 
-    channelUpdateListener.expectNoMessage()
+      newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
+      bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
+      alice2bob.expectMsgType[ChannelReestablish]
+      bob2alice.expectMsgType[ChannelReestablish]
+      alice2bob.forward(bob)
+      bob2alice.forward(newAlice)
+      alice2bob.expectMsgType[FundingLocked]
+      bob2alice.expectMsgType[FundingLocked]
+      alice2bob.forward(bob)
+      bob2alice.forward(newAlice)
+      awaitCond(newAlice.stateName == NORMAL)
+      awaitCond(bob.stateName == NORMAL)
+
+      channelUpdateListener.expectNoMessage()
+
+      // we simulate a disconnection
+      sender.send(newAlice, INPUT_DISCONNECTED)
+      sender.send(bob, INPUT_DISCONNECTED)
+      awaitCond(newAlice.stateName == OFFLINE)
+      awaitCond(bob.stateName == OFFLINE)
+
+      // and we terminate Alice
+      newAlice.stop()
+    }
   }
 
 }
