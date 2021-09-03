@@ -126,6 +126,13 @@ object Announcements {
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
     u1.copy(signature = ByteVector64.Zeroes, timestamp = 0) == u2.copy(signature = ByteVector64.Zeroes, timestamp = 0)
 
+  def areSameIgnoreFlags(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
+    u1.feeBaseMsat == u2.feeBaseMsat &&
+      u1.feeProportionalMillionths == u2.feeProportionalMillionths &&
+      u1.cltvExpiryDelta == u2.cltvExpiryDelta &&
+      u1.htlcMinimumMsat == u2.htlcMinimumMsat &&
+      u1.htlcMaximumMsat == u2.htlcMaximumMsat
+
   def makeMessageFlags(hasOptionChannelHtlcMax: Boolean): Byte = BitVector.bits(hasOptionChannelHtlcMax :: Nil).padLeft(8).toByte()
 
   def makeChannelFlags(isNode1: Boolean, enable: Boolean): Byte = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(8).toByte()

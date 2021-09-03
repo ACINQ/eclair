@@ -39,7 +39,7 @@ trait AuditDb extends Closeable {
 
   def add(channelErrorOccurred: ChannelErrorOccurred): Unit
 
-  def addChannelUpdate(localChannelUpdate: LocalChannelUpdate): Unit
+  def addChannelUpdate(channelUpdateParametersChanged: ChannelUpdateParametersChanged): Unit
 
   def listSent(from: Long, to: Long): Seq[PaymentSent]
 
