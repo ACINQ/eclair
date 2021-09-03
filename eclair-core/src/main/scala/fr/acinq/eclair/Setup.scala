@@ -374,7 +374,7 @@ case class Kit(nodeParams: NodeParams,
                server: ActorRef,
                channelsListener: typed.ActorRef[ChannelsListener.Command],
                balanceActor: typed.ActorRef[BalanceActor.Command],
-               wallet: EclairWallet)
+               wallet: OnChainWallet)
 
 object Kit {
 

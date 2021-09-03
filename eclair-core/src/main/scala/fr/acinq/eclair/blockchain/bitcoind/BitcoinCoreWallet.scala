@@ -18,6 +18,7 @@ package fr.acinq.eclair.blockchain.bitcoind
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransactionOptions, FundTransactionResponse, SignTransactionResponse, toSatoshi}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
@@ -34,7 +35,7 @@ import scala.util.{Failure, Success}
 /**
  * Created by PM on 06/07/2017.
  */
-class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends EclairWallet with Logging {
+class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionContext) extends OnChainWallet with Logging {
 
   import BitcoinCoreWallet._
 
@@ -107,7 +108,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit ec: ExecutionC
     }
   }
 
-  override def getBalance: Future[OnChainBalance] = rpcClient.invoke("getbalances").map(json => {
+  override def onChainBalance(): Future[OnChainBalance] = rpcClient.invoke("getbalances").map(json => {
     val JDecimal(confirmed) = json \ "mine" \ "trusted"
     val JDecimal(unconfirmed) = json \ "mine" \ "untrusted_pending"
     OnChainBalance(toSatoshi(confirmed), toSatoshi(unconfirmed))

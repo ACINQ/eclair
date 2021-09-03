@@ -26,7 +26,7 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
-import fr.acinq.eclair.blockchain.OnChainBalance
+import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
@@ -260,7 +260,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def onChainBalance(): Future[OnChainBalance] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.getBalance
+      case w: BitcoinCoreWallet => w.onChainBalance()
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }

@@ -21,7 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, Btc, BtcDouble, ByteVector32, MilliBtc, MilliBtcDouble, Satoshi, SatoshiLong, Script, Transaction}
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransactionResponse, SignTransactionResponse}
@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{TestKitBaseClass, addressToPublicKeyScript, randomKey}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JString, _}
+import org.json4s.JsonAST._
 import org.json4s.{DefaultFormats, Formats}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -146,7 +146,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
 
       val sender = TestProbe()
       val wallet = new BitcoinCoreWallet(bitcoinClient)
-      wallet.getBalance.pipeTo(sender.ref)
+      wallet.onChainBalance().pipeTo(sender.ref)
       assert(sender.expectMsgType[OnChainBalance] === OnChainBalance(Satoshi(satoshi), Satoshi(satoshi)))
 
       wallet.fundTransaction(txIn, lockUtxos = false, FeeratePerKw(250 sat)).pipeTo(sender.ref)
@@ -160,7 +160,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
 
-    wallet.getBalance.pipeTo(sender.ref)
+    wallet.onChainBalance().pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
 
     wallet.getReceiveAddress().pipeTo(sender.ref)
@@ -216,7 +216,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
 
-    wallet.getBalance.pipeTo(sender.ref)
+    wallet.onChainBalance().pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
 
     wallet.getReceiveAddress().pipeTo(sender.ref)
@@ -241,7 +241,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     wallet.commit(fundingTx).pipeTo(sender.ref)
     sender.expectMsg(true)
 
-    wallet.getBalance.pipeTo(sender.ref)
+    wallet.onChainBalance().pipeTo(sender.ref)
     assert(sender.expectMsgType[OnChainBalance].confirmed > 0.sat)
   }
 
@@ -274,7 +274,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val wallet = new BitcoinCoreWallet(bitcoinrpcclient)
 
-    wallet.getBalance.pipeTo(sender.ref)
+    wallet.onChainBalance().pipeTo(sender.ref)
     val initialBalance = sender.expectMsgType[OnChainBalance]
     assert(initialBalance.unconfirmed === 0.sat)
     assert(initialBalance.confirmed > 50.btc.toSatoshi)
@@ -291,7 +291,7 @@ class BitcoinCoreWalletSpec extends TestKitBaseClass with BitcoindService with A
     assert(tx1.fees < 0.sat)
     assert(tx1.confirmations === 0)
 
-    wallet.getBalance.pipeTo(sender.ref)
+    wallet.onChainBalance().pipeTo(sender.ref)
     // NB: we use + because these amounts are already negative
     sender.expectMsg(initialBalance.copy(confirmed = initialBalance.confirmed + tx1.amount + tx1.fees))
 

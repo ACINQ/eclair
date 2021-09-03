@@ -26,17 +26,13 @@ import scala.concurrent.Future
 /**
  * Created by PM on 06/07/2017.
  */
-trait EclairWallet {
 
-  def getBalance: Future[OnChainBalance]
+/** This trait lets users fund lightning channels. */
+trait OnChainChannelFunder {
 
-  /**
-   * @param label used if implemented with bitcoin core, can be ignored by implementation
-   */
-  def getReceiveAddress(label: String = ""): Future[String]
+  import OnChainWallet.MakeFundingTxResponse
 
-  def getReceivePubkey(receiveAddress: Option[String] = None): Future[PublicKey]
-
+  /** Create a channel funding transaction with the provided pubkeyScript. */
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse]
 
   /**
@@ -52,19 +48,53 @@ trait EclairWallet {
   def commit(tx: Transaction): Future[Boolean]
 
   /**
-   * Cancels this transaction: this probably translates to "release locks on utxos".
+   * Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos".
    */
   def rollback(tx: Transaction): Future[Boolean]
 
   /**
    * Tests whether the inputs of the provided transaction have been spent by another transaction.
-   *
-   * Implementations may always return false if they don't want to implement it
+   * Implementations may always return false if they don't want to implement it.
    */
   def doubleSpent(tx: Transaction): Future[Boolean]
 
 }
 
-final case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi)
+/** This trait lets users generate on-chain addresses and public keys. */
+trait OnChainAddressGenerator {
 
-final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
+  /**
+   * @param label used if implemented with bitcoin core, can be ignored by implementation
+   */
+  def getReceiveAddress(label: String = ""): Future[String]
+
+  /**
+   * @param receiveAddress if provided, will extract the public key from this address, otherwise will generate a new
+   *                       address and return the underlying public key.
+   */
+  def getReceivePubkey(receiveAddress: Option[String] = None): Future[PublicKey]
+
+}
+
+/** This trait lets users check the wallet's on-chain balance. */
+trait OnChainBalanceChecker {
+
+  import OnChainWallet.OnChainBalance
+
+  /** Get our on-chain balance */
+  def onChainBalance(): Future[OnChainBalance]
+
+}
+
+/**
+ * This trait defines the minimal set of feature an on-chain wallet needs to implement to support lightning.
+ */
+trait OnChainWallet extends OnChainChannelFunder with OnChainAddressGenerator with OnChainBalanceChecker
+
+object OnChainWallet {
+
+  final case class OnChainBalance(confirmed: Satoshi, unconfirmed: Satoshi)
+
+  final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int, fee: Satoshi)
+
+}

@@ -23,7 +23,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong}
 import fr.acinq.eclair.TestConstants._
-import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
 import fr.acinq.eclair.db._
@@ -78,7 +78,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       server.ref,
       channelsListener.ref.toTyped,
       balanceActor.ref.toTyped,
-      new TestWallet()
+      new DummyOnChainWallet()
     )
 
     withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, paymentHandler, kit)))
