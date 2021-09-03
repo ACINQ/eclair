@@ -85,7 +85,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
             case Some(paymentPreimage) if nodeParams.features.hasFeature(Features.KeySend) =>
               val amount = Some(p.payload.totalAmount)
               val paymentHash = Crypto.sha256(paymentPreimage)
-              val desc = "Donation"
+              val desc = Left("Donation")
               val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
                 PaymentRequestFeatures(Features.BasicMultiPartPayment.optional, Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
               } else {
@@ -180,14 +180,14 @@ object MultiPartHandler {
    * Use this message to create a Bolt 11 invoice to receive a payment.
    *
    * @param amount_opt          amount to receive in milli-satoshis.
-   * @param description         payment description.
+   * @param description         payment description as string or SHA256 hash.
    * @param expirySeconds_opt   number of seconds before the invoice expires (relative to the invoice creation time).
    * @param extraHops           routing hints to help the payer.
    * @param fallbackAddress_opt fallback Bitcoin address.
    * @param paymentPreimage_opt payment preimage.
    */
   case class ReceivePayment(amount_opt: Option[MilliSatoshi],
-                            description: String,
+                            description: Either[String, ByteVector32],
                             expirySeconds_opt: Option[Long] = None,
                             extraHops: List[List[ExtraHop]] = Nil,
                             fallbackAddress_opt: Option[String] = None,

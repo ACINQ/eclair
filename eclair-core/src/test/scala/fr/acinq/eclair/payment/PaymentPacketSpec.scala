@@ -209,7 +209,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     val routingHints = List(List(PaymentRequest.ExtraHop(randomKey().publicKey, ShortChannelId(42), 10 msat, 100, CltvExpiryDelta(144))))
     val invoiceFeatures = PaymentRequestFeatures(VariableLengthOnion.mandatory, PaymentSecret.mandatory, BasicMultiPartPayment.optional)
-    val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, "#reckless", CltvExpiryDelta(18), None, None, routingHints, features = invoiceFeatures)
+    val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, Left("#reckless"), CltvExpiryDelta(18), None, None, routingHints, features = invoiceFeatures)
     val (amount_ac, expiry_ac, trampolineOnion) = buildTrampolineToLegacyPacket(invoice, trampolineHops, Onion.createSinglePartPayload(finalAmount, finalExpiry, invoice.paymentSecret.get))
     assert(amount_ac === amount_bc)
     assert(expiry_ac === expiry_bc)
@@ -255,7 +255,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
   test("fail to build a trampoline payment when too much invoice data is provided") {
     val routingHintOverflow = List(List.fill(7)(PaymentRequest.ExtraHop(randomKey().publicKey, ShortChannelId(1), 10 msat, 100, CltvExpiryDelta(12))))
-    val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, "#reckless", CltvExpiryDelta(18), None, None, routingHintOverflow)
+    val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, Left("#reckless"), CltvExpiryDelta(18), None, None, routingHintOverflow)
     assertThrows[IllegalArgumentException](
       buildTrampolineToLegacyPacket(invoice, trampolineHops, Onion.createSinglePartPayload(finalAmount, finalExpiry, invoice.paymentSecret.get))
     )

@@ -127,7 +127,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
 
     def initiatePaymentOrStop(remaining: Int): Unit =
       if (remaining > 0) {
-        paymentHandler ! ReceivePayment(Some(requiredAmount), "One coffee")
+        paymentHandler ! ReceivePayment(Some(requiredAmount), Left("One coffee"))
         context become {
           case req: PaymentRequest =>
             sendChannel ! buildCmdAdd(req.paymentHash, req.nodeId, req.paymentSecret.get)

@@ -59,7 +59,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultPaymentHash = Crypto.sha256(defaultPaymentPreimage)
   val defaultOrigin = Origin.LocalCold(UUID.randomUUID())
   val defaultExternalId = UUID.randomUUID().toString
-  val defaultInvoice = PaymentRequest(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, "test", Channel.MIN_CLTV_EXPIRY_DELTA)
+  val defaultInvoice = PaymentRequest(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
   val defaultRouteParams = RouteCalculation.getDefaultRouteParams(TestConstants.Alice.nodeParams.routerConf.pathFindingConf)
 
   def defaultRouteRequest(source: PublicKey, target: PublicKey, cfg: SendPaymentConfig): RouteRequest = RouteRequest(source, target, defaultAmountMsat, defaultMaxFee, paymentContext = Some(cfg.paymentContext), routeParams = defaultRouteParams)

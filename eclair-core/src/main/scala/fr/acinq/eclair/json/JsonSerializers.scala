@@ -271,16 +271,13 @@ class PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ =>
         new ShortChannelIdSerializer +
         new MilliSatoshiSerializer +
         new CltvExpiryDeltaSerializer
-    )
+      )
     )
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
       JField("nodeId", JString(p.nodeId.toString())),
       JField("serialized", JString(PaymentRequest.write(p))),
-      JField("description", JString(p.description match {
-        case Left(l) => l
-        case Right(r) => r.toString()
-      })),
+      p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
       JField("paymentHash", JString(p.paymentHash.toString()))) ++
       expiry ++
       minFinalCltvExpiry ++

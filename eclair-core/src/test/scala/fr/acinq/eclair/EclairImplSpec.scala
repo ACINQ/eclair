@@ -107,7 +107,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val eclair = new EclairImpl(kit)
     val nodePrivKey = randomKey()
-    val invoice0 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, "description", CltvExpiryDelta(18))
+    val invoice0 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, Left("description"), CltvExpiryDelta(18))
     eclair.send(None, 123 msat, invoice0)
     val send = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send.externalId === None)
@@ -120,7 +120,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     // with assisted routes
     val externalId1 = "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87"
     val hints = List(List(ExtraHop(Bob.nodeParams.nodeId, ShortChannelId("569178x2331x1"), feeBase = 10 msat, feeProportionalMillionths = 1, cltvExpiryDelta = CltvExpiryDelta(12))))
-    val invoice1 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, "description", CltvExpiryDelta(18), None, None, hints)
+    val invoice1 = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(123 msat), ByteVector32.Zeroes, nodePrivKey, Left("description"), CltvExpiryDelta(18), None, None, hints)
     eclair.send(Some(externalId1), 123 msat, invoice1)
     val send1 = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send1.externalId === Some(externalId1))
@@ -323,7 +323,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val fallBackAddressRaw = "muhtvdmsnbQEPFuEmxcChX58fGvXaaUoVt"
     val eclair = new EclairImpl(kit)
-    eclair.receive("some desc", Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
+    eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some(fallBackAddressRaw), None)
     val receive = paymentHandler.expectMsgType[ReceivePayment]
 
     assert(receive.amount_opt === Some(123 msat))
@@ -331,7 +331,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(receive.fallbackAddress_opt === Some(fallBackAddressRaw))
 
     // try with wrong address format
-    assertThrows[IllegalArgumentException](eclair.receive("some desc", Some(123 msat), Some(456), Some("wassa wassa"), None))
+    assertThrows[IllegalArgumentException](eclair.receive(Left("some desc"), Some(123 msat), Some(456), Some("wassa wassa"), None))
   }
 
   test("passing a payment_preimage to /createinvoice should result in an invoice with payment_hash=H(payment_preimage)") { f =>
@@ -341,7 +341,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val eclair = new EclairImpl(kitWithPaymentHandler)
     val paymentPreimage = randomBytes32()
 
-    val fResp = eclair.receive("some desc", None, None, None, Some(paymentPreimage))
+    val fResp = eclair.receive(Left("some desc"), None, None, None, Some(paymentPreimage))
     awaitCond({
       fResp.value match {
         case Some(Success(pr)) => pr.paymentHash == Crypto.sha256(paymentPreimage)
@@ -389,7 +389,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val trampolines = Seq(randomKey().publicKey, randomKey().publicKey)
     val parentId = UUID.randomUUID()
     val secret = randomBytes32()
-    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), "Some invoice", CltvExpiryDelta(18))
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.One, randomKey(), Right(randomBytes32()), CltvExpiryDelta(18))
     eclair.sendToRoute(1000 msat, Some(1200 msat), Some("42"), Some(parentId), pr, CltvExpiryDelta(123), route, Some(secret), Some(100 msat), Some(CltvExpiryDelta(144)), trampolines)
 
     paymentInitiator.expectMsg(SendPaymentToRoute(1000 msat, 1200 msat, pr, CltvExpiryDelta(123), route, Some("42"), Some(parentId), Some(secret), 100 msat, CltvExpiryDelta(144), trampolines))
