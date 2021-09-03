@@ -13,7 +13,6 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
-import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
@@ -23,6 +22,7 @@ import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 import scala.concurrent.duration._
+import scala.util.Random
 
 class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
@@ -33,7 +33,6 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
       case false => init()
       case true => init(nodeParamsA = Alice.nodeParams.copy(onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(closeOnOfflineMismatch = false)))
     }
-    import setup._
     within(30 seconds) {
       reachNormal(setup)
       withFixture(test.toNoArgTest(setup))
@@ -205,17 +204,19 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     // and we terminate Alice
     alice.stop()
 
-    // we restart Alice with a different configuration
+    // we restart Alice with a random different configuration
+    val rand = Random.nextInt(3)
     val newConfig = Alice.nodeParams
-      .modifyAll(_.relayParams.publicChannelFees, _.relayParams.privateChannelFees).setTo(RelayFees(765 msat, 2345))
-      .modify(_.expiryDelta).setTo(CltvExpiryDelta(147))
+      .modify(_.relayParams.privateChannelFees.feeBase).setToIf(rand == 0)(765 msat)
+      .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setToIf(rand == 1)(2345)
+      .modify(_.expiryDelta).setToIf(rand == 2)(CltvExpiryDelta(147))
     val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     newAlice ! INPUT_RESTORED(oldStateData)
 
     val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
     assert(!Announcements.areSameIgnoreFlags(u1.channelUpdate, oldStateData.channelUpdate))
-    assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.publicChannelFees.feeBase)
-    assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.publicChannelFees.feeProportionalMillionths)
+    assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.privateChannelFees.feeBase)
+    assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
     assert(u1.channelUpdate.cltvExpiryDelta === newConfig.expiryDelta)
 
     newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
