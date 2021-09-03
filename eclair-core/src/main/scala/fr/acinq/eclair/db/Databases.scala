@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import akka.actor.ActorSystem
+import akka.Done
+import akka.actor.{ActorSystem, CoordinatedShutdown}
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
@@ -29,6 +30,7 @@ import java.io.File
 import java.nio.file._
 import java.sql.Connection
 import java.util.UUID
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 trait Databases {
@@ -111,7 +113,19 @@ object Databases extends Logging {
           l.obtainExclusiveLock(ds)
           // ...and renew the lease regularly
           import system.dispatcher
-          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => l.obtainExclusiveLock(ds))
+          val leaseLockTask = system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => l.obtainExclusiveLock(ds))
+
+          CoordinatedShutdown(system).addTask(CoordinatedShutdown.PhaseActorSystemTerminate, "release-postgres-lock") { () =>
+            Future {
+              logger.info("cancelling the pg lock renew task...")
+              leaseLockTask.cancel()
+              logger.info("releasing the curent pg lock...")
+              l.releaseExclusiveLock(ds)
+              logger.info("closing the connection pool...")
+              ds.close()
+              Done
+            }
+          }
       }
 
       val databases = PostgresDatabases(

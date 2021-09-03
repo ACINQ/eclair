@@ -38,6 +38,8 @@ object PgUtils extends JdbcUtils {
   sealed trait PgLock {
     def obtainExclusiveLock(implicit ds: DataSource): Unit
 
+    def releaseExclusiveLock(implicit ds: DataSource): Unit
+
     def withLock[T](f: Connection => T)(implicit ds: DataSource): T
   }
 
@@ -91,6 +93,8 @@ object PgUtils extends JdbcUtils {
     case object NoLock extends PgLock {
       override def obtainExclusiveLock(implicit ds: DataSource): Unit = ()
 
+      override def releaseExclusiveLock(implicit ds: DataSource): Unit = ()
+
       override def withLock[T](f: Connection => T)(implicit ds: DataSource): T =
         inTransaction(f)
     }
@@ -114,6 +118,14 @@ object PgUtils extends JdbcUtils {
 
       override def obtainExclusiveLock(implicit ds: DataSource): Unit = {
         obtainDatabaseLease(instanceId, leaseDuration) match {
+          case Right(_) => ()
+          case Left(ex) => lockFailureHandler(ex)
+        }
+      }
+
+      override def releaseExclusiveLock(implicit ds: DataSource): Unit = {
+        // put a new lease that expires right away: same as releasing the lock
+        obtainDatabaseLease(instanceId, 1 millisecond) match {
           case Right(_) => ()
           case Left(ex) => lockFailureHandler(ex)
         }

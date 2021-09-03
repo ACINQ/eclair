@@ -3,7 +3,7 @@ package fr.acinq.eclair.db
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.eclair.db.pg.PgUtils.ExtendedResultSet._
-import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LockFailure, LockFailureHandler}
+import fr.acinq.eclair.db.pg.PgUtils.PgLock.{LeaseLock, LockFailure, LockFailureHandler}
 import fr.acinq.eclair.db.pg.PgUtils.{JdbcUrlChanged, migrateTable, using}
 import fr.acinq.eclair.{TestKitBaseClass, TestUtils}
 import grizzled.slf4j.{Logger, Logging}
@@ -15,6 +15,7 @@ import org.scalatest.funsuite.AnyFunSuiteLike
 import java.io.File
 import java.util.UUID
 import javax.sql.DataSource
+import scala.concurrent.duration.DurationInt
 
 class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually {
 
@@ -25,7 +26,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     datadir.mkdirs()
     val instanceId1 = UUID.randomUUID()
     // this will lock the database for this instance id
-    val db = Databases.postgres(config, instanceId1, datadir, LockFailureHandler.logAndThrow)
+    val db1 = Databases.postgres(config, instanceId1, datadir, LockFailureHandler.logAndThrow)
 
     assert(
       intercept[LockFailureHandler.LockException] {
@@ -34,7 +35,7 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
       }.lockFailure === LockFailure.AlreadyLocked(instanceId1))
 
     // we can renew the lease at will
-    db.obtainExclusiveLock()
+    db1.obtainExclusiveLock()
 
     // we wait significantly longer than the lease interval, and make sure that the lock is still there
     Thread.sleep(10_000)
@@ -45,18 +46,18 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
       }.lockFailure === LockFailure.AlreadyLocked(instanceId1))
 
     // we close the first connection
-    db.dataSource.close()
-    eventually(assert(db.dataSource.isClosed))
+    db1.dataSource.close()
+    eventually(assert(db1.dataSource.isClosed))
     // we wait just a bit longer than the lease interval
     Thread.sleep(6_000)
 
     // now we can put a lock with a different instance id
     val instanceId2 = UUID.randomUUID()
-    Databases.postgres(config, instanceId2, datadir, LockFailureHandler.logAndThrow)
+    val db2 = Databases.postgres(config, instanceId2, datadir, LockFailureHandler.logAndThrow)
 
     // we close the second connection
-    db.dataSource.close()
-    eventually(assert(db.dataSource.isClosed))
+    db2.dataSource.close()
+    eventually(assert(db2.dataSource.isClosed))
 
     // but we don't wait for the previous lease to expire, so we can't take over right now
     assert(intercept[LockFailureHandler.LockException] {
@@ -94,6 +95,28 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
             statement.executeUpdate()
         }
       }
+    }
+
+    pg.close()
+  }
+
+  test("lock release utility method") {
+    val pg = EmbeddedPostgres.start()
+    val ds: DataSource = pg.getPostgresDatabase
+
+    val lock1 = LeaseLock(UUID.randomUUID(), 2 minutes, 1 minute, LockFailureHandler.logAndThrow)
+    val lock2 = LeaseLock(UUID.randomUUID(), 2 minutes, 1 minute, LockFailureHandler.logAndThrow)
+
+    lock1.obtainExclusiveLock(ds)
+    intercept[LockFailureHandler.LockException] {
+      lock2.obtainExclusiveLock(ds)
+    }
+
+    lock1.releaseExclusiveLock(ds)
+    Thread.sleep(5)
+    lock2.obtainExclusiveLock(ds)
+    intercept[LockFailureHandler.LockException] {
+      lock1.obtainExclusiveLock(ds)
     }
 
     pg.close()
