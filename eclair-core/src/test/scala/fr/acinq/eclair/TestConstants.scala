@@ -181,7 +181,7 @@ object TestConstants {
           searchHopCostMillionths = 0,
           mppMinPartAmount = 15000000 msat,
           mppMaxParts = 10,
-          experimentName = "",
+          experimentName = "alice-test-experiment",
           experimentPercentage = 100)))
       ),
       socksProxy_opt = None,
@@ -302,7 +302,7 @@ object TestConstants {
           searchHopCostMillionths = 0,
           mppMinPartAmount = 15000000 msat,
           mppMaxParts = 10,
-          experimentName = "",
+          experimentName = "bob-test-experiment",
           experimentPercentage = 100)))
       ),
       socksProxy_opt = None,
