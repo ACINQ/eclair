@@ -92,7 +92,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
     def migration67(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, success INTEGER NOT NULL, duration INTEGER NOT NULL, timestamp INTEGER NOT NULL, experiment_name TEXT NOT NULL)")
+      statement.executeUpdate("CREATE TABLE metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, success INTEGER NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, experiment_name TEXT NOT NULL)")
       statement.executeUpdate("CREATE INDEX metrics_success_idx ON metrics(success)")
       statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON metrics(timestamp)")
       statement.executeUpdate("CREATE INDEX metrics_name_idx ON metrics(experiment_name)")
@@ -108,7 +108,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, success INTEGER NOT NULL, duration INTEGER NOT NULL, timestamp INTEGER NOT NULL, experiment_name TEXT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, success INTEGER NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, experiment_name TEXT NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
         statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
