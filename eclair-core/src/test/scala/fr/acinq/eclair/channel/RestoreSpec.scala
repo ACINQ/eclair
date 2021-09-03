@@ -4,6 +4,7 @@ import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestProbe}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -12,7 +13,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
-import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
@@ -205,13 +206,17 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     alice.stop()
 
     // we restart Alice with a different configuration
-    val newFees = RelayFees(765 msat, 2345)
-    val newConfig = Alice.nodeParams.copy(relayParams = RelayParams(newFees, newFees, newFees))
+    val newConfig = Alice.nodeParams
+      .modifyAll(_.relayParams.publicChannelFees, _.relayParams.privateChannelFees).setTo(RelayFees(765 msat, 2345))
+      .modify(_.expiryDelta).setTo(CltvExpiryDelta(147))
     val newAlice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(newConfig, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     newAlice ! INPUT_RESTORED(oldStateData)
 
     val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
     assert(!Announcements.areSameIgnoreFlags(u1.channelUpdate, oldStateData.channelUpdate))
+    assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.publicChannelFees.feeBase)
+    assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.publicChannelFees.feeProportionalMillionths)
+    assert(u1.channelUpdate.cltvExpiryDelta === newConfig.expiryDelta)
 
     newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
