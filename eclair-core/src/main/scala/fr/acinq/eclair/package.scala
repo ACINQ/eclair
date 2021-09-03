@@ -109,8 +109,8 @@ package object eclair {
     override def fromInt(x: Int): MilliSatoshi = MilliSatoshi(x)
     override def toInt(x: MilliSatoshi): Int = x.toLong.toInt
     override def toLong(x: MilliSatoshi): Long = x.toLong
-    override def toFloat(x: MilliSatoshi): Float = x.toLong.toFloat
-    override def toDouble(x: MilliSatoshi): Double = x.toLong.toFloat
+    override def toFloat(x: MilliSatoshi): Float = x.toFloat
+    override def toDouble(x: MilliSatoshi): Double = x.toDouble
     override def compare(x: MilliSatoshi, y: MilliSatoshi): Int = x.compare(y)
     override def parseString(str: String): Option[MilliSatoshi] = ???
     // @formatter:on
