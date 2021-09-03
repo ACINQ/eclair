@@ -35,8 +35,6 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     import setup._
     within(30 seconds) {
       reachNormal(setup)
-      awaitCond(alice.stateName == NORMAL)
-      awaitCond(bob.stateName == NORMAL)
       withFixture(test.toNoArgTest(setup))
     }
   }
