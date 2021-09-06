@@ -236,7 +236,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val routeParams = PathFindingConf(
       randomize = false,
       boundaries = SearchBoundaries(100 msat, 0.0, 20, CltvExpiryDelta(2016)),
-      WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
+      Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
       MultiPartParams(10000 msat, 5),
       "my-test-experiment",
       experimentPercentage = 100

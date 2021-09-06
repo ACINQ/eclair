@@ -661,7 +661,7 @@ object MultiPartPaymentLifecycleSpec {
       0.01,
       6,
       CltvExpiryDelta(1008)),
-    WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
+    Left(WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))),
     MultiPartParams(1000 msat, 5),
     experimentName = "my-test-experiment",
     experimentPercentage = 100).getDefaultRouteParams

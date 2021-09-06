@@ -176,13 +176,13 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          ratios = WeightRatios(
+          heuristicsParams = Left(WeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
             hopCost = RelayFees(0 msat, 0),
-          ),
+          )),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
@@ -302,13 +302,13 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          ratios = WeightRatios(
+          heuristicsParams = Left(WeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
             hopCost = RelayFees(0 msat, 0),
-          ),
+          )),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
