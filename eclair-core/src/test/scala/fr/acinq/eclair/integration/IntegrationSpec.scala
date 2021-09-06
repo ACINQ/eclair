@@ -25,7 +25,7 @@ import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.{Peer, PeerConnection}
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.HeuristicsConstants
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
 import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, NORMAL => _, State => _}
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
@@ -55,7 +55,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     maxFeePct = 0.03,
     routeMaxCltv = CltvExpiryDelta(Int.MaxValue),
     routeMaxLength = ROUTE_MAX_LENGTH,
-    ratios = WeightRatios(
+    heuristicsConstants = HeuristicsConstants(
       baseFactor = 0,
       cltvDeltaFactor = 1,
       ageFactor = 0,

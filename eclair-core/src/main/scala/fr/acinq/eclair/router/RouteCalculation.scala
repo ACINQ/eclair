@@ -25,7 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios}
+import fr.acinq.eclair.router.Graph.{RichWeight, HeuristicsConstants}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
@@ -144,7 +144,7 @@ object RouteCalculation {
     // should be able to route the payment, so we'll compute an htlcMaximumMsat accordingly.
     // We could also get the channel capacity from the blockchain (since we have the shortChannelId) but that's more expensive.
     // We also need to make sure the channel isn't excluded by our heuristics.
-    val lastChannelCapacity = amount.max(RoutingHeuristics.CAPACITY_CHANNEL_LOW)
+    val lastChannelCapacity = amount
     val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
     extraRoute.zip(nextNodeIds).reverse.foldLeft((lastChannelCapacity, Map.empty[ShortChannelId, AssistedChannel])) {
       case ((amount, acs), (extraHop: ExtraHop, nextNodeId)) =>
@@ -189,13 +189,10 @@ object RouteCalculation {
     maxFeePct = pathFindingConf.searchMaxFeePct,
     routeMaxLength = pathFindingConf.searchMaxRouteLength,
     routeMaxCltv = pathFindingConf.searchMaxCltv,
-    ratios = WeightRatios(
-      baseFactor = pathFindingConf.searchRatioBase,
-      cltvDeltaFactor = pathFindingConf.searchRatioCltv,
-      ageFactor = pathFindingConf.searchRatioChannelAge,
-      capacityFactor = pathFindingConf.searchRatioChannelCapacity,
-      hopCostBase = pathFindingConf.searchHopCostBase,
-      hopCostMillionths = pathFindingConf.searchHopCostMillionths
+    heuristicsConstants = HeuristicsConstants(
+      lockedFundsRisk = pathFindingConf.lockedFundsRisk,
+      failureCost = pathFindingConf.failureCost,
+      hopCost = pathFindingConf.hopCost
     ),
     mpp = MultiPartParams(pathFindingConf.mppMinPartAmount, pathFindingConf.mppMaxParts),
     includeLocalChannelCost = false,
@@ -256,9 +253,9 @@ object RouteCalculation {
 
     def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.routeMaxCltv
 
-    val boundaries: RichWeight => Boolean = { weight => feeOk(weight.cost - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
+    val boundaries: RichWeight => Boolean = { weight => feeOk(weight.fees) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
+    val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.heuristicsConstants, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
       val routes = if (routeParams.randomize) {

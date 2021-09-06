@@ -23,6 +23,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router.{GossipDecision, PathFindingConf, RouterConf, SendChannelQuery}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
@@ -46,18 +47,19 @@ object EclairInternalsSerializer {
 
   def iterable[A](codec: Codec[A]): Codec[Iterable[A]] = listOfN(uint16, codec).xmap(_.toIterable, _.toList)
 
+  val relayFeesCodec: Codec[RelayFees] = (
+    ("feeBase" | millisatoshi) ::
+      ("feeProportionalMillionths" | int64)).as[RelayFees]
+
   val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomizeRouteSelection" | bool(8)) ::
       ("searchMaxFeeBase" | satoshi) ::
       ("searchMaxFeePct" | double) ::
       ("searchMaxRouteLength" | int32) ::
       ("searchMaxCltv" | int32.as[CltvExpiryDelta]) ::
-      ("searchRatioBase" | double) ::
-      ("searchRatioCltv" | double) ::
-      ("searchRatioChannelAge" | double) ::
-      ("searchRatioChannelCapacity" | double) ::
-      ("searchHopCostBase" | millisatoshi) ::
-      ("searchHopCostMillionths" | int64) ::
+      ("lockedFundsRisk" | double) ::
+      ("failureCost" | relayFeesCodec) ::
+      ("hopCost" | relayFeesCodec) ::
       ("mppMinPartAmount" | millisatoshi) ::
       ("mppMaxParts" | int32)).as[PathFindingConf]
 

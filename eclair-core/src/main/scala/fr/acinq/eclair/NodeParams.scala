@@ -312,12 +312,9 @@ object NodeParams extends Logging {
         searchMaxCltv = CltvExpiryDelta(config.getInt("max-cltv")),
         searchMaxFeeBase = Satoshi(config.getLong("fee-threshold-sat")),
         searchMaxFeePct = config.getDouble("max-fee-pct"),
-        searchRatioBase = config.getDouble("ratio-base"),
-        searchRatioCltv = config.getDouble("ratio-cltv"),
-        searchRatioChannelAge = config.getDouble("ratio-channel-age"),
-        searchRatioChannelCapacity = config.getDouble("ratio-channel-capacity"),
-        searchHopCostBase = MilliSatoshi(config.getLong("hop-cost-base-msat")),
-        searchHopCostMillionths = config.getLong("hop-cost-millionths"),
+        lockedFundsRisk = config.getDouble("locked-funds-risk"),
+        failureCost = getRelayFees(config.getConfig("failure-cost")),
+        hopCost = getRelayFees(config.getConfig("hop-cost")),
         mppMinPartAmount = Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
         mppMaxParts = config.getInt("mpp.max-parts"))
     }
