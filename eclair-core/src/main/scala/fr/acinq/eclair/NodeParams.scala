@@ -27,8 +27,9 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
+import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{PathFindingConf, RouterConf}
+import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, RouterConf}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import grizzled.slf4j.Logging
@@ -306,31 +307,34 @@ object NodeParams extends Logging {
       RelayFees(feeBase, relayFeesConfig.getInt("fee-proportional-millionths"))
     }
 
-    def getPathFindingConf(config: Config, name: String): PathFindingConf = {
-      PathFindingConf(
-        randomizeRouteSelection = config.getBoolean("randomize-route-selection"),
-        searchMaxRouteLength = config.getInt("max-route-length"),
-        searchMaxCltv = CltvExpiryDelta(config.getInt("max-cltv")),
-        searchMaxFeeBase = Satoshi(config.getLong("fee-threshold-sat")),
-        searchMaxFeePct = config.getDouble("max-fee-pct"),
-        searchRatioBase = config.getDouble("ratio-base"),
-        searchRatioCltv = config.getDouble("ratio-cltv"),
-        searchRatioChannelAge = config.getDouble("ratio-channel-age"),
-        searchRatioChannelCapacity = config.getDouble("ratio-channel-capacity"),
-        searchHopCostBase = MilliSatoshi(config.getLong("hop-cost-base-msat")),
-        searchHopCostMillionths = config.getLong("hop-cost-millionths"),
-        mppMinPartAmount = Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
-        mppMaxParts = config.getInt("mpp.max-parts"),
-        experimentName = name,
-        experimentPercentage = config.getInt("percentage"))
-    }
+    def getRouteParams(config: Config, name: String): RouteParams = RouteParams(
+      randomize = config.getBoolean("randomize-route-selection"),
+      routeMaxLength = config.getInt("max-route-length"),
+      routeMaxCltv = CltvExpiryDelta(config.getInt("max-cltv")),
+      maxFeeBase = Satoshi(config.getLong("fee-threshold-sat")).toMilliSatoshi,
+      maxFeePct = config.getDouble("max-fee-pct"),
+      ratios = WeightRatios(
+        baseFactor = config.getDouble("ratio-base"),
+        cltvDeltaFactor = config.getDouble("ratio-cltv"),
+        ageFactor = config.getDouble("ratio-channel-age"),
+        capacityFactor = config.getDouble("ratio-channel-capacity"),
+        hopCostBase = MilliSatoshi(config.getLong("hop-cost-base-msat")),
+        hopCostMillionths = config.getLong("hop-cost-millionths")
+      ),
+      mpp = MultiPartParams(
+        Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
+        config.getInt("mpp.max-parts")),
+      experimentName = name,
+      experimentPercentage = config.getInt("percentage"),
+      includeLocalChannelCost = false)
+
 
     def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
-      val experiments = for ((name -> c) <- config.getConfig("ab-testing").root.asScala;
-                             experimentConfig = c.atKey("Foo").getConfig("Foo"))
-      yield getPathFindingConf(experimentConfig.withFallback(config), name)
+      val experiments = for ((name -> _) <- config.root.asScala;
+                             experimentConfig = config.getConfig(name))
+      yield (name -> getRouteParams(experimentConfig, name))
 
-      new PathFindingExperimentConf(experiments.toList)
+      PathFindingExperimentConf(experiments.toMap)
     }
 
     val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {

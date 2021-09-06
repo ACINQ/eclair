@@ -23,7 +23,8 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
-import fr.acinq.eclair.router.Router.{GossipDecision, PathFindingConf, RouterConf, SendChannelQuery}
+import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, RouteParams, RouterConf, SendChannelQuery}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -46,25 +47,32 @@ object EclairInternalsSerializer {
 
   def iterable[A](codec: Codec[A]): Codec[Iterable[A]] = listOfN(uint16, codec).xmap(_.toIterable, _.toList)
 
-  val pathFindingConfCodec: Codec[PathFindingConf] = (
-    ("randomizeRouteSelection" | bool(8)) ::
-      ("searchMaxFeeBase" | satoshi) ::
-      ("searchMaxFeePct" | double) ::
-      ("searchMaxRouteLength" | int32) ::
-      ("searchMaxCltv" | int32.as[CltvExpiryDelta]) ::
-      ("searchRatioBase" | double) ::
-      ("searchRatioCltv" | double) ::
-      ("searchRatioChannelAge" | double) ::
-      ("searchRatioChannelCapacity" | double) ::
-      ("searchHopCostBase" | millisatoshi) ::
-      ("searchHopCostMillionths" | int64) ::
-      ("mppMinPartAmount" | millisatoshi) ::
-      ("mppMaxParts" | int32) ::
+  val weightRatiosCodec: Codec[WeightRatios] = (
+    ("baseFactor" | double) ::
+      ("cltvDeltaFactor" | double) ::
+      ("ageFactor" | double) ::
+      ("capacityFactor" | double) ::
+      ("hopCostBase" | millisatoshi) ::
+      ("hopCostMillionths" | int64)).as[WeightRatios]
+
+  val multiPartParamsCodec: Codec[MultiPartParams] = (
+    ("minPartAmount" | millisatoshi) ::
+      ("maxParts" | int32)).as[MultiPartParams]
+
+  val routeParamsCodec: Codec[RouteParams] = (
+    ("randomize" | bool(8)) ::
+      ("maxFeeBase" | millisatoshi) ::
+      ("maxFeePct" | double) ::
+      ("routeMaxLength" | int32) ::
+      ("routeMaxCltv" | int32.as[CltvExpiryDelta]) ::
+      ("ratios" | weightRatiosCodec) ::
+      ("mpp" | multiPartParamsCodec) ::
+      ("includeLocalChannelCost" | provide(false)) ::
       ("experimentName" | utf8_32) ::
-      ("experimentPercentage" | int32)).as[PathFindingConf]
+      ("experimentPercentage" | int32)).as[RouteParams]
 
   val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
-    ("experiments" | listOfN(int32, pathFindingConfCodec))
+    ("experiments" | listOfN(int32, routeParamsCodec).xmap[Map[String, RouteParams]](_.map(e => (e.experimentName -> e)).toMap, _.values.toList))
     ).as[PathFindingExperimentConf]
 
   val routerConfCodec: Codec[RouterConf] = (

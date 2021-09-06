@@ -284,8 +284,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   private def getRouteParams(experimentName: Option[String]): Option[RouteParams] = {
     experimentName match {
-      case None => Some(RouteCalculation.getDefaultRouteParams(appKit.nodeParams.routerConf.pathFindingExperimentConf.get()))
-      case Some(name) => appKit.nodeParams.routerConf.pathFindingExperimentConf.getByName(name).map(RouteCalculation.getDefaultRouteParams)
+      case None => Some(appKit.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf())
+      case Some(name) => appKit.nodeParams.routerConf.pathFindingExperimentConf.getByName(name)
     }
   }
 

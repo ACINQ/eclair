@@ -1,35 +1,21 @@
 package fr.acinq.eclair.router
 
-import fr.acinq.eclair.router.Router.PathFindingConf
+import fr.acinq.eclair.router.Router.RouteParams
 
 import scala.util.Random
 
-case class PathFindingExperimentConf(experiments: List[PathFindingConf]) {
-  private val confByPercentile: Array[PathFindingConf] = new Array[PathFindingConf](100)
+case class PathFindingExperimentConf(experiments: Map[String, RouteParams]) {
+  private val confByPercentile: Array[RouteParams] = experiments.values.flatMap(e => Array.fill(e.experimentPercentage)(e)).toArray
 
-  {
-    var i = 0
-    for (conf <- experiments) {
-      for (j <- 0 until conf.experimentPercentage) {
-        confByPercentile(i + j) = conf
-      }
-      i += conf.experimentPercentage
-    }
-    require(i == 100, "All experiments percentages must sum to 100.")
-  }
+  require(confByPercentile.length == 100, "All experiments percentages must sum to 100.")
 
   private val rng = new Random()
 
-  def get(): PathFindingConf = {
+  def getRandomConf(): RouteParams = {
     confByPercentile(rng.nextInt(100))
   }
 
-  def getByName(name: String): Option[PathFindingConf] = {
-    for (conf <- experiments) {
-      if(conf.experimentName == name) {
-        return Some(conf)
-      }
-    }
-    None
+  def getByName(name: String): Option[RouteParams] = {
+    experiments.get(name)
   }
 }

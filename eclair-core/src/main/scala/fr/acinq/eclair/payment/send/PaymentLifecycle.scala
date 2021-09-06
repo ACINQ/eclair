@@ -301,7 +301,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         case SendPaymentToNode(_, _, _, _, _, routeParams) => routeParams.experimentName
         case SendPaymentToRoute(_, _, _, _) => ""
       }
-      context.system.eventStream.publish(ExperimentMetrics(request.finalPayload.amount, fees, success, duration, now, experimentName))
+      context.system.eventStream.publish(PathFindingExperimentMetrics(request.finalPayload.amount, fees, success, duration, now, experimentName))
       Metrics.SentPaymentDuration
         .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
         .withTag(Tags.Success, value = success)

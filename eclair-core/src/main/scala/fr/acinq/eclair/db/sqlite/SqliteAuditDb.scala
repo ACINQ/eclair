@@ -92,10 +92,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
     def migration67(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, success INTEGER NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, experiment_name TEXT NOT NULL)")
-      statement.executeUpdate("CREATE INDEX metrics_success_idx ON metrics(success)")
-      statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON metrics(timestamp)")
-      statement.executeUpdate("CREATE INDEX metrics_name_idx ON metrics(experiment_name)")
+      statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, success INTEGER NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, experiment_name TEXT NOT NULL)")
+      statement.executeUpdate("CREATE INDEX metrics_success_idx ON path_finding_metrics(success)")
+      statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON path_finding_metrics(timestamp)")
+      statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
     }
 
     getVersion(statement, DB_NAME) match {
@@ -108,7 +108,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, success INTEGER NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, experiment_name TEXT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, success INTEGER NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, experiment_name TEXT NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
         statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
@@ -122,9 +122,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
         statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
         statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
-        statement.executeUpdate("CREATE INDEX metrics_success_idx ON metrics(success)")
-        statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON metrics(timestamp)")
-        statement.executeUpdate("CREATE INDEX metrics_name_idx ON metrics(experiment_name)")
+        statement.executeUpdate("CREATE INDEX metrics_success_idx ON path_finding_metrics(success)")
+        statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON path_finding_metrics(timestamp)")
+        statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
       case Some(v@(1 | 2 | 3 | 4 | 5 | 6)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
@@ -268,8 +268,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def addExperimentMetrics(m: ExperimentMetrics): Unit = {
-    using(sqlite.prepareStatement("INSERT INTO metrics VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+  override def addPathFindingExperimentMetrics(m: PathFindingExperimentMetrics): Unit = {
+    using(sqlite.prepareStatement("INSERT INTO path_finding_metrics VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setLong(1, m.amount.toLong)
       statement.setLong(2, m.fees.toLong)
       statement.setBoolean(3, m.success)

@@ -1789,7 +1789,7 @@ object RouteCalculationSpec {
   val DEFAULT_CAPACITY = 100000 sat
 
   val NO_WEIGHT_RATIOS: WeightRatios = WeightRatios(1, 0, 0, 0, 0 msat, 0)
-  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, 21000 msat, 0.03, 6, CltvExpiryDelta(2016), NO_WEIGHT_RATIOS, MultiPartParams(1000 msat, 10), includeLocalChannelCost = false, experimentName = "")
+  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, 21000 msat, 0.03, 6, CltvExpiryDelta(2016), NO_WEIGHT_RATIOS, MultiPartParams(1000 msat, 10), includeLocalChannelCost = false, experimentName = "my-test-experiment", experimentPercentage = 100)
 
   val DUMMY_SIG = Transactions.PlaceHolderSig
 

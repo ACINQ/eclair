@@ -47,6 +47,12 @@ object Graph {
    */
   case class WeightRatios(baseFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopCostBase: MilliSatoshi, hopCostMillionths: Long) {
     require(baseFactor + cltvDeltaFactor + ageFactor + capacityFactor == 1, "The sum of heuristics ratios must be 1")
+    require(baseFactor >= 0.0, "ratio-base must be nonnegative")
+    require(cltvDeltaFactor >= 0.0, "ratio-cltv must be nonnegative")
+    require(ageFactor >= 0.0, "ratio-channel-age must be nonnegative")
+    require(capacityFactor >= 0.0, "ratio-channel-capacity must be nonnegative")
+    require(hopCostBase.toLong >= 0.0, "hop-cost-base-msat must be nonnegative")
+    require(hopCostMillionths >= 0.0, "hop-cost-millionths must be nonnegative")
   }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)

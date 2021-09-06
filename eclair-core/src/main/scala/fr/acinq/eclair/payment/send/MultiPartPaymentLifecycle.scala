@@ -243,7 +243,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val success = event.isRight
       val now = System.currentTimeMillis
       val duration = now - start
-      context.system.eventStream.publish(ExperimentMetrics(cfg.recipientAmount, fees, success, duration, now, request.routeParams.experimentName))
+      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.recipientAmount, fees, success, duration, now, request.routeParams.experimentName))
       Metrics.SentPaymentDuration
         .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
         .withTag(Tags.Success, value = success)

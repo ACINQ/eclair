@@ -183,25 +183,6 @@ object RouteCalculation {
   /** The default number of routes we'll search for when findRoute is called with randomize = true */
   val DEFAULT_ROUTES_COUNT = 3
 
-  def getDefaultRouteParams(pathFindingConf: PathFindingConf): RouteParams = RouteParams(
-    randomize = pathFindingConf.randomizeRouteSelection,
-    maxFeeBase = pathFindingConf.searchMaxFeeBase.toMilliSatoshi,
-    maxFeePct = pathFindingConf.searchMaxFeePct,
-    routeMaxLength = pathFindingConf.searchMaxRouteLength,
-    routeMaxCltv = pathFindingConf.searchMaxCltv,
-    ratios = WeightRatios(
-      baseFactor = pathFindingConf.searchRatioBase,
-      cltvDeltaFactor = pathFindingConf.searchRatioCltv,
-      ageFactor = pathFindingConf.searchRatioChannelAge,
-      capacityFactor = pathFindingConf.searchRatioChannelCapacity,
-      hopCostBase = pathFindingConf.searchHopCostBase,
-      hopCostMillionths = pathFindingConf.searchHopCostMillionths
-    ),
-    mpp = MultiPartParams(pathFindingConf.mppMinPartAmount, pathFindingConf.mppMaxParts),
-    includeLocalChannelCost = false,
-    experimentName = pathFindingConf.experimentName,
-  )
-
   /**
    * Find a route in the graph between localNodeId and targetNodeId, returns the route.
    * Will perform a k-shortest path selection given the @param numRoutes and randomly select one of the result.

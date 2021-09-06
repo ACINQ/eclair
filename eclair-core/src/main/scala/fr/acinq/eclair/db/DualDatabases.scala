@@ -166,9 +166,9 @@ case class DualAuditDb(sqlite: SqliteAuditDb, postgres: PgAuditDb) extends Audit
     sqlite.addChannelUpdate(channelUpdateParametersChanged)
   }
 
-  override def addExperimentMetrics(metrics: ExperimentMetrics): Unit = {
-    runAsync(postgres.addExperimentMetrics(metrics))
-    sqlite.addExperimentMetrics(metrics)
+  override def addPathFindingExperimentMetrics(metrics: PathFindingExperimentMetrics): Unit = {
+    runAsync(postgres.addPathFindingExperimentMetrics(metrics))
+    sqlite.addPathFindingExperimentMetrics(metrics)
   }
 
   override def listSent(from: Long, to: Long): Seq[PaymentSent] = {
