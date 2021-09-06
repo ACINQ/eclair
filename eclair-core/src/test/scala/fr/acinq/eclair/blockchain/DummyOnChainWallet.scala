@@ -22,7 +22,7 @@ import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainB
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits._
 
-import scala.concurrent.{Future, Promise}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
 /**
  * Created by PM on 06/07/2017.
@@ -33,23 +33,23 @@ class DummyOnChainWallet extends OnChainWallet {
 
   var rolledback = Set.empty[Transaction]
 
-  override def onChainBalance(): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
+  override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
-  override def getReceivePubkey(receiveAddress: Option[String] = None): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
+  override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] =
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
     Future.successful(DummyOnChainWallet.makeDummyFundingTx(pubkeyScript, amount))
 
-  override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
+  override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
-  override def rollback(tx: Transaction): Future[Boolean] = {
+  override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = {
     rolledback = rolledback + tx
     Future.successful(true)
   }
 
-  override def doubleSpent(tx: Transaction): Future[Boolean] = Future.successful(false)
+  override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
 
 }
 
@@ -57,19 +57,19 @@ class NoOpOnChainWallet extends OnChainWallet {
 
   import DummyOnChainWallet._
 
-  override def onChainBalance(): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
+  override def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = Future.successful(OnChainBalance(1105 sat, 561 sat))
 
-  override def getReceiveAddress(label: String): Future[String] = Future.successful(dummyReceiveAddress)
+  override def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = Future.successful(dummyReceiveAddress)
 
-  override def getReceivePubkey(receiveAddress: Option[String] = None): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
+  override def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = Future.successful(dummyReceivePubkey)
 
-  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse]().future // will never be completed
+  override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse]().future // will never be completed
 
-  override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
+  override def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
-  override def rollback(tx: Transaction): Future[Boolean] = Future.successful(true)
+  override def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(true)
 
-  override def doubleSpent(tx: Transaction): Future[Boolean] = Future.successful(false)
+  override def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = Future.successful(false)
 
 }
 

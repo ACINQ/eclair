@@ -136,6 +136,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
 
     val channelType = ChannelTypes.pickChannelType(aliceInitFeatures, bobInitFeatures)
 
+    implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceParams = Alice.channelParams
       .modify(_.initFeatures).setTo(aliceInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))

@@ -39,6 +39,7 @@ import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
+import scala.concurrent.ExecutionContext
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -323,10 +324,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   def createNewChannel(nodeParams: NodeParams, initFeatures: Features, channelType: SupportedChannelType, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val (finalScript, walletStaticPaymentBasepoint) = if (channelType.paysDirectlyToWallet) {
-      val walletKey = Helpers.getWalletPaymentBasepoint(wallet)
+      val walletKey = Helpers.getWalletPaymentBasepoint(wallet)(ExecutionContext.Implicits.global)
       (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
     } else {
-      (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash), None)
+      (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)(ExecutionContext.Implicits.global), None)
     }
     val localParams = makeChannelParams(nodeParams, initFeatures, finalScript, walletStaticPaymentBasepoint, funder, fundingAmount)
     val channel = spawnChannel(origin_opt)

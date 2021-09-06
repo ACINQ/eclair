@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.{Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import scodec.bits.ByteVector
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
  * Created by PM on 06/07/2017.
@@ -33,7 +33,7 @@ trait OnChainChannelFunder {
   import OnChainWallet.MakeFundingTxResponse
 
   /** Create a channel funding transaction with the provided pubkeyScript. */
-  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse]
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse]
 
   /**
    * Committing *must* include publishing the transaction on the network.
@@ -45,18 +45,18 @@ trait OnChainChannelFunder {
    * @return true if success
    *         false IF AND ONLY IF *HAS NOT BEEN PUBLISHED* otherwise funds are at risk!!!
    */
-  def commit(tx: Transaction): Future[Boolean]
+  def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
   /**
    * Rollback a transaction that we failed to commit: this probably translates to "release locks on utxos".
    */
-  def rollback(tx: Transaction): Future[Boolean]
+  def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
   /**
    * Tests whether the inputs of the provided transaction have been spent by another transaction.
    * Implementations may always return false if they don't want to implement it.
    */
-  def doubleSpent(tx: Transaction): Future[Boolean]
+  def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean]
 
 }
 
@@ -66,13 +66,13 @@ trait OnChainAddressGenerator {
   /**
    * @param label used if implemented with bitcoin core, can be ignored by implementation
    */
-  def getReceiveAddress(label: String = ""): Future[String]
+  def getReceiveAddress(label: String = "")(implicit ec: ExecutionContext): Future[String]
 
   /**
    * @param receiveAddress if provided, will extract the public key from this address, otherwise will generate a new
    *                       address and return the underlying public key.
    */
-  def getReceivePubkey(receiveAddress: Option[String] = None): Future[PublicKey]
+  def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[PublicKey]
 
 }
 
@@ -82,7 +82,7 @@ trait OnChainBalanceChecker {
   import OnChainWallet.OnChainBalance
 
   /** Get our on-chain balance */
-  def onChainBalance(): Future[OnChainBalance]
+  def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance]
 
 }
 
