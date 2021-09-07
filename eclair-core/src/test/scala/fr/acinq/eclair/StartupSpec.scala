@@ -33,7 +33,7 @@ import scala.util.Try
 
 class StartupSpec extends AnyFunSuite {
 
-  val defaultConf = ConfigFactory.parseResources("reference.conf").resolve(ConfigResolveOptions.defaults().setAllowUnresolved(true)).getConfig("eclair")
+  val defaultConf = ConfigFactory.load("reference.conf").getConfig("eclair")
 
   def makeNodeParamsWithDefaults(conf: Config): NodeParams = {
     val blockCount = new AtomicLong(0)
