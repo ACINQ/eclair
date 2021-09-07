@@ -422,7 +422,7 @@ object NodeParams extends Logging {
         encodingType = routerSyncEncodingType,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
-        pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding"))
+        pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments"))
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
