@@ -17,7 +17,7 @@ class RegisterSpec extends AnyFunSuite {
 
   case class CustomChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey) extends AbstractChannelRestored
 
-  test("relay an htlc-add") {
+  test("register processes custom restored events") {
     implicit val timeout: Timeout = Timeout(3.seconds)
     implicit val system: ActorSystem = ActorSystem("test")
 
