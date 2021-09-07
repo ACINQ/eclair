@@ -297,6 +297,30 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
+  case class SearchBoundaries(maxFee: MilliSatoshi,
+                              maxFeeProportional: Double,
+                              maxRouteLength: Int,
+                              maxCltv: CltvExpiryDelta)
+
+  case class PathFindingConf(randomize: Boolean,
+                             boundaries: SearchBoundaries,
+                             ratios: WeightRatios,
+                             mpp: MultiPartParams,
+                             experimentName: String,
+                             experimentPercentage: Int) {
+    def getDefaultRouteParams: RouteParams = RouteParams(
+      randomize = randomize,
+      maxFee = boundaries.maxFee,
+      maxFeeProportional = boundaries.maxFeeProportional,
+      maxRouteLength = boundaries.maxRouteLength,
+      maxCltv = boundaries.maxCltv,
+      includeLocalChannelCost = false,
+      ratios = ratios,
+      mpp = mpp,
+      experimentName = experimentName,
+    )
+  }
+
   case class RouterConf(channelExcludeDuration: FiniteDuration,
                         routerBroadcastInterval: FiniteDuration,
                         networkStatsRefreshInterval: FiniteDuration,
@@ -423,24 +447,24 @@ object Router {
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
   case class RouteParams(randomize: Boolean,
-                         maxFeeBase: MilliSatoshi,
-                         maxFeePct: Double,
-                         routeMaxLength: Int,
-                         routeMaxCltv: CltvExpiryDelta,
+                         maxFee: MilliSatoshi,
+                         maxFeeProportional: Double,
+                         maxRouteLength: Int,
+                         maxCltv: CltvExpiryDelta,
+                         includeLocalChannelCost: Boolean,
                          ratios: WeightRatios,
                          mpp: MultiPartParams,
-                         includeLocalChannelCost: Boolean,
-                         experimentName: String,
-                         experimentPercentage: Int) {
+                         experimentName: String) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
-      maxFeeBase.max(amount * maxFeePct)
+      maxFee.max(amount * maxFeeProportional)
     }
   }
 
   case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
     // @formatter:off
     def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
+
     def ++(ignoreNodes: Set[PublicKey]): Ignore = copy(nodes = nodes ++ ignoreNodes)
     def +(ignoreChannel: ChannelDesc): Ignore = copy(channels = channels + ignoreChannel)
     def emptyNodes(): Ignore = copy(nodes = Set.empty)

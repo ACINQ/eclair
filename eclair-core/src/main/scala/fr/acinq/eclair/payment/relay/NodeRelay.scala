@@ -122,12 +122,11 @@ object NodeRelay {
   def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
     val routeMaxCltv = expiryIn - expiryOut
     val routeMaxFee = amountIn - amountOut
-    nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().copy(
-      maxFeeBase = routeMaxFee,
-      routeMaxCltv = routeMaxCltv,
-      maxFeePct = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
-      includeLocalChannelCost = true,
-    )
+    nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams.copy(
+      maxFee = routeMaxFee,
+      maxCltv = routeMaxCltv,
+      maxFeeProportional = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
+      includeLocalChannelCost = true)
   }
 
   /**

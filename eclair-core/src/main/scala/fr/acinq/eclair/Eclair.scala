@@ -41,7 +41,7 @@ import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChann
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendPaymentToRouteResponse, SendSpontaneousPayment}
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{NetworkStats, RouteCalculation, Router}
+import fr.acinq.eclair.router.{NetworkStats, Router}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -284,8 +284,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   private def getRouteParams(experimentName: Option[String]): Option[RouteParams] = {
     experimentName match {
-      case None => Some(appKit.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf())
-      case Some(name) => appKit.nodeParams.routerConf.pathFindingExperimentConf.getByName(name)
+      case None => Some(appKit.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+      case Some(name) => appKit.nodeParams.routerConf.pathFindingExperimentConf.getByName(name).map(_.getDefaultRouteParams)
     }
   }
 
@@ -321,8 +321,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     getRouteParams(experimentName) match {
       case Some(defaultRouteParams) =>
         val routeParams = defaultRouteParams.copy(
-          maxFeePct = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeePct),
-          maxFeeBase = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeBase)
+          maxFeeProportional = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeeProportional),
+          maxFee = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFee)
         )
 
         externalId_opt match {
@@ -359,8 +359,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     getRouteParams(experimentName) match {
       case Some(defaultRouteParams) =>
         val routeParams = defaultRouteParams.copy(
-          maxFeePct = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeePct),
-          maxFeeBase = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeBase)
+          maxFeeProportional = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeeProportional),
+          maxFee = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFee)
         )
         val sendPayment = SendSpontaneousPayment(amount, recipientNodeId, paymentPreimage, maxAttempts, externalId_opt, routeParams)
         (appKit.paymentInitiator ? sendPayment).mapTo[UUID]

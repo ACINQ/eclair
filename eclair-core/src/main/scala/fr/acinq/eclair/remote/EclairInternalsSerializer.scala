@@ -24,7 +24,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, RouteParams, RouterConf, SendChannelQuery}
+import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PathFindingConf, RouteParams, RouterConf, SearchBoundaries, SendChannelQuery}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -47,6 +47,12 @@ object EclairInternalsSerializer {
 
   def iterable[A](codec: Codec[A]): Codec[Iterable[A]] = listOfN(uint16, codec).xmap(_.toIterable, _.toList)
 
+  val searchBoundariesCodec: Codec[SearchBoundaries] = (
+    ("maxFee" | millisatoshi) ::
+    ("maxFeeProportional" | double) ::
+    ("maxRouteLength" | int32) ::
+    ("maxCltv" | int32.as[CltvExpiryDelta])).as[SearchBoundaries]
+
   val weightRatiosCodec: Codec[WeightRatios] = (
     ("baseFactor" | double) ::
       ("cltvDeltaFactor" | double) ::
@@ -59,20 +65,16 @@ object EclairInternalsSerializer {
     ("minPartAmount" | millisatoshi) ::
       ("maxParts" | int32)).as[MultiPartParams]
 
-  val routeParamsCodec: Codec[RouteParams] = (
+  val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomize" | bool(8)) ::
-      ("maxFeeBase" | millisatoshi) ::
-      ("maxFeePct" | double) ::
-      ("routeMaxLength" | int32) ::
-      ("routeMaxCltv" | int32.as[CltvExpiryDelta]) ::
+      ("boundaries" | searchBoundariesCodec) ::
       ("ratios" | weightRatiosCodec) ::
       ("mpp" | multiPartParamsCodec) ::
-      ("includeLocalChannelCost" | provide(false)) ::
       ("experimentName" | utf8_32) ::
-      ("experimentPercentage" | int32)).as[RouteParams]
+      ("experimentPercentage" | int32)).as[PathFindingConf]
 
   val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
-    ("experiments" | listOfN(int32, routeParamsCodec).xmap[Map[String, RouteParams]](_.map(e => (e.experimentName -> e)).toMap, _.values.toList))
+    ("experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => (e.experimentName -> e)).toMap, _.values.toList))
     ).as[PathFindingExperimentConf]
 
   val routerConfCodec: Codec[RouterConf] = (

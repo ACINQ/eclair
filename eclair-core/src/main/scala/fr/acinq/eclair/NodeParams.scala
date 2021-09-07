@@ -29,7 +29,7 @@ import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, RouterConf}
+import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import grizzled.slf4j.Logging
@@ -307,17 +307,18 @@ object NodeParams extends Logging {
       RelayFees(feeBase, relayFeesConfig.getInt("fee-proportional-millionths"))
     }
 
-    def getRouteParams(config: Config, name: String): RouteParams = RouteParams(
+    def getPathFindingConf(config: Config, name: String): PathFindingConf = PathFindingConf(
       randomize = config.getBoolean("randomize-route-selection"),
-      routeMaxLength = config.getInt("max-route-length"),
-      routeMaxCltv = CltvExpiryDelta(config.getInt("max-cltv")),
-      maxFeeBase = Satoshi(config.getLong("fee-threshold-sat")).toMilliSatoshi,
-      maxFeePct = config.getDouble("max-fee-pct"),
+      boundaries = SearchBoundaries(
+        maxRouteLength = config.getInt("boundaries.max-route-length"),
+        maxCltv = CltvExpiryDelta(config.getInt("boundaries.max-cltv")),
+        maxFee = Satoshi(config.getLong("boundaries.max-fee-sat")).toMilliSatoshi,
+        maxFeeProportional = config.getDouble("boundaries.max-fee-proportional")),
       ratios = WeightRatios(
-        baseFactor = config.getDouble("ratio-base"),
-        cltvDeltaFactor = config.getDouble("ratio-cltv"),
-        ageFactor = config.getDouble("ratio-channel-age"),
-        capacityFactor = config.getDouble("ratio-channel-capacity"),
+        baseFactor = config.getDouble("ratios.base"),
+        cltvDeltaFactor = config.getDouble("ratios.cltv"),
+        ageFactor = config.getDouble("ratios.channel-age"),
+        capacityFactor = config.getDouble("ratios.channel-capacity"),
         hopCostBase = MilliSatoshi(config.getLong("hop-cost-base-msat")),
         hopCostMillionths = config.getLong("hop-cost-millionths")
       ),
@@ -325,14 +326,13 @@ object NodeParams extends Logging {
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
         config.getInt("mpp.max-parts")),
       experimentName = name,
-      experimentPercentage = config.getInt("percentage"),
-      includeLocalChannelCost = false)
+      experimentPercentage = config.getInt("percentage"))
 
 
     def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
       val experiments = for ((name -> _) <- config.root.asScala;
                              experimentConfig = config.getConfig(name))
-      yield (name -> getRouteParams(experimentConfig, name))
+      yield (name -> getPathFindingConf(experimentConfig, name))
 
       PathFindingExperimentConf(experiments.toMap)
     }

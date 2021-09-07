@@ -26,7 +26,7 @@ import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.PathFindingExperimentConf
-import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, RouterConf}
+import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
 import scodec.bits.ByteVector
@@ -168,12 +168,13 @@ object TestConstants {
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingExperimentConf = PathFindingExperimentConf(Map(("alice-test-experiment" -> RouteParams(
+        pathFindingExperimentConf = PathFindingExperimentConf(Map(("alice-test-experiment" -> PathFindingConf(
           randomize = false,
-          maxFeeBase = (21 sat).toMilliSatoshi,
-          maxFeePct = 0.03,
-          routeMaxCltv = CltvExpiryDelta(2016),
-          routeMaxLength = 20,
+          boundaries = SearchBoundaries(
+            maxFee = (21 sat).toMilliSatoshi,
+            maxFeeProportional = 0.03,
+            maxCltv = CltvExpiryDelta(2016),
+            maxRouteLength = 20),
           ratios = WeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
@@ -186,7 +187,6 @@ object TestConstants {
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
-          includeLocalChannelCost = false,
           experimentName = "alice-test-experiment",
           experimentPercentage = 100))))
       ),
@@ -294,12 +294,13 @@ object TestConstants {
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingExperimentConf = PathFindingExperimentConf(Map(("bob-test-experiment" -> RouteParams(
+        pathFindingExperimentConf = PathFindingExperimentConf(Map(("bob-test-experiment" -> PathFindingConf(
           randomize = false,
-          maxFeeBase = (21 sat).toMilliSatoshi,
-          maxFeePct = 0.03,
-          routeMaxCltv = CltvExpiryDelta(2016),
-          routeMaxLength = 20,
+          boundaries = SearchBoundaries(
+            maxFee = (21 sat).toMilliSatoshi,
+            maxFeeProportional = 0.03,
+            maxCltv = CltvExpiryDelta(2016),
+            maxRouteLength = 20),
           ratios = WeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
@@ -312,7 +313,6 @@ object TestConstants {
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
-          includeLocalChannelCost = false,
           experimentName = "bob-test-experiment",
           experimentPercentage = 100))))
       ),

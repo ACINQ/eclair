@@ -650,7 +650,17 @@ object MultiPartPaymentLifecycleSpec {
   val expiry = CltvExpiry(1105)
   val finalAmount = 1000000 msat
   val finalRecipient = randomKey().publicKey
-  val routeParams = RouteParams(randomize = false, 15000 msat, 0.01, 6, CltvExpiryDelta(1008), WeightRatios(1, 0, 0, 0, 0 msat, 0), MultiPartParams(1000 msat, 5), includeLocalChannelCost = false, experimentName = "my-test-experiment", experimentPercentage = 100)
+  val routeParams = PathFindingConf(
+    randomize = false,
+    boundaries = SearchBoundaries(
+      15000 msat,
+      0.01,
+      6,
+      CltvExpiryDelta(1008)),
+    WeightRatios(1, 0, 0, 0, 0 msat, 0),
+    MultiPartParams(1000 msat, 5),
+    experimentName = "my-test-experiment",
+    experimentPercentage = 100).getDefaultRouteParams
   val maxFee = 15000 msat // max fee for the defaultAmount
 
   /**
