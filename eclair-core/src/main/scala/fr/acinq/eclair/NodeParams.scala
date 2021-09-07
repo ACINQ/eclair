@@ -201,7 +201,17 @@ object NodeParams extends Logging {
       "enable-db-backup" -> "file-backup.enabled",
       "backup-notify-script" -> "file-backup.notify-script",
       // v0.6.2
-      "router.randomize-route-selection" -> "router.path-finding.randomize-route-selection",
+      "router.randomize-route-selection" -> "router.path-finding.default.randomize-route-selection",
+      "router.path-finding.max-route-length" -> "router.path-finding.default.boundaries.max-route-length",
+      "router.path-finding.max-cltv" -> "router.path-finding.default.boundaries.max-cltv",
+      "router.path-finding.fee-threshold-sat" -> "router.path-finding.default.boundaries.max-fee-sat",
+      "router.path-finding.max-fee-pct" -> "router.path-finding.default.boundaries.max-fee-proportional",
+      "router.path-finding.ratio-base" -> "router.path-finding.default.ratios.base",
+      "router.path-finding.ratio-cltv" -> "router.path-finding.default.ratios.cltv",
+      "router.path-finding.ratio-channel-age" -> "router.path-finding.default.ratios.channel-age",
+      "router.path-finding.ratio-channel-capacity" -> "router.path-finding.default.ratios.channel-capacity",
+      "router.path-finding.hop-cost-base-msat" -> "router.path-finding.default.hop-cost-base-msat",
+      "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost-millionths",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
