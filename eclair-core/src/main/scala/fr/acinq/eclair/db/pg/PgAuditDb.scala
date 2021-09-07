@@ -85,7 +85,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
 
       def migration89(statement: Statement): Unit = {
-        statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, success BOOLEAN NOT NULL, duration INTERVAL NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, experiment_name TEXT NOT NULL)")
+        statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, success BOOLEAN NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, experiment_name TEXT NOT NULL)")
         statement.executeUpdate("CREATE INDEX metrics_success_idx ON audit.path_finding_metrics(success)")
         statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON audit.path_finding_metrics(timestamp)")
         statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
@@ -102,7 +102,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.network_fees (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, tx_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, success BOOLEAN NOT NULL, duration INTERVAL NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, experiment_name TEXT NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, success BOOLEAN NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, experiment_name TEXT NOT NULL)")
 
           statement.executeUpdate("CREATE TABLE audit.channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON audit.sent(timestamp)")
@@ -280,7 +280,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setLong(1, m.amount.toLong)
         statement.setLong(2, m.fees.toLong)
         statement.setBoolean(3, m.success)
-        statement.setObject(4, new PGInterval(0, 0, 0, 0, 0, m.duration.toDouble / 1000.0))
+        statement.setLong(4, m.duration)
         statement.setTimestamp(5, new Timestamp(m.timestamp))
         statement.setString(6, m.experimentName)
         statement.executeUpdate()
