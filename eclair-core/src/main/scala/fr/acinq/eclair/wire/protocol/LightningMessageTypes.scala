@@ -253,7 +253,6 @@ case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
                          shortChannelId: ShortChannelId,
                          timestamp: Long,
-                         messageFlags: Byte,
                          channelFlags: Byte,
                          cltvExpiryDelta: CltvExpiryDelta,
                          htlcMinimumMsat: MilliSatoshi,
@@ -261,7 +260,8 @@ case class ChannelUpdate(signature: ByteVector64,
                          feeProportionalMillionths: Long,
                          htlcMaximumMsat: Option[MilliSatoshi],
                          tlvStream: TlvStream[ChannelUpdateTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
-  require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
+
+  def messageFlags: Byte = if (htlcMaximumMsat.isDefined) 1 else 0
 
   def isNode1 = Announcements.isNode1(channelFlags)
 
