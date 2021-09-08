@@ -171,7 +171,7 @@ object TestConstants {
         pathFindingExperimentConf = PathFindingExperimentConf(Map(("alice-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
-            maxFee = (21 sat).toMilliSatoshi,
+            maxFeeFixed = (21 sat).toMilliSatoshi,
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
@@ -297,7 +297,7 @@ object TestConstants {
         pathFindingExperimentConf = PathFindingExperimentConf(Map(("bob-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
-            maxFee = (21 sat).toMilliSatoshi,
+            maxFeeFixed = (21 sat).toMilliSatoshi,
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),

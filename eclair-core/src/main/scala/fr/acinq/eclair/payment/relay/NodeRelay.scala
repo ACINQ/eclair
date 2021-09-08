@@ -123,7 +123,7 @@ object NodeRelay {
     val routeMaxCltv = expiryIn - expiryOut
     val routeMaxFee = amountIn - amountOut
     nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams.copy(
-      maxFee = routeMaxFee,
+      maxFeeFixed = routeMaxFee,
       maxCltv = routeMaxCltv,
       maxFeeProportional = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
       includeLocalChannelCost = true)

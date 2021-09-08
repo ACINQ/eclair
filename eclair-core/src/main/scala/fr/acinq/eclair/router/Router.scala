@@ -297,7 +297,7 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
-  case class SearchBoundaries(maxFee: MilliSatoshi,
+  case class SearchBoundaries(maxFeeFixed: MilliSatoshi,
                               maxFeeProportional: Double,
                               maxRouteLength: Int,
                               maxCltv: CltvExpiryDelta)
@@ -310,7 +310,7 @@ object Router {
                              experimentPercentage: Int) {
     def getDefaultRouteParams: RouteParams = RouteParams(
       randomize = randomize,
-      maxFee = boundaries.maxFee,
+      maxFeeFixed = boundaries.maxFeeFixed,
       maxFeeProportional = boundaries.maxFeeProportional,
       maxRouteLength = boundaries.maxRouteLength,
       maxCltv = boundaries.maxCltv,
@@ -447,7 +447,7 @@ object Router {
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
   case class RouteParams(randomize: Boolean,
-                         maxFee: MilliSatoshi,
+                         maxFeeFixed: MilliSatoshi,
                          maxFeeProportional: Double,
                          maxRouteLength: Int,
                          maxCltv: CltvExpiryDelta,
@@ -457,14 +457,13 @@ object Router {
                          experimentName: String) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
-      maxFee.max(amount * maxFeeProportional)
+      maxFeeFixed.max(amount * maxFeeProportional)
     }
   }
 
   case class Ignore(nodes: Set[PublicKey], channels: Set[ChannelDesc]) {
     // @formatter:off
     def +(ignoreNode: PublicKey): Ignore = copy(nodes = nodes + ignoreNode)
-
     def ++(ignoreNodes: Set[PublicKey]): Ignore = copy(nodes = nodes ++ ignoreNodes)
     def +(ignoreChannel: ChannelDesc): Ignore = copy(channels = channels + ignoreChannel)
     def emptyNodes(): Ignore = copy(nodes = Set.empty)

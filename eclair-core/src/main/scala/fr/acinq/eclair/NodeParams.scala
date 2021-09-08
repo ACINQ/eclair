@@ -204,7 +204,7 @@ object NodeParams extends Logging {
       "router.randomize-route-selection" -> "router.path-finding.default.randomize-route-selection",
       "router.path-finding.max-route-length" -> "router.path-finding.default.boundaries.max-route-length",
       "router.path-finding.max-cltv" -> "router.path-finding.default.boundaries.max-cltv",
-      "router.path-finding.fee-threshold-sat" -> "router.path-finding.default.boundaries.max-fee-sat",
+      "router.path-finding.fee-threshold-sat" -> "router.path-finding.default.boundaries.max-fee-fixed-sat",
       "router.path-finding.max-fee-pct" -> "router.path-finding.default.boundaries.max-fee-proportional",
       "router.path-finding.ratio-base" -> "router.path-finding.default.ratios.base",
       "router.path-finding.ratio-cltv" -> "router.path-finding.default.ratios.cltv",
@@ -322,7 +322,7 @@ object NodeParams extends Logging {
       boundaries = SearchBoundaries(
         maxRouteLength = config.getInt("boundaries.max-route-length"),
         maxCltv = CltvExpiryDelta(config.getInt("boundaries.max-cltv")),
-        maxFee = Satoshi(config.getLong("boundaries.max-fee-sat")).toMilliSatoshi,
+        maxFeeFixed = Satoshi(config.getLong("boundaries.max-fee-fixed-sat")).toMilliSatoshi,
         maxFeeProportional = config.getDouble("boundaries.max-fee-proportional")),
       ratios = WeightRatios(
         baseFactor = config.getDouble("ratios.base"),
@@ -340,10 +340,7 @@ object NodeParams extends Logging {
 
 
     def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
-      val experiments = for ((name -> _) <- config.root.asScala;
-                             experimentConfig = config.getConfig(name))
-      yield (name -> getPathFindingConf(experimentConfig, name))
-
+      val experiments = config.root.asScala.keys.map(name => name -> getPathFindingConf(config.getConfig(name), name))
       PathFindingExperimentConf(experiments.toMap)
     }
 
