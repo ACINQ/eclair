@@ -210,8 +210,8 @@ object NodeParams extends Logging {
       "router.path-finding.ratio-cltv" -> "router.path-finding.default.ratios.cltv",
       "router.path-finding.ratio-channel-age" -> "router.path-finding.default.ratios.channel-age",
       "router.path-finding.ratio-channel-capacity" -> "router.path-finding.default.ratios.channel-capacity",
-      "router.path-finding.hop-cost-base-msat" -> "router.path-finding.default.hop-cost-base-msat",
-      "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost-millionths",
+      "router.path-finding.hop-cost-base-msat" -> "router.path-finding.default.hop-cost.fee-base-msat",
+      "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost.fee-proportional-millionths",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
