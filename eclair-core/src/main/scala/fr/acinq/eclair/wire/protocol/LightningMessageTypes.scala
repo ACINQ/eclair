@@ -21,7 +21,6 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelType
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -253,7 +252,7 @@ case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
                          shortChannelId: ShortChannelId,
                          timestamp: Long,
-                         channelFlags: Byte,
+                         channelFlags: ChannelUpdate.ChannelFlags,
                          cltvExpiryDelta: CltvExpiryDelta,
                          htlcMinimumMsat: MilliSatoshi,
                          feeBaseMsat: MilliSatoshi,
@@ -263,9 +262,29 @@ case class ChannelUpdate(signature: ByteVector64,
 
   def messageFlags: Byte = if (htlcMaximumMsat.isDefined) 1 else 0
 
-  def isNode1 = Announcements.isNode1(channelFlags)
-
   def toStringShort: String = s"cltvExpiryDelta=$cltvExpiryDelta,feeBase=$feeBaseMsat,feeProportionalMillionths=$feeProportionalMillionths"
+}
+
+object ChannelUpdate {
+  case class ChannelFlags(disable: Boolean, direction: Boolean) {
+    // @formatter:off
+    /**
+     * BOLT 7:
+     * A node MAY create and send a channel_update with the disable bit set to
+     * signal the temporary unavailability of a channel.
+     */
+    def isEnabled: Boolean = !disable
+    /**
+     * BOLT 7:
+     * The creating node [...] MUST set the direction bit of flags to 0 if
+     * the creating node is node-id-1 in that message, otherwise 1.
+     */
+    def isNode1: Boolean = !direction
+    // @formatter:on
+  }
+  object ChannelFlags {
+    def from(isNode1: Boolean, enable: Boolean): ChannelUpdate.ChannelFlags = ChannelUpdate.ChannelFlags(direction = !isNode1, disable = !enable)
+  }
 }
 
 // @formatter:off

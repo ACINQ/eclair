@@ -102,7 +102,7 @@ object Autoprobe {
     val peers = routingData.channels
       .collect {
         case (shortChannelId, c@Router.PublicChannel(ann, _, _, Some(u1), _, _))
-          if c.getNodeIdSameSideAs(u1) == nodeId && Announcements.isEnabled(u1.channelFlags) && routingData.channels.exists(_._1 == shortChannelId) => ann.nodeId2 // we only consider outgoing channels that are enabled and announced
+          if c.getNodeIdSameSideAs(u1) == nodeId && u1.channelFlags.isEnabled && routingData.channels.exists(_._1 == shortChannelId) => ann.nodeId2 // we only consider outgoing channels that are enabled and announced
       }
     if (peers.isEmpty) {
       None

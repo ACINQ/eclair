@@ -222,13 +222,16 @@ object LightningMessageCodecs {
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
   private case class MessageFlags(optionChannelHtlcMax: Boolean)
+
   private val messageFlagsCodec = ("messageFlags" | (ignore(7) :: bool)).as[MessageFlags]
+
+  val channelFlagsCodec = ("channelFlags" | (ignore(6) :: bool :: bool)).as[ChannelUpdate.ChannelFlags]
 
   val channelUpdateChecksumCodec =
     ("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
       (messageFlagsCodec >>:~ { messageFlags =>
-        ("channelFlags" | byte) ::
+        channelFlagsCodec ::
           ("cltvExpiryDelta" | cltvExpiryDelta) ::
           ("htlcMinimumMsat" | millisatoshi) ::
           ("feeBaseMsat" | millisatoshi32) ::
@@ -246,7 +249,7 @@ object LightningMessageCodecs {
       ("shortChannelId" | shortchannelid) ::
       ("timestamp" | uint32) ::
       (messageFlagsCodec >>:~ { messageFlags =>
-        ("channelFlags" | byte) ::
+        channelFlagsCodec ::
           ("cltvExpiryDelta" | cltvExpiryDelta) ::
           ("htlcMinimumMsat" | millisatoshi) ::
           ("feeBaseMsat" | millisatoshi32) ::

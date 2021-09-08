@@ -34,7 +34,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
     shortChannelId = ShortChannelId(12345),
     timestamp = 1234567L,
     cltvExpiryDelta = CltvExpiryDelta(100),
-    channelFlags = 1,
+    channelFlags = ChannelUpdate.ChannelFlags(disable = false, direction = true),
     htlcMinimumMsat = 1000 msat,
     feeBaseMsat = 12 msat,
     feeProportionalMillionths = 76,
@@ -46,7 +46,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
         InvalidOnionVersion(randomBytes32()) :: InvalidOnionHmac(randomBytes32()) :: InvalidOnionKey(randomBytes32()) ::
         TemporaryChannelFailure(channelUpdate) :: PermanentChannelFailure :: RequiredChannelFeatureMissing :: UnknownNextPeer ::
         AmountBelowMinimum(123456 msat, channelUpdate) :: FeeInsufficient(546463 msat, channelUpdate) :: IncorrectCltvExpiry(CltvExpiry(1211), channelUpdate) :: ExpiryTooSoon(channelUpdate) ::
-        IncorrectOrUnknownPaymentDetails(123456 msat, 1105) :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(0, 1, channelUpdate) :: ExpiryTooFar :: InvalidOnionPayload(UInt64(561), 1105) :: PaymentTimeout ::
+        IncorrectOrUnknownPaymentDetails(123456 msat, 1105) :: FinalIncorrectCltvExpiry(CltvExpiry(1234)) :: ChannelDisabled(0, ChannelUpdate.ChannelFlags(disable = false, direction = true), channelUpdate) :: ExpiryTooFar :: InvalidOnionPayload(UInt64(561), 1105) :: PaymentTimeout ::
         TrampolineFeeInsufficient :: TrampolineExpiryTooSoon :: Nil
 
     msgs.foreach {
@@ -148,7 +148,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
   test("support encoding of channel_update with/without type in failure messages") {
     val tmp_channel_failure_notype = hex"10070080cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001"
     val tmp_channel_failure_withtype = hex"100700820102cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001"
-    val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, 3, CltvExpiryDelta(14), 1000 msat, 1 msat, 1, None))
+    val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, ChannelUpdate.ChannelFlags(disable = true, direction = true), CltvExpiryDelta(14), 1000 msat, 1 msat, 1, None))
 
     val u = failureMessageCodec.decode(tmp_channel_failure_notype.toBitVector).require.value
     assert(u === ref)

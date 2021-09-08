@@ -86,7 +86,7 @@ object ChannelRelayer {
 
           case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>
             val channels = if (enabledOnly) {
-              channelUpdates.values.filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
+              channelUpdates.values.filter(o => o.channelUpdate.channelFlags.isEnabled)
             } else {
               channelUpdates.values
             }

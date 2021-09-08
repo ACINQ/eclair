@@ -263,7 +263,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     // in any case, we forward the update to the router: if the channel is disabled, the router will remove it from its routing table
     router ! failure.update
     // we return updated assisted routes: they take precedence over the router's routing table
-    if (Announcements.isEnabled(failure.update.channelFlags)) {
+    if (failure.update.channelFlags.isEnabled) {
       data.c.assistedRoutes.map(_.map {
         case extraHop: ExtraHop if extraHop.shortChannelId == failure.update.shortChannelId => extraHop.copy(
           cltvExpiryDelta = failure.update.cltvExpiryDelta,
