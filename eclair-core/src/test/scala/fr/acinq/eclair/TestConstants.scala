@@ -180,8 +180,7 @@ object TestConstants {
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
-            hopCostBase = 0 msat,
-            hopCostMillionths = 0,
+            hopCost = RelayFees(0 msat, 0),
           ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
@@ -306,8 +305,7 @@ object TestConstants {
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
-            hopCostBase = 0 msat,
-            hopCostMillionths = 0,
+            hopCost = RelayFees(0 msat, 0),
           ),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,

@@ -25,6 +25,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.{FailureSummary, FailureType, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle._
 import fr.acinq.eclair.payment.send.PaymentError.RetryExhausted
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
@@ -657,7 +658,7 @@ object MultiPartPaymentLifecycleSpec {
       0.01,
       6,
       CltvExpiryDelta(1008)),
-    WeightRatios(1, 0, 0, 0, 0 msat, 0),
+    WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
     MultiPartParams(1000 msat, 5),
     experimentName = "my-test-experiment",
     experimentPercentage = 100).getDefaultRouteParams

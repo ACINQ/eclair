@@ -23,6 +23,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PathFindingConf, RouteParams, RouterConf, SearchBoundaries, SendChannelQuery}
 import fr.acinq.eclair.router._
@@ -53,13 +54,16 @@ object EclairInternalsSerializer {
     ("maxRouteLength" | int32) ::
     ("maxCltv" | int32.as[CltvExpiryDelta])).as[SearchBoundaries]
 
+  val relayFeesCodec: Codec[RelayFees] = (
+    ("feeBase" | millisatoshi) ::
+      ("feeProportionalMillionths" | int64)).as[RelayFees]
+
   val weightRatiosCodec: Codec[WeightRatios] = (
     ("baseFactor" | double) ::
       ("cltvDeltaFactor" | double) ::
       ("ageFactor" | double) ::
       ("capacityFactor" | double) ::
-      ("hopCostBase" | millisatoshi) ::
-      ("hopCostMillionths" | int64)).as[WeightRatios]
+      ("hopCost" | relayFeesCodec)).as[WeightRatios]
 
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::

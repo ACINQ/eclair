@@ -329,8 +329,7 @@ object NodeParams extends Logging {
         cltvDeltaFactor = config.getDouble("ratios.cltv"),
         ageFactor = config.getDouble("ratios.channel-age"),
         capacityFactor = config.getDouble("ratios.channel-capacity"),
-        hopCostBase = MilliSatoshi(config.getLong("hop-cost-base-msat")),
-        hopCostMillionths = config.getLong("hop-cost-millionths")
+        hopCost = getRelayFees(config.getConfig("hop-cost")),
       ),
       mpp = MultiPartParams(
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,

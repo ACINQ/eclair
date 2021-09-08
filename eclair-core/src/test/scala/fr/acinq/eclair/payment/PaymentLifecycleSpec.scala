@@ -32,6 +32,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
@@ -234,7 +235,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val routeParams = PathFindingConf(
       randomize = false,
       boundaries = SearchBoundaries(100 msat, 0.0, 20, CltvExpiryDelta(2016)),
-      WeightRatios(1, 0, 0, 0, 0 msat, 0),
+      WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
       MultiPartParams(10000 msat, 5),
       "my-test-experiment",
       experimentPercentage = 100
