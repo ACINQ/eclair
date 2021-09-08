@@ -53,7 +53,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
   val integrationTestRouteParams = PathFindingConf(
     randomize = false,
     boundaries = SearchBoundaries(
-      maxFeeFixed = 21000 msat,
+      maxFeeFlat = 21000 msat,
       maxFeeProportional = 0.03,
       maxCltv = CltvExpiryDelta(Int.MaxValue),
       maxRouteLength = ROUTE_MAX_LENGTH),

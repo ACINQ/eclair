@@ -322,7 +322,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       case Some(defaultRouteParams) =>
         val routeParams = defaultRouteParams.copy(
           maxFeeProportional = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeeProportional),
-          maxFeeFixed = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeFixed)
+          maxFeeFlat = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeFlat)
         )
 
         externalId_opt match {
@@ -360,7 +360,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       case Some(defaultRouteParams) =>
         val routeParams = defaultRouteParams.copy(
           maxFeeProportional = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeeProportional),
-          maxFeeFixed = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeFixed)
+          maxFeeFlat = feeThreshold_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeFlat)
         )
         val sendPayment = SendSpontaneousPayment(amount, recipientNodeId, paymentPreimage, maxAttempts, externalId_opt, routeParams)
         (appKit.paymentInitiator ? sendPayment).mapTo[UUID]

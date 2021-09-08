@@ -204,8 +204,8 @@ object NodeParams extends Logging {
       "router.randomize-route-selection" -> "router.path-finding.default.randomize-route-selection",
       "router.path-finding.max-route-length" -> "router.path-finding.default.boundaries.max-route-length",
       "router.path-finding.max-cltv" -> "router.path-finding.default.boundaries.max-cltv",
-      "router.path-finding.fee-threshold-sat" -> "router.path-finding.default.boundaries.max-fee-fixed-sat",
-      "router.path-finding.max-fee-pct" -> "router.path-finding.default.boundaries.max-fee-proportional",
+      "router.path-finding.fee-threshold-sat" -> "router.path-finding.default.boundaries.max-fee-flat-sat",
+      "router.path-finding.max-fee-pct" -> "router.path-finding.default.boundaries.max-fee-proportional-percent",
       "router.path-finding.ratio-base" -> "router.path-finding.default.ratios.base",
       "router.path-finding.ratio-cltv" -> "router.path-finding.default.ratios.cltv",
       "router.path-finding.ratio-channel-age" -> "router.path-finding.default.ratios.channel-age",
@@ -322,8 +322,8 @@ object NodeParams extends Logging {
       boundaries = SearchBoundaries(
         maxRouteLength = config.getInt("boundaries.max-route-length"),
         maxCltv = CltvExpiryDelta(config.getInt("boundaries.max-cltv")),
-        maxFeeFixed = Satoshi(config.getLong("boundaries.max-fee-fixed-sat")).toMilliSatoshi,
-        maxFeeProportional = config.getDouble("boundaries.max-fee-proportional")),
+        maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
+        maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
       ratios = WeightRatios(
         baseFactor = config.getDouble("ratios.base"),
         cltvDeltaFactor = config.getDouble("ratios.cltv"),

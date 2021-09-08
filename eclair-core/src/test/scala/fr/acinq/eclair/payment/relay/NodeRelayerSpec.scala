@@ -488,7 +488,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val routeRequest = router.expectMessageType[RouteRequest]
     val routeParams = routeRequest.routeParams
     assert(routeParams.maxFeeProportional === 0) // should be disabled
-    assert(routeParams.maxFeeFixed === incomingAmount - outgoingAmount)
+    assert(routeParams.maxFeeFlat === incomingAmount - outgoingAmount)
     assert(routeParams.maxCltv === incomingSinglePart.add.cltvExpiry - outgoingExpiry)
     assert(routeParams.includeLocalChannelCost)
   }

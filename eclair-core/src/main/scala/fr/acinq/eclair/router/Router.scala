@@ -297,7 +297,7 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
-  case class SearchBoundaries(maxFeeFixed: MilliSatoshi,
+  case class SearchBoundaries(maxFeeFlat: MilliSatoshi,
                               maxFeeProportional: Double,
                               maxRouteLength: Int,
                               maxCltv: CltvExpiryDelta)
@@ -310,7 +310,7 @@ object Router {
                              experimentPercentage: Int) {
     def getDefaultRouteParams: RouteParams = RouteParams(
       randomize = randomize,
-      maxFeeFixed = boundaries.maxFeeFixed,
+      maxFeeFlat = boundaries.maxFeeFlat,
       maxFeeProportional = boundaries.maxFeeProportional,
       maxRouteLength = boundaries.maxRouteLength,
       maxCltv = boundaries.maxCltv,
@@ -447,7 +447,7 @@ object Router {
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
   case class RouteParams(randomize: Boolean,
-                         maxFeeFixed: MilliSatoshi,
+                         maxFeeFlat: MilliSatoshi,
                          maxFeeProportional: Double,
                          maxRouteLength: Int,
                          maxCltv: CltvExpiryDelta,
@@ -456,8 +456,8 @@ object Router {
                          mpp: MultiPartParams,
                          experimentName: String) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
-      // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
-      maxFeeFixed.max(amount * maxFeeProportional)
+      // The payment fee must satisfy either the flat fee or the proportional fee, not necessarily both.
+      maxFeeFlat.max(amount * maxFeeProportional)
     }
   }
 

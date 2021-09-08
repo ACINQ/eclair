@@ -65,7 +65,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     // here we have a maximum fee base of 1 msat, and all our updates have a base fee of 10 msat
     // so our fee will always be above the base fee, and we will always check that it is below our maximum percentage
     // of the amount being paid
-    val routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeFixed = 1 msat)
+    val routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeFlat = 1 msat)
     val maxFee = routeParams.getMaxFee(DEFAULT_AMOUNT_MSAT)
 
     val g = DirectedGraph(List(
@@ -772,7 +772,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("select a random route below the requested fee") {
-    val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeFixed = 7 msat, maxFeeProportional = 0, randomize = true)
+    val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeFlat = 7 msat, maxFeeProportional = 0, randomize = true)
     val strictFee = strictFeeParams.getMaxFee(DEFAULT_AMOUNT_MSAT)
     assert(strictFee === 7.msat)
 
