@@ -22,13 +22,12 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, SatoshiLo
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT}
-import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx, SetChannelId}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, HtlcSuccessTx, HtlcTimeoutTx}
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, DefaultCommitmentFormat, HtlcSuccessTx, HtlcTimeoutTx, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, Features, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
@@ -701,10 +700,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Bob publishes the latest commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) {
-      assert(bobCommitTx.txOut.length === 7) // two main outputs + two anchors + 3 HTLCs
-    } else {
-      assert(bobCommitTx.txOut.length === 5) // two main outputs + 3 HTLCs
+    channelFeatures.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => assert(bobCommitTx.txOut.length === 7) // two main outputs + two anchors + 3 HTLCs
+      case DefaultCommitmentFormat => assert(bobCommitTx.txOut.length === 5) // two main outputs + 3 HTLCs
     }
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
     assert(closingState.claimHtlcTxs.size === 3)
@@ -833,10 +831,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Bob publishes the next commit tx.
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) {
-      assert(bobCommitTx.txOut.length === 7) // two main outputs + two anchors + 3 HTLCs
-    } else {
-      assert(bobCommitTx.txOut.length === 5) // two main outputs + 3 HTLCs
+    channelFeatures.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => assert(bobCommitTx.txOut.length === 7) // two main outputs + two anchors + 3 HTLCs
+      case DefaultCommitmentFormat => assert(bobCommitTx.txOut.length === 5) // two main outputs + 3 HTLCs
     }
     val closingState = remoteClose(bobCommitTx, alice, alice2blockchain)
     assert(getClaimHtlcTimeoutTxs(closingState).length === 3)
@@ -1013,10 +1010,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
     // bob is nice and publishes its commitment
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) {
-      assert(bobCommitTx.txOut.length === 6) // two main outputs + two anchors + 2 HTLCs
-    } else {
-      assert(bobCommitTx.txOut.length === 4) // two main outputs + 2 HTLCs
+    channelFeatures.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => assert(bobCommitTx.txOut.length === 6) // two main outputs + two anchors + 2 HTLCs
+      case DefaultCommitmentFormat => assert(bobCommitTx.txOut.length === 4) // two main outputs + 2 HTLCs
     }
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     bobCommitTx
@@ -1091,10 +1087,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // Bob's first commit tx doesn't contain any htlc
     val localCommit1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit
-    if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) {
-      assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4) // 2 main outputs + 2 anchors
-    } else {
-      assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size === 2) // 2 main outputs
+    channelFeatures.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4) // 2 main outputs + 2 anchors
+      case DefaultCommitmentFormat => assert(localCommit1.commitTxAndRemoteSig.commitTx.tx.txOut.size === 2) // 2 main outputs
     }
 
     // Bob's second commit tx contains 1 incoming htlc and 1 outgoing htlc
@@ -1108,10 +1103,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size)
-    if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) {
-      assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
-    } else {
-      assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4)
+    channelFeatures.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
+      case DefaultCommitmentFormat => assert(localCommit2.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4)
     }
 
     // Bob's third commit tx contains 2 incoming htlcs and 2 outgoing htlcs
@@ -1125,10 +1119,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size)
-    if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) {
-      assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size === 8)
-    } else {
-      assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
+    channelFeatures.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size === 8)
+      case DefaultCommitmentFormat => assert(localCommit3.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
     }
 
     // Bob's fourth commit tx doesn't contain any htlc
@@ -1140,10 +1133,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     }
 
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size == localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size)
-    if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) {
-      assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4)
-    } else {
-      assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size === 2)
+    channelFeatures.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size === 4)
+      case DefaultCommitmentFormat => assert(localCommit4.commitTxAndRemoteSig.commitTx.tx.txOut.size === 2)
     }
 
     RevokedCloseFixture(Seq(localCommit1, localCommit2, localCommit3, localCommit4), Seq(htlcAlice1, htlcAlice2), Seq(htlcBob1, htlcBob2))
@@ -1184,7 +1176,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice spends all outpoints of the revoked tx, except her main output when it goes directly to our wallet
     val spentOutpoints = penaltyTxs.flatMap(_.tx.txIn.map(_.outPoint)).toSet
     assert(spentOutpoints.forall(_.txid === bobRevokedTx.txid))
-    if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) {
+    if (channelFeatures.commitmentFormat.isInstanceOf[AnchorOutputsCommitmentFormat]) {
       assert(spentOutpoints.size === bobRevokedTx.txOut.size - 2) // we don't claim the anchors
     }
     else if (channelFeatures.paysDirectlyToWallet) {
@@ -1454,7 +1446,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val commitmentFormat = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.commitmentFormat
     alice ! WatchFundingSpentTriggered(bobRevokedCommit.commitTxAndRemoteSig.commitTx.tx)
     awaitCond(alice.stateData.isInstanceOf[DATA_CLOSING])
-    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat === AnchorOutputsCommitmentFormat)
+    assert(alice.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat === ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     val rvk = alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head
     assert(rvk.commitTx === bobRevokedCommit.commitTxAndRemoteSig.commitTx.tx)
@@ -1526,7 +1518,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   private def testRevokedTxConfirmed(f: FixtureParam, channelFeatures: ChannelFeatures): Unit = {
     import f._
     assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.channelFeatures === channelFeatures)
-    val initOutputCount = if (channelFeatures.commitmentFormat == AnchorOutputsCommitmentFormat) 4 else 2
+    val initOutputCount = channelFeatures.commitmentFormat match {
+      case _: AnchorOutputsCommitmentFormat => 4
+      case DefaultCommitmentFormat => 2
+    }
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.size === initOutputCount)
 
     // bob's second commit tx contains 2 incoming htlcs

@@ -239,7 +239,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def checkHtlcPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTx: HtlcTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
-    val htlcFeerate = cmd.commitments.localCommit.spec.htlcTxFeerate(cmd.commitments.channelType)
+    val htlcFeerate = cmd.commitments.localCommit.spec.htlcTxFeerate(cmd.commitments.commitmentFormat)
     // HTLC transactions have a 1-block relative delay when using anchor outputs, which ensures our commit tx has already
     // been confirmed (we don't need to check again here).
     HtlcTxAndWitnessData(htlcTx, cmd.commitments) match {

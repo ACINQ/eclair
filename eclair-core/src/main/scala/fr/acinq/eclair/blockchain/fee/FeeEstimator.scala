@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.channel.{ChannelTypes, SupportedChannelType}
-import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat
+import fr.acinq.eclair.transactions.Transactions
 
 trait FeeEstimator {
   // @formatter:off
@@ -40,13 +40,9 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
    */
   def isFeeDiffTooHigh(channelType: SupportedChannelType, networkFeerate: FeeratePerKw, proposedFeerate: FeeratePerKw): Boolean = {
     channelType match {
-      case ChannelTypes.Standard =>
+      case ChannelTypes.Standard | ChannelTypes.StaticRemoteKey =>
         proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
-      case ChannelTypes.StaticRemoteKey =>
-        proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
-      case ChannelTypes.AnchorOutputs =>
-        proposedFeerate < networkFeerate * ratioLow || anchorOutputMaxCommitFeerate * ratioHigh < proposedFeerate
-      case ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
+      case ChannelTypes.AnchorOutputs | ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
         proposedFeerate < networkFeerate * ratioLow || anchorOutputMaxCommitFeerate * ratioHigh < proposedFeerate
     }
   }
@@ -74,10 +70,9 @@ case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, cl
       case Some(currentFeerates) => currentFeerates.feeratesPerKw.feePerBlock(feeTargets.commitmentBlockTarget)
       case None => feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
     }
-    if (channelType.commitmentFormat == AnchorOutputsCommitmentFormat) {
-      networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
-    } else {
-      networkFeerate
+    channelType.commitmentFormat match {
+      case Transactions.DefaultCommitmentFormat => networkFeerate
+      case _: Transactions.AnchorOutputsCommitmentFormat => networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
     }
   }
 }

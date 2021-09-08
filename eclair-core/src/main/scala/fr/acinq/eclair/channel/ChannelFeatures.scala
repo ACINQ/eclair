@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, CommitmentFormat, DefaultCommitmentFormat}
+import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, DefaultCommitmentFormat, UnsafeLegacyAnchorOutputsCommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.{Feature, FeatureSupport, Features}
 
 /**
@@ -98,13 +98,13 @@ object ChannelTypes {
   case object AnchorOutputs extends SupportedChannelType {
     override def features: Set[Feature] = Set(Features.StaticRemoteKey, Features.AnchorOutputs)
     override def paysDirectlyToWallet: Boolean = false
-    override def commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
+    override def commitmentFormat: CommitmentFormat = UnsafeLegacyAnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs"
   }
   case object AnchorOutputsZeroFeeHtlcTx extends SupportedChannelType {
     override def features: Set[Feature] = Set(Features.StaticRemoteKey, Features.AnchorOutputsZeroFeeHtlcTx)
     override def paysDirectlyToWallet: Boolean = false
-    override def commitmentFormat: CommitmentFormat = AnchorOutputsCommitmentFormat
+    override def commitmentFormat: CommitmentFormat = ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
     override def toString: String = "anchor_outputs_zero_fee_htlc_tx"
   }
   case class UnsupportedChannelType(featureBits: Features) extends ChannelType {

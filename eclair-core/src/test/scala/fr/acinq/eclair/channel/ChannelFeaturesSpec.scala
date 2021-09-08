@@ -44,13 +44,13 @@ class ChannelFeaturesSpec extends TestKitBaseClass with AnyFunSuiteLike with Cha
     assert(anchorOutputsChannel.hasFeature(Features.StaticRemoteKey))
     assert(anchorOutputsChannel.hasFeature(Features.AnchorOutputs))
     assert(!anchorOutputsChannel.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx))
-    assert(anchorOutputsChannel.commitmentFormat === Transactions.AnchorOutputsCommitmentFormat)
+    assert(anchorOutputsChannel.commitmentFormat === Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat)
     assert(!anchorOutputsChannel.paysDirectlyToWallet)
 
     assert(anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.StaticRemoteKey))
     assert(anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.AnchorOutputsZeroFeeHtlcTx))
     assert(!anchorOutputsZeroFeeHtlcsChannel.hasFeature(Features.AnchorOutputs))
-    assert(anchorOutputsZeroFeeHtlcsChannel.commitmentFormat === Transactions.AnchorOutputsCommitmentFormat)
+    assert(anchorOutputsZeroFeeHtlcsChannel.commitmentFormat === Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat)
     assert(!anchorOutputsZeroFeeHtlcsChannel.paysDirectlyToWallet)
   }
 

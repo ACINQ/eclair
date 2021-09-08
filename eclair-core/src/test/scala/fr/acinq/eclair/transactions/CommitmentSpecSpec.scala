@@ -18,7 +18,6 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.channel.ChannelTypes
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
@@ -69,12 +68,11 @@ class CommitmentSpecSpec extends AnyFunSuite {
     assert(spec4 === spec3.copy(htlcs = Set(), toRemote = (3000 * 1000) msat))
   }
 
-  test("compute htlc tx feerate based on channel type") {
+  test("compute htlc tx feerate based on commitment format") {
     val spec = CommitmentSpec(htlcs = Set(), commitTxFeerate = FeeratePerKw(2500 sat), toLocal = (5000 * 1000) msat, toRemote = (2500 * 1000) msat)
-    assert(spec.htlcTxFeerate(ChannelTypes.Standard) === FeeratePerKw(2500 sat))
-    assert(spec.htlcTxFeerate(ChannelTypes.StaticRemoteKey) === FeeratePerKw(2500 sat))
-    assert(spec.htlcTxFeerate(ChannelTypes.AnchorOutputs) === FeeratePerKw(2500 sat))
-    assert(spec.htlcTxFeerate(ChannelTypes.AnchorOutputsZeroFeeHtlcTx) === FeeratePerKw(0 sat))
+    assert(spec.htlcTxFeerate(Transactions.DefaultCommitmentFormat) === FeeratePerKw(2500 sat))
+    assert(spec.htlcTxFeerate(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === FeeratePerKw(2500 sat))
+    assert(spec.htlcTxFeerate(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === FeeratePerKw(0 sat))
   }
 
 }

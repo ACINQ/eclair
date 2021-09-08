@@ -36,10 +36,8 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   // @formatter:off
   def filename: String
   def channelFeatures: ChannelFeatures
+  val commitmentFormat = channelFeatures.commitmentFormat
   // @formatter:on
-
-  val channelType = channelFeatures.channelType
-  val commitmentFormat = channelType.commitmentFormat
 
   val tests = {
     val tests = collection.mutable.HashMap.empty[String, Map[String, String]]
@@ -197,7 +195,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       localFundingPubkey = Local.funding_pubkey,
       remoteFundingPubkey = Remote.funding_pubkey,
       spec,
-      channelType)
+      commitmentFormat)
 
     val commitTx = {
       val tx = Transactions.makeCommitTx(
@@ -214,7 +212,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val baseFee = Transactions.commitTxFeeMsat(Local.dustLimit, spec, channelType)
+    val baseFee = Transactions.commitTxFeeMsat(Local.dustLimit, spec, commitmentFormat)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
@@ -237,7 +235,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
       Local.dustLimit,
       Local.revocation_pubkey,
       Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
-      spec.htlcTxFeerate(channelType),
+      spec.htlcTxFeerate(commitmentFormat),
       outputs,
       commitmentFormat)
 

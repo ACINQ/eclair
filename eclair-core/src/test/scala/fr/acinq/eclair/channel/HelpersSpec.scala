@@ -174,7 +174,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     import f._
 
     val dustLimit = alice.underlyingActor.nodeParams.dustLimit
-    val channelType = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.channelType
+    val commitmentFormat = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.commitmentFormat
     val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.localCommit
     val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.remoteCommit
 
@@ -189,25 +189,25 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     val claimHtlcSuccessTxs = getClaimHtlcSuccessTxs(remoteCommitPublished)
 
     val aliceTimedOutHtlcs = htlcTimeoutTxs.map(htlcTimeout => {
-      val timedOutHtlcs = Closing.timedOutHtlcs(channelType, localCommit, localCommitPublished, dustLimit, htlcTimeout.tx)
+      val timedOutHtlcs = Closing.timedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, htlcTimeout.tx)
       assert(timedOutHtlcs.size === 1)
       timedOutHtlcs.head
     })
     assert(aliceTimedOutHtlcs.toSet === aliceHtlcs)
 
     val bobTimedOutHtlcs = claimHtlcTimeoutTxs.map(claimHtlcTimeout => {
-      val timedOutHtlcs = Closing.timedOutHtlcs(channelType, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcTimeout.tx)
+      val timedOutHtlcs = Closing.timedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcTimeout.tx)
       assert(timedOutHtlcs.size === 1)
       timedOutHtlcs.head
     })
     assert(bobTimedOutHtlcs.toSet === bobHtlcs)
 
-    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.timedOutHtlcs(channelType, localCommit, localCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
-    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.timedOutHtlcs(channelType, remoteCommit, remoteCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.timedOutHtlcs(channelType, localCommit, localCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.timedOutHtlcs(channelType, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
-    htlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.timedOutHtlcs(channelType, remoteCommit, remoteCommitPublished, dustLimit, htlcTimeout.tx).isEmpty))
-    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.timedOutHtlcs(channelType, localCommit, localCommitPublished, dustLimit, claimHtlcTimeout.tx).isEmpty))
+    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.timedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
+    htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.timedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
+    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.timedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
+    claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.timedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
+    htlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.timedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, htlcTimeout.tx).isEmpty))
+    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.timedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, claimHtlcTimeout.tx).isEmpty))
   }
 
   test("find timed out htlcs") {

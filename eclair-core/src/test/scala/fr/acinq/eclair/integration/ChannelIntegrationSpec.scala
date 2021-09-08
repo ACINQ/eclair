@@ -34,7 +34,7 @@ import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.transactions.Transactions.TxOwner
+import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat, TxOwner}
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, PermanentChannelFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
@@ -397,7 +397,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val localCommitF = commitmentsF.localCommit
     commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size === 6)
-      case Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size === 8)
+      case _: Transactions.AnchorOutputsCommitmentFormat => assert(localCommitF.commitTxAndRemoteSig.commitTx.tx.txOut.size === 8)
     }
     val htlcTimeoutTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcTimeoutTx, _) => h }
     val htlcSuccessTxs = localCommitF.htlcTxsAndRemoteSigs.collect { case h@HtlcTxAndRemoteSig(_: Transactions.HtlcSuccessTx, _) => h }
@@ -631,6 +631,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
 abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
+  val commitmentFormat: AnchorOutputsCommitmentFormat
+
   def connectNodes(expectedChannelType: SupportedChannelType): Unit = {
     // A --- C --- F
     val eventListener = TestProbe()
@@ -746,7 +748,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
   }
 
   def testPunishRevokedCommit(): Unit = {
-    val revokedCommitFixture = testRevokedCommit(Transactions.AnchorOutputsCommitmentFormat)
+    val revokedCommitFixture = testRevokedCommit(commitmentFormat)
     import revokedCommitFixture._
 
     val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
@@ -778,6 +780,8 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
 class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
 
+  override val commitmentFormat = Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat
+
   test("start eclair nodes") {
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29750, "eclair.api.port" -> 28093).asJava).withFallback(commonFeatures).withFallback(commonConfig))
     instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29751, "eclair.api.port" -> 28094).asJava).withFallback(withAnchorOutputs).withFallback(withWumbo).withFallback(commonConfig))
@@ -793,19 +797,19 @@ class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs)") {
-    testDownstreamFulfillLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
+    testDownstreamFulfillLocalCommit(commitmentFormat)
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs)") {
-    testDownstreamFulfillRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
+    testDownstreamFulfillRemoteCommit(commitmentFormat)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs)") {
-    testDownstreamTimeoutLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
+    testDownstreamTimeoutLocalCommit(commitmentFormat)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs)") {
-    testDownstreamTimeoutRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
+    testDownstreamTimeoutRemoteCommit(commitmentFormat)
   }
 
   test("punish a node that has published a revoked commit tx (anchor outputs)") {
@@ -815,6 +819,8 @@ class AnchorOutputChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
 }
 
 class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelIntegrationSpec {
+
+  override val commitmentFormat = Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat
 
   test("start eclair nodes") {
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.expiry-delta-blocks" -> 40, "eclair.fulfill-safety-before-timeout-blocks" -> 12, "eclair.server.port" -> 29760, "eclair.api.port" -> 28096).asJava).withFallback(commonFeatures).withFallback(commonConfig))
@@ -831,19 +837,19 @@ class AnchorOutputZeroFeeHtlcTxsChannelIntegrationSpec extends AnchorChannelInte
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit, anchor outputs zero fee htlc txs)") {
-    testDownstreamFulfillLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
+    testDownstreamFulfillLocalCommit(commitmentFormat)
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit, anchor outputs zero fee htlc txs)") {
-    testDownstreamFulfillRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
+    testDownstreamFulfillRemoteCommit(commitmentFormat)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit, anchor outputs zero fee htlc txs)") {
-    testDownstreamTimeoutLocalCommit(Transactions.AnchorOutputsCommitmentFormat)
+    testDownstreamTimeoutLocalCommit(commitmentFormat)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit, anchor outputs zero fee htlc txs)") {
-    testDownstreamTimeoutRemoteCommit(Transactions.AnchorOutputsCommitmentFormat)
+    testDownstreamTimeoutRemoteCommit(commitmentFormat)
   }
 
   test("punish a node that has published a revoked commit tx (anchor outputs)") {
