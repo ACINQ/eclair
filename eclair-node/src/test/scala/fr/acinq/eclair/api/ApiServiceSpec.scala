@@ -44,8 +44,9 @@ import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router.PredefinedNodeRoute
-import fr.acinq.eclair.router.{NetworkStats, Stats}
-import fr.acinq.eclair.wire.protocol.{Color, NodeAddress}
+import fr.acinq.eclair.router.{NetworkStats, Router, Stats}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAddress}
+import org.json4s.JsonAST.{JArray, JString}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
@@ -721,6 +722,86 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         assert(entityAs[String] == expected)
         eclair.sendToRoute(1234 msat, None, None, None, pr, CltvExpiryDelta(190), expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'findroute' method response should support both a node ID and channel ID formats") {
+    val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+
+
+    val mockChannelUpdate1 = ChannelUpdate(
+      signature = randomBytes64(),
+      chainHash = randomBytes32(),
+      shortChannelId = ShortChannelId(1, 2, 3),
+      timestamp = 0,
+      messageFlags = 0,
+      channelFlags = 0,
+      cltvExpiryDelta = CltvExpiryDelta(0),
+      htlcMinimumMsat = MilliSatoshi(1),
+      feeBaseMsat = MilliSatoshi(1),
+      feeProportionalMillionths = 1,
+      htlcMaximumMsat = None
+    )
+
+    val mockHop1 =
+      Router.ChannelHop(nodeId = randomKey().publicKey, nextNodeId = randomKey().publicKey, mockChannelUpdate1)
+    val mockHop2 =
+      Router.ChannelHop(nodeId = mockHop1.nextNodeId, nextNodeId = randomKey().publicKey, mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 4)))
+    val mockHop3 =
+      Router.ChannelHop(nodeId = mockHop2.nextNodeId, nextNodeId = randomKey().publicKey, mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 5)))
+
+    val mockHops = Seq(mockHop1, mockHop2, mockHop3)
+
+
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+    eclair.findRoute(any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops))))
+
+    Post("/findroute", FormData("invoice" -> invoice, "amountMsat" -> "456")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse])) == JArray(List(
+          JString(mockHop1.nodeId.toString()),
+          JString(mockHop2.nodeId.toString()),
+          JString(mockHop3.nodeId.toString()),
+          JString(mockHop3.nextNodeId.toString())
+        )))
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any)(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/findroute", FormData("invoice" -> invoice, "amountMsat" -> "456", "format" -> "nodeId")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse])) == JArray(List(
+          JString(mockHop1.nodeId.toString()),
+          JString(mockHop2.nodeId.toString()),
+          JString(mockHop3.nodeId.toString()),
+          JString(mockHop3.nextNodeId.toString())
+        )))
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any)(any[Timeout]).wasCalled(twice)
+      }
+
+    Post("/findroute", FormData("invoice" -> invoice, "amountMsat" -> "456", "format" -> "shortChannelId")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse])) == JArray(List(
+          JString(mockHop1.lastUpdate.shortChannelId.toString()),
+          JString(mockHop2.lastUpdate.shortChannelId.toString()),
+          JString(mockHop3.lastUpdate.shortChannelId.toString())
+        )))
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any)(any[Timeout]).wasCalled(threeTimes)
       }
   }
 
