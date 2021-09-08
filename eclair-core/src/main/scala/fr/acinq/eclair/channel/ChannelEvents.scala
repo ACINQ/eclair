@@ -32,7 +32,15 @@ trait ChannelEvent
 
 case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, temporaryChannelId: ByteVector32, initialFeeratePerKw: FeeratePerKw, fundingTxFeeratePerKw: Option[FeeratePerKw]) extends ChannelEvent
 
-case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, data: HasCommitments) extends ChannelEvent
+// This trait can be used by non-standard channels to inject themselves into Register actor and thus make them usable for routing
+trait AbstractChannelRestored extends ChannelEvent {
+  val channel: ActorRef
+  val channelId: ByteVector32
+  val peer: ActorRef
+  val remoteNodeId: PublicKey
+}
+
+case class ChannelRestored(channel: ActorRef, channelId: ByteVector32, peer: ActorRef, remoteNodeId: PublicKey, data: HasCommitments) extends AbstractChannelRestored
 
 case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, temporaryChannelId: ByteVector32, channelId: ByteVector32) extends ChannelEvent
 
