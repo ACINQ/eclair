@@ -616,7 +616,7 @@ class AuditDbSpec extends AnyFunSuite {
 
   test("add experiment metrics") {
     forAllDbs { dbs =>
-      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(100000000 msat, 3000 msat, success = true, 37, System.currentTimeMillis, "my-test-experiment"))
+      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(100000000 msat, 3000 msat, success = true, 37, System.currentTimeMillis, isMultiPart = false, "my-test-experiment"))
     }
   }
 

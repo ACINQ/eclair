@@ -235,22 +235,22 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         log.info("multi-part payment succeeded")
         reply(request.replyTo, paymentSent)
     }
+    val success = event.isRight
+    val now = System.currentTimeMillis
+    val duration = now - start
     if (cfg.recordMetrics) {
       val fees = event match {
         case Left(paymentFailed) => 0 msat
         case Right(paymentSent) => paymentSent.feesPaid
       }
-      val success = event.isRight
-      val now = System.currentTimeMillis
-      val duration = now - start
-      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.recipientAmount, fees, success, duration, now, request.routeParams.experimentName))
-      Metrics.SentPaymentDuration
-        .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
-        .withTag(Tags.Success, value = success)
-        .record(duration, TimeUnit.MILLISECONDS)
-      if (retriedFailedChannels) {
-        Metrics.RetryFailedChannelsResult.withTag(Tags.Success, event.isRight).increment()
-      }
+      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.recipientAmount, fees, success, duration, now, isMultiPart = true, request.routeParams.experimentName))
+    }
+    Metrics.SentPaymentDuration
+      .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
+      .withTag(Tags.Success, value = success)
+      .record(duration, TimeUnit.MILLISECONDS)
+    if (retriedFailedChannels) {
+      Metrics.RetryFailedChannelsResult.withTag(Tags.Success, event.isRight).increment()
     }
     stop(FSM.Normal)
   }

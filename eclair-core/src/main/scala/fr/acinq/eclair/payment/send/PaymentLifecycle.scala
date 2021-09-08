@@ -289,24 +289,24 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     }
     request.replyTo ! result
     if (cfg.publishEvent) context.system.eventStream.publish(result)
+    val success = result.isInstanceOf[PaymentSent]
+    val now = System.currentTimeMillis
+    val duration = now - start
     if (cfg.recordMetrics) {
       val fees = result match {
         case paymentSent: PaymentSent => paymentSent.feesPaid
         case _ => 0 msat
       }
-      val success = result.isInstanceOf[PaymentSent]
-      val now = System.currentTimeMillis
-      val duration = now - start
       request match {
         case SendPaymentToNode(_, _, _, _, _, routeParams) =>
-          context.system.eventStream.publish(PathFindingExperimentMetrics(request.finalPayload.amount, fees, success, duration, now, routeParams.experimentName))
+          context.system.eventStream.publish(PathFindingExperimentMetrics(request.finalPayload.amount, fees, success, duration, now, isMultiPart = false, routeParams.experimentName))
         case SendPaymentToRoute(_, _, _, _) => ()
       }
-      Metrics.SentPaymentDuration
-        .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
-        .withTag(Tags.Success, value = success)
-        .record(duration, TimeUnit.MILLISECONDS)
     }
+    Metrics.SentPaymentDuration
+      .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
+      .withTag(Tags.Success, value = success)
+      .record(duration, TimeUnit.MILLISECONDS)
     stop(FSM.Normal)
   }
 

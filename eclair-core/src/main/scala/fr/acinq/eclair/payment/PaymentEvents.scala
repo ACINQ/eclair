@@ -232,4 +232,4 @@ object PaymentFailure {
 
 }
 
-case class PathFindingExperimentMetrics(amount: MilliSatoshi, fees: MilliSatoshi, success: Boolean, duration: Long, timestamp: Long, experimentName: String)
+case class PathFindingExperimentMetrics(amount: MilliSatoshi, fees: MilliSatoshi, success: Boolean, duration: Long, timestamp: Long, isMultiPart: Boolean, experimentName: String)
