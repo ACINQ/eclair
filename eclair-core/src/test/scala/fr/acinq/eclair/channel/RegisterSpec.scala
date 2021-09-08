@@ -19,6 +19,6 @@ class RegisterSpec extends TestKitBaseClass with AnyFunSuiteLike with ParallelTe
     val customRestoredEvent = CustomChannelRestored(TestProbe().ref, randomBytes32(), TestProbe().ref, randomKey().publicKey)
     registerRef ! customRestoredEvent
     sender.send(registerRef, Symbol("channels"))
-    sender.expectMsgType[Map[ByteVector32, ActorRef]] == Map(customRestoredEvent.channelId -> customRestoredEvent.channel)
+    sender.expectMsgType[Map[ByteVector32, ActorRef]] === Map(customRestoredEvent.channelId -> customRestoredEvent.channel)
   }
 }
