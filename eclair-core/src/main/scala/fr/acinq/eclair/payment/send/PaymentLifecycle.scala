@@ -297,11 +297,11 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       val success = result.isInstanceOf[PaymentSent]
       val now = System.currentTimeMillis
       val duration = now - start
-      val experimentName = request match {
-        case SendPaymentToNode(_, _, _, _, _, routeParams) => routeParams.experimentName
-        case SendPaymentToRoute(_, _, _, _) => ""
+      request match {
+        case SendPaymentToNode(_, _, _, _, _, routeParams) =>
+          context.system.eventStream.publish(PathFindingExperimentMetrics(request.finalPayload.amount, fees, success, duration, now, routeParams.experimentName))
+        case SendPaymentToRoute(_, _, _, _) => ()
       }
-      context.system.eventStream.publish(PathFindingExperimentMetrics(request.finalPayload.amount, fees, success, duration, now, experimentName))
       Metrics.SentPaymentDuration
         .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
         .withTag(Tags.Success, value = success)
