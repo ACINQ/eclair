@@ -100,7 +100,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.nonTrampolineFees === 100.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.success)
+    assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 100.msat)
@@ -136,7 +136,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.nonTrampolineFees === 200.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.success)
+    assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 200200.msat)
@@ -163,7 +163,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.trampolineFees === 1000.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.success)
+    assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 1200.msat)
@@ -196,7 +196,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.nonTrampolineFees === 200.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.success)
+    assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 200.msat)
@@ -238,7 +238,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.nonTrampolineFees === 200.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.success)
+    assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 200.msat)
@@ -305,7 +305,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.amountWithFees === 1000200.msat)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.success)
+    assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
     assert(metrics.fees == 200.msat)
@@ -417,9 +417,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.failures.contains(LocalFailure(Nil, RetryExhausted)))
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(!metrics.success)
+    assert(metrics.status == "FAILURE")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
+    assert(metrics.fees == 15000.msat)
     metricsListener.expectNoMessage()
   }
 
@@ -447,9 +448,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     childPayFsm.expectNoMessage(100 millis)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(!metrics.success)
+    assert(metrics.status == "FAILURE")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
+    assert(metrics.fees == 15000.msat)
     metricsListener.expectNoMessage()
   }
 
@@ -467,9 +469,10 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.failures.length === 1)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(!metrics.success)
+    assert(metrics.status == "FAILURE")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == finalAmount)
+    assert(metrics.fees == 15000.msat)
     metricsListener.expectNoMessage()
   }
 

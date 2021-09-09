@@ -221,9 +221,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(!metrics.success)
+    assert(metrics.status == "FAILURE")
     assert(metrics.experimentName == "alice-test-experiment")
     assert(metrics.amount == defaultAmountMsat)
+    assert(metrics.fees == 4260000.msat)
     metricsListener.expectNoMessage()
   }
 
@@ -250,9 +251,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(!metrics.success)
+    assert(metrics.status == "FAILURE")
     assert(metrics.experimentName == "my-test-experiment")
     assert(metrics.amount == defaultAmountMsat)
+    assert(metrics.fees == 100.msat)
     metricsListener.expectNoMessage()
   }
 
@@ -292,9 +294,10 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) // after last attempt the payment is failed
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(!metrics.success)
+    assert(metrics.status == "FAILURE")
     assert(metrics.experimentName == "alice-test-experiment")
     assert(metrics.amount == defaultAmountMsat)
+    assert(metrics.fees == 4260000.msat)
     metricsListener.expectNoMessage()
   }
 
@@ -650,7 +653,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.success)
+    assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "alice-test-experiment")
     assert(metrics.amount == defaultAmountMsat)
     assert(metrics.fees == 730.msat)
@@ -703,7 +706,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(paymentOK.recipientAmount === request.finalPayload.amount)
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
-    assert(metrics.success)
+    assert(metrics.status == "SUCCESS")
     assert(metrics.experimentName == "alice-test-experiment")
     assert(metrics.amount == defaultAmountMsat)
     assert(metrics.fees == 0.msat)

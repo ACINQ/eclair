@@ -289,23 +289,35 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     }
     request.replyTo ! result
     if (cfg.publishEvent) context.system.eventStream.publish(result)
-    val success = result.isInstanceOf[PaymentSent]
+    val status = result match {
+      case s: PaymentSent => "SUCCESS"
+      case f: PaymentFailed =>
+        if (f.failures.exists({ case r: RemoteFailure => r.e.originNode == cfg.recipientNodeId case _ => false })) {
+          "RECIPIENT_FAILURE"
+        } else {
+          "FAILURE"
+        }
+      case _ => "INTERNAL_ERROR"
+    }
     val now = System.currentTimeMillis
     val duration = now - start
     if (cfg.recordMetrics) {
       val fees = result match {
         case paymentSent: PaymentSent => paymentSent.feesPaid
-        case _ => 0 msat
+        case _ => request match {
+          case s: SendPaymentToNode => s.routeParams.getMaxFee(cfg.recipientAmount)
+          case _: SendPaymentToRoute => 0 msat
+        }
       }
       request match {
         case SendPaymentToNode(_, _, _, _, _, routeParams) =>
-          context.system.eventStream.publish(PathFindingExperimentMetrics(request.finalPayload.amount, fees, success, duration, now, isMultiPart = false, routeParams.experimentName))
+          context.system.eventStream.publish(PathFindingExperimentMetrics(request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, routeParams.experimentName, cfg.recipientNodeId))
         case SendPaymentToRoute(_, _, _, _) => ()
       }
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
-      .withTag(Tags.Success, value = success)
+      .withTag(Tags.Success, value = (status == "SUCCESS"))
       .record(duration, TimeUnit.MILLISECONDS)
     stop(FSM.Normal)
   }
