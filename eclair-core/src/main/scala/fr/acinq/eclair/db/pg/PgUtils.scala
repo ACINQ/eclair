@@ -112,7 +112,7 @@ object PgUtils extends JdbcUtils {
      *
      * `lockExceptionHandler` provides a lock exception handler to customize the behavior when locking errors occur.
      */
-    case class LeaseLock(instanceId: UUID, leaseDuration: FiniteDuration, leaseRenewInterval: FiniteDuration, lockFailureHandler: LockFailureHandler) extends PgLock {
+    case class LeaseLock(instanceId: UUID, leaseDuration: FiniteDuration, leaseRenewInterval: FiniteDuration, lockFailureHandler: LockFailureHandler, autoReleaseAtShutdown: Boolean) extends PgLock {
 
       import LeaseLock._
 
