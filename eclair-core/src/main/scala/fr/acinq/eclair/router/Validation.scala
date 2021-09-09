@@ -299,7 +299,7 @@ object Validation {
         db.updateChannel(u)
         // update the graph
         val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
+        val graph1 = if (u.channelFlags.isEnabled) {
           d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
           d.graph.removeEdge(desc)
@@ -348,7 +348,7 @@ object Validation {
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
         // we also need to update the graph
         val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = if (Announcements.isEnabled(u.channelFlags)) {
+        val graph1 = if (u.channelFlags.isEnabled) {
           d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         } else {
           d.graph.removeEdge(desc)

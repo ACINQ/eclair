@@ -359,12 +359,12 @@ object RoutingSyncSpec {
   }
 
   def makeNewerChannelUpdate(pub2priv: mutable.Map[PublicKey, PrivateKey])(channelAnnouncement: ChannelAnnouncement, channelUpdate: ChannelUpdate): ChannelUpdate = {
-    val (local, remote) = if (Announcements.isNode1(channelUpdate.channelFlags)) (channelAnnouncement.nodeId1, channelAnnouncement.nodeId2) else (channelAnnouncement.nodeId2, channelAnnouncement.nodeId1)
+    val (local, remote) = if (channelUpdate.channelFlags.isNode1) (channelAnnouncement.nodeId1, channelAnnouncement.nodeId2) else (channelAnnouncement.nodeId2, channelAnnouncement.nodeId1)
     val priv = pub2priv(local)
     makeChannelUpdate(channelUpdate.chainHash, priv, remote, channelUpdate.shortChannelId,
       channelUpdate.cltvExpiryDelta, channelUpdate.htlcMinimumMsat,
       channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths,
-      channelUpdate.htlcMinimumMsat, Announcements.isEnabled(channelUpdate.channelFlags), channelUpdate.timestamp + 5000)
+      channelUpdate.htlcMinimumMsat, channelUpdate.channelFlags.isEnabled, channelUpdate.timestamp + 5000)
   }
 
   def makeFakeNodeAnnouncement(pub2priv: mutable.Map[PublicKey, PrivateKey])(nodeId: PublicKey): NodeAnnouncement = {
