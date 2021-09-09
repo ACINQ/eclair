@@ -82,7 +82,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(Status.Failure(t), WaitingForRoute(c, failures, _)) =>
       log.warning("router error: {}", t.getMessage)
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(Nil, t))).increment()
-      myStop(c, PaymentFailed(id, paymentHash, failures :+ LocalFailure(Nil, t)))
+      myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(Nil, t))))
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
@@ -97,7 +97,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PartialPayment(id, d.c.finalPayload.amount, d.cmd.amount - d.c.finalPayload.amount, htlc.channelId, Some(cfg.fullRoute(d.route)))
-      myStop(d.c, cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil))
+      myStop(d.c, Right(cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil)))
 
     case Event(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
@@ -153,7 +153,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
       retry(localFailure, d)
     } else {
-      myStop(d.c, PaymentFailed(id, paymentHash, d.failures :+ localFailure))
+      myStop(d.c, Left(PaymentFailed(id, paymentHash, d.failures :+ localFailure)))
     }
   }
 
@@ -170,7 +170,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
         // if destination node returns an error, we fail the payment immediately
         log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
-        myStop(c, PaymentFailed(id, paymentHash, failures :+ RemoteFailure(cfg.fullRoute(route), e)))
+        myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ RemoteFailure(cfg.fullRoute(route), e))))
       case res if failures.size + 1 >= c.maxAttempts =>
         // otherwise we never try more than maxAttempts, no matter the kind of error returned
         val failure = res match {
@@ -186,7 +186,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             UnreadableRemoteFailure(cfg.fullRoute(route))
         }
         log.warning(s"too many failed attempts, failing the payment")
-        myStop(c, PaymentFailed(id, paymentHash, failures :+ failure))
+        myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ failure)))
       case Failure(t) =>
         log.warning(s"cannot parse returned error: ${t.getMessage}, route=${route.printNodes()}")
         val failure = UnreadableRemoteFailure(cfg.fullRoute(route))
@@ -277,34 +277,36 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     }
   }
 
-  def myStop(request: SendPayment, result: PaymentEvent): State = {
+  def myStop(request: SendPayment, result: Either[PaymentFailed, PaymentSent]): State = {
     if (cfg.storeInDb) {
       result match {
-        case paymentFailed: PaymentFailed =>
+        case Left(paymentFailed: PaymentFailed) =>
           paymentsDb.updateOutgoingPayment(paymentFailed)
-        case paymentSent: PaymentSent =>
+        case Right(paymentSent: PaymentSent) =>
           paymentsDb.updateOutgoingPayment(paymentSent)
-        case _ => ()
       }
     }
-    request.replyTo ! result
-    if (cfg.publishEvent) context.system.eventStream.publish(result)
+    val event = result match {
+        case Left(event) => event
+        case Right(event) => event
+      }
+    request.replyTo ! event
+    if (cfg.publishEvent)  context.system.eventStream.publish(event)
     val status = result match {
-      case s: PaymentSent => "SUCCESS"
-      case f: PaymentFailed =>
+      case Right(_: PaymentSent) => "SUCCESS"
+      case Left(f: PaymentFailed) =>
         if (f.failures.exists({ case r: RemoteFailure => r.e.originNode == cfg.recipientNodeId case _ => false })) {
           "RECIPIENT_FAILURE"
         } else {
           "FAILURE"
         }
-      case _ => "INTERNAL_ERROR"
     }
     val now = System.currentTimeMillis
     val duration = now - start
     if (cfg.recordMetrics) {
       val fees = result match {
-        case paymentSent: PaymentSent => paymentSent.feesPaid
-        case _ => request match {
+        case Right(paymentSent: PaymentSent) => paymentSent.feesPaid
+        case Left(_) => request match {
           case s: SendPaymentToNode => s.routeParams.getMaxFee(cfg.recipientAmount)
           case _: SendPaymentToRoute => 0 msat
         }
