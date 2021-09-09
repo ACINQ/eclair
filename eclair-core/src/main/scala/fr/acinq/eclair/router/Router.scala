@@ -297,26 +297,28 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], initialized: Option[Promise[Done]] = None) = Props(new Router(nodeParams, watcher, initialized))
 
-  case class PathFindingConf(randomizeRouteSelection: Boolean,
-                             searchMaxFeeBase: Satoshi,
-                             searchMaxFeePct: Double,
-                             searchMaxRouteLength: Int,
-                             searchMaxCltv: CltvExpiryDelta,
-                             searchRatioBase: Double,
-                             searchRatioCltv: Double,
-                             searchRatioChannelAge: Double,
-                             searchRatioChannelCapacity: Double,
-                             searchHopCostBase: MilliSatoshi,
-                             searchHopCostMillionths: Long,
-                             mppMinPartAmount: MilliSatoshi,
-                             mppMaxParts: Int) {
-    require(searchRatioBase >= 0.0, "ratio-base must be nonnegative")
-    require(searchRatioCltv >= 0.0, "ratio-cltv must be nonnegative")
-    require(searchRatioChannelAge >= 0.0, "ratio-channel-age must be nonnegative")
-    require(searchRatioChannelCapacity >= 0.0, "ratio-channel-capacity must be nonnegative")
-    require(searchRatioBase + searchRatioCltv + searchRatioChannelAge + searchRatioChannelCapacity == 1, "The sum of heuristics ratios must be 1")
-    require(searchHopCostBase.toLong >= 0.0, "hop-cost-base-msat must be nonnegative")
-    require(searchHopCostMillionths >= 0.0, "hop-cost-millionths must be nonnegative")
+  case class SearchBoundaries(maxFeeFlat: MilliSatoshi,
+                              maxFeeProportional: Double,
+                              maxRouteLength: Int,
+                              maxCltv: CltvExpiryDelta)
+
+  case class PathFindingConf(randomize: Boolean,
+                             boundaries: SearchBoundaries,
+                             ratios: WeightRatios,
+                             mpp: MultiPartParams,
+                             experimentName: String,
+                             experimentPercentage: Int) {
+    def getDefaultRouteParams: RouteParams = RouteParams(
+      randomize = randomize,
+      maxFeeFlat = boundaries.maxFeeFlat,
+      maxFeeProportional = boundaries.maxFeeProportional,
+      maxRouteLength = boundaries.maxRouteLength,
+      maxCltv = boundaries.maxCltv,
+      includeLocalChannelCost = false,
+      ratios = ratios,
+      mpp = mpp,
+      experimentName = experimentName,
+    )
   }
 
   case class RouterConf(channelExcludeDuration: FiniteDuration,
@@ -326,7 +328,7 @@ object Router {
                         encodingType: EncodingType,
                         channelRangeChunkSize: Int,
                         channelQueryChunkSize: Int,
-                        pathFindingConf: PathFindingConf)
+                        pathFindingExperimentConf: PathFindingExperimentConf)
 
   // @formatter:off
   case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
@@ -444,10 +446,18 @@ object Router {
 
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
-  case class RouteParams(randomize: Boolean, maxFeeBase: MilliSatoshi, maxFeePct: Double, routeMaxLength: Int, routeMaxCltv: CltvExpiryDelta, ratios: WeightRatios, mpp: MultiPartParams, includeLocalChannelCost: Boolean) {
+  case class RouteParams(randomize: Boolean,
+                         maxFeeFlat: MilliSatoshi,
+                         maxFeeProportional: Double,
+                         maxRouteLength: Int,
+                         maxCltv: CltvExpiryDelta,
+                         includeLocalChannelCost: Boolean,
+                         ratios: WeightRatios,
+                         mpp: MultiPartParams,
+                         experimentName: String) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
-      // The payment fee must satisfy either the flat fee or the percentage fee, not necessarily both.
-      maxFeeBase.max(amount * maxFeePct)
+      // The payment fee must satisfy either the flat fee or the proportional fee, not necessarily both.
+      maxFeeFlat.max(amount * maxFeeProportional)
     }
   }
 

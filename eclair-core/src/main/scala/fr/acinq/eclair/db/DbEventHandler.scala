@@ -41,6 +41,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[ChannelClosed])
   context.system.eventStream.subscribe(self, classOf[ChannelUpdateParametersChanged])
+  context.system.eventStream.subscribe(self, classOf[PathFindingExperimentMetrics])
 
   override def receive: Receive = {
 
@@ -119,6 +120,9 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case u: ChannelUpdateParametersChanged =>
       auditDb.addChannelUpdate(u)
+
+    case m: PathFindingExperimentMetrics =>
+      auditDb.addPathFindingExperimentMetrics(m)
 
   }
 

@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.{RichWeight, WeightRatios}
@@ -64,7 +65,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     // here we have a maximum fee base of 1 msat, and all our updates have a base fee of 10 msat
     // so our fee will always be above the base fee, and we will always check that it is below our maximum percentage
     // of the amount being paid
-    val routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = 1 msat)
+    val routeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeFlat = 1 msat)
     val maxFee = routeParams.getMaxFee(DEFAULT_AMOUNT_MSAT)
 
     val g = DirectedGraph(List(
@@ -618,7 +619,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6, f, d, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9))
     ))
 
-    val Success(route :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxCltv = CltvExpiryDelta(28)), currentBlockHeight = 400000)
+    val Success(route :: Nil) = findRoute(g, a, d, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(maxCltv = CltvExpiryDelta(28)), currentBlockHeight = 400000)
     assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
   }
 
@@ -633,7 +634,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(6, b, f, feeBase = 5 msat, 0, minHtlc = 0 msat, maxHtlc = None, CltvExpiryDelta(9))
     ))
 
-    val Success(route :: Nil) = findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(routeMaxLength = 3), currentBlockHeight = 400000)
+    val Success(route :: Nil) = findRoute(g, a, f, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(maxRouteLength = 3), currentBlockHeight = 400000)
     assert(route2Ids(route) === 1 :: 6 :: Nil)
   }
 
@@ -771,7 +772,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
   }
 
   test("select a random route below the requested fee") {
-    val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeBase = 7 msat, maxFeePct = 0, randomize = true)
+    val strictFeeParams = DEFAULT_ROUTE_PARAMS.copy(maxFeeFlat = 7 msat, maxFeeProportional = 0, randomize = true)
     val strictFee = strictFeeParams.getMaxFee(DEFAULT_AMOUNT_MSAT)
     assert(strictFee === 7.msat)
 
@@ -824,8 +825,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       cltvDeltaFactor = 1,
       ageFactor = 0,
       capacityFactor = 0,
-      hopCostBase = 0 msat,
-      hopCostMillionths = 0
+      hopCost = RelayFees(0 msat, 0),
     )), currentBlockHeight = 400000)
     assert(route2Nodes(routeCltvOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
 
@@ -834,8 +834,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       cltvDeltaFactor = 0,
       ageFactor = 0,
       capacityFactor = 1,
-      hopCostBase = 0 msat,
-      hopCostMillionths = 0
+      hopCost = RelayFees(0 msat, 0),
     )), currentBlockHeight = 400000)
     assert(route2Nodes(routeCapacityOptimized) === (a, e) :: (e, c) :: (c, d) :: Nil)
   }
@@ -857,8 +856,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33,
-      hopCostBase = 0 msat,
-      hopCostMillionths = 0
+      hopCost = RelayFees(0 msat, 0),
     )), currentBlockHeight = currentBlockHeight)
 
     assert(route2Nodes(routeScoreOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
@@ -879,8 +877,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33,
-      hopCostBase = 0 msat,
-      hopCostMillionths = 0
+      hopCost = RelayFees(0 msat, 0),
     )), currentBlockHeight = 400000)
 
     assert(route2Nodes(routeScoreOptimized) === (a, b) :: (b, c) :: (c, d) :: Nil)
@@ -903,8 +900,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       ageFactor = 0.33,
       cltvDeltaFactor = 0.33,
       capacityFactor = 0.33,
-      hopCostBase = 0 msat,
-      hopCostMillionths = 0
+      hopCost = RelayFees(0 msat, 0),
     )), currentBlockHeight = 400000)
 
     assert(route2Nodes(routeScoreOptimized) === (a, e) :: (e, f) :: (f, d) :: Nil)
@@ -942,8 +938,8 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     val g = DirectedGraph.makeGraph(updates)
     val params = DEFAULT_ROUTE_PARAMS.copy(
-      routeMaxCltv = CltvExpiryDelta(1008),
-      ratios = WeightRatios(baseFactor = 0, cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5, hopCostBase = 0 msat, hopCostMillionths = 0),
+      maxCltv = CltvExpiryDelta(1008),
+      ratios = WeightRatios(baseFactor = 0, cltvDeltaFactor = 0.15, ageFactor = 0.35, capacityFactor = 0.5, hopCost = RelayFees(0 msat, 0)),
     )
     val thisNode = PublicKey(hex"036d65409c41ab7380a43448f257809e7496b52bf92057c09c4f300cbd61c50d96")
     val targetNode = PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")
@@ -1766,13 +1762,13 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       assert(route2Ids(route) === 0 :: 2 :: 5 :: 6 :: 7 :: 4 :: Nil)
     }
     { // small base hop cost
-      val Success(routes) = findRoute(g, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(1, 0, 0, 0, 100 msat, 0)), currentBlockHeight = 400000)
+      val Success(routes) = findRoute(g, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(1, 0, 0, 0, RelayFees(100 msat, 0))), currentBlockHeight = 400000)
       assert(routes.distinct.length == 1)
       val route :: Nil = routes
       assert(route2Ids(route) === 0 :: 2 :: 3 :: 4 :: Nil)
     }
     { // large proportional hop cost
-      val Success(routes) = findRoute(g, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(1, 0, 0, 0, 0 msat, 200)), currentBlockHeight = 400000)
+      val Success(routes) = findRoute(g, start, b, DEFAULT_AMOUNT_MSAT, 100000000 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS.copy(ratios = WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 200))), currentBlockHeight = 400000)
       assert(routes.distinct.length == 1)
       val route :: Nil = routes
       assert(route2Ids(route) === 0 :: 1 :: Nil)
@@ -1788,8 +1784,14 @@ object RouteCalculationSpec {
   val DEFAULT_MAX_FEE = 100000 msat
   val DEFAULT_CAPACITY = 100000 sat
 
-  val NO_WEIGHT_RATIOS: WeightRatios = WeightRatios(1, 0, 0, 0, 0 msat, 0)
-  val DEFAULT_ROUTE_PARAMS = RouteParams(randomize = false, 21000 msat, 0.03, 6, CltvExpiryDelta(2016), NO_WEIGHT_RATIOS, MultiPartParams(1000 msat, 10), includeLocalChannelCost = false)
+  val NO_WEIGHT_RATIOS: WeightRatios = WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0))
+  val DEFAULT_ROUTE_PARAMS = PathFindingConf(
+    randomize = false,
+    boundaries = SearchBoundaries(21000 msat, 0.03, 6, CltvExpiryDelta(2016)),
+    NO_WEIGHT_RATIOS,
+    MultiPartParams(1000 msat, 10),
+    experimentName = "my-test-experiment",
+    experimentPercentage = 100).getDefaultRouteParams
 
   val DUMMY_SIG = Transactions.PlaceHolderSig
 

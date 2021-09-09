@@ -32,6 +32,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
@@ -60,7 +61,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultOrigin = Origin.LocalCold(UUID.randomUUID())
   val defaultExternalId = UUID.randomUUID().toString
   val defaultInvoice = PaymentRequest(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
-  val defaultRouteParams = RouteCalculation.getDefaultRouteParams(TestConstants.Alice.nodeParams.routerConf.pathFindingConf)
+  val defaultRouteParams = TestConstants.Alice.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
 
   def defaultRouteRequest(source: PublicKey, target: PublicKey, cfg: SendPaymentConfig): RouteRequest = RouteRequest(source, target, defaultAmountMsat, defaultMaxFee, paymentContext = Some(cfg.paymentContext), routeParams = defaultRouteParams)
 
@@ -71,18 +72,20 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
                             register: TestProbe,
                             sender: TestProbe,
                             monitor: TestProbe,
-                            eventListener: TestProbe)
+                            eventListener: TestProbe,
+                            metricsListener: TestProbe)
 
-  def createPaymentLifecycle(storeInDb: Boolean = true, publishEvent: Boolean = true): PaymentFixture = {
+  def createPaymentLifecycle(storeInDb: Boolean = true, publishEvent: Boolean = true, recordMetrics: Boolean = true): PaymentFixture = {
     val (id, parentId) = (UUID.randomUUID(), UUID.randomUUID())
     val nodeParams = TestConstants.Alice.nodeParams.copy(nodeKeyManager = testNodeKeyManager, channelKeyManager = testChannelKeyManager)
-    val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, defaultAmountMsat, d, Upstream.Local(id), Some(defaultInvoice), storeInDb, publishEvent, Nil)
-    val (routerForwarder, register, sender, monitor, eventListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
+    val cfg = SendPaymentConfig(id, parentId, Some(defaultExternalId), defaultPaymentHash, defaultAmountMsat, d, Upstream.Local(id), Some(defaultInvoice), storeInDb, publishEvent, recordMetrics, Nil)
+    val (routerForwarder, register, sender, monitor, eventListener, metricsListener) = (TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe(), TestProbe())
     val paymentFSM = TestFSMRef(new PaymentLifecycle(nodeParams, cfg, routerForwarder.ref, register.ref))
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-    PaymentFixture(cfg, nodeParams, paymentFSM, routerForwarder, register, sender, monitor, eventListener)
+    system.eventStream.subscribe(metricsListener.ref, classOf[PathFindingExperimentMetrics])
+    PaymentFixture(cfg, nodeParams, paymentFSM, routerForwarder, register, sender, monitor, eventListener, metricsListener)
   }
 
   def addCompleted(result: HtlcResult) = {
@@ -93,7 +96,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("send to route") { _ =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(recordMetrics = false)
     import payFixture._
     import cfg._
 
@@ -114,10 +117,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(ps.id === parentId)
     assert(ps.parts.head.route === Some(route.hops))
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
+
+    metricsListener.expectNoMessage()
   }
 
   test("send to route (node_id only)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(recordMetrics = false)
     import payFixture._
     import cfg._
 
@@ -139,10 +144,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id === parentId)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
+
+    metricsListener.expectNoMessage()
   }
 
   test("send to route (nodes not found in the graph)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(recordMetrics = false)
     import payFixture._
 
     val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedNodeRoute(Seq(randomKey().publicKey, randomKey().publicKey, randomKey().publicKey))), Onion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get))
@@ -152,10 +159,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val failureMessage = eventListener.expectMsgType[PaymentFailed].failures.head.asInstanceOf[LocalFailure].t.getMessage
     assert(failureMessage == "Not all the nodes in the supplied route are connected with public channels")
+
+    metricsListener.expectNoMessage()
   }
 
   test("send to route (channels not found in the graph)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(recordMetrics = false)
     import payFixture._
 
     val brokenRoute = SendPaymentToRoute(sender.ref, Left(PredefinedChannelRoute(randomKey().publicKey, Seq(ShortChannelId(1), ShortChannelId(2)))), Onion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get))
@@ -165,10 +174,12 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     val failureMessage = eventListener.expectMsgType[PaymentFailed].failures.head.asInstanceOf[LocalFailure].t.getMessage
     assert(failureMessage == "The sequence of channels provided cannot be used to build a route to the target node")
+
+    metricsListener.expectNoMessage()
   }
 
   test("send to route (routing hints)") { routerFixture =>
-    val payFixture = createPaymentLifecycle()
+    val payFixture = createPaymentLifecycle(recordMetrics = false)
     import payFixture._
     import cfg._
 
@@ -190,6 +201,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id === parentId)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
+
+    metricsListener.expectNoMessage()
   }
 
   test("payment failed (route not found)") { routerFixture =>
@@ -206,6 +219,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(routerFixture.router, routeRequest)
     assert(sender.expectMsgType[PaymentFailed].failures === LocalFailure(Nil, RouteNotFound) :: Nil)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
+
+    val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
+    assert(metrics.status == "FAILURE")
+    assert(metrics.experimentName == "alice-test-experiment")
+    assert(metrics.amount == defaultAmountMsat)
+    assert(metrics.fees == 4260000.msat)
+    metricsListener.expectNoMessage()
   }
 
   test("payment failed (route too expensive)") { routerFixture =>
@@ -213,7 +233,15 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     import payFixture._
     import cfg._
 
-    val request = SendPaymentToNode(sender.ref, d, Onion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get), 5, routeParams = RouteParams(randomize = false, 100 msat, 0.0, 20, CltvExpiryDelta(2016), WeightRatios(1, 0, 0, 0, 0 msat, 0), MultiPartParams(10000 msat, 5), false))
+    val routeParams = PathFindingConf(
+      randomize = false,
+      boundaries = SearchBoundaries(100 msat, 0.0, 20, CltvExpiryDelta(2016)),
+      WeightRatios(1, 0, 0, 0, RelayFees(0 msat, 0)),
+      MultiPartParams(10000 msat, 5),
+      "my-test-experiment",
+      experimentPercentage = 100
+    ).getDefaultRouteParams
+    val request = SendPaymentToNode(sender.ref, d, Onion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get), 5, routeParams = routeParams)
     sender.send(paymentFSM, request)
     val routeRequest = routerForwarder.expectMsgType[RouteRequest]
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -221,6 +249,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     routerForwarder.forward(routerFixture.router, routeRequest)
     val Seq(LocalFailure(Nil, RouteNotFound)) = sender.expectMsgType[PaymentFailed].failures
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
+
+    val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
+    assert(metrics.status == "FAILURE")
+    assert(metrics.experimentName == "my-test-experiment")
+    assert(metrics.amount == defaultAmountMsat)
+    assert(metrics.fees == 100.msat)
+    metricsListener.expectNoMessage()
   }
 
   test("payment failed (unparsable failure)") { routerFixture =>
@@ -257,6 +292,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // we allow 2 tries, so we send a 2nd request to the router
     assert(sender.expectMsgType[PaymentFailed].failures === UnreadableRemoteFailure(route.hops) :: UnreadableRemoteFailure(route.hops) :: Nil)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) // after last attempt the payment is failed
+
+    val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
+    assert(metrics.status == "FAILURE")
+    assert(metrics.experimentName == "alice-test-experiment")
+    assert(metrics.amount == defaultAmountMsat)
+    assert(metrics.fees == 4260000.msat)
+    metricsListener.expectNoMessage()
   }
 
   test("payment failed (local error)") { routerFixture =>
@@ -609,6 +651,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(ps.paymentPreimage === defaultPaymentPreimage)
     assert(ps.parts.head.id === id)
     awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded]))
+
+    val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
+    assert(metrics.status == "SUCCESS")
+    assert(metrics.experimentName == "alice-test-experiment")
+    assert(metrics.amount == defaultAmountMsat)
+    assert(metrics.fees == 730.msat)
+    metricsListener.expectNoMessage()
   }
 
   test("payment succeeded to a channel with fees=0") { routerFixture =>
@@ -655,6 +704,13 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // NB: B -> H doesn't asks for fees at all
     assert(fee === 0.msat)
     assert(paymentOK.recipientAmount === request.finalPayload.amount)
+
+    val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
+    assert(metrics.status == "SUCCESS")
+    assert(metrics.experimentName == "alice-test-experiment")
+    assert(metrics.amount == defaultAmountMsat)
+    assert(metrics.fees == 0.msat)
+    metricsListener.expectNoMessage()
   }
 
   test("filter errors properly") { _ =>
@@ -710,7 +766,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("disable database and events") { routerFixture =>
-    val payFixture = createPaymentLifecycle(storeInDb = false, publishEvent = false)
+    val payFixture = createPaymentLifecycle(storeInDb = false, publishEvent = false, recordMetrics = false)
     import payFixture._
     import cfg._
 

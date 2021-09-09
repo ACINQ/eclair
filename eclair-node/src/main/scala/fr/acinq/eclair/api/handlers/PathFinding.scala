@@ -29,11 +29,11 @@ trait PathFinding {
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
   val findRoute: Route = postRequest("findroute") { implicit t =>
-    formFields(invoiceFormParam, amountMsatFormParam.?) {
-      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None) =>
-        complete(eclairApi.findRoute(nodeId, amount, invoice.routingInfo))
-      case (invoice, Some(overrideAmount)) =>
-        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo))
+    formFields(invoiceFormParam, amountMsatFormParam.?, "pathFindingExperimentName".?) {
+      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, pathFindingExperimentName_opt) =>
+        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, invoice.routingInfo))
+      case (invoice, Some(overrideAmount), pathFindingExperimentName_opt) =>
+        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, pathFindingExperimentName_opt, invoice.routingInfo))
       case _ => reject(MalformedFormFieldRejection(
         "invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"
       ))
@@ -41,14 +41,14 @@ trait PathFinding {
   }
 
   val findRouteToNode: Route = postRequest("findroutetonode") { implicit t =>
-    formFields(nodeIdFormParam, amountMsatFormParam) { (nodeId, amount) =>
-      complete(eclairApi.findRoute(nodeId, amount))
+    formFields(nodeIdFormParam, amountMsatFormParam, "pathFindingExperimentName".?) { (nodeId, amount, pathFindingExperimentName_opt) =>
+      complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt))
     }
   }
 
   val findRouteBetweenNodes: Route = postRequest("findroutebetweennodes") { implicit t =>
-    formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam) { (sourceNodeId, targetNodeId, amount) =>
-      complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount))
+    formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam, "pathFindingExperimentName".?) { (sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt) =>
+      complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt))
     }
   }
 

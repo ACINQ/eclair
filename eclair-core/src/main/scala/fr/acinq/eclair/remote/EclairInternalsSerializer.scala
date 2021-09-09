@@ -23,7 +23,9 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
-import fr.acinq.eclair.router.Router.{GossipDecision, PathFindingConf, RouterConf, SendChannelQuery}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
+import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PathFindingConf, RouteParams, RouterConf, SearchBoundaries, SendChannelQuery}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -46,20 +48,38 @@ object EclairInternalsSerializer {
 
   def iterable[A](codec: Codec[A]): Codec[Iterable[A]] = listOfN(uint16, codec).xmap(_.toIterable, _.toList)
 
+  val searchBoundariesCodec: Codec[SearchBoundaries] = (
+    ("maxFee" | millisatoshi) ::
+    ("maxFeeProportional" | double) ::
+    ("maxRouteLength" | int32) ::
+    ("maxCltv" | int32.as[CltvExpiryDelta])).as[SearchBoundaries]
+
+  val relayFeesCodec: Codec[RelayFees] = (
+    ("feeBase" | millisatoshi) ::
+      ("feeProportionalMillionths" | int64)).as[RelayFees]
+
+  val weightRatiosCodec: Codec[WeightRatios] = (
+    ("baseFactor" | double) ::
+      ("cltvDeltaFactor" | double) ::
+      ("ageFactor" | double) ::
+      ("capacityFactor" | double) ::
+      ("hopCost" | relayFeesCodec)).as[WeightRatios]
+
+  val multiPartParamsCodec: Codec[MultiPartParams] = (
+    ("minPartAmount" | millisatoshi) ::
+      ("maxParts" | int32)).as[MultiPartParams]
+
   val pathFindingConfCodec: Codec[PathFindingConf] = (
-    ("randomizeRouteSelection" | bool(8)) ::
-      ("searchMaxFeeBase" | satoshi) ::
-      ("searchMaxFeePct" | double) ::
-      ("searchMaxRouteLength" | int32) ::
-      ("searchMaxCltv" | int32.as[CltvExpiryDelta]) ::
-      ("searchRatioBase" | double) ::
-      ("searchRatioCltv" | double) ::
-      ("searchRatioChannelAge" | double) ::
-      ("searchRatioChannelCapacity" | double) ::
-      ("searchHopCostBase" | millisatoshi) ::
-      ("searchHopCostMillionths" | int64) ::
-      ("mppMinPartAmount" | millisatoshi) ::
-      ("mppMaxParts" | int32)).as[PathFindingConf]
+    ("randomize" | bool(8)) ::
+      ("boundaries" | searchBoundariesCodec) ::
+      ("ratios" | weightRatiosCodec) ::
+      ("mpp" | multiPartParamsCodec) ::
+      ("experimentName" | utf8_32) ::
+      ("experimentPercentage" | int32)).as[PathFindingConf]
+
+  val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
+    ("experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => (e.experimentName -> e)).toMap, _.values.toList))
+    ).as[PathFindingExperimentConf]
 
   val routerConfCodec: Codec[RouterConf] = (
     ("channelExcludeDuration" | finiteDurationCodec) ::
@@ -71,7 +91,7 @@ object EclairInternalsSerializer {
         .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
-      ("pathFindingConf" | pathFindingConfCodec)).as[RouterConf]
+      ("pathFindingExperimentConf" | pathFindingExperimentConfCodec)).as[RouterConf]
 
   val overrideFeaturesListCodec: Codec[List[(PublicKey, Features)]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
 

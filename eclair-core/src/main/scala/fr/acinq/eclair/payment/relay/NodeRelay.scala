@@ -122,12 +122,11 @@ object NodeRelay {
   def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
     val routeMaxCltv = expiryIn - expiryOut
     val routeMaxFee = amountIn - amountOut
-    RouteCalculation.getDefaultRouteParams(nodeParams.routerConf.pathFindingConf).copy(
-      maxFeeBase = routeMaxFee,
-      routeMaxCltv = routeMaxCltv,
-      maxFeePct = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
-      includeLocalChannelCost = true,
-    )
+    nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams.copy(
+      maxFeeFlat = routeMaxFee,
+      maxCltv = routeMaxCltv,
+      maxFeeProportional = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
+      includeLocalChannelCost = true)
   }
 
   /**
@@ -264,7 +263,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }.toClassic
 
   private def relay(upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): ActorRef = {
-    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, Nil)
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, recordMetrics = true, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     val payFSM = payloadOut.invoiceFeatures match {

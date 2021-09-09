@@ -85,7 +85,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
     (for {
       kit <- fKit
-      routeParams = RouteCalculation.getDefaultRouteParams(kit.nodeParams.routerConf.pathFindingConf)
+      routeParams = kit.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
       sendPayment = req.minFinalCltvExpiryDelta match {
         case None => SendPaymentToNode(MilliSatoshi(amountMsat), req, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo, routeParams = routeParams)
         case Some(minFinalCltvExpiry) => SendPaymentToNode(MilliSatoshi(amountMsat), req, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo, fallbackFinalExpiryDelta = minFinalCltvExpiry, routeParams = routeParams)
