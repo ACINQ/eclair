@@ -135,7 +135,7 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     val aliceListener = TestProbe()
     channelUpdateListener.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case u: ChannelUpdateParametersChanged if Announcements.isNode1(u.channelUpdate.channelFlags) == Announcements.isNode1(Alice.nodeParams.nodeId, Bob.nodeParams.nodeId) =>
+        case u: ChannelUpdateParametersChanged if u.channelUpdate.channelFlags.isNode1 == Announcements.isNode1(Alice.nodeParams.nodeId, Bob.nodeParams.nodeId) =>
           aliceListener.ref.tell(msg, sender)
           TestActor.KeepRunning
         case _ => TestActor.KeepRunning

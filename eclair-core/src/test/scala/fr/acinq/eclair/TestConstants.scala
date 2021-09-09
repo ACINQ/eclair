@@ -24,7 +24,9 @@ import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
-import fr.acinq.eclair.router.Router.{PathFindingConf, RouterConf}
+import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.PathFindingExperimentConf
+import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
 import scodec.bits.ByteVector
@@ -167,20 +169,26 @@ object TestConstants {
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingConf = PathFindingConf(
-          randomizeRouteSelection = false,
-          searchMaxFeeBase = 21 sat,
-          searchMaxFeePct = 0.03,
-          searchMaxCltv = CltvExpiryDelta(2016),
-          searchMaxRouteLength = 20,
-          searchRatioBase = 1.0,
-          searchRatioCltv = 0.0,
-          searchRatioChannelAge = 0.0,
-          searchRatioChannelCapacity = 0.0,
-          searchHopCostBase = 0 msat,
-          searchHopCostMillionths = 0,
-          mppMinPartAmount = 15000000 msat,
-          mppMaxParts = 10)
+        pathFindingExperimentConf = PathFindingExperimentConf(Map(("alice-test-experiment" -> PathFindingConf(
+          randomize = false,
+          boundaries = SearchBoundaries(
+            maxFeeFlat = (21 sat).toMilliSatoshi,
+            maxFeeProportional = 0.03,
+            maxCltv = CltvExpiryDelta(2016),
+            maxRouteLength = 20),
+          ratios = WeightRatios(
+            baseFactor = 1.0,
+            cltvDeltaFactor = 0.0,
+            ageFactor = 0.0,
+            capacityFactor = 0.0,
+            hopCost = RelayFees(0 msat, 0),
+          ),
+          mpp = MultiPartParams(
+            minPartAmount = 15000000 msat,
+            maxParts = 10,
+          ),
+          experimentName = "alice-test-experiment",
+          experimentPercentage = 100))))
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -287,20 +295,26 @@ object TestConstants {
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingConf = PathFindingConf(
-          randomizeRouteSelection = false,
-          searchMaxFeeBase = 21 sat,
-          searchMaxFeePct = 0.03,
-          searchMaxCltv = CltvExpiryDelta(2016),
-          searchMaxRouteLength = 20,
-          searchRatioBase = 1.0,
-          searchRatioCltv = 0.0,
-          searchRatioChannelAge = 0.0,
-          searchRatioChannelCapacity = 0.0,
-          searchHopCostBase = 0 msat,
-          searchHopCostMillionths = 0,
-          mppMinPartAmount = 15000000 msat,
-          mppMaxParts = 10)
+        pathFindingExperimentConf = PathFindingExperimentConf(Map(("bob-test-experiment" -> PathFindingConf(
+          randomize = false,
+          boundaries = SearchBoundaries(
+            maxFeeFlat = (21 sat).toMilliSatoshi,
+            maxFeeProportional = 0.03,
+            maxCltv = CltvExpiryDelta(2016),
+            maxRouteLength = 20),
+          ratios = WeightRatios(
+            baseFactor = 1.0,
+            cltvDeltaFactor = 0.0,
+            ageFactor = 0.0,
+            capacityFactor = 0.0,
+            hopCost = RelayFees(0 msat, 0),
+          ),
+          mpp = MultiPartParams(
+            minPartAmount = 15000000 msat,
+            maxParts = 10,
+          ),
+          experimentName = "bob-test-experiment",
+          experimentPercentage = 100))))
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,

@@ -424,7 +424,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
     assert(channelUpdate.feeBaseMsat === 4200.msat)
     assert(channelUpdate.feeProportionalMillionths === 123456)
-    assert(Announcements.isEnabled(channelUpdate.channelFlags))
+    assert(channelUpdate.channelFlags.isEnabled)
 
     // no more messages
     channelUpdateListener.expectNoMessage(300 millis)
@@ -446,7 +446,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice will broadcast a new disabled channel_update
     val update = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(!Announcements.isEnabled(update.channelUpdate.channelFlags))
+    assert(!update.channelUpdate.channelFlags.isEnabled)
   }
 
   test("replay pending commands when going back to NORMAL") { f =>

@@ -751,7 +751,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val sender = TestProbe()
     // channel starts with all funds on alice's side, so channel will be initially disabled on bob's side
-    assert(Announcements.isEnabled(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags) === false)
+    assert(!bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
     // alice will send enough funds to bob to make it go above reserve
     val (r, htlc) = addHtlc(50000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
@@ -766,7 +766,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! CMD_SIGN()
     bob2alice.expectMsgType[CommitSig]
     // it should update its channel_update
-    awaitCond(Announcements.isEnabled(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags))
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
     // and broadcast it
     assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate === bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
   }
@@ -2922,7 +2922,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
-    assert(Announcements.isEnabled(update1a.channelFlags))
+    assert(update1a.channelFlags.isEnabled)
 
     // actual test starts here
     alice ! INPUT_DISCONNECTED
@@ -2936,7 +2936,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     alice ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
     val update1a = alice2bob.expectMsgType[ChannelUpdate]
-    assert(Announcements.isEnabled(update1a.channelFlags))
+    assert(update1a.channelFlags.isEnabled)
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val (_, htlc2) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
@@ -2953,7 +2953,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val addSettled2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
     assert(addSettled2.htlc == htlc2)
     assert(addSettled2.result.isInstanceOf[HtlcResult.DisconnectedBeforeSigned])
-    assert(!Announcements.isEnabled(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags))
+    assert(!channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
     awaitCond(alice.stateName == OFFLINE)
   }
 
@@ -2964,7 +2964,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
     val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(Announcements.isEnabled(update1.channelUpdate.channelFlags))
+    assert(update1.channelUpdate.channelFlags.isEnabled)
 
     // actual test starts here
     alice ! INPUT_DISCONNECTED
@@ -2983,7 +2983,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice2bob.forward(bob)
     val update1a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     val update1b = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    assert(Announcements.isEnabled(update1a.channelUpdate.channelFlags))
+    assert(update1a.channelUpdate.channelFlags.isEnabled)
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
     val (_, htlc2) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
@@ -2998,7 +2998,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc2.paymentHash)
     val update2a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
     assert(update1a.channelUpdate.timestamp < update2a.channelUpdate.timestamp)
-    assert(!Announcements.isEnabled(update2a.channelUpdate.channelFlags))
+    assert(!update2a.channelUpdate.channelFlags.isEnabled)
     awaitCond(alice.stateName == OFFLINE)
   }
 

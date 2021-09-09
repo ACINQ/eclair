@@ -25,7 +25,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics, WeightRatios}
+import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
@@ -135,7 +135,7 @@ object RouteCalculation {
   private def toFakeUpdate(extraHop: ExtraHop, htlcMaximum: MilliSatoshi): ChannelUpdate = {
     // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
     // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
-    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, System.currentTimeMillis.milliseconds.toSeconds, messageFlags = 1, channelFlags = 0, extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, Some(htlcMaximum))
+    ChannelUpdate(signature = ByteVector64.Zeroes, chainHash = ByteVector32.Zeroes, extraHop.shortChannelId, System.currentTimeMillis.milliseconds.toSeconds, channelFlags = ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = true), extraHop.cltvExpiryDelta, htlcMinimumMsat = 0 msat, extraHop.feeBase, extraHop.feeProportionalMillionths, Some(htlcMaximum))
   }
 
   def toAssistedChannels(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey, amount: MilliSatoshi): Map[ShortChannelId, AssistedChannel] = {
@@ -182,24 +182,6 @@ object RouteCalculation {
 
   /** The default number of routes we'll search for when findRoute is called with randomize = true */
   val DEFAULT_ROUTES_COUNT = 3
-
-  def getDefaultRouteParams(pathFindingConf: PathFindingConf): RouteParams = RouteParams(
-    randomize = pathFindingConf.randomizeRouteSelection,
-    maxFeeBase = pathFindingConf.searchMaxFeeBase.toMilliSatoshi,
-    maxFeePct = pathFindingConf.searchMaxFeePct,
-    routeMaxLength = pathFindingConf.searchMaxRouteLength,
-    routeMaxCltv = pathFindingConf.searchMaxCltv,
-    ratios = WeightRatios(
-      baseFactor = pathFindingConf.searchRatioBase,
-      cltvDeltaFactor = pathFindingConf.searchRatioCltv,
-      ageFactor = pathFindingConf.searchRatioChannelAge,
-      capacityFactor = pathFindingConf.searchRatioChannelCapacity,
-      hopCostBase = pathFindingConf.searchHopCostBase,
-      hopCostMillionths = pathFindingConf.searchHopCostMillionths
-    ),
-    mpp = MultiPartParams(pathFindingConf.mppMinPartAmount, pathFindingConf.mppMaxParts),
-    includeLocalChannelCost = false,
-  )
 
   /**
    * Find a route in the graph between localNodeId and targetNodeId, returns the route.
@@ -252,9 +234,9 @@ object RouteCalculation {
 
     def feeOk(fee: MilliSatoshi): Boolean = fee <= maxFee
 
-    def lengthOk(length: Int): Boolean = length <= routeParams.routeMaxLength && length <= ROUTE_MAX_LENGTH
+    def lengthOk(length: Int): Boolean = length <= routeParams.maxRouteLength && length <= ROUTE_MAX_LENGTH
 
-    def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.routeMaxCltv
+    def cltvOk(cltv: CltvExpiryDelta): Boolean = cltv <= routeParams.maxCltv
 
     val boundaries: RichWeight => Boolean = { weight => feeOk(weight.cost - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
@@ -267,9 +249,9 @@ object RouteCalculation {
         directRoutes ++ indirectRoutes
       }
       Right(routes)
-    } else if (routeParams.routeMaxLength < ROUTE_MAX_LENGTH) {
+    } else if (routeParams.maxRouteLength < ROUTE_MAX_LENGTH) {
       // if not found within the constraints we relax and repeat the search
-      val relaxedRouteParams = routeParams.copy(routeMaxLength = ROUTE_MAX_LENGTH, routeMaxCltv = DEFAULT_ROUTE_MAX_CLTV)
+      val relaxedRouteParams = routeParams.copy(maxRouteLength = ROUTE_MAX_LENGTH, maxCltv = DEFAULT_ROUTE_MAX_CLTV)
       findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight)
     } else {
       Left(RouteNotFound)

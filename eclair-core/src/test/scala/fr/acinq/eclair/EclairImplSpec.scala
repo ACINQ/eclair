@@ -37,7 +37,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPay
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
 import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
-import fr.acinq.eclair.wire.protocol.{Color, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAnnouncement}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -143,14 +143,14 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send2.fallbackFinalExpiryDelta === CltvExpiryDelta(96))
 
     // with custom route fees parameters
-    eclair.send(None, 123 msat, invoice0, feeThreshold_opt = Some(123 sat), maxFeePct_opt = Some(4.20))
+    eclair.send(None, 123 msat, invoice0, maxFeeFlat_opt = Some(123 sat), maxFeePct_opt = Some(4.20))
     val send3 = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send3.externalId === None)
     assert(send3.recipientNodeId === nodePrivKey.publicKey)
     assert(send3.recipientAmount === 123.msat)
     assert(send3.paymentHash === ByteVector32.Zeroes)
-    assert(send3.routeParams.maxFeeBase === 123000.msat) // conversion sat -> msat
-    assert(send3.routeParams.maxFeePct === 4.20)
+    assert(send3.routeParams.maxFeeFlat === 123000.msat) // conversion sat -> msat
+    assert(send3.routeParams.maxFeeProportional === 0.042)
 
     val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
     assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), 123 msat, invoice0), 50 millis))
@@ -236,7 +236,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       (ann_cd, makeUpdateShort(ShortChannelId(3L), c, d, feeBase = 1 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(500))),
       (ann_ec, makeUpdateShort(ShortChannelId(7L), e, c, feeBase = 2 msat, 0, minHtlc = 0 msat, maxHtlc = None, cltvDelta = CltvExpiryDelta(12)))
     ).foreach { case (ann, update) =>
-      channels = channels + (update.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = 0)), None, None))
+      channels = channels + (update.shortChannelId -> PublicChannel(ann, ByteVector32.Zeroes, 100 sat, Some(update.copy(channelFlags = ChannelUpdate.ChannelFlags.DUMMY)), None, None))
     }
 
     val mockNetworkDb = mock[NetworkDb]

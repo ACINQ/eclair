@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
+import fr.acinq.eclair.wire.protocol.ChannelUpdate.ChannelFlags
 import fr.acinq.eclair.wire.protocol.NodeAddress
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -95,18 +96,18 @@ class AnnouncementsSpec extends AnyFunSuite {
     val channelUpdate1_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), 0 msat, 0 msat, 0, 500000000 msat, enable = false)
     val channelUpdate2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), 0 msat, 0 msat, 0, 500000000 msat, enable = true)
     val channelUpdate2_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), 0 msat, 0 msat, 0, 500000000 msat, enable = false)
-    assert(channelUpdate1.channelFlags == 0) // ....00
-    assert(channelUpdate1_disabled.channelFlags == 2) // ....10
-    assert(channelUpdate2.channelFlags == 1) // ....01
-    assert(channelUpdate2_disabled.channelFlags == 3) // ....11
-    assert(isNode1(channelUpdate1.channelFlags))
-    assert(isNode1(channelUpdate1_disabled.channelFlags))
-    assert(!isNode1(channelUpdate2.channelFlags))
-    assert(!isNode1(channelUpdate2_disabled.channelFlags))
-    assert(isEnabled(channelUpdate1.channelFlags))
-    assert(!isEnabled(channelUpdate1_disabled.channelFlags))
-    assert(isEnabled(channelUpdate2.channelFlags))
-    assert(!isEnabled(channelUpdate2_disabled.channelFlags))
+    assert(channelUpdate1.channelFlags == ChannelFlags(isEnabled = true, isNode1 = true)) // ....00
+    assert(channelUpdate1_disabled.channelFlags == ChannelFlags(isEnabled = false, isNode1 = true)) // ....10
+    assert(channelUpdate2.channelFlags == ChannelFlags(isEnabled = true, isNode1 = false)) // ....01
+    assert(channelUpdate2_disabled.channelFlags == ChannelFlags(isEnabled = false, isNode1 = false)) // ....11
+    assert(channelUpdate1.channelFlags.isNode1)
+    assert(channelUpdate1_disabled.channelFlags.isNode1)
+    assert(!channelUpdate2.channelFlags.isNode1)
+    assert(!channelUpdate2_disabled.channelFlags.isNode1)
+    assert(channelUpdate1.channelFlags.isEnabled)
+    assert(!channelUpdate1_disabled.channelFlags.isEnabled)
+    assert(channelUpdate2.channelFlags.isEnabled)
+    assert(!channelUpdate2_disabled.channelFlags.isEnabled)
   }
 
 }

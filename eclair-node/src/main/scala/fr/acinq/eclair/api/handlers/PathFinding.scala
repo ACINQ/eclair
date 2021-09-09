@@ -34,11 +34,11 @@ trait PathFinding {
 
     implicit val ec: ExecutionContext = actorSystem.dispatcher
 
-    formFields(invoiceFormParam, amountMsatFormParam.?, routeFormat.?) {
-      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, routeFormat) =>
-        complete(eclairApi.findRoute(nodeId, amount, invoice.routingInfo).map(r => RouteFormat.format(r, routeFormat)))
-      case (invoice, Some(overrideAmount), routeFormat) =>
-        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, invoice.routingInfo).map(r => RouteFormat.format(r, routeFormat)))
+    formFields(invoiceFormParam, amountMsatFormParam.?, "pathFindingExperimentName".?, routeFormat.?) {
+      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, pathFindingExperimentName_opt, routeFormat) =>
+        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, invoice.routingInfo).map(r => RouteFormat.format(r, routeFormat)))
+      case (invoice, Some(overrideAmount), pathFindingExperimentName_opt, routeFormat) =>
+        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, pathFindingExperimentName_opt, invoice.routingInfo).map(r => RouteFormat.format(r, routeFormat)))
       case _ => reject(MalformedFormFieldRejection(
         "invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"
       ))
@@ -49,8 +49,8 @@ trait PathFinding {
 
     implicit val ec: ExecutionContext = actorSystem.dispatcher
 
-    formFields(nodeIdFormParam, amountMsatFormParam, routeFormat.?) { (nodeId, amount, routeFormat) =>
-      complete(eclairApi.findRoute(nodeId, amount).map(r => RouteFormat.format(r, routeFormat)))
+    formFields(nodeIdFormParam, amountMsatFormParam, "pathFindingExperimentName".?, routeFormat.?) { (nodeId, amount, pathFindingExperimentName_opt, routeFormat) =>
+      complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt).map(r => RouteFormat.format(r, routeFormat)))
     }
   }
 
@@ -58,8 +58,8 @@ trait PathFinding {
 
     implicit val ec: ExecutionContext = actorSystem.dispatcher
 
-    formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam, routeFormat.?) { (sourceNodeId, targetNodeId, amount, routeFormat) =>
-      complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount).map(r => RouteFormat.format(r, routeFormat)))
+    formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam, "pathFindingExperimentName".?, routeFormat.?) { (sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt, routeFormat) =>
+      complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt).map(r => RouteFormat.format(r, routeFormat)))
     }
   }
 

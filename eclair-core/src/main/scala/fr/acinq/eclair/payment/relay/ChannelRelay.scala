@@ -70,7 +70,7 @@ object ChannelRelay {
       case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
       case (_: FeerateTooDifferent, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-      case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.channelFlags) => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
+      case (_: ChannelUnavailable, Some(channelUpdate)) if !channelUpdate.channelFlags.isEnabled => ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)
       case (_: ChannelUnavailable, None) => PermanentChannelFailure
       case _ => TemporaryNodeFailure
     }
@@ -256,7 +256,7 @@ class ChannelRelay private(nodeParams: NodeParams,
     channelUpdate_opt match {
       case None =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
-      case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.channelFlags) =>
+      case Some(channelUpdate) if !channelUpdate.channelFlags.isEnabled =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.messageFlags, channelUpdate.channelFlags, channelUpdate)), commit = true))
       case Some(channelUpdate) if payload.amountToForward < channelUpdate.htlcMinimumMsat =>
         RelayFailure(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(payload.amountToForward, channelUpdate)), commit = true))

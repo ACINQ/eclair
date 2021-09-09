@@ -104,8 +104,8 @@ class PgUtilsSpec extends TestKitBaseClass with AnyFunSuiteLike with Eventually 
     val pg = EmbeddedPostgres.start()
     val ds: DataSource = pg.getPostgresDatabase
 
-    val lock1 = LeaseLock(UUID.randomUUID(), 2 minutes, 1 minute, LockFailureHandler.logAndThrow)
-    val lock2 = LeaseLock(UUID.randomUUID(), 2 minutes, 1 minute, LockFailureHandler.logAndThrow)
+    val lock1 = LeaseLock(UUID.randomUUID(), 2 minutes, 1 minute, LockFailureHandler.logAndThrow, autoReleaseAtShutdown = false)
+    val lock2 = LeaseLock(UUID.randomUUID(), 2 minutes, 1 minute, LockFailureHandler.logAndThrow, autoReleaseAtShutdown = false)
 
     lock1.obtainExclusiveLock(ds)
     intercept[LockFailureHandler.LockException] {
@@ -216,6 +216,7 @@ object PgUtilsSpec extends Logging {
        |    interval = 5 seconds // lease-interval must be greater than lease-renew-interval
        |    renew-interval = 2 seconds
        |    lock-timeout = 5 seconds // timeout for the lock statement on the lease table
+       |    auto-release-at-shutdown = false // automatically release the lock when eclair is stopping
        |  }
        |}
        |""".stripMargin

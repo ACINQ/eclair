@@ -82,8 +82,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(Status.Failure(t), WaitingForRoute(c, failures, _)) =>
       log.warning("router error: {}", t.getMessage)
       Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(LocalFailure(Nil, t))).increment()
-      onFailure(c.replyTo, PaymentFailed(id, paymentHash, failures :+ LocalFailure(Nil, t)))
-      stop(FSM.Normal)
+      myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ LocalFailure(Nil, t))))
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
@@ -98,8 +97,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PartialPayment(id, d.c.finalPayload.amount, d.cmd.amount - d.c.finalPayload.amount, htlc.channelId, Some(cfg.fullRoute(d.route)))
-      onSuccess(d.c.replyTo, cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil))
-      stop(FSM.Normal)
+      myStop(d.c, Right(cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil)))
 
     case Event(RES_ADD_SETTLED(_, _, fail: HtlcResult.Fail), d: WaitingForComplete) =>
       fail match {
@@ -155,8 +153,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
       retry(localFailure, d)
     } else {
-      onFailure(d.c.replyTo, PaymentFailed(id, paymentHash, d.failures :+ localFailure))
-      stop(FSM.Normal)
+      myStop(d.c, Left(PaymentFailed(id, paymentHash, d.failures :+ localFailure)))
     }
   }
 
@@ -173,8 +170,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
         // if destination node returns an error, we fail the payment immediately
         log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
-        onFailure(c.replyTo, PaymentFailed(id, paymentHash, failures :+ RemoteFailure(cfg.fullRoute(route), e)))
-        stop(FSM.Normal)
+        myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ RemoteFailure(cfg.fullRoute(route), e))))
       case res if failures.size + 1 >= c.maxAttempts =>
         // otherwise we never try more than maxAttempts, no matter the kind of error returned
         val failure = res match {
@@ -190,8 +186,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             UnreadableRemoteFailure(cfg.fullRoute(route))
         }
         log.warning(s"too many failed attempts, failing the payment")
-        onFailure(c.replyTo, PaymentFailed(id, paymentHash, failures :+ failure))
-        stop(FSM.Normal)
+        myStop(c, Left(PaymentFailed(id, paymentHash, failures :+ failure)))
       case Failure(t) =>
         log.warning(s"cannot parse returned error: ${t.getMessage}, route=${route.printNodes()}")
         val failure = UnreadableRemoteFailure(cfg.fullRoute(route))
@@ -263,7 +258,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     // in any case, we forward the update to the router: if the channel is disabled, the router will remove it from its routing table
     router ! failure.update
     // we return updated assisted routes: they take precedence over the router's routing table
-    if (Announcements.isEnabled(failure.update.channelFlags)) {
+    if (failure.update.channelFlags.isEnabled) {
       data.c.assistedRoutes.map(_.map {
         case extraHop: ExtraHop if extraHop.shortChannelId == failure.update.shortChannelId => extraHop.copy(
           cltvExpiryDelta = failure.update.cltvExpiryDelta,
@@ -282,24 +277,51 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     }
   }
 
-  private def onSuccess(replyTo: ActorRef, result: PaymentSent): Unit = {
-    if (cfg.storeInDb) paymentsDb.updateOutgoingPayment(result)
-    replyTo ! result
-    if (cfg.publishEvent) context.system.eventStream.publish(result)
+  def myStop(request: SendPayment, result: Either[PaymentFailed, PaymentSent]): State = {
+    if (cfg.storeInDb) {
+      result match {
+        case Left(paymentFailed: PaymentFailed) =>
+          paymentsDb.updateOutgoingPayment(paymentFailed)
+        case Right(paymentSent: PaymentSent) =>
+          paymentsDb.updateOutgoingPayment(paymentSent)
+      }
+    }
+    val event = result match {
+        case Left(event) => event
+        case Right(event) => event
+      }
+    request.replyTo ! event
+    if (cfg.publishEvent)  context.system.eventStream.publish(event)
+    val status = result match {
+      case Right(_: PaymentSent) => "SUCCESS"
+      case Left(f: PaymentFailed) =>
+        if (f.failures.exists({ case r: RemoteFailure => r.e.originNode == cfg.recipientNodeId case _ => false })) {
+          "RECIPIENT_FAILURE"
+        } else {
+          "FAILURE"
+        }
+    }
+    val now = System.currentTimeMillis
+    val duration = now - start
+    if (cfg.recordMetrics) {
+      val fees = result match {
+        case Right(paymentSent: PaymentSent) => paymentSent.feesPaid
+        case Left(_) => request match {
+          case s: SendPaymentToNode => s.routeParams.getMaxFee(cfg.recipientAmount)
+          case _: SendPaymentToRoute => 0 msat
+        }
+      }
+      request match {
+        case SendPaymentToNode(_, _, _, _, _, routeParams) =>
+          context.system.eventStream.publish(PathFindingExperimentMetrics(request.finalPayload.amount, fees, status, duration, now, isMultiPart = false, routeParams.experimentName, cfg.recipientNodeId))
+        case SendPaymentToRoute(_, _, _, _) => ()
+      }
+    }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
-      .withTag(Tags.Success, value = true)
-      .record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
-  }
-
-  private def onFailure(replyTo: ActorRef, result: PaymentFailed): Unit = {
-    if (cfg.storeInDb) paymentsDb.updateOutgoingPayment(result)
-    replyTo ! result
-    if (cfg.publishEvent) context.system.eventStream.publish(result)
-    Metrics.SentPaymentDuration
-      .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
-      .withTag(Tags.Success, value = false)
-      .record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
+      .withTag(Tags.Success, value = (status == "SUCCESS"))
+      .record(duration, TimeUnit.MILLISECONDS)
+    stop(FSM.Normal)
   }
 
   override def mdc(currentMessage: Any): MDC = {

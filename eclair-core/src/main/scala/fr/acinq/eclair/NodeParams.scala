@@ -27,7 +27,9 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
-import fr.acinq.eclair.router.Router.{PathFindingConf, RouterConf}
+import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.PathFindingExperimentConf
+import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import grizzled.slf4j.Logging
@@ -200,7 +202,17 @@ object NodeParams extends Logging {
       "enable-db-backup" -> "file-backup.enabled",
       "backup-notify-script" -> "file-backup.notify-script",
       // v0.6.2
-      "router.randomize-route-selection" -> "router.path-finding.randomize-route-selection",
+      "router.randomize-route-selection" -> "router.path-finding.default.randomize-route-selection",
+      "router.path-finding.max-route-length" -> "router.path-finding.default.boundaries.max-route-length",
+      "router.path-finding.max-cltv" -> "router.path-finding.default.boundaries.max-cltv",
+      "router.path-finding.fee-threshold-sat" -> "router.path-finding.default.boundaries.max-fee-flat-sat",
+      "router.path-finding.max-fee-pct" -> "router.path-finding.default.boundaries.max-fee-proportional-percent",
+      "router.path-finding.ratio-base" -> "router.path-finding.default.ratios.base",
+      "router.path-finding.ratio-cltv" -> "router.path-finding.default.ratios.cltv",
+      "router.path-finding.ratio-channel-age" -> "router.path-finding.default.ratios.channel-age",
+      "router.path-finding.ratio-channel-capacity" -> "router.path-finding.default.ratios.channel-capacity",
+      "router.path-finding.hop-cost-base-msat" -> "router.path-finding.default.hop-cost.fee-base-msat",
+      "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost.fee-proportional-millionths",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -308,21 +320,30 @@ object NodeParams extends Logging {
       RelayFees(feeBase, relayFeesConfig.getInt("fee-proportional-millionths"))
     }
 
-    def getPathFindingConf(config: Config): PathFindingConf = {
-      PathFindingConf(
-        randomizeRouteSelection = config.getBoolean("randomize-route-selection"),
-        searchMaxRouteLength = config.getInt("max-route-length"),
-        searchMaxCltv = CltvExpiryDelta(config.getInt("max-cltv")),
-        searchMaxFeeBase = Satoshi(config.getLong("fee-threshold-sat")),
-        searchMaxFeePct = config.getDouble("max-fee-pct"),
-        searchRatioBase = config.getDouble("ratio-base"),
-        searchRatioCltv = config.getDouble("ratio-cltv"),
-        searchRatioChannelAge = config.getDouble("ratio-channel-age"),
-        searchRatioChannelCapacity = config.getDouble("ratio-channel-capacity"),
-        searchHopCostBase = MilliSatoshi(config.getLong("hop-cost-base-msat")),
-        searchHopCostMillionths = config.getLong("hop-cost-millionths"),
-        mppMinPartAmount = Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
-        mppMaxParts = config.getInt("mpp.max-parts"))
+    def getPathFindingConf(config: Config, name: String): PathFindingConf = PathFindingConf(
+      randomize = config.getBoolean("randomize-route-selection"),
+      boundaries = SearchBoundaries(
+        maxRouteLength = config.getInt("boundaries.max-route-length"),
+        maxCltv = CltvExpiryDelta(config.getInt("boundaries.max-cltv")),
+        maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
+        maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
+      ratios = WeightRatios(
+        baseFactor = config.getDouble("ratios.base"),
+        cltvDeltaFactor = config.getDouble("ratios.cltv"),
+        ageFactor = config.getDouble("ratios.channel-age"),
+        capacityFactor = config.getDouble("ratios.channel-capacity"),
+        hopCost = getRelayFees(config.getConfig("hop-cost")),
+      ),
+      mpp = MultiPartParams(
+        Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
+        config.getInt("mpp.max-parts")),
+      experimentName = name,
+      experimentPercentage = config.getInt("percentage"))
+
+
+    def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
+      val experiments = config.root.asScala.keys.map(name => name -> getPathFindingConf(config.getConfig(name), name))
+      PathFindingExperimentConf(experiments.toMap)
     }
 
     val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
@@ -411,7 +432,7 @@ object NodeParams extends Logging {
         encodingType = routerSyncEncodingType,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
-        pathFindingConf = getPathFindingConf(config.getConfig("router.path-finding"))
+        pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments"))
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
