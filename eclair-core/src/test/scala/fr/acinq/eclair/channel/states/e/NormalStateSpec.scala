@@ -375,6 +375,48 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectNoMessage(200 millis)
   }
 
+  test("recv CMD_ADD_HTLC (over max dust htlc exposure)") { f =>
+    import f._
+    val sender = TestProbe()
+    val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+    val aliceCommitments = initialState.commitments
+    assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).maxDustHtlcExposure === 25_000.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.localParams.dustLimit, aliceCommitments.localCommit.spec, aliceCommitments.commitmentFormat) === 7730.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.localParams.dustLimit, aliceCommitments.localCommit.spec, aliceCommitments.commitmentFormat) === 8130.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.remoteParams.dustLimit, aliceCommitments.localCommit.spec, aliceCommitments.commitmentFormat) === 7630.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.remoteParams.dustLimit, aliceCommitments.localCommit.spec, aliceCommitments.commitmentFormat) === 8030.sat)
+
+    // Alice sends HTLCs to Bob that add 10 000 sat to the dust exposure:
+    addHtlc(500.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // dust htlc
+    addHtlc(1250.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // trimmed htlc
+    addHtlc(8250.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // slightly above the trimmed threshold -> included in the dust exposure
+    addHtlc(15000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // way above the trimmed threshold -> not included in the dust exposure
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // Bob sends HTLCs to Alice that add 14 500 sat to the dust exposure:
+    addHtlc(300.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // dust htlc
+    addHtlc(6000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // trimmed htlc
+    addHtlc(8200.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // slightly above the trimmed threshold -> included in the dust exposure
+    addHtlc(18000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // way above the trimmed threshold -> not included in the dust exposure
+    crossSign(bob, alice, bob2alice, alice2bob)
+
+    // HTLCs that take Alice's dust exposure above her threshold are rejected.
+    val dustAdd = CMD_ADD_HTLC(sender.ref, 501.sat.toMilliSatoshi, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    alice ! dustAdd
+    sender.expectMsg(RES_ADD_FAILED(dustAdd, DustHtlcExposureTooHighInFlight(channelId(alice), 25000.sat, 25001.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
+    val trimmedAdd = CMD_ADD_HTLC(sender.ref, 5000.sat.toMilliSatoshi, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    alice ! trimmedAdd
+    sender.expectMsg(RES_ADD_FAILED(trimmedAdd, DustHtlcExposureTooHighInFlight(channelId(alice), 25000.sat, 29500.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
+    val justAboveTrimmedAdd = CMD_ADD_HTLC(sender.ref, 8500.sat.toMilliSatoshi, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    alice ! justAboveTrimmedAdd
+    sender.expectMsg(RES_ADD_FAILED(justAboveTrimmedAdd, DustHtlcExposureTooHighInFlight(channelId(alice), 25000.sat, 33000.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
+
+    // HTLCs that don't contribute to dust exposure are accepted.
+    alice ! CMD_ADD_HTLC(sender.ref, 25000.sat.toMilliSatoshi, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
+    sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
+    alice2bob.expectMsgType[UpdateAddHtlc]
+  }
+
   test("recv CMD_ADD_HTLC (over capacity)", Tag(ChannelStateTestsTags.NoMaxHtlcValueInFlight)) { f =>
     import f._
     val sender = TestProbe()
@@ -1125,6 +1167,46 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid)
     alice2blockchain.expectMsgType[PublishTx]
     alice2blockchain.expectMsgType[WatchTxConfirmed]
+  }
+
+  test("recv RevokeAndAck (over max dust htlc exposure)") { f =>
+    import f._
+    val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(alice.underlyingActor.nodeParams.onChainFeeConf.feerateToleranceFor(bob.underlyingActor.nodeParams.nodeId).maxDustHtlcExposure === 25_000.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(aliceCommitments.localParams.dustLimit, aliceCommitments.localCommit.spec, aliceCommitments.commitmentFormat) === 7730.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(aliceCommitments.remoteParams.dustLimit, aliceCommitments.localCommit.spec, aliceCommitments.commitmentFormat) === 8030.sat)
+
+    // Alice sends HTLCs to Bob that add 10 000 sat to the dust exposure:
+    addHtlc(500.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // dust htlc
+    addHtlc(1250.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // trimmed htlc
+    addHtlc(8250.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice) // slightly above the trimmed threshold -> included in the dust exposure
+    crossSign(alice, bob, alice2bob, bob2alice)
+
+    // Bob sends HTLCs to Alice that overflow the dust exposure:
+    val (_, dust1) = addHtlc(500.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // dust htlc
+    val (_, dust2) = addHtlc(500.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // dust htlc
+    val (_, trimmed1) = addHtlc(4000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // trimmed htlc
+    val (_, trimmed2) = addHtlc(6400.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // trimmed htlc
+    val (_, almostTrimmed) = addHtlc(8500.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // slightly above the trimmed threshold -> included in the dust exposure
+    val (_, nonDust) = addHtlc(20000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob) // way above the trimmed threshold -> not included in the dust exposure
+    crossSign(bob, alice, bob2alice, alice2bob)
+
+    // Alice forwards HTLCs that fit in the dust exposure
+    relayerA.expectMsgAllOf(
+      RelayForward(nonDust),
+      RelayForward(almostTrimmed),
+      RelayForward(trimmed2),
+    )
+    relayerA.expectNoMessage(100 millis)
+    // And instantly fails the others
+    val failedHtlcs = Seq(
+      alice2bob.expectMsgType[UpdateFailHtlc],
+      alice2bob.expectMsgType[UpdateFailHtlc],
+      alice2bob.expectMsgType[UpdateFailHtlc]
+    )
+    assert(failedHtlcs.map(_.id).toSet === Set(dust1.id, dust2.id, trimmed1.id))
+    alice2bob.expectMsgType[CommitSig]
+    alice2bob.expectNoMessage(100 millis)
   }
 
   test("recv RevokeAndAck (unexpectedly)") { f =>

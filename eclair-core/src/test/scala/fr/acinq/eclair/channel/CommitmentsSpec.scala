@@ -41,7 +41,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  val feeConfNoMismatch = OnChainFeeConf(FeeTargets(6, 2, 2, 6), new TestFeeEstimator, closeOnOfflineMismatch = false, 1.0, FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw), Map.empty)
+  val feeConfNoMismatch = OnChainFeeConf(FeeTargets(6, 2, 2, 6), new TestFeeEstimator, closeOnOfflineMismatch = false, 1.0, FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw, 100000 sat), Map.empty)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -61,6 +61,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val b = 190000000 msat // initial balance bob
     val p = 42000000 msat // a->b payment
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+    val maxDustExposure = 500000 sat
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -88,7 +89,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac3, _)) = receiveRevocation(ac2, revocation1)
+    val Right((ac3, _)) = receiveRevocation(ac2, revocation1, maxDustExposure)
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
@@ -100,7 +101,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac4.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b)
 
-    val Right((bc4, _)) = receiveRevocation(bc3, revocation2)
+    val Right((bc4, _)) = receiveRevocation(bc3, revocation2, maxDustExposure)
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -121,7 +122,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac6.availableBalanceForSend == a - p)
     assert(ac6.availableBalanceForReceive == b + p)
 
-    val Right((bc7, _)) = receiveRevocation(bc6, revocation3)
+    val Right((bc7, _)) = receiveRevocation(bc6, revocation3, maxDustExposure)
     assert(bc7.availableBalanceForSend == b + p)
     assert(bc7.availableBalanceForReceive == a - p)
 
@@ -133,7 +134,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc8.availableBalanceForSend == b + p)
     assert(bc8.availableBalanceForReceive == a - p)
 
-    val Right((ac8, _)) = receiveRevocation(ac7, revocation4)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation4, maxDustExposure)
     assert(ac8.availableBalanceForSend == a - p)
     assert(ac8.availableBalanceForReceive == b + p)
   }
@@ -145,6 +146,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val b = 190000000 msat // initial balance bob
     val p = 42000000 msat // a->b payment
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+    val maxDustExposure = 500000 sat
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -172,7 +174,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac3, _)) = receiveRevocation(ac2, revocation1)
+    val Right((ac3, _)) = receiveRevocation(ac2, revocation1, maxDustExposure)
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
@@ -184,7 +186,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac4.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b)
 
-    val Right((bc4, _)) = receiveRevocation(bc3, revocation2)
+    val Right((bc4, _)) = receiveRevocation(bc3, revocation2, maxDustExposure)
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -205,7 +207,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac6.availableBalanceForSend == a)
     assert(ac6.availableBalanceForReceive == b)
 
-    val Right((bc7, _)) = receiveRevocation(bc6, revocation3)
+    val Right((bc7, _)) = receiveRevocation(bc6, revocation3, maxDustExposure)
     assert(bc7.availableBalanceForSend == b)
     assert(bc7.availableBalanceForReceive == a)
 
@@ -217,7 +219,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc8.availableBalanceForSend == b)
     assert(bc8.availableBalanceForReceive == a)
 
-    val Right((ac8, _)) = receiveRevocation(ac7, revocation4)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation4, maxDustExposure)
     assert(ac8.availableBalanceForSend == a)
     assert(ac8.availableBalanceForReceive == b)
   }
@@ -231,6 +233,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val p2 = 20000000 msat // a->b payment
     val p3 = 40000000 msat // b->a payment
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+    val maxDustExposure = 500000 sat
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -277,7 +280,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc4.availableBalanceForSend == b - p3)
     assert(bc4.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Right((ac5, _)) = receiveRevocation(ac4, revocation1)
+    val Right((ac5, _)) = receiveRevocation(ac4, revocation1, maxDustExposure)
     assert(ac5.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b - p3)
 
@@ -289,7 +292,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac6.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // alice has acknowledged b's hltc so it needs to pay the fee for it
     assert(ac6.availableBalanceForReceive == b - p3)
 
-    val Right((bc6, _)) = receiveRevocation(bc5, revocation2)
+    val Right((bc6, _)) = receiveRevocation(bc5, revocation2, maxDustExposure)
     assert(bc6.availableBalanceForSend == b - p3)
     assert(bc6.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
@@ -301,7 +304,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc7.availableBalanceForSend == b - p3)
     assert(bc7.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-    val Right((ac8, _)) = receiveRevocation(ac7, revocation3)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation3, maxDustExposure)
     assert(ac8.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac8.availableBalanceForReceive == b - p3)
 
@@ -340,7 +343,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc11.availableBalanceForSend == b + p1 - p3)
     assert(bc11.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
-    val Right((ac13, _)) = receiveRevocation(ac12, revocation4)
+    val Right((ac13, _)) = receiveRevocation(ac12, revocation4, maxDustExposure)
     assert(ac13.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac13.availableBalanceForReceive == b + p1 - p3)
 
@@ -352,7 +355,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac14.availableBalanceForSend == a - p1 + p3)
     assert(ac14.availableBalanceForReceive == b + p1 - p3)
 
-    val Right((bc13, _)) = receiveRevocation(bc12, revocation5)
+    val Right((bc13, _)) = receiveRevocation(bc12, revocation5, maxDustExposure)
     assert(bc13.availableBalanceForSend == b + p1 - p3)
     assert(bc13.availableBalanceForReceive == a - p1 + p3)
 
@@ -364,7 +367,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc14.availableBalanceForSend == b + p1 - p3)
     assert(bc14.availableBalanceForReceive == a - p1 + p3)
 
-    val Right((ac16, _)) = receiveRevocation(ac15, revocation6)
+    val Right((ac16, _)) = receiveRevocation(ac15, revocation6, maxDustExposure)
     assert(ac16.availableBalanceForSend == a - p1 + p3)
     assert(ac16.availableBalanceForReceive == b + p1 - p3)
   }
@@ -458,6 +461,34 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         case Left(e) => fail(s"$t -> $e")
       }
     }
+  }
+
+  test("add htlcs until we reach our maximum dust exposure") { f =>
+    import f._
+
+    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(ac0.currentDustExposure() === (0 msat, 0 msat))
+    assert(ac0.contributesToDustExposure(UpdateAddHtlc(channelId(alice), 0, 9000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)) === (true, true))
+    assert(ac0.contributesToDustExposure(UpdateAddHtlc(channelId(alice), 0, 9500.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)) === (false, true))
+    assert(ac0.contributesToDustExposure(UpdateAddHtlc(channelId(alice), 0, 10000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)) === (false, false))
+
+    addHtlc(9000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
+    addHtlc(9500.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    val ac1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
+    assert(ac1.currentDustExposure() === (18500.sat.toMilliSatoshi, 9000.sat.toMilliSatoshi))
+
+    val receivedHtlcs = Seq(
+      UpdateAddHtlc(channelId(alice), 5, 9500.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(channelId(alice), 6, 5000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(channelId(alice), 7, 1000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(channelId(alice), 8, 400.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(channelId(alice), 9, 400.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
+      UpdateAddHtlc(channelId(alice), 10, 50000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
+    )
+    val (accepted, rejected) = ac1.addHtlcsUntilDustExposureReached(25000 sat, 10000.sat.toMilliSatoshi, 10000.sat.toMilliSatoshi, receivedHtlcs)
+    assert(accepted.map(_.id).toSet === Set(5, 6, 8, 10))
+    assert(rejected.map(_.id).toSet === Set(7, 9))
   }
 
 }

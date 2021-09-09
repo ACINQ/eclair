@@ -383,14 +383,16 @@ object NodeParams extends Logging {
         defaultFeerateTolerance = FeerateTolerance(
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"),
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-high"),
-          FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate"))))
+          FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate")))),
+          Satoshi(config.getLong("on-chain-fees.feerate-tolerance.max-dust-htlc-exposure-satoshis"))
         ),
         perNodeFeerateTolerance = config.getConfigList("on-chain-fees.override-feerate-tolerance").asScala.map { e =>
           val nodeId = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
           val tolerance = FeerateTolerance(
             e.getDouble("feerate-tolerance.ratio-low"),
             e.getDouble("feerate-tolerance.ratio-high"),
-            FeeratePerKw(FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate"))))
+            FeeratePerKw(FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate")))),
+            Satoshi(e.getLong("feerate-tolerance.max-dust-htlc-exposure-satoshis"))
           )
           nodeId -> tolerance
         }.toMap

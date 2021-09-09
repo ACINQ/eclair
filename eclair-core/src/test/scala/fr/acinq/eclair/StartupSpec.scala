@@ -16,10 +16,10 @@
 
 package fr.acinq.eclair
 
-import com.typesafe.config.{Config, ConfigFactory, ConfigResolveOptions}
+import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, SatoshiLong}
-import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
+import fr.acinq.eclair.FeatureSupport.Mandatory
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeerateTolerance}
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
@@ -58,7 +58,7 @@ class StartupSpec extends AnyFunSuite {
     assert(baseUkraineAlias.getBytes.length === 27)
 
     // we add 2 UTF-8 chars, each is 3-bytes long -> total new length 33 bytes!
-    val goUkraineGo = s"${threeBytesUTFChar}BitcoinLightningNodeUkraine${threeBytesUTFChar}"
+    val goUkraineGo = s"${threeBytesUTFChar}BitcoinLightningNodeUkraine$threeBytesUTFChar"
 
     assert(goUkraineGo.length === 29)
     assert(goUkraineGo.getBytes.length === 33) // too long for the alias, should be truncated
@@ -174,6 +174,7 @@ class StartupSpec extends AnyFunSuite {
         |        ratio-low = 0.1
         |        ratio-high = 15.0
         |        anchor-output-max-commit-feerate = 15
+        |        max-dust-htlc-exposure-satoshis = 25000
         |      }
         |    },
         |    {
@@ -182,6 +183,7 @@ class StartupSpec extends AnyFunSuite {
         |        ratio-low = 0.75
         |        ratio-high = 5.0
         |        anchor-output-max-commit-feerate = 5
+        |        max-dust-htlc-exposure-satoshis = 50000
         |      }
         |    },
         |  ]
@@ -189,9 +191,9 @@ class StartupSpec extends AnyFunSuite {
     )
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) === FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat))))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")) === FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat))))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat))))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) === FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat)), 25_000 sat))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")) === FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat)), 50_000 sat))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat)), 100_000 sat))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {

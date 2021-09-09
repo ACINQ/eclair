@@ -32,7 +32,7 @@ trait FeeEstimator {
 
 case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)
 
-case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMaxCommitFeerate: FeeratePerKw) {
+case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMaxCommitFeerate: FeeratePerKw, maxDustHtlcExposure: Satoshi) {
   /**
    * @param channelType     channel type
    * @param networkFeerate  reference fee rate (value we estimate from our view of the network)
