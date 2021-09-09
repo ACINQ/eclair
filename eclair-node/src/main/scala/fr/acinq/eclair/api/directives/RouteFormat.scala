@@ -18,11 +18,11 @@ package fr.acinq.eclair.api.directives
 
 import fr.acinq.eclair.router.Router.RouteResponse
 
+// @formatter:off
 sealed trait RouteFormat
-
 case object NodeIdRouteFormat extends RouteFormat
-
 case object ShortChannelIdRouteFormat extends RouteFormat
+// @formatter:on
 
 object RouteFormat {
 
