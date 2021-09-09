@@ -445,7 +445,7 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
     val channels3 = getOutgoingChannels(true)
     assert(channels3.size === 1 && channels3.head.commitments.availableBalanceForSend === 100000.msat)
 
-    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = ChannelUpdate.ChannelFlags(disable = true, direction = false)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
+    channelRelayer ! WrappedLocalChannelUpdate(LocalChannelUpdate(null, channelId_ab, channelUpdate_ab.shortChannelId, a, None, channelUpdate_ab.copy(channelFlags = ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = true)), makeCommitments(channelId_ab, 100000 msat, 200000 msat)))
     val channels4 = getOutgoingChannels(true)
     assert(channels4.isEmpty)
     val channels5 = getOutgoingChannels(false)
@@ -492,7 +492,7 @@ object ChannelRelayerSpec {
 
   def createLocalUpdate(shortChannelId: ShortChannelId, balance: MilliSatoshi = 10000000 msat, capacity: Satoshi = 500000 sat, enabled: Boolean = true, htlcMinimum: MilliSatoshi = 0 msat): LocalChannelUpdate = {
     val channelId = channelIds(shortChannelId)
-    val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, shortChannelId, 0, ChannelUpdate.ChannelFlags.from(isNode1 = true, enabled), CltvExpiryDelta(100), htlcMinimum, 1000 msat, 100, Some(capacity.toMilliSatoshi))
+    val update = ChannelUpdate(ByteVector64(randomBytes(64)), Block.RegtestGenesisBlock.hash, shortChannelId, 0, ChannelUpdate.ChannelFlags(isNode1 = true, isEnabled = enabled), CltvExpiryDelta(100), htlcMinimum, 1000 msat, 100, Some(capacity.toMilliSatoshi))
     val commitments = PaymentPacketSpec.makeCommitments(channelId, testAvailableBalanceForSend = balance, testCapacity = capacity)
     LocalChannelUpdate(null, channelId, shortChannelId, outgoingNodeId, None, update, commitments)
   }

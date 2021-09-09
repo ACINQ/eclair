@@ -225,7 +225,10 @@ object LightningMessageCodecs {
 
   private val messageFlagsCodec = ("messageFlags" | (ignore(7) :: bool)).as[MessageFlags]
 
-  val channelFlagsCodec = ("channelFlags" | (ignore(6) :: bool :: bool)).as[ChannelUpdate.ChannelFlags]
+  val reverseBool: Codec[Boolean] = bool.xmap[Boolean](b => !b, b => !b)
+
+  /** BOLT 7 defines a 'disable' bit and a 'direction' bit, but it's easier to understand if we take the reverse. */
+  val channelFlagsCodec = ("channelFlags" | (ignore(6) :: reverseBool :: reverseBool)).as[ChannelUpdate.ChannelFlags]
 
   val channelUpdateChecksumCodec =
     ("chainHash" | bytes32) ::

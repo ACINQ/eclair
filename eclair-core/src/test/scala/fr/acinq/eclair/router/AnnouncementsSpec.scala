@@ -96,10 +96,10 @@ class AnnouncementsSpec extends AnyFunSuite {
     val channelUpdate1_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node1_priv, node2_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), 0 msat, 0 msat, 0, 500000000 msat, enable = false)
     val channelUpdate2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), 0 msat, 0 msat, 0, 500000000 msat, enable = true)
     val channelUpdate2_disabled = makeChannelUpdate(Block.RegtestGenesisBlock.hash, node2_priv, node1_priv.publicKey, ShortChannelId(0), CltvExpiryDelta(0), 0 msat, 0 msat, 0, 500000000 msat, enable = false)
-    assert(channelUpdate1.channelFlags == ChannelFlags(disable = false, direction = false)) // ....00
-    assert(channelUpdate1_disabled.channelFlags == ChannelFlags(disable = true, direction = false)) // ....10
-    assert(channelUpdate2.channelFlags == ChannelFlags(disable = false, direction = true)) // ....01
-    assert(channelUpdate2_disabled.channelFlags == ChannelFlags(disable = true, direction = true)) // ....11
+    assert(channelUpdate1.channelFlags == ChannelFlags(isEnabled = true, isNode1 = true)) // ....00
+    assert(channelUpdate1_disabled.channelFlags == ChannelFlags(isEnabled = false, isNode1 = true)) // ....10
+    assert(channelUpdate2.channelFlags == ChannelFlags(isEnabled = true, isNode1 = false)) // ....01
+    assert(channelUpdate2_disabled.channelFlags == ChannelFlags(isEnabled = false, isNode1 = false)) // ....11
     assert(channelUpdate1.channelFlags.isNode1)
     assert(channelUpdate1_disabled.channelFlags.isNode1)
     assert(!channelUpdate2.channelFlags.isNode1)

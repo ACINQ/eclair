@@ -118,7 +118,7 @@ object Announcements {
       u1.htlcMaximumMsat == u2.htlcMaximumMsat
 
   def makeChannelUpdate(chainHash: ByteVector32, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, enable: Boolean = true, timestamp: Long = System.currentTimeMillis.milliseconds.toSeconds): ChannelUpdate = {
-    val channelFlags = ChannelUpdate.ChannelFlags.from(isNode1 = isNode1(nodeSecret.publicKey, remoteNodeId), enable = enable)
+    val channelFlags = ChannelUpdate.ChannelFlags(isNode1 = isNode1(nodeSecret.publicKey, remoteNodeId), isEnabled = enable)
     val htlcMaximumMsatOpt = Some(htlcMaximumMsat)
 
     val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestamp, channelFlags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths, htlcMaximumMsatOpt, TlvStream.empty)

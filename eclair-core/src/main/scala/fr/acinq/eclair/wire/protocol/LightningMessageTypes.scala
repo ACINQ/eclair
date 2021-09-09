@@ -266,24 +266,11 @@ case class ChannelUpdate(signature: ByteVector64,
 }
 
 object ChannelUpdate {
-  case class ChannelFlags(disable: Boolean, direction: Boolean) {
-    // @formatter:off
-    /**
-     * BOLT 7:
-     * A node MAY create and send a channel_update with the disable bit set to
-     * signal the temporary unavailability of a channel.
-     */
-    def isEnabled: Boolean = !disable
-    /**
-     * BOLT 7:
-     * The creating node [...] MUST set the direction bit of flags to 0 if
-     * the creating node is node-id-1 in that message, otherwise 1.
-     */
-    def isNode1: Boolean = !direction
-    // @formatter:on
-  }
+  case class ChannelFlags(isEnabled: Boolean, isNode1: Boolean)
+
   object ChannelFlags {
-    def from(isNode1: Boolean, enable: Boolean): ChannelUpdate.ChannelFlags = ChannelUpdate.ChannelFlags(direction = !isNode1, disable = !enable)
+    /** for tests */
+    val DUMMY: ChannelFlags = ChannelFlags(isEnabled = true, isNode1 = true)
   }
 }
 
