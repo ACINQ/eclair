@@ -1820,7 +1820,7 @@ object RouteCalculationSpec {
       chainHash = Block.RegtestGenesisBlock.hash,
       shortChannelId = shortChannelId,
       timestamp = timestamp,
-      channelFlags = ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = !Announcements.isNode1(nodeId1, nodeId2)),
+      channelFlags = ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = Announcements.isNode1(nodeId1, nodeId2)),
       cltvExpiryDelta = cltvDelta,
       htlcMinimumMsat = minHtlc,
       feeBaseMsat = feeBase,
