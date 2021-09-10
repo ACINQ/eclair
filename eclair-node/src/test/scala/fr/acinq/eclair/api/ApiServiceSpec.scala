@@ -964,14 +964,24 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       Router.ChannelHop(nodeId = mockHop1.nextNodeId, nextNodeId = randomKey().publicKey, mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 4)))
     val mockHop3 =
       Router.ChannelHop(nodeId = mockHop2.nextNodeId, nextNodeId = randomKey().publicKey, mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 5)))
-
     val mockHops = Seq(mockHop1, mockHop2, mockHop3)
-
 
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
     eclair.findRoute(any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops))))
 
+    // invalid format
+    Post("/findroute", FormData("format"-> "invalid-output-format", "invoice" -> invoice, "amountMsat" -> "456")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasNever(called)
+      }
+
+    // default format
     Post("/findroute", FormData("invoice" -> invoice, "amountMsat" -> "456")) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
@@ -988,7 +998,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(once)
       }
 
-    Post("/findroute", FormData("invoice" -> invoice, "amountMsat" -> "456", "format" -> "nodeId")) ~>
+    Post("/findroute", FormData("format" -> "nodeId", "invoice" -> invoice, "amountMsat" -> "456")) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.findRoute) ~>
@@ -1004,7 +1014,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(twice)
       }
 
-    Post("/findroute", FormData("invoice" -> invoice, "amountMsat" -> "456", "format" -> "shortChannelId")) ~>
+    Post("/findroute", FormData("format" -> "shortChannelId", "invoice" -> invoice, "amountMsat" -> "456")) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.findRoute) ~>

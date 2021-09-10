@@ -30,10 +30,9 @@ trait PathFinding {
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
+  private implicit def ec: ExecutionContext = actorSystem.dispatcher
+
   val findRoute: Route = postRequest("findroute") { implicit t =>
-
-    implicit val ec: ExecutionContext = actorSystem.dispatcher
-
     formFields(invoiceFormParam, amountMsatFormParam.?, "pathFindingExperimentName".?, routeFormat.?) {
       case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, pathFindingExperimentName_opt, routeFormat) =>
         complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, invoice.routingInfo).map(r => RouteFormat.format(r, routeFormat)))
@@ -46,18 +45,12 @@ trait PathFinding {
   }
 
   val findRouteToNode: Route = postRequest("findroutetonode") { implicit t =>
-
-    implicit val ec: ExecutionContext = actorSystem.dispatcher
-
     formFields(nodeIdFormParam, amountMsatFormParam, "pathFindingExperimentName".?, routeFormat.?) { (nodeId, amount, pathFindingExperimentName_opt, routeFormat) =>
       complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt).map(r => RouteFormat.format(r, routeFormat)))
     }
   }
 
   val findRouteBetweenNodes: Route = postRequest("findroutebetweennodes") { implicit t =>
-
-    implicit val ec: ExecutionContext = actorSystem.dispatcher
-
     formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam, "pathFindingExperimentName".?, routeFormat.?) { (sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt, routeFormat) =>
       complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt).map(r => RouteFormat.format(r, routeFormat)))
     }
