@@ -23,8 +23,9 @@ import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, randomBytes
 import org.scalatest.funsuite.AnyFunSuite
 
 class CommitmentSpecSpec extends AnyFunSuite {
+
   test("add, fulfill and fail htlcs from the sender side") {
-    val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = FeeratePerKw(1000 sat), toLocal = 5000000 msat, toRemote = 0 msat)
+    val spec = CommitmentSpec(htlcs = Set(), commitTxFeerate = FeeratePerKw(1000 sat), toLocal = 5000000 msat, toRemote = 0 msat)
     val R = randomBytes32()
     val H = Crypto.sha256(R)
 
@@ -46,13 +47,13 @@ class CommitmentSpecSpec extends AnyFunSuite {
   }
 
   test("add, fulfill and fail htlcs from the receiver side") {
-    val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = FeeratePerKw(1000 sat), toLocal = 0 msat, toRemote = (5000 * 1000) msat)
+    val spec = CommitmentSpec(htlcs = Set(), commitTxFeerate = FeeratePerKw(1000 sat), toLocal = 0 msat, toRemote = (5000 * 1000) msat)
     val R = randomBytes32()
     val H = Crypto.sha256(R)
 
     val add1 = UpdateAddHtlc(ByteVector32.Zeroes, 1, (2000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec1 = CommitmentSpec.reduce(spec, Nil, add1 :: Nil)
-    assert(spec1 === spec.copy(htlcs = Set(IncomingHtlc(add1)), toRemote = (3000 * 1000 msat)))
+    assert(spec1 === spec.copy(htlcs = Set(IncomingHtlc(add1)), toRemote = 3000 * 1000 msat))
 
     val add2 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (1000 * 1000) msat, H, CltvExpiry(400), TestConstants.emptyOnionPacket)
     val spec2 = CommitmentSpec.reduce(spec1, Nil, add2 :: Nil)
@@ -66,4 +67,12 @@ class CommitmentSpecSpec extends AnyFunSuite {
     val spec4 = CommitmentSpec.reduce(spec3, fail1 :: Nil, Nil)
     assert(spec4 === spec3.copy(htlcs = Set(), toRemote = (3000 * 1000) msat))
   }
+
+  test("compute htlc tx feerate based on commitment format") {
+    val spec = CommitmentSpec(htlcs = Set(), commitTxFeerate = FeeratePerKw(2500 sat), toLocal = (5000 * 1000) msat, toRemote = (2500 * 1000) msat)
+    assert(spec.htlcTxFeerate(Transactions.DefaultCommitmentFormat) === FeeratePerKw(2500 sat))
+    assert(spec.htlcTxFeerate(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === FeeratePerKw(2500 sat))
+    assert(spec.htlcTxFeerate(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === FeeratePerKw(0 sat))
+  }
+
 }

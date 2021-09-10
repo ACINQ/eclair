@@ -39,11 +39,12 @@ trait Channel {
           case Some(str) if str == ChannelTypes.Standard.toString => (true, Some(ChannelTypes.Standard))
           case Some(str) if str == ChannelTypes.StaticRemoteKey.toString => (true, Some(ChannelTypes.StaticRemoteKey))
           case Some(str) if str == ChannelTypes.AnchorOutputs.toString => (true, Some(ChannelTypes.AnchorOutputs))
+          case Some(str) if str == ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString => (true, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))
           case Some(_) => (false, None)
           case None => (true, None)
         }
         if (!channelTypeOk) {
-          reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be ${ChannelTypes.Standard.toString}, ${ChannelTypes.StaticRemoteKey.toString} or ${ChannelTypes.AnchorOutputs.toString}"))
+          reject(MalformedFormFieldRejection("channelType", s"Channel type not supported: must be ${ChannelTypes.Standard.toString}, ${ChannelTypes.StaticRemoteKey.toString}, ${ChannelTypes.AnchorOutputs.toString} or ${ChannelTypes.AnchorOutputsZeroFeeHtlcTx.toString}"))
         } else {
           complete {
             eclairApi.open(nodeId, fundingSatoshis, pushMsat, channelType_opt, fundingFeerateSatByte, channelFlags, openTimeout_opt)

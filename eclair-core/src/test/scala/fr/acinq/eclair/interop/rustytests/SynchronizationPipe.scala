@@ -136,14 +136,14 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         s"  Received htlcs: ${localCommit.spec.htlcs.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Balance us: ${localCommit.spec.toLocal}",
         s"  Balance them: ${localCommit.spec.toRemote}",
-        s"  Fee rate: ${localCommit.spec.feeratePerKw.toLong}",
+        s"  Fee rate: ${localCommit.spec.commitTxFeerate.toLong}",
         "REMOTE COMMITS:",
         s" Commit ${remoteCommit.index}:",
         s"  Offered htlcs: ${remoteCommit.spec.htlcs.collect { case OutgoingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Received htlcs: ${remoteCommit.spec.htlcs.collect { case IncomingHtlc(add) => (add.id, add.amountMsat) }.mkString(" ")}",
         s"  Balance us: ${remoteCommit.spec.toLocal}",
         s"  Balance them: ${remoteCommit.spec.toRemote}",
-        s"  Fee rate: ${remoteCommit.spec.feeratePerKw.toLong}")
+        s"  Fee rate: ${remoteCommit.spec.commitTxFeerate.toLong}")
         .foreach(s => {
           fout.write(rtrim(s))
           fout.newLine()

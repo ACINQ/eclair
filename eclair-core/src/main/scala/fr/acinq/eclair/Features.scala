@@ -193,6 +193,11 @@ object Features {
     val mandatory = 20
   }
 
+  case object AnchorOutputsZeroFeeHtlcTx extends Feature {
+    val rfcName = "option_anchors_zero_fee_htlc_tx"
+    val mandatory = 22
+  }
+
   case object ShutdownAnySegwit extends Feature {
     val rfcName = "option_shutdown_anysegwit"
     val mandatory = 26
@@ -224,6 +229,7 @@ object Features {
     TrampolinePayment,
     StaticRemoteKey,
     AnchorOutputs,
+    AnchorOutputsZeroFeeHtlcTx,
     ShutdownAnySegwit,
     KeySend
   )
@@ -236,6 +242,7 @@ object Features {
     // PaymentSecret -> (VariableLengthOnion :: Nil),
     BasicMultiPartPayment -> (PaymentSecret :: Nil),
     AnchorOutputs -> (StaticRemoteKey :: Nil),
+    AnchorOutputsZeroFeeHtlcTx -> (StaticRemoteKey :: Nil),
     TrampolinePayment -> (PaymentSecret :: Nil),
     KeySend -> (VariableLengthOnion :: Nil)
   )

@@ -18,95 +18,18 @@ package fr.acinq.eclair.channel
 
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.FeatureSupport._
-import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateAddHtlc}
-import fr.acinq.eclair.{Features, MilliSatoshiLong, TestKitBaseClass}
+import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
-class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
+class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
-
-  test("channel features determines commitment format") {
-    val standardChannel = ChannelFeatures()
-    val staticRemoteKeyChannel = ChannelFeatures(Features.StaticRemoteKey)
-    val anchorOutputsChannel = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
-    assert(!standardChannel.hasFeature(Features.StaticRemoteKey))
-    assert(!standardChannel.hasFeature(Features.AnchorOutputs))
-    assert(standardChannel.commitmentFormat === Transactions.DefaultCommitmentFormat)
-    assert(!standardChannel.paysDirectlyToWallet)
-
-    assert(staticRemoteKeyChannel.hasFeature(Features.StaticRemoteKey))
-    assert(!staticRemoteKeyChannel.hasFeature(Features.AnchorOutputs))
-    assert(staticRemoteKeyChannel.commitmentFormat === Transactions.DefaultCommitmentFormat)
-    assert(staticRemoteKeyChannel.paysDirectlyToWallet)
-
-    assert(anchorOutputsChannel.hasFeature(Features.StaticRemoteKey))
-    assert(anchorOutputsChannel.hasFeature(Features.AnchorOutputs))
-    assert(anchorOutputsChannel.commitmentFormat === Transactions.AnchorOutputsCommitmentFormat)
-    assert(!anchorOutputsChannel.paysDirectlyToWallet)
-  }
-
-  test("pick channel type based on local and remote features") {
-    case class TestCase(localFeatures: Features, remoteFeatures: Features, expectedChannelType: ChannelType)
-    val testCases = Seq(
-      TestCase(Features.empty, Features.empty, ChannelTypes.Standard),
-      TestCase(Features(StaticRemoteKey -> Optional), Features.empty, ChannelTypes.Standard),
-      TestCase(Features.empty, Features(StaticRemoteKey -> Optional), ChannelTypes.Standard),
-      TestCase(Features.empty, Features(StaticRemoteKey -> Mandatory), ChannelTypes.Standard),
-      TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Mandatory), Features(Wumbo -> Mandatory), ChannelTypes.Standard),
-      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Optional), ChannelTypes.StaticRemoteKey),
-      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Mandatory), ChannelTypes.StaticRemoteKey),
-      TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Optional), Features(StaticRemoteKey -> Mandatory, Wumbo -> Mandatory), ChannelTypes.StaticRemoteKey),
-      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelTypes.StaticRemoteKey),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelTypes.AnchorOutputs)
-    )
-
-    for (testCase <- testCases) {
-      assert(ChannelTypes.pickChannelType(testCase.localFeatures, testCase.remoteFeatures) === testCase.expectedChannelType)
-    }
-  }
-
-  test("create channel type from features") {
-    val validChannelTypes = Seq(
-      Features.empty -> ChannelTypes.Standard,
-      Features(StaticRemoteKey -> Mandatory) -> ChannelTypes.StaticRemoteKey,
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory) -> ChannelTypes.AnchorOutputs,
-    )
-    for ((features, expected) <- validChannelTypes) {
-      assert(ChannelTypes.fromFeatures(features) === expected)
-    }
-
-    val invalidChannelTypes = Seq(
-      Features(Wumbo -> Optional),
-      Features(StaticRemoteKey -> Optional),
-      Features(StaticRemoteKey -> Mandatory, Wumbo -> Optional),
-      Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional),
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional),
-      Features(StaticRemoteKey -> Optional, AnchorOutputs -> Mandatory),
-      Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Mandatory, Wumbo -> Optional),
-    )
-    for (features <- invalidChannelTypes) {
-      assert(ChannelTypes.fromFeatures(features) === ChannelTypes.UnsupportedChannelType(features))
-    }
-  }
-
-  test("enrich channel type with other permanent channel features") {
-    assert(ChannelFeatures(ChannelTypes.Standard, Features(Wumbo -> Optional), Features.empty).activated.isEmpty)
-    assert(ChannelFeatures(ChannelTypes.Standard, Features(Wumbo -> Optional), Features(Wumbo -> Optional)).activated === Set(Wumbo))
-    assert(ChannelFeatures(ChannelTypes.Standard, Features(Wumbo -> Mandatory), Features(Wumbo -> Optional)).activated === Set(Wumbo))
-    assert(ChannelFeatures(ChannelTypes.StaticRemoteKey, Features(Wumbo -> Optional), Features.empty).activated === Set(StaticRemoteKey))
-    assert(ChannelFeatures(ChannelTypes.StaticRemoteKey, Features(Wumbo -> Optional), Features(Wumbo -> Optional)).activated === Set(StaticRemoteKey, Wumbo))
-    assert(ChannelFeatures(ChannelTypes.AnchorOutputs, Features.empty, Features(Wumbo -> Optional)).activated === Set(StaticRemoteKey, AnchorOutputs))
-    assert(ChannelFeatures(ChannelTypes.AnchorOutputs, Features(Wumbo -> Optional), Features(Wumbo -> Mandatory)).activated === Set(StaticRemoteKey, AnchorOutputs, Wumbo))
-  }
 
   case class HtlcWithPreimage(preimage: ByteVector32, htlc: UpdateAddHtlc)
 
