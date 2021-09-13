@@ -573,7 +573,7 @@ object Commitments {
     }
   }
 
-  def sendFee(commitments: Commitments, cmd: CMD_UPDATE_FEE): Either[ChannelException, (Commitments, UpdateFee)] = {
+  def sendFee(commitments: Commitments, cmd: CMD_UPDATE_FEE, feeConf: OnChainFeeConf): Either[ChannelException, (Commitments, UpdateFee)] = {
     if (!commitments.localParams.isFunder) {
       Left(FundeeCannotSendUpdateFee(commitments.channelId))
     } else {
@@ -588,10 +588,22 @@ object Commitments {
       val fees = commitTxTotalCost(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
       val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
       if (missing < 0.sat) {
-        Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
-      } else {
-        Right(commitments1, fee)
+        return Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
       }
+
+      // if we would overflow our dust exposure with the new feerate, we avoid sending this fee update
+      if (feeConf.feerateToleranceFor(commitments.remoteNodeId).closeOnUpdateFeeDustExposureOverflow) {
+        val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).maxDustHtlcExposure
+        val dustExposureAfterFeeUpdate = Seq(
+          CommitmentSpec.dustExposure(commitments1.localCommit.spec, cmd.feeratePerKw, commitments1.localParams.dustLimit, commitments1.commitmentFormat),
+          CommitmentSpec.dustExposure(reduced, cmd.feeratePerKw, commitments1.remoteParams.dustLimit, commitments1.commitmentFormat)
+        ).max
+        if (dustExposureAfterFeeUpdate > maxDustExposure) {
+          return Left(DustHtlcExposureTooHighInFlight(commitments.channelId, maxDustExposure, dustExposureAfterFeeUpdate))
+        }
+      }
+
+      Right(commitments1, fee)
     }
   }
 
@@ -621,10 +633,22 @@ object Commitments {
         val fees = commitTxTotalCost(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
         val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
         if (missing < 0.sat) {
-          Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
-        } else {
-          Right(commitments1)
+          return Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
         }
+
+        // if we would overflow our dust exposure with the new feerate, we reject this fee update
+        if (feeConf.feerateToleranceFor(commitments.remoteNodeId).closeOnUpdateFeeDustExposureOverflow) {
+          val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).maxDustHtlcExposure
+          val dustExposureAfterFeeUpdate = Seq(
+            CommitmentSpec.dustExposure(commitments1.localCommit.spec, fee.feeratePerKw, commitments1.localParams.dustLimit, commitments1.commitmentFormat),
+            CommitmentSpec.dustExposure(reduced, fee.feeratePerKw, commitments1.remoteParams.dustLimit, commitments1.commitmentFormat),
+          ).max
+          if (dustExposureAfterFeeUpdate > maxDustExposure) {
+            return Left(DustHtlcExposureTooHighInFlight(commitments.channelId, maxDustExposure, dustExposureAfterFeeUpdate))
+          }
+        }
+
+        Right(commitments1)
       }
     }
   }

@@ -771,7 +771,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       }
 
     case Event(c: CMD_UPDATE_FEE, d: DATA_NORMAL) =>
-      Commitments.sendFee(d.commitments, c) match {
+      Commitments.sendFee(d.commitments, c, nodeParams.onChainFeeConf) match {
         case Right((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN()
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
@@ -1138,7 +1138,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       }
 
     case Event(c: CMD_UPDATE_FEE, d: DATA_SHUTDOWN) =>
-      Commitments.sendFee(d.commitments, c) match {
+      Commitments.sendFee(d.commitments, c, nodeParams.onChainFeeConf) match {
         case Right((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN()
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fee

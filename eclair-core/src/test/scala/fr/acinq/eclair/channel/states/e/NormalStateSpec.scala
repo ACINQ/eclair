@@ -1765,6 +1765,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     testCmdUpdateFee _
   }
 
+  test("recv CMD_UPDATE_FEE (over max dust htlc exposure)") { f =>
+    import f._
+
+    // Alice sends HTLCs to Bob that are not included in the dust exposure at the current feerate:
+    addHtlc(14000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
+    addHtlc(15000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.currentDustExposure() === (0 msat, 0 msat))
+
+    // A large feerate increase would make these HTLCs overflow alice's dust exposure, so she rejects it:
+    val sender = TestProbe()
+    val cmd = CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
+    alice ! cmd
+    sender.expectMsg(RES_FAILURE(cmd, DustHtlcExposureTooHighInFlight(channelId(alice), 25000 sat, 29000000 msat)))
+  }
+
   test("recv CMD_UPDATE_FEE (two in a row)") { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -1919,6 +1935,27 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid)
     bob2blockchain.expectMsgType[PublishTx]
     bob2blockchain.expectMsgType[WatchTxConfirmed]
+  }
+
+  test("recv UpdateFee (over max dust htlc exposure)") { f =>
+    import f._
+
+    // Alice sends HTLCs to Bob that are not included in the dust exposure at the current feerate:
+    addHtlc(14000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
+    addHtlc(14500.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
+    addHtlc(15000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
+    addHtlc(15500.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.currentDustExposure() === (0 msat, 0 msat))
+    val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+
+    // A large feerate increase would make these HTLCs overflow bob's dust exposure, so he force-closes:
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(25000 sat)))
+    bob ! UpdateFee(channelId(bob), FeeratePerKw(25000 sat))
+    val error = bob2alice.expectMsgType[Error]
+    assert(new String(error.data.toArray) === DustHtlcExposureTooHighInFlight(channelId(bob), 50000 sat, 59000000 msat).getMessage)
+    assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid)
+    awaitCond(bob.stateName == CLOSING)
   }
 
   test("recv CMD_UPDATE_RELAY_FEE ") { f =>

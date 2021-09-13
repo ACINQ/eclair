@@ -41,7 +41,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  val feeConfNoMismatch = OnChainFeeConf(FeeTargets(6, 2, 2, 6), new TestFeeEstimator, closeOnOfflineMismatch = false, 1.0, FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw, 100000 sat), Map.empty)
+  val feeConfNoMismatch = OnChainFeeConf(
+    FeeTargets(6, 2, 2, 6),
+    new TestFeeEstimator(),
+    closeOnOfflineMismatch = false,
+    1.0,
+    FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw, 100000 sat, closeOnUpdateFeeDustExposureOverflow = false),
+    Map.empty
+  )
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -381,7 +388,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(c1.availableBalanceForSend === 0.msat)
 
     // We should be able to handle a fee increase.
-    val Right((c2, _)) = sendFee(c1, CMD_UPDATE_FEE(FeeratePerKw(3000 sat)))
+    val Right((c2, _)) = sendFee(c1, CMD_UPDATE_FEE(FeeratePerKw(3000 sat)), feeConfNoMismatch)
 
     // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
     val (_, cmdAdd1) = makeCmdAdd(100 msat, randomKey().publicKey, f.currentBlockHeight)

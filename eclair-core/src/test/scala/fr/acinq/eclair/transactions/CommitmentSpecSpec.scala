@@ -121,6 +121,7 @@ class CommitmentSpecSpec extends AnyFunSuite {
       val spec = CommitmentSpec(htlcs, feerate, 50000 msat, 75000 msat)
       val expected = 450.sat + 450.sat + 2250.sat + 2150.sat + 4010.sat + 3810.sat
       assert(CommitmentSpec.dustExposure(spec, dustLimit, Transactions.DefaultCommitmentFormat) === expected.toMilliSatoshi)
+      assert(CommitmentSpec.dustExposure(spec, feerate * 2, dustLimit, Transactions.DefaultCommitmentFormat) === CommitmentSpec.dustExposure(spec, dustLimit, Transactions.DefaultCommitmentFormat))
       assert(CommitmentSpec.contributesToDustExposure(IncomingHtlc(createHtlc(4010.sat.toMilliSatoshi)), spec, dustLimit, Transactions.DefaultCommitmentFormat))
       assert(CommitmentSpec.contributesToDustExposure(OutgoingHtlc(createHtlc(3810.sat.toMilliSatoshi)), spec, dustLimit, Transactions.DefaultCommitmentFormat))
       assert(!CommitmentSpec.contributesToDustExposure(IncomingHtlc(createHtlc(4020.sat.toMilliSatoshi)), spec, dustLimit, Transactions.DefaultCommitmentFormat))
@@ -151,6 +152,7 @@ class CommitmentSpecSpec extends AnyFunSuite {
       val spec = CommitmentSpec(htlcs, feerate, 50000 msat, 75000 msat)
       val expected = 900.sat + 900.sat + 15000.sat + 14000.sat + 18000.sat + 17000.sat
       assert(CommitmentSpec.dustExposure(spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === expected.toMilliSatoshi)
+      assert(CommitmentSpec.dustExposure(spec, feerate * 1.25, dustLimit, Transactions.DefaultCommitmentFormat) === CommitmentSpec.dustExposure(spec, dustLimit, Transactions.DefaultCommitmentFormat))
       assert(CommitmentSpec.contributesToDustExposure(IncomingHtlc(createHtlc(18000.sat.toMilliSatoshi)), spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       assert(CommitmentSpec.contributesToDustExposure(OutgoingHtlc(createHtlc(17000.sat.toMilliSatoshi)), spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       assert(!CommitmentSpec.contributesToDustExposure(IncomingHtlc(createHtlc(19000.sat.toMilliSatoshi)), spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))

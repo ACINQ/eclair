@@ -384,7 +384,8 @@ object NodeParams extends Logging {
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"),
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-high"),
           FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate")))),
-          Satoshi(config.getLong("on-chain-fees.feerate-tolerance.max-dust-htlc-exposure-satoshis"))
+          Satoshi(config.getLong("on-chain-fees.feerate-tolerance.max-dust-htlc-exposure-satoshis")),
+          config.getBoolean("on-chain-fees.feerate-tolerance.close-on-update-fee-dust-exposure-overflow")
         ),
         perNodeFeerateTolerance = config.getConfigList("on-chain-fees.override-feerate-tolerance").asScala.map { e =>
           val nodeId = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
@@ -392,7 +393,8 @@ object NodeParams extends Logging {
             e.getDouble("feerate-tolerance.ratio-low"),
             e.getDouble("feerate-tolerance.ratio-high"),
             FeeratePerKw(FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate")))),
-            Satoshi(e.getLong("feerate-tolerance.max-dust-htlc-exposure-satoshis"))
+            Satoshi(e.getLong("feerate-tolerance.max-dust-htlc-exposure-satoshis")),
+            e.getBoolean("feerate-tolerance.close-on-update-fee-dust-exposure-overflow")
           )
           nodeId -> tolerance
         }.toMap
