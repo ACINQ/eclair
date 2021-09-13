@@ -16,12 +16,11 @@
 
 package fr.acinq.eclair.api.serde
 
-import java.util.UUID
-
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.eclair.api.directives.RouteFormat
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.io.NodeURI
@@ -29,6 +28,7 @@ import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import scodec.bits.ByteVector
 
+import java.util.UUID
 import scala.concurrent.duration._
 import scala.util.Try
 
@@ -63,6 +63,8 @@ object FormParamExtractors {
   implicit val feeratePerByteUnmarshaller: Unmarshaller[String, FeeratePerByte] = Unmarshaller.strict { str => FeeratePerByte(Satoshi(str.toLong)) }
 
   implicit val base64DataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidBase64(str) }
+
+  implicit val routeFormatUnmarshaller: Unmarshaller[String, RouteFormat] = Unmarshaller.strict { str => RouteFormat.fromString(str) }
 
   private def listUnmarshaller[T](unmarshal: String => T): Unmarshaller[String, List[T]] = Unmarshaller.strict { str =>
     Try(serialization.read[List[String]](str).map(unmarshal))

@@ -19,21 +19,25 @@ package fr.acinq.eclair.api.handlers
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.api.Service
-import fr.acinq.eclair.api.directives.EclairDirectives
+import fr.acinq.eclair.api.directives.{EclairDirectives, RouteFormat}
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.payment.PaymentRequest
+
+import scala.concurrent.ExecutionContext
 
 trait PathFinding {
   this: Service with EclairDirectives =>
 
   import fr.acinq.eclair.api.serde.JsonSupport.{formats, marshaller, serialization}
 
+  private implicit def ec: ExecutionContext = actorSystem.dispatcher
+
   val findRoute: Route = postRequest("findroute") { implicit t =>
-    formFields(invoiceFormParam, amountMsatFormParam.?, "pathFindingExperimentName".?) {
-      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, pathFindingExperimentName_opt) =>
-        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, invoice.routingInfo))
-      case (invoice, Some(overrideAmount), pathFindingExperimentName_opt) =>
-        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, pathFindingExperimentName_opt, invoice.routingInfo))
+    formFields(invoiceFormParam, amountMsatFormParam.?, "pathFindingExperimentName".?, routeFormat.?) {
+      case (invoice@PaymentRequest(_, Some(amount), _, nodeId, _, _), None, pathFindingExperimentName_opt, routeFormat) =>
+        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, invoice.routingInfo).map(r => RouteFormat.format(r, routeFormat)))
+      case (invoice, Some(overrideAmount), pathFindingExperimentName_opt, routeFormat) =>
+        complete(eclairApi.findRoute(invoice.nodeId, overrideAmount, pathFindingExperimentName_opt, invoice.routingInfo).map(r => RouteFormat.format(r, routeFormat)))
       case _ => reject(MalformedFormFieldRejection(
         "invoice", "The invoice must have an amount or you need to specify one using 'amountMsat'"
       ))
@@ -41,14 +45,14 @@ trait PathFinding {
   }
 
   val findRouteToNode: Route = postRequest("findroutetonode") { implicit t =>
-    formFields(nodeIdFormParam, amountMsatFormParam, "pathFindingExperimentName".?) { (nodeId, amount, pathFindingExperimentName_opt) =>
-      complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt))
+    formFields(nodeIdFormParam, amountMsatFormParam, "pathFindingExperimentName".?, routeFormat.?) { (nodeId, amount, pathFindingExperimentName_opt, routeFormat) =>
+      complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt).map(r => RouteFormat.format(r, routeFormat)))
     }
   }
 
   val findRouteBetweenNodes: Route = postRequest("findroutebetweennodes") { implicit t =>
-    formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam, "pathFindingExperimentName".?) { (sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt) =>
-      complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt))
+    formFields("sourceNodeId".as[PublicKey], "targetNodeId".as[PublicKey], amountMsatFormParam, "pathFindingExperimentName".?, routeFormat.?) { (sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt, routeFormat) =>
+      complete(eclairApi.findRouteBetween(sourceNodeId, targetNodeId, amount, pathFindingExperimentName_opt).map(r => RouteFormat.format(r, routeFormat)))
     }
   }
 
