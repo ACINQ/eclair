@@ -24,6 +24,17 @@ You must remove that line from your `bitcoin.conf` and replace it with:
 zmqpubhashblock=tcp://127.0.0.1:29000
 ```
 
+### Per node relay fees
+
+Relay fees are now set per node instead of per channel:
+
+- If you set the relay fees for a node with the `updaterelayfee` API, all new channels with this node will use these fees.
+- Otherwise the default relay fees set in `eclair.conf` will be used: this means that changing `eclair.conf` will update the fees for all channels where the fee was not manually set.
+
+Note that you can use the `updaterelayfee` API *before* opening a channel to ensure that the channel doesn't use the default relay fees from `eclair.conf`.
+
+:warning: When updating eclair, the relay fees for your existing channels will be reset to the value from your `eclair.conf`. You should use the `updaterelayfee` API to reconfigure relay fees if you don't want to use the default fees for every node you're connected to.
+
 ### Beta support for anchor outputs
 
 Anchor outputs is still disabled by default, but users willing to try it can activate it by adding the following line to `eclair.conf`:
@@ -45,8 +56,10 @@ Do note that anchor outputs may still be unsafe in high-fee environments until t
 ### Path-finding improvements
 
 This release contains many improvements to path-finding and paves the way for future experimentation.
-It adds support for A/B testing and various refinements of the previous heuristics.
 
+A noteworthy addition is a new heuristic that can be used to penalize long paths by setting a virtual cost per additional hop in the route (#1815). This can be freely configured by node operators by setting fields in the `eclair.router.path-finding.default.hop-cost` section.
+
+We also added support for A/B testing to experiment with various configurations of the available heuristics.
 A/B testing can be activated directly from `eclair.conf`, by configuring some `experiments`, for example:
 
 ```conf
