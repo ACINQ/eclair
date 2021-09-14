@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
-import fr.acinq.bitcoin.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scala.{Block, BlockHeader, OutPoint, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.GetMerkleResponse
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData

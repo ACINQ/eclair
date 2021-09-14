@@ -20,8 +20,8 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Block
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.FeatureSupport.Mandatory
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.crypto.LocalKeyManager

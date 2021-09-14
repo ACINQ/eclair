@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey, ripemd160}
+import fr.acinq.bitcoin.scala._
 import fr.acinq.eclair.transactions.Scripts._
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector

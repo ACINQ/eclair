@@ -19,7 +19,7 @@ package fr.acinq.eclair.io
 import java.net.{InetAddress, ServerSocket}
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.io.Peer.ChannelId
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData

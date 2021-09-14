@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.electrum.db
 
-import fr.acinq.bitcoin.{BlockHeader, ByteVector32}
+import fr.acinq.bitcoin.scala.{BlockHeader, ByteVector32}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 
 trait HeaderDb {

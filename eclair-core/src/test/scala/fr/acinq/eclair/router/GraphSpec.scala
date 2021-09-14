@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.ByteVector32
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Graph.RoutingHeuristics
 import fr.acinq.eclair.router.RouteCalculationSpec._

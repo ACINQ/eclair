@@ -18,7 +18,7 @@ package fr.acinq.eclair.crypto
 
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.{ByteVector32, Protocol}
+import fr.acinq.bitcoin.scala.{ByteVector32, Protocol}
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.{DecryptionError, EncryptionError, InvalidCounter}
 import grizzled.slf4j.Logger
 import grizzled.slf4j.Logging

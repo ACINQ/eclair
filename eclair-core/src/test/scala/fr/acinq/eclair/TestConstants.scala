@@ -20,8 +20,8 @@ import java.sql.{Connection, DriverManager, Statement}
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Script}
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.NodeParams.BITCOIND

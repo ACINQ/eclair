@@ -18,9 +18,9 @@ package fr.acinq.eclair.payment
 
 import java.util.UUID
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.DeterministicWallet.ExtendedPrivateKey
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, Crypto, DeterministicWallet}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel.{Channel, ChannelVersion, Commitments, Upstream}

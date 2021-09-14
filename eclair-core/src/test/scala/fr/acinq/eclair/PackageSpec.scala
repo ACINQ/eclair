@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, Satoshi, Script}
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.{Base58, Base58Check, Bech32, Block, ByteVector32, Crypto, Satoshi, Script}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 

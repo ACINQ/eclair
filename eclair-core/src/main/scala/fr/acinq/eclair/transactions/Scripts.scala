@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_1, OP_1NEGATE, OP_2, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Script._
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_1, OP_1NEGATE, OP_2, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount}
 import scodec.bits.ByteVector
 

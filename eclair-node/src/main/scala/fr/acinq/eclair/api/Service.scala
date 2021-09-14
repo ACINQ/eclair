@@ -20,8 +20,8 @@ import java.util.UUID
 
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.FormParamExtractors._
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentRequest

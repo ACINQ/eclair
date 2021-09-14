@@ -23,8 +23,8 @@ import akka.actor.FSM
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.{Btc, Crypto, Script}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{Btc, Crypto, Script}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{Wumbo, StaticRemoteKey}
 import fr.acinq.eclair.TestConstants._

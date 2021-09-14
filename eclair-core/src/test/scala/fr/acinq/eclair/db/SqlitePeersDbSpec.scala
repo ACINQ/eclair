@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.wire.{NodeAddress, Tor2, Tor3}
 import fr.acinq.eclair.{TestConstants, randomKey}
 import org.scalatest.funsuite.AnyFunSuite

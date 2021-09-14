@@ -19,7 +19,7 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 
 class ClientSpawner(nodeParams: NodeParams, switchboard: ActorRef, router: ActorRef) extends Actor with ActorLogging {

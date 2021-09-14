@@ -22,7 +22,7 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scala.ByteVector32
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw

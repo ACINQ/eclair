@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.electrum
 import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
-import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scala.{BlockHeader, ByteVector32, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.computeScriptHash
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_PARENT_TX_CONFIRMED}

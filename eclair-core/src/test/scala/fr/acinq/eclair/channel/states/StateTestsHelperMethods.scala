@@ -21,8 +21,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}

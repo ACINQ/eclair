@@ -18,8 +18,8 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.Connection
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.PublicChannel

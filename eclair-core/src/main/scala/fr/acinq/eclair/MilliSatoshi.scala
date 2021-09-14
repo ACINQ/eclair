@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, Satoshi, btc2satoshi, millibtc2satoshi}
+import fr.acinq.bitcoin.scala.{Btc, BtcAmount, MilliBtc, Satoshi, btc2satoshi, millibtc2satoshi}
 
 /**
  * Created by t-bast on 22/08/2019.

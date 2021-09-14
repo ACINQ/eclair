@@ -18,7 +18,7 @@ package fr.acinq.eclair.db
 
 import java.io.Closeable
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.wire.NodeAddress
 
 trait PeersDb extends Closeable {

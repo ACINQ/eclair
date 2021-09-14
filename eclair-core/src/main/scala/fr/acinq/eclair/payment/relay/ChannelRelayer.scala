@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment.relay
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, Status}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scala.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.IncomingPacket

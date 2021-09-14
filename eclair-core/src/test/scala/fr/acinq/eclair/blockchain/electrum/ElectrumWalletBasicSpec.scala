@@ -18,9 +18,9 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
+import fr.acinq.bitcoin.scala._
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import grizzled.slf4j.Logging

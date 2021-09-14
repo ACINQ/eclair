@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{ActorRef, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, Crypto}
+import fr.acinq.bitcoin.scala.{Block, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelFlags, ChannelUnavailable, Upstream}
 import fr.acinq.eclair.crypto.Sphinx

@@ -18,7 +18,7 @@ package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, Statement}
 
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scala.ByteVector32
 import fr.acinq.eclair.CltvExpiry
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb

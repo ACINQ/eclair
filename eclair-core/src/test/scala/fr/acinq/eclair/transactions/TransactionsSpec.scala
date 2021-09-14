@@ -18,9 +18,9 @@ package fr.acinq.eclair.transactions
 
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
-import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, ripemd160, sha256}
+import fr.acinq.bitcoin.scala.Script.{pay2wpkh, pay2wsh, write}
+import fr.acinq.bitcoin.scala.{Btc, ByteVector32, Crypto, MilliBtc, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc}
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}

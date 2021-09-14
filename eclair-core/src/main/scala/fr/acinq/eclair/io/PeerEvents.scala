@@ -17,8 +17,8 @@
 package fr.acinq.eclair.io
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.ByteVector32
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.wire.PayToOpenRequest
 
 import scala.concurrent.Promise

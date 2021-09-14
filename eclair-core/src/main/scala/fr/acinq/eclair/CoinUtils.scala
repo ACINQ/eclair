@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import java.text.{DecimalFormat, NumberFormat}
 
-import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, Satoshi}
+import fr.acinq.bitcoin.scala.{Btc, BtcAmount, MilliBtc, Satoshi}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}

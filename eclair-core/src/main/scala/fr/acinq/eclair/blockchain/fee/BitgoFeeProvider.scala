@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.fee
 
 import com.softwaremill.sttp._
 import com.softwaremill.sttp.json4s._
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32}
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.{JInt, JValue}
 import org.json4s.jackson.Serialization

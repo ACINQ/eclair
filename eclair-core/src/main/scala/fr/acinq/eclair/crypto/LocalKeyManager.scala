@@ -17,9 +17,9 @@
 package fr.acinq.eclair.crypto
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.DeterministicWallet.{derivePrivateKey, _}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo

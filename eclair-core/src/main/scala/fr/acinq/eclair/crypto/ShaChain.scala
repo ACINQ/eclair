@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scala._
 import fr.acinq.eclair.wire.CommonCodecs
 import scodec.Codec
 

@@ -20,8 +20,8 @@ import java.util.UUID
 
 import akka.testkit.TestProbe
 import akka.util.Timeout
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}

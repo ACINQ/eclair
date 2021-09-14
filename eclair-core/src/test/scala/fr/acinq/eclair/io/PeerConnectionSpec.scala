@@ -20,8 +20,8 @@ import java.net.{Inet4Address, InetSocketAddress}
 
 import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.Block
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{ChannelRangeQueries, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._

@@ -22,9 +22,9 @@ import akka.Done
 import akka.actor.{ActorRef, Props}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.scala.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._

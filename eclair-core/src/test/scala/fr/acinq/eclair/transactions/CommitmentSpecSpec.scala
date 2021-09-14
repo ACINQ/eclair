@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.scala.{ByteVector32, Crypto}
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, LongToBtcAmount, TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite

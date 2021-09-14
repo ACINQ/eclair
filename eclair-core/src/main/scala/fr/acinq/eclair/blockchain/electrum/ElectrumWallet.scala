@@ -17,9 +17,9 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import akka.actor.{ActorRef, FSM, PoisonPill, Props}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
-import fr.acinq.bitcoin.{Base58, Base58Check, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
+import fr.acinq.bitcoin.scala.{Base58, Base58Check, Block, ByteVector32, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._

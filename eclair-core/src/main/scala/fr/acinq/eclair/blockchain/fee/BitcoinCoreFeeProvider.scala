@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scala._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST._

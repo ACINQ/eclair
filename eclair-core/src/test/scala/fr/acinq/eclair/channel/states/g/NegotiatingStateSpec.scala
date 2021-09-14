@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.actor.Status.Failure
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw

@@ -23,8 +23,8 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, PoisonPill, Props, ReceiveTimeout, SupervisorStrategy}
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.{Block, ByteVector32}
 import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{SSL, computeScriptHash}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress

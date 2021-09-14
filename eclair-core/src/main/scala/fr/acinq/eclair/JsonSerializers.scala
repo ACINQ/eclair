@@ -2,8 +2,8 @@ package fr.acinq.eclair
 
 import akka.actor.ActorRef
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, DeterministicWallet, OutPoint, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.Features.OptionDataLossProtect
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain

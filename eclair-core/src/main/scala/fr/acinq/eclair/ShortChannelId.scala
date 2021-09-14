@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 
 /**
   * A short channel id uniquely identifies a channel by the coordinates of its funding tx output in the blockchain.

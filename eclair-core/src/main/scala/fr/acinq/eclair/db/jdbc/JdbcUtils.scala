@@ -19,7 +19,7 @@ package fr.acinq.eclair.db.jdbc
 import java.sql.{Connection, ResultSet, Statement}
 import java.util.UUID
 
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scala.ByteVector32
 import fr.acinq.eclair.MilliSatoshi
 import javax.sql.DataSource
 import scodec.Codec

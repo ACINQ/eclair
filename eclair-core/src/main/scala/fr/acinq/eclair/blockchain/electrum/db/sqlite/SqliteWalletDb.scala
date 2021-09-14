@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum.db.sqlite
 
 import java.sql.Connection
 
-import fr.acinq.bitcoin.{BlockHeader, ByteVector32, Transaction}
+import fr.acinq.bitcoin.scala.{BlockHeader, ByteVector32, Transaction}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetMerkleResponse, TransactionHistoryItem}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.PersistentData
 import fr.acinq.eclair.blockchain.electrum.db.WalletDb

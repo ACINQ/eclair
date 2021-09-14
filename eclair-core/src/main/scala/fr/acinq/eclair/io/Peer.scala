@@ -23,8 +23,8 @@ import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, Satoshi, Script}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, DeterministicWallet, Satoshi, Script}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.{StaticRemoteKey, Wumbo, canUseFeature}
 import fr.acinq.eclair.Logs.LogCategory

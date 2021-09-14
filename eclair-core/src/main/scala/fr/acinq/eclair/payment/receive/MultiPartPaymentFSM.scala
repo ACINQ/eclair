@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment.receive
 
 import akka.actor.{ActorRef, Props}
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scala.ByteVector32
 import fr.acinq.eclair.channel.ChannelCommandResponse
 import fr.acinq.eclair.payment.MissedPayToOpenPayment
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}

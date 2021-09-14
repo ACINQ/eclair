@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.Props
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scala.{ByteVector32, OutPoint, SIGHASH_ALL, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService

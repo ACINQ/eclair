@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import scodec.bits.ByteVector
 
 import scala.util.{Failure, Success, Try}

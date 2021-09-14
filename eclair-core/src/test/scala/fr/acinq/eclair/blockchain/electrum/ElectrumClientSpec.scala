@@ -20,7 +20,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
+import fr.acinq.bitcoin.scala.{ByteVector32, Crypto, Transaction}
 import fr.acinq.eclair.TestKitBaseClass
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuiteLike

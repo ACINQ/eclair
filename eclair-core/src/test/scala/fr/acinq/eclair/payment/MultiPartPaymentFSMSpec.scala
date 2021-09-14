@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorRef
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32}
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM._
 import fr.acinq.eclair.wire.{IncorrectOrUnknownPaymentDetails, PayToOpenRequest, UpdateAddHtlc}

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scala._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}

@@ -18,7 +18,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.Status.Failure
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants.Alice

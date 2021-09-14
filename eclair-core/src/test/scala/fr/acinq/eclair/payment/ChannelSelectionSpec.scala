@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{Block, ByteVector32}
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, CMD_FAIL_HTLC, Upstream}
 import fr.acinq.eclair.payment.PaymentPacketSpec.makeCommitments
 import fr.acinq.eclair.payment.relay.ChannelRelayer.{RelayFailure, RelaySuccess, relayOrFail, selectPreferredChannel}

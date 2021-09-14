@@ -19,7 +19,7 @@ package fr.acinq.eclair.api
 import java.net.InetAddress
 import java.util.UUID
 
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
+import fr.acinq.bitcoin.scala.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.api.JsonSupport.CustomTypeHints
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
@@ -43,7 +43,7 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     val error = intercept[org.json4s.MappingException] {
       JsonSupport.serialization.write(map)(org.json4s.DefaultFormats)
     }
-    assert(error.msg.contains("Do not know how to serialize key of type class fr.acinq.bitcoin.OutPoint."))
+    assert(error.msg.contains("Do not know how to serialize key of type class fr.acinq.bitcoin.scala.OutPoint."))
 
     // but it works with our custom key serializer
     val json = JsonSupport.serialization.write(map)(org.json4s.DefaultFormats + new ByteVectorSerializer + new OutPointKeySerializer)

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.scala.Satoshi
 import fr.acinq.eclair.wire.CommonCodecs._
 import fr.acinq.eclair.wire.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.{Features, KamonExt, wire}

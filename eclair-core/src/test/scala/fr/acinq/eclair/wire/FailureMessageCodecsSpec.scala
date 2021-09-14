@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.FailureMessageCodecs._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, LongToBtcAmount, MilliSatoshi, ShortChannelId, UInt64, randomBytes32, randomBytes64}

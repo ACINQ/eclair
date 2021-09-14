@@ -19,8 +19,8 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.{Connection, Statement}
 import java.util.UUID
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.{ByteVector32, Satoshi}
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db._

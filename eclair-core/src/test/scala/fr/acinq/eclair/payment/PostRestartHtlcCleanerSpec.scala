@@ -21,7 +21,7 @@ import java.util.UUID
 import akka.Done
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.blockchain.WatchEventConfirmed
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods

@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.TestConstants.{TestDatabases, TestSqliteDatabases}

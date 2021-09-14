@@ -18,8 +18,8 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, InetAddress}
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs._

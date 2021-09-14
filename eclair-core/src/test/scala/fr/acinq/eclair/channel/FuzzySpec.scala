@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.ByteVector32
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._

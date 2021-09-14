@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scala.{Block, Btc, ByteVector32, Satoshi}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.TestConstants.{Alice, Bob}

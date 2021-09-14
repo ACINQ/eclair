@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, Error, ExtendedBitcoinClient, JsonRPCError}

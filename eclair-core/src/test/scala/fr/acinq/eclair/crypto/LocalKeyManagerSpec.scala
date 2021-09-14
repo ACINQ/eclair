@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.KeyPath
-import fr.acinq.bitcoin.{Block, ByteVector32, DeterministicWallet}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, DeterministicWallet}
 import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.channel.ChannelVersion
 import org.scalatest.funsuite.AnyFunSuite

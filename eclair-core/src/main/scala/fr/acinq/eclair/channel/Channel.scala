@@ -19,8 +19,8 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorCell, ActorRef, FSM, OneForOneStrategy, Props, Stash, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.{ByteVector32, OutPoint, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Features.StaticRemoteKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._

@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.scala.Block
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.UInt64.Conversions._

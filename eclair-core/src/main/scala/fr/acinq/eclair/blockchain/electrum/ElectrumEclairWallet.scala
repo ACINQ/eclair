@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.pattern.ask
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.scala.{ByteVector32, Crypto, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.addressToPublicKeyScript
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.BroadcastTransaction
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._

@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.c
 
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.scala.{ByteVector32, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._

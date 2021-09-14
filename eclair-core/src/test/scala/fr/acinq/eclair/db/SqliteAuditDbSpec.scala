@@ -18,8 +18,8 @@ package fr.acinq.eclair.db
 
 import java.util.UUID
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, Transaction}
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.{ByteVector32, Transaction}
 import fr.acinq.eclair.TestConstants.{TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{ChannelErrorOccurred, LocalError, NetworkFeePaid, RemoteError}

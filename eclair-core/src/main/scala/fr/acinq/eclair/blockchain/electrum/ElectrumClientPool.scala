@@ -21,7 +21,7 @@ import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorRef, FSM, OneForOneStrategy, Props, SupervisorStrategy, Terminated}
-import fr.acinq.bitcoin.BlockHeader
+import fr.acinq.bitcoin.scala.BlockHeader
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress

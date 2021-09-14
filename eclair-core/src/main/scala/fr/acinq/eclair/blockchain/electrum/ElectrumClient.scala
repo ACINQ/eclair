@@ -20,7 +20,7 @@ import java.net.{InetSocketAddress, SocketAddress}
 import java.util
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scala._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.tor.Socks5ProxyParams

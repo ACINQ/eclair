@@ -18,8 +18,8 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Script.{pay2wsh, write}
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult, WatchSpentBasic}
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, LocalChannelDown, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler

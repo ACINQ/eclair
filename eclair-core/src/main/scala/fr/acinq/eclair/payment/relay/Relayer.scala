@@ -22,8 +22,8 @@ import akka.Done
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, Status}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.ByteVector32
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingRelayDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}

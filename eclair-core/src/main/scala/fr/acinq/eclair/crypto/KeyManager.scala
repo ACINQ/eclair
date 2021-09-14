@@ -19,9 +19,9 @@ package fr.acinq.eclair.crypto
 import java.io.ByteArrayInputStream
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.DeterministicWallet.ExtendedPublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, Crypto, DeterministicWallet, Protocol}
 import fr.acinq.eclair.{Features, ShortChannelId}
 import fr.acinq.eclair.channel.{ChannelVersion, LocalParams}
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo

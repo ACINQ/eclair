@@ -20,8 +20,8 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import java.nio.charset.StandardCharsets
 
 import com.google.common.base.Charsets
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.payment.OutgoingPacket
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64, _}

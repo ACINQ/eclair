@@ -18,8 +18,8 @@ package fr.acinq.eclair.channel
 
 import java.util.UUID
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{DeterministicWallet, Satoshi, Transaction}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{DeterministicWallet, Satoshi, Transaction}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Commitments._

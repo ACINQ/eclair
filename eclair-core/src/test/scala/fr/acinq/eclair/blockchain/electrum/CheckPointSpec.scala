@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.scala.Block
 import org.scalatest.funsuite.AnyFunSuite
 
 class CheckPointSpec extends AnyFunSuite {

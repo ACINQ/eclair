@@ -18,8 +18,8 @@ package fr.acinq.eclair.db
 
 import java.util.UUID
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.TestConstants.{TestSqliteDatabases, forAllDbs}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb

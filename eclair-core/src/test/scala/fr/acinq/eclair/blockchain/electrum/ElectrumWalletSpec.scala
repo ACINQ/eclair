@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicLong
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestKit, TestProbe}
 import com.whisk.docker.DockerReadyChecker
-import fr.acinq.bitcoin.{Block, Btc, ByteVector32, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scala.{Block, Btc, ByteVector32, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.{FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
@@ -33,7 +33,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddr
 import fr.acinq.eclair.blockchain.electrum.db.sqlite.SqliteWalletDb
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{LongToBtcAmount, TestKitBaseClass}
-import fr.acinq.{bitcoin, eclair}
+import fr.acinq.eclair
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JDecimal, JString, JValue}
 import org.scalatest.BeforeAndAfterAll
@@ -376,12 +376,12 @@ class ElectrumWalletSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
       txOut = TxOut(Satoshi(0), eclair.addressToPublicKeyScript(address, Block.RegtestGenesisBlock.hash)) :: Nil,
       lockTime = 0)
 
-    val sig = Transaction.signInput(tx2, 0, Scripts.multiSig2of2(priv.publicKey, priv.publicKey), bitcoin.SIGHASH_ALL, tx1.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+    val sig = Transaction.signInput(tx2, 0, Scripts.multiSig2of2(priv.publicKey, priv.publicKey), fr.acinq.bitcoin.scala.SIGHASH_ALL, tx1.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
     val tx3 = tx2.updateWitness(0, ScriptWitness(Seq(ByteVector.empty, sig, sig, Script.write(Scripts.multiSig2of2(priv.publicKey, priv.publicKey)))))
     Transaction.correctlySpends(tx3, Seq(tx1), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val fee = Transactions.weight2fee(tx3.weight(), 253)
     val tx4 = tx3.copy(txOut = tx3.txOut(0).copy(amount = tx1.txOut(0).amount - fee) :: Nil)
-    val sig1 = Transaction.signInput(tx4, 0, Scripts.multiSig2of2(priv.publicKey, priv.publicKey), bitcoin.SIGHASH_ALL, tx1.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+    val sig1 = Transaction.signInput(tx4, 0, Scripts.multiSig2of2(priv.publicKey, priv.publicKey), fr.acinq.bitcoin.scala.SIGHASH_ALL, tx1.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
     val tx5 = tx4.updateWitness(0, ScriptWitness(Seq(ByteVector.empty, sig1, sig1, Script.write(Scripts.multiSig2of2(priv.publicKey, priv.publicKey)))))
 
     probe.send(wallet, BroadcastTransaction(tx5))

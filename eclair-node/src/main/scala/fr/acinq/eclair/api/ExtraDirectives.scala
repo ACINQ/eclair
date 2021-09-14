@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.api
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.ByteVector32
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 import fr.acinq.eclair.payment.PaymentRequest
 import FormParamExtractors._

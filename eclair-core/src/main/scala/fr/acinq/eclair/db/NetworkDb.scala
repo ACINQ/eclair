@@ -18,8 +18,8 @@ package fr.acinq.eclair.db
 
 import java.io.Closeable
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}

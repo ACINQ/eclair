@@ -20,8 +20,8 @@ import java.net.InetSocketAddress
 import java.util.UUID
 
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.channel.{ChannelCommandResponse, ChannelVersion, State}
 import fr.acinq.eclair.crypto.ShaChain

@@ -19,8 +19,8 @@ package fr.acinq.eclair.api
 import java.util.UUID
 
 import akka.util.Timeout
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, Satoshi}
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}

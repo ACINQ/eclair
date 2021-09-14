@@ -1,7 +1,7 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.channel.{ChannelVersion, LocalChanges, LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions._

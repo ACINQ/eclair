@@ -19,8 +19,8 @@ package fr.acinq.eclair.crypto
 import java.math.BigInteger
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Crypto, Protocol}
+import fr.acinq.bitcoin.scala.Crypto.PrivateKey
+import fr.acinq.bitcoin.scala.{Crypto, Protocol}
 import fr.acinq.eclair.randomBytes
 import grizzled.slf4j.Logging
 import org.bouncycastle.crypto.digests.SHA256Digest

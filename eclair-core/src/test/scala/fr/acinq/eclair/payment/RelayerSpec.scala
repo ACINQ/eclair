@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.{ActorRef, Props, Status}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.scala.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.IncomingPacket.FinalPacket

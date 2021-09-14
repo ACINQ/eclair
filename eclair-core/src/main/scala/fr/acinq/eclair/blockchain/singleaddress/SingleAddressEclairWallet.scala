@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.blockchain.singleaddress
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi, Transaction, computeP2WpkhAddress}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{ByteVector32, Crypto, Satoshi, Transaction, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse, OnChainBalance}
 import scodec.bits.ByteVector
 

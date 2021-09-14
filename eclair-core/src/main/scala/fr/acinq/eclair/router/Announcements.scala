@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, serializationResult}
 import scodec.bits.{BitVector, ByteVector}

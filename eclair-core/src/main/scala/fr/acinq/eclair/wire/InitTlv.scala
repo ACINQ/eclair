@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.scala.ByteVector32
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.CommonCodecs._
 import scodec.Codec

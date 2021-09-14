@@ -17,17 +17,15 @@
 package fr.acinq.eclair.transactions
 
 import java.nio.ByteOrder
-
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
-import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin.SigVersion._
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey, ripemd160}
+import fr.acinq.bitcoin.scala.Script._
+import fr.acinq.bitcoin.scala.SigVersion._
+import fr.acinq.bitcoin.scala._
 import fr.acinq.eclair._
 import fr.acinq.eclair.transactions.CommitmentOutput.{InHtlc, OutHtlc, ToLocal, ToRemote}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import scodec.bits.ByteVector
-
 import scala.util.Try
 
 /**

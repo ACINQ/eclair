@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.io.InputStream
 
-import fr.acinq.bitcoin.{Block, ByteVector32, encodeCompact}
+import fr.acinq.bitcoin.scala.{Block, ByteVector32, encodeCompact}
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 import org.json4s.JsonAST.{JArray, JInt, JString}
 import org.json4s.jackson.JsonMethods

@@ -27,7 +27,7 @@ import akka.Done
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.scala.Block
 import fr.acinq.eclair.NodeParams.ELECTRUM
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.SSL
 import fr.acinq.eclair.blockchain.electrum.ElectrumClientPool.ElectrumServerAddress

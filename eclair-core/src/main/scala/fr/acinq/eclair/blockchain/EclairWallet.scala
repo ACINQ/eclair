@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Satoshi, Transaction}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.{Satoshi, Transaction}
 import scodec.bits.ByteVector
 
 import scala.concurrent.Future

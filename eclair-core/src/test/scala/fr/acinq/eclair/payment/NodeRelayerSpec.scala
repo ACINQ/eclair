@@ -20,7 +20,7 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import akka.testkit.{TestActorRef, TestProbe}
-import fr.acinq.bitcoin.{Block, Crypto}
+import fr.acinq.bitcoin.scala.{Block, Crypto}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Register, Upstream}
 import fr.acinq.eclair.crypto.Sphinx

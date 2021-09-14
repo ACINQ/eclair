@@ -18,8 +18,8 @@ package fr.acinq.eclair.wire
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
 import org.apache.commons.codec.binary.Base32

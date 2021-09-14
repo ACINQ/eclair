@@ -22,9 +22,9 @@ import java.sql.DriverManager
 import akka.actor.{ActorRef, Terminated}
 import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
-import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.DeterministicWallet.derivePrivateKey
+import fr.acinq.bitcoin.scala.{Block, BlockHeader, ByteVector32, Crypto, DeterministicWallet, MnemonicCode, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._

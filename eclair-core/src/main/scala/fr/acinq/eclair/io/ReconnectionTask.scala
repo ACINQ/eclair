@@ -21,7 +21,7 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, Props, Status}
 import akka.event.Logging.MDC
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.db.{NetworkDb, PeersDb}
 import fr.acinq.eclair.io.Monitoring.Metrics

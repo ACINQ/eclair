@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import com.google.common.math.Quantiles.percentiles
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.scala.Satoshi
 import fr.acinq.eclair.router.Router.PublicChannel
 import fr.acinq.eclair.wire.ChannelUpdate
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi}

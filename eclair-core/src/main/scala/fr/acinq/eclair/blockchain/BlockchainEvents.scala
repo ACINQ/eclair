@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.{Block, Transaction}
+import fr.acinq.bitcoin.scala.{Block, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 
 /**

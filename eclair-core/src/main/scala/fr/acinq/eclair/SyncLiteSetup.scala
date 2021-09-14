@@ -22,8 +22,8 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props, ReceiveTimeout, SupervisorStrategy}
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.scala.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.scala.{Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratesPerKB, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{UtxoStatus, ValidateRequest, ValidateResult}
 import fr.acinq.eclair.crypto.LocalKeyManager

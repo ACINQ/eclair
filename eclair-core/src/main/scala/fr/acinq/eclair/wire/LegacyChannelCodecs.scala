@@ -19,8 +19,8 @@ package fr.acinq.eclair.wire
 import java.util.UUID
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.scala.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
+import fr.acinq.bitcoin.scala.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.relay.Origin

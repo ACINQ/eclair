@@ -18,9 +18,9 @@ package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, Transaction, TxOut}
+import fr.acinq.bitcoin.scala.Crypto.PublicKey
+import fr.acinq.bitcoin.scala.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.scala.{Block, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{AvailableBalanceChanged, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT, CommitmentsSpec, LocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler

@@ -21,7 +21,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Transaction}
+import fr.acinq.bitcoin.scala.{ByteVector32, Crypto, Transaction}
 import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import grizzled.slf4j.Logging

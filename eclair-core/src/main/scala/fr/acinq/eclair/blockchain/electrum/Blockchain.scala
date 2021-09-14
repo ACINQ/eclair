@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.math.BigInteger
 
-import fr.acinq.bitcoin.{Block, BlockHeader, ByteVector32, decodeCompact}
+import fr.acinq.bitcoin.scala.{Block, BlockHeader, ByteVector32, decodeCompact}
 import fr.acinq.eclair.blockchain.electrum.db.HeaderDb
 import grizzled.slf4j.Logging
 

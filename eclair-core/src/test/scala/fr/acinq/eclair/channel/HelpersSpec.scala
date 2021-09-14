@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{Btc, Transaction}
+import fr.acinq.bitcoin.scala.{Btc, Transaction}
 import fr.acinq.eclair.LongToBtcAmount
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
