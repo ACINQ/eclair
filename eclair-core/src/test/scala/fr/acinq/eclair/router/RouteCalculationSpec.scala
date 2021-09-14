@@ -162,7 +162,6 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     //      10000 msat |         | 10000 msat
     //                 +--> D <--+
 
-    //    val amount = 8750 msat
     val amount = 10000 msat
     val (ab, ae, bc, cd, df, fd) = (
       makeEdge(1L, a, b, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
@@ -186,15 +185,6 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     {
       // a route via F: A->E->F->D
       val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = Some(ae.desc.shortChannelId))
-      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
-      assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
-      assert(weightedPath.length === 3)
-      assert(weightedPath.cost === 10007.msat)
-    }
-
-    {
-      // no last hop nodeId provided, find the shortest path which is A->E->F->D
-      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = None)
       val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
       assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
       assert(weightedPath.length === 3)
@@ -257,15 +247,6 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     {
       // a route via F: A->E->F->D
       val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, lastHopChannelId = Some(fd.desc.shortChannelId))
-      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
-      assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
-      assert(weightedPath.length === 3)
-      assert(weightedPath.cost === 10007.msat)
-    }
-
-    {
-      // no last hop nodeId provided, find the shortest path which is A->E->F->D
-      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, lastHopChannelId = None)
       val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
       assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
       assert(weightedPath.length === 3)
