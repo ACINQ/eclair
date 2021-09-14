@@ -102,10 +102,12 @@ object Graph {
                         wr: WeightRatios,
                         currentBlockHeight: Long,
                         boundaries: RichWeight => Boolean,
-                        includeLocalChannelCost: Boolean): Seq[WeightedPath] = {
+                        includeLocalChannelCost: Boolean,
+                        firstHopChannelId: Option[ShortChannelId] = None,
+                        lastHopChannelId: Option[ShortChannelId] = None): Seq[WeightedPath] = {
     // find the shortest path (k = 0)
     val targetWeight = RichWeight(amount, 0, CltvExpiryDelta(0), 0)
-    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
+    val shortestPath = dijkstraShortestPath(graph, sourceNode, targetNode, ignoredEdges, ignoredVertices, extraEdges, targetWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost, firstHopChannelId, lastHopChannelId)
     if (shortestPath.isEmpty) {
       return Seq.empty // if we can't even find a single path, avoid returning a Seq(Seq.empty)
     }
@@ -144,7 +146,7 @@ object Graph {
           val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
           val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
           // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
+          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost, firstHopChannelId, lastHopChannelId)
           if (spurPath.nonEmpty) {
             val completePath = spurPath ++ rootPathEdges
             val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
@@ -192,7 +194,9 @@ object Graph {
                                    boundaries: RichWeight => Boolean,
                                    currentBlockHeight: Long,
                                    wr: WeightRatios,
-                                   includeLocalChannelCost: Boolean): Seq[GraphEdge] = {
+                                   includeLocalChannelCost: Boolean,
+                                   firstHopChannelId: Option[ShortChannelId],
+                                   lastHopChannelId: Option[ShortChannelId]): Seq[GraphEdge] = {
     // the graph does not contain source/destination nodes
     val sourceNotInGraph = !g.containsVertex(sourceNode) && !extraEdges.exists(_.desc.a == sourceNode)
     val targetNotInGraph = !g.containsVertex(targetNode) && !extraEdges.exists(_.desc.b == targetNode)
@@ -222,9 +226,32 @@ object Graph {
         visitedNodes += current.key
         // build the neighbors with optional extra edges
         val neighborEdges = {
-          val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
-          // the resulting set must have only one element per shortChannelId; we prioritize extra edges
-          g.getIncomingEdgesOf(current.key).filterNot(e => extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId)) ++ extraNeighbors
+
+          def allEdges: Seq[GraphEdge] = {
+            val extraNeighbors = extraEdges.filter(_.desc.b == current.key)
+            // the resulting set must have only one element per shortChannelId; we prioritize extra edges
+            g.getIncomingEdgesOf(current.key).filterNot(e => extraNeighbors.exists(_.desc.shortChannelId == e.desc.shortChannelId)) ++ extraNeighbors
+          }
+
+          def lastHopEdges(edges: Seq[GraphEdge], lastHop: ShortChannelId) = {
+            if (current.key == targetNode)
+              edges.filter(e => e.desc.shortChannelId == lastHop)
+            else edges
+          }
+
+          def firstHopEdges(edges: Seq[GraphEdge], firstHop: ShortChannelId) = {
+            edges.filter(e => e.desc.a != sourceNode || e.desc.shortChannelId == firstHop)
+          }
+
+          (firstHopChannelId, lastHopChannelId) match {
+            case (None, None) => allEdges
+            case (Some(firstHop), Some(lastHop)) =>
+              firstHopEdges(lastHopEdges(allEdges, lastHop), firstHop)
+            case (Some(firstHop), None) =>
+              firstHopEdges(allEdges, firstHop)
+            case (None, Some(lastHop)) =>
+              lastHopEdges(allEdges, lastHop)
+          }
         }
         neighborEdges.foreach { edge =>
           val neighbor = edge.desc.a

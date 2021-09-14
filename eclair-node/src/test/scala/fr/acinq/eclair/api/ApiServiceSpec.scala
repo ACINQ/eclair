@@ -979,7 +979,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    eclair.findRoute(any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops))))
+    eclair.findRoute(any, any, any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops))))
 
     // invalid format
     Post("/findroute", FormData("format"-> "invalid-output-format", "invoice" -> invoice, "amountMsat" -> "456")) ~>
@@ -989,7 +989,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == BadRequest)
-        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasNever(called)
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any, any, any)(any[Timeout]).wasNever(called)
       }
 
     // default format
@@ -1006,7 +1006,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
           JString(mockHop3.nodeId.toString()),
           JString(mockHop3.nextNodeId.toString())
         )))
-        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(once)
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
 
     Post("/findroute", FormData("format" -> "nodeId", "invoice" -> invoice, "amountMsat" -> "456")) ~>
@@ -1022,7 +1022,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
           JString(mockHop3.nodeId.toString()),
           JString(mockHop3.nextNodeId.toString())
         )))
-        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(twice)
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any, any, any)(any[Timeout]).wasCalled(twice)
       }
 
     Post("/findroute", FormData("format" -> "shortChannelId", "invoice" -> invoice, "amountMsat" -> "456")) ~>
@@ -1037,7 +1037,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
           JString(mockHop2.lastUpdate.shortChannelId.toString()),
           JString(mockHop3.lastUpdate.shortChannelId.toString())
         )))
-        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(threeTimes)
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any, any, any)(any[Timeout]).wasCalled(threeTimes)
       }
   }
 

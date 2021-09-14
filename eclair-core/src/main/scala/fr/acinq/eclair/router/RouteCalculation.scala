@@ -115,7 +115,7 @@ object RouteCalculation {
         val result = if (r.allowMultiPart) {
           findMultiPartRoute(d.graph, r.source, r.target, r.amount, r.maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, params, currentBlockHeight)
         } else {
-          findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight)
+          findRoute(d.graph, r.source, r.target, r.amount, r.maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, params, currentBlockHeight, r.firstHopChannelId, r.lastHopChannelId)
         }
         result match {
           case Success(routes) =>
@@ -209,8 +209,10 @@ object RouteCalculation {
                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
-                currentBlockHeight: Long): Try[Seq[Route]] = Try {
-    findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight) match {
+                currentBlockHeight: Long,
+                firstHopChannelId: Option[ShortChannelId] = None,
+                lastHopChannelId: Option[ShortChannelId] = None): Try[Seq[Route]] = Try {
+    findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, routeParams, currentBlockHeight, firstHopChannelId, lastHopChannelId) match {
       case Right(routes) => routes.map(route => Route(amount, route.path.map(graphEdgeToHop)))
       case Left(ex) => return Failure(ex)
     }
@@ -227,7 +229,9 @@ object RouteCalculation {
                                 ignoredEdges: Set[ChannelDesc] = Set.empty,
                                 ignoredVertices: Set[PublicKey] = Set.empty,
                                 routeParams: RouteParams,
-                                currentBlockHeight: Long): Either[RouterException, Seq[Graph.WeightedPath]] = {
+                                currentBlockHeight: Long,
+                                firstHopChannelId: Option[ShortChannelId],
+                                lastHopChannelId: Option[ShortChannelId]): Either[RouterException, Seq[Graph.WeightedPath]] = {
     require(amount > 0.msat, "route amount must be strictly positive")
 
     if (localNodeId == targetNodeId) return Left(CannotRouteToSelf)
@@ -240,7 +244,7 @@ object RouteCalculation {
 
     val boundaries: RichWeight => Boolean = { weight => feeOk(weight.cost - amount) && lengthOk(weight.length) && cltvOk(weight.cltv) }
 
-    val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost)
+    val foundRoutes: Seq[Graph.WeightedPath] = Graph.yenKshortestPaths(g, localNodeId, targetNodeId, amount, ignoredEdges, ignoredVertices, extraEdges, numRoutes, routeParams.ratios, currentBlockHeight, boundaries, routeParams.includeLocalChannelCost, firstHopChannelId, lastHopChannelId)
     if (foundRoutes.nonEmpty) {
       val (directRoutes, indirectRoutes) = foundRoutes.partition(_.path.length == 1)
       val routes = if (routeParams.randomize) {
@@ -252,7 +256,7 @@ object RouteCalculation {
     } else if (routeParams.maxRouteLength < ROUTE_MAX_LENGTH) {
       // if not found within the constraints we relax and repeat the search
       val relaxedRouteParams = routeParams.copy(maxRouteLength = ROUTE_MAX_LENGTH, maxCltv = DEFAULT_ROUTE_MAX_CLTV)
-      findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight)
+      findRouteInternal(g, localNodeId, targetNodeId, amount, maxFee, numRoutes, extraEdges, ignoredEdges, ignoredVertices, relaxedRouteParams, currentBlockHeight, firstHopChannelId, lastHopChannelId)
     } else {
       Left(RouteNotFound)
     }
@@ -325,7 +329,7 @@ object RouteCalculation {
       val minPartAmount = routeParams.mpp.minPartAmount.max(amount / numRoutes).min(amount)
       routeParams.copy(mpp = MultiPartParams(minPartAmount, numRoutes))
     }
-    findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight) match {
+    findRouteInternal(g, localNodeId, targetNodeId, routeParams1.mpp.minPartAmount, maxFee, routeParams1.mpp.maxParts, extraEdges, ignoredEdges, ignoredVertices, routeParams1, currentBlockHeight, None, None) match {
       case Right(routes) =>
         // We use these shortest paths to find a set of non-conflicting HTLCs that send the total amount.
         split(amount, mutable.Queue(routes: _*), initializeUsedCapacity(pendingHtlcs), routeParams1) match {

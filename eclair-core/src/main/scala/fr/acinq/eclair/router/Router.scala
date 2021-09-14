@@ -484,7 +484,9 @@ object Router {
                           routeParams: RouteParams,
                           allowMultiPart: Boolean = false,
                           pendingPayments: Seq[Route] = Nil,
-                          paymentContext: Option[PaymentContext] = None)
+                          paymentContext: Option[PaymentContext] = None,
+                          firstHopChannelId: Option[ShortChannelId] = None,
+                          lastHopChannelId: Option[ShortChannelId] = None)
 
   case class FinalizeRoute(amount: MilliSatoshi,
                            route: PredefinedRoute,

@@ -134,6 +134,211 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     }
   }
 
+  test("calculate the shortest path (with the first hop channel id)") {
+    val (a, b, c, d, e, f) = (
+      PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // a: source
+      PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
+      PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
+      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), // d: target
+      PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"),
+      PublicKey(hex"020c65be6f9252e85ae2fe9a46eed892cb89565e2157730e78311b1621a0db4b22")
+    )
+
+    // note: we don't actually use floating point numbers
+    // cost(CD) = 10005 = amountMsat + 1 + (amountMsat * 400 / 1000000)
+    // cost(BC) = 10009,0015 = (cost(CD) + 1 + (cost(CD) * 300 / 1000000)
+    // cost(FD) = 10002 = amountMsat + 1 + (amountMsat * 100 / 1000000)
+    // cost(EF) = 10007,0008 = cost(FD) + 1 + (cost(FD) * 400 / 1000000)
+    // cost(AE) = 10007 -> A is source, shortest path found
+    // cost(AB) = 10009
+    //
+    // The amounts that need to be sent through each edge are then:
+    //
+    //                 +--- A ---+
+    // 10009,0015 msat |         | 10007,0008 msat
+    //                 B         E
+    //      10005 msat |         | 10002 msat
+    //                 C         F
+    //      10000 msat |         | 10000 msat
+    //                 +--> D <--+
+
+    //    val amount = 8750 msat
+    val amount = 10000 msat
+    val (ab, ae, bc, cd, df, fd) = (
+      makeEdge(1L, a, b, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
+      makeEdge(4L, a, e, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
+      makeEdge(2L, b, c, feeBase = 1 msat, feeProportionalMillionth = 300, minHtlc = 0 msat),
+      makeEdge(3L, c, d, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
+      makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
+      makeEdge(6L, f, d, feeBase = 1 msat, feeProportionalMillionth = 100, minHtlc = 0 msat)
+    )
+    val graph = DirectedGraph(List(ab, ae, bc, cd, df, fd))
+
+    {
+      // a route via C: A->B->C->D
+      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = Some(ab.desc.shortChannelId))
+      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
+      assert(route2Ids(route) === 1 :: 2 :: 3 :: Nil)
+      assert(weightedPath.length === 3)
+      assert(weightedPath.cost === 10009.msat)
+    }
+
+    {
+      // a route via F: A->E->F->D
+      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = Some(ae.desc.shortChannelId))
+      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
+      assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
+      assert(weightedPath.length === 3)
+      assert(weightedPath.cost === 10007.msat)
+    }
+
+    {
+      // no last hop nodeId provided, find the shortest path which is A->E->F->D
+      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = None)
+      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
+      assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
+      assert(weightedPath.length === 3)
+      assert(weightedPath.cost === 10007.msat)
+    }
+
+    // the route via C cannot be found because its fee is 9 > maxFee
+    assert(findRoute(graph, a, d, amount, maxFee = 7 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = Some(ab.desc.shortChannelId)) == Failure(RouteNotFound))
+  }
+
+  test("calculate the shortest path (with the last hop node id)") {
+    val (a, b, c, d, e, f) = (
+      PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // a: source
+      PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
+      PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
+      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), // d: target
+      PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"),
+      PublicKey(hex"020c65be6f9252e85ae2fe9a46eed892cb89565e2157730e78311b1621a0db4b22")
+    )
+
+    // note: we don't actually use floating point numbers
+    // cost(CD) = 10005 = amountMsat + 1 + (amountMsat * 400 / 1000000)
+    // cost(BC) = 10009,0015 = (cost(CD) + 1 + (cost(CD) * 300 / 1000000)
+    // cost(FD) = 10002 = amountMsat + 1 + (amountMsat * 100 / 1000000)
+    // cost(EF) = 10007,0008 = cost(FD) + 1 + (cost(FD) * 400 / 1000000)
+    // cost(AE) = 10007 -> A is source, shortest path found
+    // cost(AB) = 10009
+    //
+    // The amounts that need to be sent through each edge are then:
+    //
+    //                 +--- A ---+
+    // 10009,0015 msat |         | 10007,0008 msat
+    //                 B         E
+    //      10005 msat |         | 10002 msat
+    //                 C         F
+    //      10000 msat |         | 10000 msat
+    //                 +--> D <--+
+
+    //    val amount = 8750 msat
+    val amount = 10000 msat
+    val (ab, ae, bc, cd, df, fd) = (
+      makeEdge(1L, a, b, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
+      makeEdge(4L, a, e, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
+      makeEdge(2L, b, c, feeBase = 1 msat, feeProportionalMillionth = 300, minHtlc = 0 msat),
+      makeEdge(3L, c, d, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
+      makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
+      makeEdge(6L, f, d, feeBase = 1 msat, feeProportionalMillionth = 100, minHtlc = 0 msat)
+    )
+    val graph = DirectedGraph(List(ab, ae, bc, cd, df, fd))
+
+    {
+      // a route via C: A->B->C->D
+      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, lastHopChannelId = Some(cd.desc.shortChannelId))
+      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
+      assert(route2Ids(route) === 1 :: 2 :: 3 :: Nil)
+      assert(weightedPath.length === 3)
+      assert(weightedPath.cost === 10009.msat)
+    }
+
+    {
+      // a route via F: A->E->F->D
+      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, lastHopChannelId = Some(fd.desc.shortChannelId))
+      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
+      assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
+      assert(weightedPath.length === 3)
+      assert(weightedPath.cost === 10007.msat)
+    }
+
+    {
+      // no last hop nodeId provided, find the shortest path which is A->E->F->D
+      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, lastHopChannelId = None)
+      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
+      assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
+      assert(weightedPath.length === 3)
+      assert(weightedPath.cost === 10007.msat)
+    }
+
+    // the route via C cannot be found because its fee is 9 > maxFee
+    assert(findRoute(graph, a, d, amount, maxFee = 7 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, lastHopChannelId = Some(cd.desc.shortChannelId)) == Failure(RouteNotFound))
+  }
+
+  test("calculate the shortest path (with the first hop channel id and the last hop node id)") {
+    val (a, b, c, d, e, f) = (
+      PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73"), // a: source
+      PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a"),
+      PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484"),
+      PublicKey(hex"029e059b6780f155f38e83601969919aae631ddf6faed58fe860c72225eb327d7c"), // d: target
+      PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"),
+      PublicKey(hex"020c65be6f9252e85ae2fe9a46eed892cb89565e2157730e78311b1621a0db4b22")
+    )
+
+    // note: we don't actually use floating point numbers
+    // cost(CD) = 10005 = amountMsat + 1 + (amountMsat * 400 / 1000000)
+    // cost(BC) = 10009,0015 = (cost(CD) + 1 + (cost(CD) * 300 / 1000000)
+    // cost(FD) = 10002 = amountMsat + 1 + (amountMsat * 100 / 1000000)
+    // cost(EF) = 10007,0008 = cost(FD) + 1 + (cost(FD) * 400 / 1000000)
+    // cost(AE) = 10007 -> A is source, shortest path found
+    // cost(AB) = 10009
+    //
+    // The amounts that need to be sent through each edge are then:
+    //
+    //                 +--- A ---+
+    // 10009,0015 msat |         | 10007,0008 msat
+    //                 B         E
+    //      10005 msat |         | 10002 msat
+    //                 C         F
+    //      10000 msat |         | 10000 msat
+    //                 +--> D <--+
+
+    //    val amount = 8750 msat
+    val amount = 10000 msat
+    val (ab, ae, bc, cd, df, fd) = (
+      makeEdge(1L, a, b, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
+      makeEdge(4L, a, e, feeBase = 1 msat, feeProportionalMillionth = 200, minHtlc = 0 msat),
+      makeEdge(2L, b, c, feeBase = 1 msat, feeProportionalMillionth = 300, minHtlc = 0 msat),
+      makeEdge(3L, c, d, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
+      makeEdge(5L, e, f, feeBase = 1 msat, feeProportionalMillionth = 400, minHtlc = 0 msat),
+      makeEdge(6L, f, d, feeBase = 1 msat, feeProportionalMillionth = 100, minHtlc = 0 msat)
+    )
+    val graph = DirectedGraph(List(ab, ae, bc, cd, df, fd))
+
+    {
+      // a route via C: A->B->C->D
+      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = Some(ab.desc.shortChannelId), lastHopChannelId = Some(cd.desc.shortChannelId))
+      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
+      assert(route2Ids(route) === 1 :: 2 :: 3 :: Nil)
+      assert(weightedPath.length === 3)
+      assert(weightedPath.cost === 10009.msat)
+    }
+
+    assert(findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = Some(ab.desc.shortChannelId), lastHopChannelId = Some(fd.desc.shortChannelId)) == Failure(RouteNotFound))
+
+    {
+      // a route via C: A->E->F->D
+      val Success(route :: Nil) = findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = Some(ae.desc.shortChannelId), lastHopChannelId = Some(fd.desc.shortChannelId))
+      val weightedPath = Graph.pathWeight(a, route2Edges(route), amount, 0, NO_WEIGHT_RATIOS, false)
+      assert(route2Ids(route) === 4 :: 5 :: 6 :: Nil)
+      assert(weightedPath.length === 3)
+      assert(weightedPath.cost === 10007.msat)
+    }
+
+    assert(findRoute(graph, a, d, amount, maxFee = 10 msat, numRoutes = 1, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000, firstHopChannelId = Some(ae.desc.shortChannelId), lastHopChannelId = Some(cd.desc.shortChannelId)) == Failure(RouteNotFound))
+  }
+
   test("calculate route considering the direct channel pays no fees") {
     val g = DirectedGraph(List(
       makeEdge(1L, a, b, 5 msat, 0), // a -> b
