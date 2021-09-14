@@ -122,7 +122,7 @@ trait Eclair {
 
   def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32]
 
-  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, firstHopChannelId: Option[ShortChannelId], lastHopChannelId: Option[ShortChannelId])(implicit timeout: Timeout): Future[RouteResponse]
+  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, firstHopChannelId_opt: Option[ShortChannelId], lastHopChannelId_opt: Option[ShortChannelId])(implicit timeout: Timeout): Future[RouteResponse]
 
   def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, firstHopChannelId: Option[ShortChannelId], lastHopChannelId: Option[ShortChannelId])(implicit timeout: Timeout): Future[RouteResponse]
 
@@ -279,8 +279,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, firstHopChannelId: Option[ShortChannelId], lastHopChannelId: Option[ShortChannelId])(implicit timeout: Timeout): Future[RouteResponse] =
-    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, assistedRoutes, firstHopChannelId, lastHopChannelId)
+  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, firstHopChannelId_opt: Option[ShortChannelId], lastHopChannelId_opt: Option[ShortChannelId])(implicit timeout: Timeout): Future[RouteResponse] =
+    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, assistedRoutes, firstHopChannelId_opt, lastHopChannelId_opt)
 
   private def getRouteParams(pathFindingExperimentName_opt: Option[String]): Option[RouteParams] = {
     pathFindingExperimentName_opt match {
@@ -289,11 +289,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, firstHopChannelId: Option[ShortChannelId], lastHopChannelId: Option[ShortChannelId])(implicit timeout: Timeout): Future[RouteResponse] = {
+  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, firstHopChannelId_opt: Option[ShortChannelId], lastHopChannelId_opt: Option[ShortChannelId])(implicit timeout: Timeout): Future[RouteResponse] = {
     getRouteParams(pathFindingExperimentName_opt) match {
       case Some(routeParams) =>
         val maxFee = routeParams.getMaxFee(amount)
-        (appKit.router ? RouteRequest(sourceNodeId, targetNodeId, amount, maxFee, assistedRoutes, routeParams = routeParams, firstHopChannelId = firstHopChannelId, lastHopChannelId = lastHopChannelId)).mapTo[RouteResponse]
+        (appKit.router ? RouteRequest(sourceNodeId, targetNodeId, amount, maxFee, assistedRoutes, routeParams = routeParams, firstHopChannelId = firstHopChannelId_opt, lastHopChannelId = lastHopChannelId_opt)).mapTo[RouteResponse]
       case None => Future.failed(new IllegalArgumentException(s"Path-finding experiment ${pathFindingExperimentName_opt.get} does not exist."))
     }
   }

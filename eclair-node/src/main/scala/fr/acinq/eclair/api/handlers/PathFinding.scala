@@ -47,7 +47,7 @@ trait PathFinding {
   val findRouteToNode: Route = postRequest("findroutetonode") { implicit t =>
     formFields(nodeIdFormParam, amountMsatFormParam, "pathFindingExperimentName".?, routeFormat.?, firstHopChannelIdParam.?, lastHopChannelIdParam.?) {
       (nodeId, amount, pathFindingExperimentName_opt, routeFormat, firstHopChannel_opt, lastHopChannel_opt) =>
-        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, firstHopChannelId = firstHopChannel_opt, lastHopChannelId = lastHopChannel_opt).map(r => RouteFormat.format(r, routeFormat)))
+        complete(eclairApi.findRoute(nodeId, amount, pathFindingExperimentName_opt, firstHopChannelId_opt = firstHopChannel_opt, lastHopChannelId_opt = lastHopChannel_opt).map(r => RouteFormat.format(r, routeFormat)))
     }
   }
 
