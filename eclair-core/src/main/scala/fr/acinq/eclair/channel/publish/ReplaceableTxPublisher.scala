@@ -432,7 +432,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       psbt <- makeSingleOutput(fundPsbtResponse)
       // NB: we insert the anchor input in the *first* position because our signing helpers only sign input #0.
       unsignedTx = txInfo.copy(tx = psbt.global.tx.copy(txIn = txInfo.tx.txIn.head +: psbt.global.tx.txIn))
-      adjustedTx = adjustAnchorOutputChange(unsignedTx, commitTx, fundPsbtResponse.amountIn + AnchorOutputsCommitmentFormat.anchorAmount, commitFeerate, targetFeerate, dustLimit)
+      (adjustedTx, fee) = adjustAnchorOutputChange(unsignedTx, commitTx, fundPsbtResponse.amountIn + AnchorOutputsCommitmentFormat.anchorAmount, commitFeerate, targetFeerate, dustLimit)
       // add a PSBT input for our input (i.e the one that spends our own anchor/htlc output and that we'll need to sign
       psbtInput = Psbt.PartiallySignedInput.empty.copy(
         witnessUtxo = Some(txInfo.input.txOut),
@@ -442,7 +442,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         global = psbt.global.copy(tx = adjustedTx.tx),
         inputs = psbtInput +: psbt.inputs)
     } yield {
-      (adjustedTx, psbt1)
+      (adjustedTx, fee, psbt1)
     }
   }
 
@@ -477,12 +477,12 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = txWithHtlcInput)
         case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = txWithHtlcInput)
       }
-      val adjustedTx = adjustHtlcTxChange(unsignedTx, fundPsbtResponse.amountIn + unsignedTx.input.txOut.amount, targetFeerate, commitments)
+      val (adjustedTx, fee) = adjustHtlcTxChange(unsignedTx, fundPsbtResponse.amountIn + unsignedTx.input.txOut.amount, targetFeerate, commitments)
       val psbt1 = fundPsbtResponse.psbt.copy(
         global = fundPsbtResponse.psbt.global.copy(tx = adjustedTx.tx),
         inputs = Psbt.PartiallySignedInput.empty.copy(witnessUtxo = Some(txInfo.input.txOut), witnessScript = Some(Script.parse(txInfo.input.redeemScript))) +: fundPsbtResponse.psbt.inputs
       )
-      adjustedTx -> psbt1
+      (adjustedTx, fee, psbt1)
     })
   }
 

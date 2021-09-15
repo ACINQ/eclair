@@ -65,7 +65,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     bitcoinClient.makeFundingTx(ExtendedPublicKey(randomKey().publicKey.value, randomBytes32(), 4, KeyPath("m/1/2/3/4"), 0), randomKey().publicKey, 50 millibtc, FeeratePerKw(10000 sat)).pipeTo(sender.ref)
     val error = sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error
-    assert(error.message.contains("Please enter the wallet passphrase with walletpassphrase first"))
+    assert(error.message.contains("cannot sign psbt"))
 
     sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 10))
     sender.expectMsgType[JValue]
@@ -189,7 +189,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       }
 
       val sender = TestProbe()
-      val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
+      val bitcoinClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, rpcClient)
       bitcoinClient.onChainBalance().pipeTo(sender.ref)
       assert(sender.expectMsgType[OnChainBalance] === OnChainBalance(Satoshi(satoshi), Satoshi(satoshi)))
 

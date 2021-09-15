@@ -92,7 +92,7 @@ object AnnouncementsBatchValidationSpec {
     val node2BitcoinKey = randomKey()
     val amount = 1000000 sat
     // first we publish the funding tx
-    val fundingTxFuture = bitcoinClient.makeFundingTx(ExtendedPublicKey(randomKey().publicKey.value, randomBytes32(), 4, KeyPath("m/1/2/3/4"), 0), randomKey().publicKey, amount, FeeratePerKw(10000 sat))
+    val fundingTxFuture = bitcoinClient.makeFundingTx(ExtendedPublicKey(node1BitcoinKey.publicKey.value, randomBytes32(), 4, KeyPath("m/1/2/3/4"), 0), node2BitcoinKey.publicKey, amount, FeeratePerKw(10000 sat))
     val res = Await.result(fundingTxFuture, 10 seconds)
     Await.result(bitcoinClient.publishTransaction(res.psbt.extract().get), 10 seconds)
     SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.psbt.extract().get, res.fundingTxOutputIndex)

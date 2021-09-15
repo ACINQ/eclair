@@ -90,7 +90,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     // Create a unique wallet for this test and ensure it has some btc.
     val testId = UUID.randomUUID()
     val walletRpcClient = createWallet(s"lightning-$testId")
-    val walletClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, bitcoinrpcclient)
+    val walletClient = new BitcoinCoreClient(Block.RegtestGenesisBlock.hash, walletRpcClient)
     val probe = TestProbe()
 
     // Ensure our wallet has some funds.
