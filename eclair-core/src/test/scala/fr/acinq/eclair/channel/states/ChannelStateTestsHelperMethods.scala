@@ -26,7 +26,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
-import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
+import fr.acinq.eclair.blockchain.{OnChainWallet, DummyOnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
@@ -90,13 +90,13 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
                           relayerA: TestProbe,
                           relayerB: TestProbe,
                           channelUpdateListener: TestProbe,
-                          wallet: EclairWallet,
+                          wallet: OnChainWallet,
                           alicePeer: TestProbe,
                           bobPeer: TestProbe) {
     def currentBlockHeight: Long = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: EclairWallet = new TestWallet): SetupFixture = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: OnChainWallet = new DummyOnChainWallet()): SetupFixture = {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alicePeer = TestProbe()
@@ -136,6 +136,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
 
     val channelType = ChannelTypes.pickChannelType(aliceInitFeatures, bobInitFeatures)
 
+    implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceParams = Alice.channelParams
       .modify(_.initFeatures).setTo(aliceInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))

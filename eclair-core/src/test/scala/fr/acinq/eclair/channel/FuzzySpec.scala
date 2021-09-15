@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
@@ -70,7 +70,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     val paymentHandlerB = system.actorOf(Props(new PaymentHandler(bobParams, registerB)))
     val relayerA = system.actorOf(Relayer.props(aliceParams, TestProbe().ref, registerA, paymentHandlerA))
     val relayerB = system.actorOf(Relayer.props(bobParams, TestProbe().ref, registerB, paymentHandlerB))
-    val wallet = new TestWallet
+    val wallet = new DummyOnChainWallet()
     val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(aliceParams, wallet, bobParams.nodeId, alice2blockchain.ref, relayerA, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(bobParams, wallet, aliceParams.nodeId, bob2blockchain.ref, relayerB, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     within(30 seconds) {

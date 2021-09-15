@@ -26,9 +26,9 @@ import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.{OnChainAddressGenerator, OnChainChannelFunder}
 import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
@@ -39,6 +39,7 @@ import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
+import scala.concurrent.ExecutionContext
 
 /**
  * This actor represents a logical peer. There is one [[Peer]] per unique remote node id at all time.
@@ -50,7 +51,7 @@ import java.net.InetSocketAddress
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWallet, channelFactory: Peer.ChannelFactory) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -323,10 +324,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWa
 
   def createNewChannel(nodeParams: NodeParams, initFeatures: Features, channelType: SupportedChannelType, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val (finalScript, walletStaticPaymentBasepoint) = if (channelType.paysDirectlyToWallet) {
-      val walletKey = Helpers.getWalletPaymentBasepoint(wallet)
+      val walletKey = Helpers.getWalletPaymentBasepoint(wallet)(ExecutionContext.Implicits.global)
       (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
     } else {
-      (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash), None)
+      (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)(ExecutionContext.Implicits.global), None)
     }
     val localParams = makeChannelParams(nodeParams, initFeatures, finalScript, walletStaticPaymentBasepoint, funder, fundingAmount)
     val channel = spawnChannel(origin_opt)
@@ -389,12 +390,12 @@ object Peer {
     def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef
   }
 
-  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: EclairWallet, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
+  case class SimpleChannelFactory(nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, wallet: OnChainChannelFunder, txPublisherFactory: Channel.TxPublisherFactory) extends ChannelFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef =
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory, origin_opt))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: EclairWallet, channelFactory: ChannelFactory): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory))
 
   // @formatter:off
 

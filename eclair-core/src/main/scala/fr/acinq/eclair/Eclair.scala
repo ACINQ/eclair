@@ -26,9 +26,9 @@ import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
-import fr.acinq.eclair.blockchain.OnChainBalance
-import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
-import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet.WalletTransaction
+import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
@@ -152,7 +152,7 @@ trait Eclair {
 
   def onChainBalance(): Future[OnChainBalance]
 
-  def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]]
+  def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTx]]
 
   def globalBalance()(implicit timeout: Timeout): Future[GlobalBalance]
 
@@ -253,28 +253,28 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def newAddress(): Future[String] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.getReceiveAddress()
+      case w: BitcoinCoreClient => w.getReceiveAddress()
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
 
   override def onChainBalance(): Future[OnChainBalance] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.getBalance
+      case w: BitcoinCoreClient => w.onChainBalance()
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
 
-  override def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTransaction]] = {
+  override def onChainTransactions(count: Int, skip: Int): Future[Iterable[WalletTx]] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.listTransactions(count, skip)
+      case w: BitcoinCoreClient => w.listTransactions(count, skip)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }
 
   override def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32] = {
     appKit.wallet match {
-      case w: BitcoinCoreWallet => w.sendToAddress(address, amount, confirmationTarget)
+      case w: BitcoinCoreClient => w.sendToAddress(address, amount, confirmationTarget)
       case _ => Future.failed(new IllegalArgumentException("this call is only available with a bitcoin core backend"))
     }
   }

@@ -16,9 +16,12 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.TxCoordinates
+import fr.acinq.eclair.blockchain.OnChainWallet
+import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratePerKw}
 import fr.acinq.eclair.transactions.Transactions
@@ -36,15 +39,15 @@ import scala.util.{Failure, Success, Try}
  */
 
 /**
- * The ExtendedBitcoinClient adds some high-level utility methods to interact with Bitcoin Core.
- * Note that all wallet utilities (signing transactions, setting fees, locking outputs, etc) can be found in
- * [[fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet]].
+ * The Bitcoin Core client provides some high-level utility methods to interact with Bitcoin Core.
  */
-class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging {
+class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWallet with Logging {
 
-  import ExtendedBitcoinClient._
+  import BitcoinCoreClient._
 
   implicit val formats: Formats = org.json4s.DefaultFormats
+
+  //------------------------- TRANSACTIONS  -------------------------//
 
   def getTransaction(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Transaction] =
     getRawTransaction(txid).map(raw => Transaction.read(raw))
@@ -57,8 +60,8 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
   def getTransactionMeta(txid: ByteVector32)(implicit ec: ExecutionContext): Future[GetTxWithMetaResponse] =
     for {
       tx_opt <- getTransaction(txid).map(Some(_)).recover { case _ => None }
-      blockchaininfo <- rpcClient.invoke("getblockchaininfo")
-      JInt(timestamp) = blockchaininfo \ "mediantime"
+      blockchainInfo <- rpcClient.invoke("getblockchaininfo")
+      JInt(timestamp) = blockchainInfo \ "mediantime"
     } yield GetTxWithMetaResponse(txid, tx_opt, timestamp.toLong)
 
   /** Get the number of confirmations of a given transaction. */
@@ -90,6 +93,82 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
       index = txs.indexOf(JString(txid.toHex))
     } yield (height.toInt, index)
 
+  def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+    for {
+      json <- rpcClient.invoke("gettxout", txid, outputIndex, includeMempool)
+    } yield json != JNull
+
+  def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] =
+    for {
+      exists <- getTransaction(tx.txid)
+        .map(_ => true) // we have found the transaction
+        .recover {
+          case JsonRPCError(Error(_, message)) if message.contains("index") =>
+            sys.error("Fatal error: bitcoind is indexing!!")
+            sys.exit(1) // bitcoind is indexing, that's a fatal error!!
+            false // won't be reached
+          case _ => false
+        }
+      doublespent <- if (exists) {
+        // if the tx is in the blockchain, it can't have been double-spent
+        Future.successful(false)
+      } else {
+        // if the tx wasn't in the blockchain and one of its inputs has been spent, it is double-spent
+        // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
+        // the overriding transaction has been confirmed
+        Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
+      }
+    } yield doublespent
+
+  /**
+   * Iterate over blocks to find the transaction that has spent a given output.
+   * NB: only call this method when you're sure the output has been spent, otherwise this will iterate over the whole
+   * blockchain history.
+   *
+   * @param blockhash_opt hash of a block *after* the output has been spent. If not provided, we will use the blockchain tip.
+   * @param txid          id of the transaction output that has been spent.
+   * @param outputIndex   index of the transaction output that has been spent.
+   * @return the transaction spending the given output.
+   */
+  def lookForSpendingTx(blockhash_opt: Option[ByteVector32], txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
+    for {
+      blockhash <- blockhash_opt match {
+        case Some(b) => Future.successful(b)
+        case None => rpcClient.invoke("getbestblockhash").collect { case JString(b) => ByteVector32.fromValidHex(b) }
+      }
+      // with a verbosity of 0, getblock returns the raw serialized block
+      block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
+      prevblockhash = block.header.hashPreviousBlock.reverse
+      res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
+        case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
+        case Some(tx) => Future.successful(tx)
+      }
+    } yield res
+
+  def listTransactions(count: Int, skip: Int)(implicit ec: ExecutionContext): Future[List[WalletTx]] = rpcClient.invoke("listtransactions", "*", count, skip).map {
+    case JArray(txs) => txs.map(tx => {
+      val JString(address) = tx \ "address"
+      val JDecimal(amount) = tx \ "amount"
+      // fee is optional and only included for sent transactions
+      val fee = tx \ "fee" match {
+        case JDecimal(fee) => toSatoshi(fee)
+        case _ => Satoshi(0)
+      }
+      val JInt(confirmations) = tx \ "confirmations"
+      // while transactions are still in the mempool, block hash will no be included
+      val blockHash = tx \ "blockhash" match {
+        case JString(blockHash) => ByteVector32.fromValidHex(blockHash)
+        case _ => ByteVector32.Zeroes
+      }
+      val JString(txid) = tx \ "txid"
+      val JInt(timestamp) = tx \ "time"
+      WalletTx(address, toSatoshi(amount), fee, blockHash, confirmations.toLong, ByteVector32.fromValidHex(txid), timestamp.toLong)
+    }).reverse
+    case _ => Nil
+  }
+
+  //------------------------- FUNDING  -------------------------//
+
   def fundTransaction(tx: Transaction, options: FundTransactionOptions)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     rpcClient.invoke("fundrawtransaction", tx.toString(), options).map(json => {
       val JString(hex) = json \ "hex"
@@ -101,16 +180,40 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
     })
   }
 
-  /**
-   * @return the public key hash of a bech32 raw change address.
-   */
-  def getChangeAddress()(implicit ec: ExecutionContext): Future[ByteVector] = {
-    rpcClient.invoke("getrawchangeaddress", "bech32").collect {
-      case JString(changeAddress) =>
-        val (_, _, pubkeyHash) = Bech32.decodeWitnessAddress(changeAddress)
-        pubkeyHash
-    }
+  def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
+    val partialFundingTx = Transaction(
+      version = 2,
+      txIn = Seq.empty[TxIn],
+      txOut = TxOut(amount, pubkeyScript) :: Nil,
+      lockTime = 0)
+    for {
+      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
+      // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
+      fundTxResponse <- fundTransaction(partialFundingTx, FundTransactionOptions(feerate, lockUtxos = true))
+      // now let's sign the funding tx
+      SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(fundTxResponse.tx)
+      // there will probably be a change output, so we need to find which output is ours
+      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript) match {
+        case Right(outputIndex) => Future.successful(outputIndex)
+        case Left(skipped) => Future.failed(new RuntimeException(skipped.toString))
+      }
+      _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fundTxResponse.fee}")
+    } yield MakeFundingTxResponse(fundingTx, outputIndex, fundTxResponse.fee)
   }
+
+  def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).transformWith {
+    case Success(_) => Future.successful(true)
+    case Failure(e) =>
+      logger.warn(s"txid=${tx.txid} error=$e")
+      getTransaction(tx.txid).transformWith {
+        case Success(_) => Future.successful(true) // tx is in the mempool, we consider that it was published
+        case Failure(_) => rollback(tx).transform(_ => Success(false)) // we use transform here because we want to return false in all cases even if rollback fails
+      }
+  }
+
+  //------------------------- SIGNING  -------------------------//
+
+  def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = signTransaction(tx, Nil)
 
   def signTransaction(tx: Transaction, previousTxs: Seq[PreviousTx], allowIncomplete: Boolean = false)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
     rpcClient.invoke("signrawtransactionwithwallet", tx.toString(), previousTxs).map(json => {
@@ -131,6 +234,22 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
       SignTransactionResponse(Transaction.read(hex), complete)
     })
   }
+
+  private def signTransactionOrUnlock(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = {
+    val f = signTransaction(tx)
+    // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
+    f.recoverWith { case _ =>
+      unlockOutpoints(tx.txIn.map(_.outPoint))
+        .recover { case t: Throwable => // no-op, just add a log in case of failure
+          logger.warn(s"Cannot unlock failed transaction's UTXOs txid=${tx.txid}", t)
+          t
+        }
+        .flatMap(_ => f) // return signTransaction error
+        .recoverWith { case _ => f } // return signTransaction error
+    }
+  }
+
+  //------------------------- PUBLISHING  -------------------------//
 
   /**
    * Publish a transaction on the bitcoin network.
@@ -185,57 +304,51 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
     future.map(_.forall(b => b))
   }
 
-  def isTransactionOutputSpendable(txid: ByteVector32, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
-    for {
-      json <- rpcClient.invoke("gettxout", txid, outputIndex, includeMempool)
-    } yield json != JNull
+  def rollback(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = unlockOutpoints(tx.txIn.map(_.outPoint)) // we unlock all utxos used by the tx
 
-  def doubleSpent(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] =
-    for {
-      exists <- getTransaction(tx.txid)
-        .map(_ => true) // we have found the transaction
-        .recover {
-          case JsonRPCError(Error(_, message)) if message.contains("index") =>
-            sys.error("Fatal error: bitcoind is indexing!!")
-            sys.exit(1) // bitcoind is indexing, that's a fatal error!!
-            false // won't be reached
-          case _ => false
-        }
-      doublespent <- if (exists) {
-        // if the tx is in the blockchain, it can't have been double-spent
-        Future.successful(false)
-      } else {
-        // if the tx wasn't in the blockchain and one of its inputs has been spent, it is double-spent
-        // NB: we don't look in the mempool, so it means that we will only consider that the tx has been double-spent if
-        // the overriding transaction has been confirmed
-        Future.sequence(tx.txIn.map(txIn => isTransactionOutputSpendable(txIn.outPoint.txid, txIn.outPoint.index.toInt, includeMempool = false))).map(_.exists(_ == false))
-      }
-    } yield doublespent
+  //------------------------- ADDRESSES  -------------------------//
+
+  def onChainBalance()(implicit ec: ExecutionContext): Future[OnChainBalance] = rpcClient.invoke("getbalances").map(json => {
+    val JDecimal(confirmed) = json \ "mine" \ "trusted"
+    val JDecimal(unconfirmed) = json \ "mine" \ "untrusted_pending"
+    OnChainBalance(toSatoshi(confirmed), toSatoshi(unconfirmed))
+  })
+
+  def getReceiveAddress(label: String)(implicit ec: ExecutionContext): Future[String] = for {
+    JString(address) <- rpcClient.invoke("getnewaddress", label)
+  } yield address
+
+  def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = for {
+    address <- receiveAddress.map(Future.successful).getOrElse(getReceiveAddress())
+    JString(rawKey) <- rpcClient.invoke("getaddressinfo", address).map(_ \ "pubkey")
+  } yield PublicKey(ByteVector.fromValidHex(rawKey))
 
   /**
-   * Iterate over blocks to find the transaction that has spent a given output.
-   * NB: only call this method when you're sure the output has been spent, otherwise this will iterate over the whole
-   * blockchain history.
-   *
-   * @param blockhash_opt hash of a block *after* the output has been spent. If not provided, we will use the blockchain tip.
-   * @param txid          id of the transaction output that has been spent.
-   * @param outputIndex   index of the transaction output that has been spent.
-   * @return the transaction spending the given output.
+   * @return the public key hash of a bech32 raw change address.
    */
-  def lookForSpendingTx(blockhash_opt: Option[ByteVector32], txid: ByteVector32, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
-    for {
-      blockhash <- blockhash_opt match {
-        case Some(b) => Future.successful(b)
-        case None => rpcClient.invoke("getbestblockhash").collect { case JString(b) => ByteVector32.fromValidHex(b) }
-      }
-      // with a verbosity of 0, getblock returns the raw serialized block
-      block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
-      prevblockhash = block.header.hashPreviousBlock.reverse
-      res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
-        case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
-        case Some(tx) => Future.successful(tx)
-      }
-    } yield res
+  def getChangeAddress()(implicit ec: ExecutionContext): Future[ByteVector] = {
+    rpcClient.invoke("getrawchangeaddress", "bech32").collect {
+      case JString(changeAddress) =>
+        val (_, _, pubkeyHash) = Bech32.decodeWitnessAddress(changeAddress)
+        pubkeyHash
+    }
+  }
+
+  def sendToAddress(address: String, amount: Satoshi, confirmationTarget: Long)(implicit ec: ExecutionContext): Future[ByteVector32] = {
+    rpcClient.invoke(
+      "sendtoaddress",
+      address,
+      amount.toBtc.toBigDecimal,
+      "sent via eclair",
+      "",
+      false, // subtractfeefromamount
+      true, // replaceable
+      confirmationTarget).collect {
+      case JString(txid) => ByteVector32.fromValidHex(txid)
+    }
+  }
+
+  //------------------------- MEMPOOL  -------------------------//
 
   def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
     for {
@@ -258,6 +371,15 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
       MempoolTx(txid, vsize.toLong, weight.toLong, replaceable, toSatoshi(fees), ancestorCount.toInt - 1, toSatoshi(ancestorFees), descendantCount.toInt - 1, toSatoshi(descendantFees))
     })
   }
+
+  def mempoolMinFee()(implicit ec: ExecutionContext): Future[FeeratePerKB] =
+    rpcClient.invoke("getmempoolinfo").map(json => json \ "mempoolminfee" match {
+      case JDecimal(feerate) => FeeratePerKB(Btc(feerate).toSatoshi)
+      case JInt(feerate) => FeeratePerKB(Btc(feerate.toLong).toSatoshi)
+      case other => throw new RuntimeException(s"mempoolminfee failed: $other")
+    })
+
+  //------------------------- BLOCKCHAIN  -------------------------//
 
   def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
     rpcClient.invoke("getblockcount").collect {
@@ -301,7 +423,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) extends Logging
 
 }
 
-object ExtendedBitcoinClient {
+object BitcoinCoreClient {
 
   case class FundTransactionOptions(feeRate: BigDecimal, replaceable: Boolean, lockUnspents: Boolean, changePosition: Option[Int])
 
@@ -344,6 +466,8 @@ object ExtendedBitcoinClient {
    * @param descendantFees  transactions fees for the package consisting of this transaction and its unconfirmed children (without its unconfirmed parents).
    */
   case class MempoolTx(txid: ByteVector32, vsize: Long, weight: Long, replaceable: Boolean, fees: Satoshi, ancestorCount: Int, ancestorFees: Satoshi, descendantCount: Int, descendantFees: Satoshi)
+
+  case class WalletTx(address: String, amount: Satoshi, fees: Satoshi, blockHash: ByteVector32, confirmations: Long, txid: ByteVector32, timestamp: Long)
 
   case class UnlockOutpoint(txid: ByteVector32, vout: Long)
 

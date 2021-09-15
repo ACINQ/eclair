@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
@@ -641,7 +641,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("generate and validate lots of channels") {
-    implicit val bitcoinClient: ExtendedBitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     // we simulate fake channels by publishing a funding tx and sending announcement messages to a node at random
     logger.info(s"generating fake channels")
     val sender = TestProbe()
@@ -652,7 +652,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       if (i % 10 == 0) {
         generateBlocks(1, Some(address))
       }
-      AnnouncementsBatchValidationSpec.simulateChannel()
+      AnnouncementsBatchValidationSpec.simulateChannel(bitcoinClient)
     }
     generateBlocks(1, Some(address))
     logger.info(s"simulated ${channels.size} channels")
@@ -660,7 +660,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
 
     // then we make the announcements
-    val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
+    val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c, bitcoinClient))
     announcements.foreach { ann =>
       nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann)
       sender.expectMsg(TransportHandler.ReadAck(ann))

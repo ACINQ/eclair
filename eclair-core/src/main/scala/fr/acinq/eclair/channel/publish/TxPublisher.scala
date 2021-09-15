@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
@@ -139,7 +139,7 @@ object TxPublisher {
     // @formatter:on
   }
 
-  case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command]) extends ChildFactory {
+  case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command]) extends ChildFactory {
     // @formatter:off
     override def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[RawTxPublisher.Command] = {
       context.spawn(RawTxPublisher(nodeParams, bitcoinClient, watcher, loggingInfo), s"raw-tx-${loggingInfo.id}")

@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.EclairWallet
+import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.channel.Channel.REFRESH_CHANNEL_UPDATE_INTERVAL
 import fr.acinq.eclair.crypto.Generators
@@ -36,7 +36,7 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
-import scala.concurrent.Await
+import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
@@ -255,15 +255,14 @@ object Helpers {
   }
 
   /** NB: this is a blocking call, use carefully! */
-  def getFinalScriptPubKey(wallet: EclairWallet, chainHash: ByteVector32): ByteVector = {
+  def getFinalScriptPubKey(wallet: OnChainAddressGenerator, chainHash: ByteVector32)(implicit ec: ExecutionContext): ByteVector = {
     import scala.concurrent.duration._
     val finalAddress = Await.result(wallet.getReceiveAddress(), 40 seconds)
-
     Script.write(addressToPublicKeyScript(finalAddress, chainHash))
   }
 
   /** NB: this is a blocking call, use carefully! */
-  def getWalletPaymentBasepoint(wallet: EclairWallet): PublicKey = {
+  def getWalletPaymentBasepoint(wallet: OnChainAddressGenerator)(implicit ec: ExecutionContext): PublicKey = {
     Await.result(wallet.getReceivePubkey(), 40 seconds)
   }
 

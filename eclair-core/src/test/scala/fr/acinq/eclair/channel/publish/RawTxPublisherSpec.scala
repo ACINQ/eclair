@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.RawTxPublisher.{Publish, Stop}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.ConflictingTxConfirmed
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, TxConfirmed, TxPublishLogContext, TxRejected}
@@ -48,22 +48,22 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     stopBitcoind()
   }
 
-  case class Fixture(bitcoinClient: ExtendedBitcoinClient, publisher: ActorRef[RawTxPublisher.Command], watcher: TestProbe, probe: TestProbe)
+  case class Fixture(bitcoinClient: BitcoinCoreClient, publisher: ActorRef[RawTxPublisher.Command], watcher: TestProbe, probe: TestProbe)
 
   def createFixture(): Fixture = {
     val probe = TestProbe()
     val watcher = TestProbe()
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     val publisher = system.spawnAnonymous(RawTxPublisher(TestConstants.Alice.nodeParams, bitcoinClient, watcher.ref, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
     Fixture(bitcoinClient, publisher, watcher, probe)
   }
 
-  def getMempool(bitcoinClient: ExtendedBitcoinClient, probe: TestProbe): Seq[Transaction] = {
+  def getMempool(bitcoinClient: BitcoinCoreClient, probe: TestProbe): Seq[Transaction] = {
     bitcoinClient.getMempool().pipeTo(probe.ref)
     probe.expectMsgType[Seq[Transaction]]
   }
 
-  def waitTxInMempool(bitcoinClient: ExtendedBitcoinClient, txId: ByteVector32, probe: TestProbe): Unit = {
+  def waitTxInMempool(bitcoinClient: BitcoinCoreClient, txId: ByteVector32, probe: TestProbe): Unit = {
     awaitCond(getMempool(bitcoinClient, probe).exists(_.txid == txId))
   }
 

@@ -24,8 +24,8 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{Block, Btc, MilliBtcDouble, OutPoint, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.WatcherSpec._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.{FundTransactionResponse, SignTransactionResponse}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactionOptions, FundTransactionResponse, SignTransactionResponse}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewTransaction}
@@ -66,7 +66,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     super.afterAll()
   }
 
-  case class Fixture(blockCount: AtomicLong, bitcoinClient: ExtendedBitcoinClient, bitcoinWallet: BitcoinCoreWallet, watcher: typed.ActorRef[ZmqWatcher.Command], probe: TestProbe, listener: TestProbe)
+  case class Fixture(blockCount: AtomicLong, bitcoinClient: BitcoinCoreClient, watcher: typed.ActorRef[ZmqWatcher.Command], probe: TestProbe, listener: TestProbe)
 
   // NB: we can't use ScalaTest's fixtures, they would see uninitialized bitcoind fields because they sandbox each test.
   private def withWatcher(testFun: Fixture => Any): Unit = {
@@ -74,12 +74,11 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     val probe = TestProbe()
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[CurrentBlockCount])
-    val bitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
-    val bitcoinWallet = new BitcoinCoreWallet(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     val nodeParams = TestConstants.Alice.nodeParams.copy(chainHash = Block.RegtestGenesisBlock.hash)
     val watcher = system.spawn(ZmqWatcher(nodeParams, blockCount, bitcoinClient), UUID.randomUUID().toString)
     try {
-      testFun(Fixture(blockCount, bitcoinClient, bitcoinWallet, watcher, probe, listener))
+      testFun(Fixture(blockCount, bitcoinClient, watcher, probe, listener))
     } finally {
       system.stop(watcher.ref.toClassic)
     }
@@ -283,9 +282,9 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       // create a chain of transactions that we don't broadcast yet
       val priv = dumpPrivateKey(getNewAddress(probe), probe)
       val tx1 = {
-        bitcoinWallet.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, 0), lockUtxos = true, FeeratePerKw(250 sat)).pipeTo(probe.ref)
+        bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, 0), FundTransactionOptions(FeeratePerKw(250 sat), lockUtxos = true)).pipeTo(probe.ref)
         val funded = probe.expectMsgType[FundTransactionResponse].tx
-        bitcoinWallet.signTransaction(funded).pipeTo(probe.ref)
+        bitcoinClient.signTransaction(funded).pipeTo(probe.ref)
         probe.expectMsgType[SignTransactionResponse].tx
       }
       val outputIndex = tx1.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))

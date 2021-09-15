@@ -21,8 +21,8 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
@@ -61,7 +61,7 @@ object ReplaceableTxPublisher {
   case object Stop extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
@@ -161,7 +161,7 @@ object ReplaceableTxPublisher {
 }
 
 private class ReplaceableTxPublisher(nodeParams: NodeParams,
-                                     bitcoinClient: ExtendedBitcoinClient,
+                                     bitcoinClient: BitcoinCoreClient,
                                      watcher: ActorRef[ZmqWatcher.Command],
                                      context: ActorContext[ReplaceableTxPublisher.Command],
                                      timers: TimerScheduler[ReplaceableTxPublisher.Command],
@@ -288,7 +288,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case claimAnchorTx: ClaimLocalAnchorOutputTx =>
         val claimAnchorSig = keyManager.sign(claimAnchorTx, keyManager.fundingPublicKey(cmd.commitments.localParams.fundingKeyPath), TxOwner.Local, cmd.commitments.commitmentFormat)
         val signedClaimAnchorTx = addSigs(claimAnchorTx, claimAnchorSig)
-        val commitInfo = ExtendedBitcoinClient.PreviousTx(signedClaimAnchorTx.input, signedClaimAnchorTx.tx.txIn.head.witness)
+        val commitInfo = BitcoinCoreClient.PreviousTx(signedClaimAnchorTx.input, signedClaimAnchorTx.tx.txIn.head.witness)
         context.pipeToSelf(bitcoinClient.signTransaction(signedClaimAnchorTx.tx, Seq(commitInfo))) {
           case Success(signedTx) => PublishSignedTx(signedTx.tx)
           case Failure(reason) => UnknownFailure(reason)
@@ -302,7 +302,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
         val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
         val signedHtlcTx = txWithWitnessData.addSigs(localSig, cmd.commitments.commitmentFormat)
-        val inputInfo = ExtendedBitcoinClient.PreviousTx(signedHtlcTx.input, signedHtlcTx.tx.txIn.head.witness)
+        val inputInfo = BitcoinCoreClient.PreviousTx(signedHtlcTx.input, signedHtlcTx.tx.txIn.head.witness)
         context.pipeToSelf(bitcoinClient.signTransaction(signedHtlcTx.tx, Seq(inputInfo), allowIncomplete = true).map(signTxResponse => {
           // NB: bitcoind versions older than 0.21.1 messes up the witness stack for our htlc input, so we need to restore it.
           // See https://github.com/bitcoin/bitcoin/issues/21151

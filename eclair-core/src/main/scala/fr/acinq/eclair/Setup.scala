@@ -26,11 +26,11 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
-import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
-import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient}
+import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.{Channel, Register}
 import fr.acinq.eclair.crypto.WeakEntropyPool
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
@@ -240,19 +240,18 @@ class Setup(val datadir: File,
       })
       _ <- feeratesRetrieved.future
 
-      extendedBitcoinClient = new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoin))
+      bitcoinClient = new BitcoinCoreClient(new BatchingBitcoinJsonRPCClient(bitcoin))
       watcher = {
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqblock"), ZMQActor.Topics.HashBlock, Some(zmqBlockConnected))), "zmqblock", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmqtx"), ZMQActor.Topics.RawTx, Some(zmqTxConnected))), "zmqtx", SupervisorStrategy.Restart))
-        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockCount, extendedBitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "watcher")
+        system.spawn(Behaviors.supervise(ZmqWatcher(nodeParams, blockCount, bitcoinClient)).onFailure(typed.SupervisorStrategy.resume), "watcher")
       }
 
       router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher, Some(routerInitialized)), "router", SupervisorStrategy.Resume))
       routerTimeout = after(FiniteDuration(config.getDuration("router.init-timeout").getSeconds, TimeUnit.SECONDS), using = system.scheduler)(Future.failed(new RuntimeException("Router initialization timed out")))
       _ <- Future.firstCompletedOf(routerInitialized.future :: routerTimeout :: Nil)
 
-      wallet = new BitcoinCoreWallet(bitcoin)
-      _ = wallet.getReceiveAddress().map(address => logger.info(s"initial wallet address=$address"))
+      _ = bitcoinClient.getReceiveAddress().map(address => logger.info(s"initial wallet address=$address"))
 
       channelsListener = system.spawn(ChannelsListener(channelsListenerReady), name = "channels-listener")
       _ <- channelsListenerReady.future
@@ -281,9 +280,9 @@ class Setup(val datadir: File,
       // we want to make sure the handler for post-restart broken HTLCs has finished initializing.
       _ <- postRestartCleanUpInitialized.future
 
-      txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, watcher, extendedBitcoinClient)
-      channelFactory = Peer.SimpleChannelFactory(nodeParams, watcher, relayer, wallet, txPublisherFactory)
-      peerFactory = Switchboard.SimplePeerFactory(nodeParams, wallet, channelFactory)
+      txPublisherFactory = Channel.SimpleTxPublisherFactory(nodeParams, watcher, bitcoinClient)
+      channelFactory = Peer.SimpleChannelFactory(nodeParams, watcher, relayer, bitcoinClient, txPublisherFactory)
+      peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory)
 
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, peerFactory), "switchboard", SupervisorStrategy.Resume))
       clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
@@ -291,7 +290,7 @@ class Setup(val datadir: File,
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)), "payment-initiator", SupervisorStrategy.Restart))
       _ = for (i <- 0 until config.getInt("autoprobe-count")) yield system.actorOf(SimpleSupervisor.props(Autoprobe.props(nodeParams, router, paymentInitiator), s"payment-autoprobe-$i", SupervisorStrategy.Restart))
 
-      balanceActor = system.spawn(BalanceActor(nodeParams.db, extendedBitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
+      balanceActor = system.spawn(BalanceActor(nodeParams.db, bitcoinClient, channelsListener, nodeParams.balanceCheckInterval), name = "balance-actor")
 
       kit = Kit(
         nodeParams = nodeParams,
@@ -306,7 +305,7 @@ class Setup(val datadir: File,
         server = server,
         channelsListener = channelsListener,
         balanceActor = balanceActor,
-        wallet = wallet)
+        wallet = bitcoinClient)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
       zmqTxTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -374,7 +373,7 @@ case class Kit(nodeParams: NodeParams,
                server: ActorRef,
                channelsListener: typed.ActorRef[ChannelsListener.Command],
                balanceActor: typed.ActorRef[BalanceActor.Command],
-               wallet: EclairWallet)
+               wallet: OnChainWallet)
 
 object Kit {
 

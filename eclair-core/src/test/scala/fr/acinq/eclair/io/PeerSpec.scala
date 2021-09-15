@@ -26,8 +26,8 @@ import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{AnchorOutputs, AnchorOutputsZeroFeeHtlcTx, StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
-import fr.acinq.eclair.blockchain.{EclairWallet, TestWallet}
 import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer._
@@ -58,7 +58,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   }
 
   override protected def withFixture(test: OneArgTest): Outcome = {
-    val wallet: EclairWallet = new TestWallet()
+    val wallet = new DummyOnChainWallet()
     val remoteNodeId = Bob.nodeParams.nodeId
     val peerConnection = TestProbe()
     val channel = TestProbe()
@@ -432,7 +432,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
         channel.ref
       }
     }
-    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new TestWallet, channelFactory))
+    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory))
     connect(remoteNodeId, peer, peerConnection)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 100 msat, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]

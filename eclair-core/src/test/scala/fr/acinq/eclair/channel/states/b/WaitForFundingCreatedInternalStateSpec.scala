@@ -17,19 +17,16 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
+import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.eclair.blockchain.NoOpOnChainWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
-import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
-import scala.concurrent.{Future, Promise}
 
 /**
  * Created by PM on 05/07/2016.
@@ -40,10 +37,7 @@ class WaitForFundingCreatedInternalStateSpec extends TestKitBaseClass with Fixtu
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val noopWallet = new TestWallet {
-      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse]().future // will never be completed
-    }
-    val setup = init(wallet = noopWallet)
+    val setup = init(wallet = new NoOpOnChainWallet())
     import setup._
     val channelConfig = ChannelConfig.standard
     val (aliceParams, bobParams, channelType) = computeFeatures(setup, test.tags)

@@ -6,8 +6,8 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.balance.BalanceActor._
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.Utxo
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.Utxo
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.Databases
 import grizzled.slf4j.Logger
@@ -28,20 +28,20 @@ object BalanceActor {
   private final case class WrappedUtxoInfo(wrapped: Try[UtxoInfo]) extends Command
   // @formatter:on
 
-  def apply(db: Databases, extendedBitcoinClient: ExtendedBitcoinClient, channelsListener: ActorRef[ChannelsListener.GetChannels], interval: FiniteDuration)(implicit ec: ExecutionContext): Behavior[Command] = {
+  def apply(db: Databases, bitcoinClient: BitcoinCoreClient, channelsListener: ActorRef[ChannelsListener.GetChannels], interval: FiniteDuration)(implicit ec: ExecutionContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         timers.startTimerWithFixedDelay(TickBalance, interval)
-        new BalanceActor(context, db, extendedBitcoinClient, channelsListener).apply(refBalance_opt = None)
+        new BalanceActor(context, db, bitcoinClient, channelsListener).apply(refBalance_opt = None)
       }
     }
   }
 
   final case class UtxoInfo(utxos: Seq[Utxo], ancestorCount: Map[ByteVector32, Long])
 
-  def checkUtxos(extendedBitcoinClient: ExtendedBitcoinClient)(implicit ec: ExecutionContext): Future[UtxoInfo] = {
+  def checkUtxos(bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[UtxoInfo] = {
 
-    def getUnconfirmedAncestorCount(utxo: Utxo): Future[(ByteVector32, Long)] = extendedBitcoinClient.rpcClient.invoke("getmempoolentry", utxo.txid).map(json => {
+    def getUnconfirmedAncestorCount(utxo: Utxo): Future[(ByteVector32, Long)] = bitcoinClient.rpcClient.invoke("getmempoolentry", utxo.txid).map(json => {
       val JInt(ancestorCount) = json \ "ancestorcount"
       (utxo.txid, ancestorCount.toLong)
     }).recover {
@@ -55,7 +55,7 @@ object BalanceActor {
     def getUnconfirmedAncestorCountMap(utxos: Seq[Utxo]): Future[Map[ByteVector32, Long]] = Future.sequence(utxos.filter(_.confirmations == 0).map(getUnconfirmedAncestorCount)).map(_.toMap)
 
     for {
-      utxos <- extendedBitcoinClient.listUnspent()
+      utxos <- bitcoinClient.listUnspent()
       ancestorCount <- getUnconfirmedAncestorCountMap(utxos)
     } yield UtxoInfo(utxos, ancestorCount)
   }
@@ -64,7 +64,7 @@ object BalanceActor {
 
 private class BalanceActor(context: ActorContext[Command],
                            db: Databases,
-                           extendedBitcoinClient: ExtendedBitcoinClient,
+                           bitcoinClient: BitcoinCoreClient,
                            channelsListener: ActorRef[ChannelsListener.GetChannels])(implicit ec: ExecutionContext) {
 
   private val log = context.log
@@ -73,10 +73,10 @@ private class BalanceActor(context: ActorContext[Command],
     case TickBalance =>
       log.debug("checking balance...")
       channelsListener ! ChannelsListener.GetChannels(context.messageAdapter[ChannelsListener.GetChannelsResponse](WrappedChannels))
-      context.pipeToSelf(checkUtxos(extendedBitcoinClient))(WrappedUtxoInfo)
+      context.pipeToSelf(checkUtxos(bitcoinClient))(WrappedUtxoInfo)
       Behaviors.same
     case WrappedChannels(res) =>
-      context.pipeToSelf(CheckBalance.computeGlobalBalance(res.channels, db, extendedBitcoinClient))(WrappedGlobalBalance)
+      context.pipeToSelf(CheckBalance.computeGlobalBalance(res.channels, db, bitcoinClient))(WrappedGlobalBalance)
       Behaviors.same
     case WrappedGlobalBalance(res) =>
       res match {
@@ -112,7 +112,7 @@ private class BalanceActor(context: ActorContext[Command],
           Behaviors.same
       }
     case GetGlobalBalance(replyTo, channels) =>
-      CheckBalance.computeGlobalBalance(channels, db, extendedBitcoinClient) onComplete (replyTo ! _)
+      CheckBalance.computeGlobalBalance(channels, db, bitcoinClient) onComplete (replyTo ! _)
       Behaviors.same
     case WrappedUtxoInfo(res) =>
       res match {

@@ -21,7 +21,7 @@ import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
-import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
@@ -62,7 +62,7 @@ class RustyTestsSpec extends TestKitBaseClass with Matchers with FixtureAnyFunSu
     paymentHandler ! new ForwardHandler(TestProbe().ref)
     // we just bypass the relayer for this test
     val relayer = paymentHandler
-    val wallet = new TestWallet
+    val wallet = new DummyOnChainWallet()
     val feeEstimator = new TestFeeEstimator
     val aliceNodeParams = Alice.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Alice.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))
     val bobNodeParams = Bob.nodeParams.copy(blockCount = blockCount, onChainFeeConf = Bob.nodeParams.onChainFeeConf.copy(feeEstimator = feeEstimator))

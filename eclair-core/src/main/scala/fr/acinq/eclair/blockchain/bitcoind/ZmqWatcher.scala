@@ -22,7 +22,7 @@ import akka.actor.typed.{ActorRef, Behavior, SupervisorStrategy}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.Monitoring.Metrics
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
@@ -163,7 +163,7 @@ object ZmqWatcher {
   private case object Ignore extends AddWatchResult
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: ExtendedBitcoinClient): Behavior[Command] =
+  def apply(nodeParams: NodeParams, blockCount: AtomicLong, client: BitcoinCoreClient): Behavior[Command] =
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewBlock](b => ProcessNewBlock(b.blockHash)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NewTransaction](t => ProcessNewTransaction(t.tx)))
@@ -210,7 +210,7 @@ object ZmqWatcher {
 
 }
 
-private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client: ExtendedBitcoinClient, context: ActorContext[ZmqWatcher.Command], timers: TimerScheduler[ZmqWatcher.Command])(implicit ec: ExecutionContext = ExecutionContext.global) {
+private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client: BitcoinCoreClient, context: ActorContext[ZmqWatcher.Command], timers: TimerScheduler[ZmqWatcher.Command])(implicit ec: ExecutionContext = ExecutionContext.global) {
 
   import ZmqWatcher._
 
