@@ -213,7 +213,12 @@ class BitcoinCoreClient(val chainHash: ByteVector32, val rpcClient: BitcoinJsonR
   }
 
   private def signPsbtOrUnlock(psbt: Psbt)(implicit ec: ExecutionContext): Future[ProcessPsbtResponse] = {
-    val f = processPsbt(psbt).withFilter(_.complete == true)
+    val f1 = processPsbt(psbt).withFilter(_.complete == true)
+
+    val f = for {
+      ProcessPsbtResponse(psbt1, complete) <- processPsbt(psbt)
+      _ = if (!complete) throw JsonRPCError(Error(0, "cannot sign psbt"))
+    } yield ProcessPsbtResponse(psbt1, complete)
     // if signature fails (e.g. because wallet is encrypted) we need to unlock the utxos
     f.recoverWith { case _ =>
       unlockOutpoints(psbt.global.tx.txIn.map(_.outPoint))
@@ -240,21 +245,33 @@ class BitcoinCoreClient(val chainHash: ByteVector32, val rpcClient: BitcoinJsonR
       case _ => return Future.failed(new IllegalArgumentException("invalid pubkey script"))
     }
 
-    for {
-      // we ask bitcoin core to create and fund the funding tx
-      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(feeRatePerKw))
-      FundPsbtResponse(psbt, fee, Some(changePos)) <- fundPsbt(Seq(fundingAddress -> amount), 0, FundPsbtOptions(feerate, lockUtxos = true))
-      ourbip32path = localFundingKey.path.drop(2)
-      output = psbt.outputs(1 - changePos).copy(
+    def updatePsbt(psbt: Psbt, changepos_opt: Option[Int], ourbip32path: Seq[Long]): Psbt = {
+      val outputIndex = changepos_opt match {
+        case None => 0
+        case Some(changePos) => 1 - changePos
+      }
+      val output = psbt.outputs(outputIndex).copy(
         derivationPaths = Map(
           localFundingKey.publicKey -> Psbt.KeyPathWithMaster(localFundingKey.parent, ourbip32path),
           remoteFundingKey -> Psbt.KeyPathWithMaster(0L, DeterministicWallet.KeyPath("1/2/3/4"))
         )
       )
-      psbt1 = psbt.copy(outputs = psbt.outputs.updated(1 - changePos, output))
+      psbt.copy(outputs = psbt.outputs.updated(outputIndex, output))
+    }
+
+    for {
+      // we ask bitcoin core to create and fund the funding tx
+      feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(feeRatePerKw))
+      FundPsbtResponse(psbt, fee, changePos_opt) <- fundPsbt(Seq(fundingAddress -> amount), 0, FundPsbtOptions(feerate, lockUtxos = true, changePosition = Some(1)))
+      ourbip32path = localFundingKey.path.drop(2)
+      _ = logger.info(s"funded psbt = $psbt")
+      psbt1 = updatePsbt(psbt, changePos_opt, ourbip32path)
       // now let's sign the funding tx
-      ProcessPsbtResponse(signedPsbt, true) <- signPsbtOrUnlock(psbt1)
-      Success(fundingTx) = signedPsbt.extract()
+      ProcessPsbtResponse(signedPsbt, complete) <- signPsbtOrUnlock(psbt1)
+      _ = logger.info(s"psbt signing complete = $complete")
+      extracted = signedPsbt.extract()
+      _ = if (extracted.isFailure) logger.error(s"psbt failure $extracted")
+      fundingTx = extracted.get
       // there will probably be a change output, so we need to find which output is ours
       outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, fundingPubkeyScript) match {
         case Right(outputIndex) => Future.successful(outputIndex)
@@ -262,7 +279,6 @@ class BitcoinCoreClient(val chainHash: ByteVector32, val rpcClient: BitcoinJsonR
       }
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fee}")
     } yield MakeFundingTxResponse(signedPsbt, outputIndex, fee)
-
   }
 
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).transformWith {
