@@ -139,7 +139,7 @@ class ChannelCodecs1Spec extends AnyFunSuite {
     assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
-      feeratePerKw = FeeratePerKw(Random.nextInt(Int.MaxValue).sat),
+      commitTxFeerate = FeeratePerKw(Random.nextInt(Int.MaxValue).sat),
       toLocal = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toRemote = MilliSatoshi(Random.nextInt(Int.MaxValue))
     )

@@ -79,9 +79,9 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
       registerA ! alice
       registerB ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte, ChannelConfig.standard, ChannelFeatures())
+      alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte, ChannelConfig.standard, ChannelTypes.Standard)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
-      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelFeatures())
+      bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, Bob.channelParams, pipe, aliceInit, ChannelConfig.standard, ChannelTypes.Standard)
       bob2blockchain.expectMsgType[TxPublisher.SetChannelId]
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
@@ -187,7 +187,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     awaitCond(latch.getCount == 0, interval = 1 second, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
-      val c = CMD_CLOSE(sender.ref, None)
+      val c = CMD_CLOSE(sender.ref, None, None)
       alice ! c
       sender.expectMsgType[CommandResponse[CMD_CLOSE]].isInstanceOf[RES_SUCCESS[CMD_CLOSE]]
     }, interval = 1 second, max = 30 seconds)
@@ -205,7 +205,7 @@ class FuzzySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Channe
     awaitCond(latch.getCount == 0, interval = 1 second, max = 2 minutes)
     val sender = TestProbe()
     awaitCond({
-      val c = CMD_CLOSE(sender.ref, None)
+      val c = CMD_CLOSE(sender.ref, None, None)
       alice ! c
       val resa = sender.expectMsgType[CommandResponse[CMD_CLOSE]]
       sender.send(bob, c)

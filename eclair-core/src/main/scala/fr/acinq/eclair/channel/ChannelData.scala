@@ -87,13 +87,13 @@ case class INPUT_INIT_FUNDER(temporaryChannelId: ByteVector32,
                              remoteInit: Init,
                              channelFlags: Byte,
                              channelConfig: ChannelConfig,
-                             channelFeatures: ChannelFeatures)
+                             channelType: SupportedChannelType)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: ByteVector32,
                              localParams: LocalParams,
                              remote: ActorRef,
                              remoteInit: Init,
                              channelConfig: ChannelConfig,
-                             channelFeatures: ChannelFeatures)
+                             channelType: SupportedChannelType)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef, localInit: Init, remoteInit: Init)
@@ -170,10 +170,16 @@ final case class CMD_FAIL_HTLC(id: Long, reason: Either[ByteVector, FailureMessa
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: ByteVector32, failureCode: Int, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HtlcSettlementCommand
 final case class CMD_UPDATE_FEE(feeratePerKw: FeeratePerKw, commit: Boolean = false, replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand
 final case class CMD_SIGN(replyTo_opt: Option[ActorRef] = None) extends HasOptionalReplyToCommand
+
+final case class ClosingFees(preferred: Satoshi, min: Satoshi, max: Satoshi)
+final case class ClosingFeerates(preferred: FeeratePerKw, min: FeeratePerKw, max: FeeratePerKw) {
+  def computeFees(closingTxWeight: Int): ClosingFees = ClosingFees(weight2fee(preferred, closingTxWeight), weight2fee(min, closingTxWeight), weight2fee(max, closingTxWeight))
+}
+
 sealed trait CloseCommand extends HasReplyToCommand
-final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector]) extends CloseCommand
+final case class CMD_CLOSE(replyTo: ActorRef, scriptPubKey: Option[ByteVector], feerates: Option[ClosingFeerates]) extends CloseCommand
 final case class CMD_FORCECLOSE(replyTo: ActorRef) extends CloseCommand
-final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long) extends HasReplyToCommand
+final case class CMD_UPDATE_RELAY_FEE(replyTo: ActorRef, feeBase: MilliSatoshi, feeProportionalMillionths: Long, cltvExpiryDelta_opt: Option[CltvExpiryDelta]) extends HasReplyToCommand
 final case class CMD_GETSTATE(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GETSTATEDATA(replyTo: ActorRef) extends HasReplyToCommand
 final case class CMD_GETINFO(replyTo: ActorRef)extends HasReplyToCommand
@@ -215,7 +221,7 @@ object HtlcResult {
   case class RemoteFailMalformed(fail: UpdateFailMalformedHtlc) extends Fail
   case class OnChainFail(cause: Throwable) extends Fail
   case object ChannelFailureBeforeSigned extends Fail
-  case class DisconnectedBeforeSigned(channelUpdate: ChannelUpdate) extends Fail { assert(!Announcements.isEnabled(channelUpdate.channelFlags), "channel update must have disabled flag set") }
+  case class DisconnectedBeforeSigned(channelUpdate: ChannelUpdate) extends Fail { require(!channelUpdate.channelFlags.isEnabled, "channel update must have disabled flag set") }
 }
 final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc: UpdateAddHtlc, result: R) extends CommandSuccess[CMD_ADD_HTLC]
 
@@ -422,9 +428,9 @@ final case class DATA_NORMAL(commitments: Commitments,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
                              localShutdown: Option[Shutdown],
-                             remoteShutdown: Option[Shutdown]) extends ChannelData with HasCommitments
-final case class DATA_SHUTDOWN(commitments: Commitments,
-                               localShutdown: Shutdown, remoteShutdown: Shutdown) extends ChannelData with HasCommitments
+                             remoteShutdown: Option[Shutdown],
+                             closingFeerates: Option[ClosingFeerates]) extends ChannelData with HasCommitments
+final case class DATA_SHUTDOWN(commitments: Commitments, localShutdown: Shutdown, remoteShutdown: Shutdown, closingFeerates: Option[ClosingFeerates]) extends ChannelData with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
                                   closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)

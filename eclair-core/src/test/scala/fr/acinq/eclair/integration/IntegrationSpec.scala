@@ -25,9 +25,10 @@ import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.{Peer, PeerConnection}
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.RouteCalculation.ROUTE_MAX_LENGTH
-import fr.acinq.eclair.router.Router.{MultiPartParams, RouteParams, NORMAL => _, State => _}
+import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, SearchBoundaries, NORMAL => _, State => _}
 import fr.acinq.eclair.{CltvExpiryDelta, Kit, MilliSatoshi, MilliSatoshiLong, Setup, TestKitBaseClass}
 import grizzled.slf4j.Logging
 import org.json4s.{DefaultFormats, Formats}
@@ -49,23 +50,24 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
   var nodes: Map[String, Kit] = Map()
 
   // we override the default because these test were designed to use cost-optimized routes
-  val integrationTestRouteParams = Some(RouteParams(
+  val integrationTestRouteParams = PathFindingConf(
     randomize = false,
-    maxFeeBase = 21000 msat,
-    maxFeePct = 0.03,
-    routeMaxCltv = CltvExpiryDelta(Int.MaxValue),
-    routeMaxLength = ROUTE_MAX_LENGTH,
+    boundaries = SearchBoundaries(
+      maxFeeFlat = 21000 msat,
+      maxFeeProportional = 0.03,
+      maxCltv = CltvExpiryDelta(Int.MaxValue),
+      maxRouteLength = ROUTE_MAX_LENGTH),
     ratios = WeightRatios(
       baseFactor = 0,
       cltvDeltaFactor = 1,
       ageFactor = 0,
       capacityFactor = 0,
-      hopCostBase = 0 msat,
-      hopCostMillionths = 0
+      hopCost = RelayFees(0 msat, 0),
     ),
     mpp = MultiPartParams(15000000 msat, 6),
-    includeLocalChannelCost = false,
-  ))
+    experimentName = "my-test-experiment",
+    experimentPercentage = 100
+  ).getDefaultRouteParams
 
   // we need to provide a value higher than every node's fulfill-safety-before-timeout
   val finalCltvExpiryDelta = CltvExpiryDelta(36)
@@ -107,6 +109,10 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
 
   val withAnchorOutputs = withStaticRemoteKey.withFallback(ConfigFactory.parseMap(Map(
     s"eclair.features.${AnchorOutputs.rfcName}" -> "optional"
+  ).asJava))
+
+  val withAnchorOutputsZeroFeeHtlcTxs = withAnchorOutputs.withFallback(ConfigFactory.parseMap(Map(
+    s"eclair.features.${AnchorOutputsZeroFeeHtlcTx.rfcName}" -> "optional"
   ).asJava))
 
   implicit val formats: Formats = DefaultFormats
@@ -155,6 +161,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
       remoteNodeId = node2.nodeParams.nodeId,
       fundingSatoshis = fundingSatoshis,
       pushMsat = pushMsat,
+      channelType_opt = None,
       fundingTxFeeratePerKw_opt = None,
       channelFlags = None,
       timeout_opt = None))

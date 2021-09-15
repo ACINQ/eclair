@@ -112,7 +112,10 @@ object Relayer extends Logging {
     Props(new Relayer(nodeParams, router, register, paymentHandler, initialized))
 
   // @formatter:off
-  case class RelayFees(feeBase: MilliSatoshi, feeProportionalMillionths: Long)
+  case class RelayFees(feeBase: MilliSatoshi, feeProportionalMillionths: Long) {
+    require(feeBase.toLong >= 0.0, "feeBase must be nonnegative")
+    require(feeProportionalMillionths >= 0.0, "feeProportionalMillionths must be nonnegative")
+  }
 
   case class RelayParams(publicChannelFees: RelayFees,
                          privateChannelFees: RelayFees,

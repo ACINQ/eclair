@@ -17,7 +17,6 @@
 package fr.acinq.eclair.gui
 
 import java.util.UUID
-
 import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
 import fr.acinq.eclair.blockchain.fee.FeeratePerKB
@@ -25,7 +24,8 @@ import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
-import fr.acinq.eclair.payment.send.PaymentInitiator.SendPayment
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToNode
+import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.{MilliSatoshi, _}
 import grizzled.slf4j.Logging
 
@@ -85,9 +85,10 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
     (for {
       kit <- fKit
+      routeParams = kit.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
       sendPayment = req.minFinalCltvExpiryDelta match {
-        case None => SendPayment(MilliSatoshi(amountMsat), req, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo)
-        case Some(minFinalCltvExpiry) => SendPayment(MilliSatoshi(amountMsat), req, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo, fallbackFinalExpiryDelta = minFinalCltvExpiry)
+        case None => SendPaymentToNode(MilliSatoshi(amountMsat), req, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo, routeParams = routeParams)
+        case Some(minFinalCltvExpiry) => SendPaymentToNode(MilliSatoshi(amountMsat), req, kit.nodeParams.maxPaymentAttempts, assistedRoutes = req.routingInfo, fallbackFinalExpiryDelta = minFinalCltvExpiry, routeParams = routeParams)
       }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[UUID]
     } yield res).recover {

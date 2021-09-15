@@ -182,12 +182,12 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
           log.debug(s"peer channel with id={} has been updated - flags: {} fees: {} {}", channelUpdate.shortChannelId, channelUpdate.channelFlags, channelUpdate.feeBaseMsat, channelUpdate.feeProportionalMillionths)
           if (mainController.networkChannelsMap.containsKey(channelUpdate.shortChannelId)) {
             val c = mainController.networkChannelsMap.get(channelUpdate.shortChannelId)
-            if (Announcements.isNode1(channelUpdate.channelFlags)) {
-              c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
+            if (channelUpdate.channelFlags.isNode1) {
+              c.isNode1Enabled = Some(channelUpdate.channelFlags.isEnabled)
               c.feeBaseMsatNode1_opt = Some(channelUpdate.feeBaseMsat.toLong)
               c.feeProportionalMillionthsNode1_opt = Some(channelUpdate.feeProportionalMillionths)
             } else {
-              c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.channelFlags))
+              c.isNode2Enabled = Some(channelUpdate.channelFlags.isEnabled)
               c.feeBaseMsatNode2_opt = Some(channelUpdate.feeBaseMsat.toLong)
               c.feeProportionalMillionthsNode2_opt = Some(channelUpdate.feeProportionalMillionths)
             }

@@ -21,63 +21,15 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn,
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
-import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateAddHtlc}
-import fr.acinq.eclair.{Features, MilliSatoshiLong, TestKitBaseClass}
+import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
 
-class ChannelTypesSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
+class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
-
-  test("channel features determines commitment format") {
-    val standardChannel = ChannelFeatures()
-    val staticRemoteKeyChannel = ChannelFeatures(Features.StaticRemoteKey)
-    val anchorOutputsChannel = ChannelFeatures(Features.StaticRemoteKey, Features.AnchorOutputs)
-    assert(!standardChannel.hasFeature(Features.StaticRemoteKey))
-    assert(!standardChannel.hasFeature(Features.AnchorOutputs))
-    assert(standardChannel.commitmentFormat === Transactions.DefaultCommitmentFormat)
-    assert(!standardChannel.paysDirectlyToWallet)
-
-    assert(staticRemoteKeyChannel.hasFeature(Features.StaticRemoteKey))
-    assert(!staticRemoteKeyChannel.hasFeature(Features.AnchorOutputs))
-    assert(staticRemoteKeyChannel.commitmentFormat === Transactions.DefaultCommitmentFormat)
-    assert(staticRemoteKeyChannel.paysDirectlyToWallet)
-
-    assert(anchorOutputsChannel.hasFeature(Features.StaticRemoteKey))
-    assert(anchorOutputsChannel.hasFeature(Features.AnchorOutputs))
-    assert(anchorOutputsChannel.commitmentFormat === Transactions.AnchorOutputsCommitmentFormat)
-    assert(!anchorOutputsChannel.paysDirectlyToWallet)
-  }
-
-  test("pick channel features based on local and remote features") {
-    import fr.acinq.eclair.FeatureSupport._
-    import fr.acinq.eclair.Features
-    import fr.acinq.eclair.Features._
-
-    case class TestCase(localFeatures: Features, remoteFeatures: Features, expectedChannelFeatures: ChannelFeatures)
-    val testCases = Seq(
-      TestCase(Features.empty, Features.empty, ChannelFeatures()),
-      TestCase(Features(StaticRemoteKey -> Optional), Features.empty, ChannelFeatures()),
-      TestCase(Features.empty, Features(StaticRemoteKey -> Optional), ChannelFeatures()),
-      TestCase(Features.empty, Features(StaticRemoteKey -> Mandatory), ChannelFeatures()),
-      TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Mandatory), Features(Wumbo -> Mandatory), ChannelFeatures(Wumbo)),
-      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Optional), ChannelFeatures(StaticRemoteKey)),
-      TestCase(Features(StaticRemoteKey -> Optional), Features(StaticRemoteKey -> Mandatory), ChannelFeatures(StaticRemoteKey)),
-      TestCase(Features(StaticRemoteKey -> Optional, Wumbo -> Optional), Features(StaticRemoteKey -> Mandatory, Wumbo -> Mandatory), ChannelFeatures(StaticRemoteKey, Wumbo)),
-      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional), ChannelFeatures(StaticRemoteKey)),
-      TestCase(Features(StaticRemoteKey -> Mandatory, AnchorOutputs -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional), ChannelFeatures(StaticRemoteKey, AnchorOutputs)),
-      TestCase(Features(OptionUpfrontShutdownScript -> Optional), Features.empty, ChannelFeatures()),
-      TestCase(Features(OptionUpfrontShutdownScript -> Optional), Features(OptionUpfrontShutdownScript -> Optional), ChannelFeatures(OptionUpfrontShutdownScript)),
-      TestCase(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, OptionUpfrontShutdownScript -> Optional), Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, OptionUpfrontShutdownScript -> Optional), ChannelFeatures(StaticRemoteKey, AnchorOutputs, OptionUpfrontShutdownScript)),
-    )
-
-    for (testCase <- testCases) {
-      assert(ChannelFeatures.pickChannelFeatures(testCase.localFeatures, testCase.remoteFeatures) === testCase.expectedChannelFeatures)
-    }
-  }
 
   case class HtlcWithPreimage(preimage: ByteVector32, htlc: UpdateAddHtlc)
 

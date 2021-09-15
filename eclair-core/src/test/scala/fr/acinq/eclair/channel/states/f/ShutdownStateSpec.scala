@@ -89,7 +89,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
       relayerB.expectMsgType[RelayForward]
       relayerB.expectMsgType[RelayForward]
       // alice initiates a closing
-      alice ! CMD_CLOSE(sender.ref, None)
+      alice ! CMD_CLOSE(sender.ref, None, None)
       alice2bob.expectMsgType[Shutdown]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[Shutdown]
@@ -598,7 +598,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     val sender = TestProbe()
     val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
     val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
-    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, newFeeBaseMsat, newFeeProportionalMillionth)
+    alice ! CMD_UPDATE_RELAY_FEE(sender.ref, newFeeBaseMsat, newFeeProportionalMillionth, cltvExpiryDelta_opt = None)
     sender.expectMsgType[RES_FAILURE[CMD_UPDATE_RELAY_FEE, _]]
     relayerA.expectNoMessage(1 seconds)
   }
@@ -630,10 +630,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.feePerBlock(alice.feeTargets.commitmentBlockTarget)))
   }
 
-  test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("recv CurrentFeerate (when funder, triggers an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    assert(initialState.commitments.localCommit.spec.feeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
+    assert(initialState.commitments.localCommit.spec.commitTxFeerate === TestConstants.anchorOutputsFeeratePerKw)
     alice ! CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw / 2))
     alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, TestConstants.anchorOutputsFeeratePerKw / 2))
   }
@@ -645,10 +645,10 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     alice2bob.expectNoMessage(500 millis)
   }
 
-  test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) { f =>
+  test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee, anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) { f =>
     import f._
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    assert(initialState.commitments.localCommit.spec.feeratePerKw === TestConstants.anchorOutputsFeeratePerKw)
+    assert(initialState.commitments.localCommit.spec.commitTxFeerate === TestConstants.anchorOutputsFeeratePerKw)
     alice ! CurrentFeerates(FeeratesPerKw.single(TestConstants.anchorOutputsFeeratePerKw * 2))
     alice2bob.expectNoMessage(500 millis)
   }
@@ -837,8 +837,25 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_CLOSE") { f =>
     import f._
     val sender = TestProbe()
-    alice ! CMD_CLOSE(sender.ref, None)
+    alice ! CMD_CLOSE(sender.ref, None, None)
     sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
+  }
+
+  test("recv CMD_CLOSE with updated feerates") { f =>
+    import f._
+    val sender = TestProbe()
+    val closingFeerates1 = ClosingFeerates(FeeratePerKw(500 sat), FeeratePerKw(250 sat), FeeratePerKw(2500 sat))
+    alice ! CMD_CLOSE(sender.ref, None, Some(closingFeerates1))
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates === Some(closingFeerates1))
+
+    val closingScript = alice.stateData.asInstanceOf[DATA_SHUTDOWN].localShutdown.scriptPubKey
+    val closingFeerates2 = ClosingFeerates(FeeratePerKw(600 sat), FeeratePerKw(300 sat), FeeratePerKw(2500 sat))
+    alice ! CMD_CLOSE(sender.ref, Some(closingScript.reverse), Some(closingFeerates2))
+    sender.expectMsgType[RES_FAILURE[CMD_CLOSE, ClosingAlreadyInProgress]]
+    alice ! CMD_CLOSE(sender.ref, Some(closingScript), Some(closingFeerates2))
+    sender.expectMsgType[RES_SUCCESS[CMD_CLOSE]]
+    assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].closingFeerates === Some(closingFeerates2))
   }
 
   test("recv CMD_FORCECLOSE") { f =>

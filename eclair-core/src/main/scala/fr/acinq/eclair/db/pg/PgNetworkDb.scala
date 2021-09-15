@@ -187,7 +187,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
   }
 
   override def updateChannel(u: ChannelUpdate): Unit = withMetrics("network/update-channel", DbBackends.Postgres) {
-    val column = if (u.isNode1) "channel_update_1" else "channel_update_2"
+    val column = if (u.channelFlags.isNode1) "channel_update_1" else "channel_update_2"
     inTransaction { pg =>
       using(pg.prepareStatement(s"UPDATE network.public_channels SET $column=?, ${column}_json=?::JSONB WHERE short_channel_id=?")) {
         statement =>

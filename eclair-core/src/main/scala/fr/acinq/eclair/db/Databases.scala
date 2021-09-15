@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.db
 
-import akka.actor.ActorSystem
+import akka.Done
+import akka.actor.{ActorSystem, CoordinatedShutdown}
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
@@ -29,6 +30,7 @@ import java.io.File
 import java.nio.file._
 import java.sql.Connection
 import java.util.UUID
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 trait Databases {
@@ -111,7 +113,22 @@ object Databases extends Logging {
           l.obtainExclusiveLock(ds)
           // ...and renew the lease regularly
           import system.dispatcher
-          system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => l.obtainExclusiveLock(ds))
+          val leaseLockTask = system.scheduler.scheduleWithFixedDelay(l.leaseRenewInterval, l.leaseRenewInterval)(() => l.obtainExclusiveLock(ds))
+
+          if (l.autoReleaseAtShutdown) {
+            CoordinatedShutdown(system).addTask(CoordinatedShutdown.PhaseActorSystemTerminate, "release-postgres-lock") { () =>
+              Future {
+                logger.info("cancelling the pg lock renew task...")
+                leaseLockTask.cancel()
+                logger.info("releasing the curent pg lock...")
+                l.releaseExclusiveLock(ds)
+                Thread.sleep(3000)
+                logger.info("closing the connection pool...")
+                ds.close()
+                Done
+              }
+            }
+          }
       }
 
       val databases = PostgresDatabases(
@@ -221,7 +238,8 @@ object Databases extends Logging {
         // by other threads. That timeout gives time for other transactions to complete, then ours can take the lock
         val lockTimeout = dbConfig.getDuration("postgres.lease.lock-timeout").toSeconds.seconds
         hikariConfig.setConnectionInitSql(s"SET lock_timeout TO '${lockTimeout.toSeconds}s'")
-        PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, lockExceptionHandler)
+        val autoReleaseAtShutdown = dbConfig.getBoolean("postgres.lease.auto-release-at-shutdown")
+        PgLock.LeaseLock(instanceId, leaseInterval, leaseRenewInterval, lockExceptionHandler, autoReleaseAtShutdown)
       case unknownLock => throw new RuntimeException(s"unknown postgres lock type: `$unknownLock`")
     }
 

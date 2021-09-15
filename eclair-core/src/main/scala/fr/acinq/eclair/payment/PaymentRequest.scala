@@ -25,7 +25,7 @@ import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
 
 import scala.concurrent.duration._
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 /**
  * Lightning Payment Request
@@ -462,17 +462,19 @@ object PaymentRequest {
       case _ => 'm'
     }
 
-    def decode(input: String): Option[MilliSatoshi] =
+    def decode(input: String): Try[Option[MilliSatoshi]] =
       (input match {
-        case "" => None
-        case a if a.last == 'p' => Some(MilliSatoshi(a.dropRight(1).toLong / 10L)) // 1 pico-bitcoin == 0.1 milli-satoshis
-        case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
-        case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
-        case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
-        case a => Some(MilliSatoshi(a.toLong * 100000000000L))
-      }).flatMap {
-        case MilliSatoshi(0) => None
-        case amount => Some(amount)
+        case "" => Success(None)
+        case a if a.last == 'p' && a.dropRight(1).last != '0' => Failure(new IllegalArgumentException("invalid sub-millisatoshi precision"))
+        case a if a.last == 'p' => Success(Some(MilliSatoshi(a.dropRight(1).toLong / 10L))) // 1 pico-bitcoin == 0.1 milli-satoshis
+        case a if a.last == 'n' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100L)))
+        case a if a.last == 'u' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100000L)))
+        case a if a.last == 'm' => Success(Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L)))
+        case a => Success(Some(MilliSatoshi(a.toLong * 100000000000L)))
+      }).map {
+        case None => None
+        case Some(MilliSatoshi(0)) => None
+        case Some(amount) => Some(amount)
       }
 
     def encode(amount: Option[MilliSatoshi]): String = {
@@ -513,7 +515,10 @@ object PaymentRequest {
     val pub = Crypto.recoverPublicKey(signature, Crypto.sha256(message), recid)
     // README: since we use pubkey recovery to compute the node id from the message and signature, we don't check the signature.
     // If instead we read the node id from the `n` field (which nobody uses afaict) then we would have to check the signature.
-    val amount_opt = Amount.decode(hrp.drop(prefix.length))
+    val amount_opt = Amount.decode(hrp.drop(prefix.length)) match {
+      case Success(value) => value
+      case Failure(e) => throw e
+    }
     PaymentRequest(
       prefix = prefix,
       amount = amount_opt,

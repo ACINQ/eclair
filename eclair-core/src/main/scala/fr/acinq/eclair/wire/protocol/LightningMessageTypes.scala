@@ -20,7 +20,7 @@ import com.google.common.base.Charsets
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.channel.ChannelType
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.ByteVector
 
@@ -103,7 +103,8 @@ case class OpenChannel(chainHash: ByteVector32,
                        firstPerCommitmentPoint: PublicKey,
                        channelFlags: Byte,
                        tlvStream: TlvStream[OpenChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId with HasChainHash {
-  val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScript].map(_.script)
+  val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
+  val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
 }
 
 case class AcceptChannel(temporaryChannelId: ByteVector32,
@@ -121,7 +122,8 @@ case class AcceptChannel(temporaryChannelId: ByteVector32,
                          htlcBasepoint: PublicKey,
                          firstPerCommitmentPoint: PublicKey,
                          tlvStream: TlvStream[AcceptChannelTlv] = TlvStream.empty) extends ChannelMessage with HasTemporaryChannelId {
-  val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScript].map(_.script)
+  val upfrontShutdownScript_opt: Option[ByteVector] = tlvStream.get[ChannelTlv.UpfrontShutdownScriptTlv].map(_.script)
+  val channelType_opt: Option[ChannelType] = tlvStream.get[ChannelTlv.ChannelTypeTlv].map(_.channelType)
 }
 
 case class FundingCreated(temporaryChannelId: ByteVector32,
@@ -145,7 +147,9 @@ case class Shutdown(channelId: ByteVector32,
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
                          signature: ByteVector64,
-                         tlvStream: TlvStream[ClosingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
+                         tlvStream: TlvStream[ClosingSignedTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId {
+  val feeRange_opt = tlvStream.get[ClosingSignedTlv.FeeRange]
+}
 
 case class UpdateAddHtlc(channelId: ByteVector32,
                          id: Long,
@@ -250,17 +254,26 @@ case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
                          shortChannelId: ShortChannelId,
                          timestamp: Long,
-                         messageFlags: Byte,
-                         channelFlags: Byte,
+                         channelFlags: ChannelUpdate.ChannelFlags,
                          cltvExpiryDelta: CltvExpiryDelta,
                          htlcMinimumMsat: MilliSatoshi,
                          feeBaseMsat: MilliSatoshi,
                          feeProportionalMillionths: Long,
                          htlcMaximumMsat: Option[MilliSatoshi],
                          tlvStream: TlvStream[ChannelUpdateTlv] = TlvStream.empty) extends RoutingMessage with AnnouncementMessage with HasTimestamp with HasChainHash {
-  require(((messageFlags & 1) != 0) == htlcMaximumMsat.isDefined, "htlcMaximumMsat is not consistent with messageFlags")
 
-  def isNode1 = Announcements.isNode1(channelFlags)
+  def messageFlags: Byte = if (htlcMaximumMsat.isDefined) 1 else 0
+
+  def toStringShort: String = s"cltvExpiryDelta=$cltvExpiryDelta,feeBase=$feeBaseMsat,feeProportionalMillionths=$feeProportionalMillionths"
+}
+
+object ChannelUpdate {
+  case class ChannelFlags(isEnabled: Boolean, isNode1: Boolean)
+
+  object ChannelFlags {
+    /** for tests */
+    val DUMMY: ChannelFlags = ChannelFlags(isEnabled = true, isNode1 = true)
+  }
 }
 
 // @formatter:off

@@ -32,7 +32,6 @@ import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
-import fr.acinq.eclair.router.RouteCalculation
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams}
@@ -60,7 +59,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   when(WAIT_FOR_PAYMENT_REQUEST) {
     case Event(r: SendMultiPartPayment, _) =>
-      val routeParams = r.getRouteParams(nodeParams, randomize = false) // we don't randomize the first attempt, regardless of configuration choices
+      val routeParams = r.routeParams.copy(randomize = false) // we don't randomize the first attempt, regardless of configuration choices
       val maxFee = routeParams.getMaxFee(r.totalAmount)
       log.debug("sending {} with maximum fee {}", r.totalAmount, maxFee)
       val d = PaymentProgress(r, r.maxAttempts, Map.empty, Ignore.empty, Nil)
@@ -81,7 +80,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         // If a child payment failed while we were waiting for routes, the routes we received don't cover the whole
         // remaining amount. In that case we discard these routes and send a new request to the router.
         log.info("discarding routes, another child payment failed so we need to recompute them (amount = {}, maximum fee = {})", toSend, maxFee)
-        val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
+        val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d, cfg)
         stay()
       }
@@ -95,7 +94,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         // a different split, they may have enough balance to forward the payment.
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, d.pending.values)
         log.debug("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignore.channels.map(_.shortChannelId).mkString(","))
-        val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
+        val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d, cfg).copy(ignore = d.ignore.emptyChannels())
         retriedFailedChannels = true
         stay() using d.copy(remainingAttempts = (d.remainingAttempts - 1).max(0), ignore = d.ignore.emptyChannels())
@@ -143,7 +142,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         val stillPending = d.pending - pf.id
         val (toSend, maxFee) = remainingToSend(nodeParams, d.request, stillPending.values)
         log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
-        val routeParams = d.request.getRouteParams(nodeParams, randomize = true) // we randomize route selection when we retry
+        val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d1, cfg)
         goto(WAIT_FOR_ROUTES) using d1
@@ -161,7 +160,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val failures = d.failures ++ pf.failures
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.request.replyTo, Left(PaymentFailed(id, paymentHash, failures)))
+        myStop(d.request, Left(PaymentFailed(id, paymentHash, failures)))
       } else {
         stay() using d.copy(failures = failures, pending = pending)
       }
@@ -183,7 +182,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val parts = d.parts ++ ps.parts
       val pending = d.pending - ps.parts.head.id
       if (pending.isEmpty) {
-        myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, parts)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.preimage, parts)))
       } else {
         stay() using d.copy(parts = parts, pending = pending)
       }
@@ -194,7 +193,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       log.warning(s"payment succeeded but partial payment failed (id=${pf.id})")
       val pending = d.pending - pf.id
       if (pending.isEmpty) {
-        myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, d.parts)))
+        myStop(d.request, Right(cfg.createPaymentSent(d.preimage, d.parts)))
       } else {
         stay() using d.copy(pending = pending)
       }
@@ -208,13 +207,13 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       case Upstream.Local(_) => Upstream.Local(childId)
       case _ => cfg.upstream
     }
-    val childCfg = cfg.copy(id = childId, publishEvent = false, upstream = upstream)
+    val childCfg = cfg.copy(id = childId, publishEvent = false, recordMetrics = false, upstream = upstream)
     paymentFactory.spawnOutgoingPayment(context, childCfg)
   }
 
   private def gotoAbortedOrStop(d: PaymentAborted): State = {
     if (d.pending.isEmpty) {
-      myStop(d.request.replyTo, Left(PaymentFailed(id, paymentHash, d.failures)))
+      myStop(d.request, Left(PaymentFailed(id, paymentHash, d.failures)))
     } else
       goto(PAYMENT_ABORTED) using d
   }
@@ -222,24 +221,42 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
   private def gotoSucceededOrStop(d: PaymentSucceeded): State = {
     d.request.replyTo ! PreimageReceived(paymentHash, d.preimage)
     if (d.pending.isEmpty) {
-      myStop(d.request.replyTo, Right(cfg.createPaymentSent(d.preimage, d.parts)))
+      myStop(d.request, Right(cfg.createPaymentSent(d.preimage, d.parts)))
     } else
       goto(PAYMENT_SUCCEEDED) using d
   }
 
-  def myStop(origin: ActorRef, event: Either[PaymentFailed, PaymentSent]): State = {
+  def myStop(request: SendMultiPartPayment, event: Either[PaymentFailed, PaymentSent]): State = {
     event match {
       case Left(paymentFailed) =>
         log.warning("multi-part payment failed")
-        reply(origin, paymentFailed)
+        reply(request.replyTo, paymentFailed)
       case Right(paymentSent) =>
         log.info("multi-part payment succeeded")
-        reply(origin, paymentSent)
+        reply(request.replyTo, paymentSent)
+    }
+    val status = event match {
+      case Right(s: PaymentSent) => "SUCCESS"
+      case Left(f: PaymentFailed) =>
+        if (f.failures.exists({ case r: RemoteFailure => r.e.originNode == cfg.recipientNodeId case _ => false })) {
+          "RECIPIENT_FAILURE"
+        } else {
+          "FAILURE"
+        }
+    }
+    val now = System.currentTimeMillis
+    val duration = now - start
+    if (cfg.recordMetrics) {
+      val fees = event match {
+        case Left(paymentFailed) => request.routeParams.getMaxFee(cfg.recipientAmount)
+        case Right(paymentSent) => paymentSent.feesPaid
+      }
+      context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId))
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
-      .withTag(Tags.Success, value = event.isRight)
-      .record(System.currentTimeMillis - start, TimeUnit.MILLISECONDS)
+      .withTag(Tags.Success, value = (status == "SUCCESS"))
+      .record(duration, TimeUnit.MILLISECONDS)
     if (retriedFailedChannels) {
       Metrics.RetryFailedChannelsResult.withTag(Tags.Success, event.isRight).increment()
     }
@@ -290,13 +307,10 @@ object MultiPartPaymentLifecycle {
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
                                   assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
-                                  routeParams: Option[RouteParams] = None,
+                                  routeParams: RouteParams,
                                   additionalTlvs: Seq[OnionTlv] = Nil,
                                   userCustomTlvs: Seq[GenericTlv] = Nil) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
-
-    def getRouteParams(nodeParams: NodeParams, randomize: Boolean): RouteParams =
-      routeParams.getOrElse(RouteCalculation.getDefaultRouteParams(nodeParams.routerConf)).copy(randomize = randomize)
   }
 
   /**
@@ -368,7 +382,7 @@ object MultiPartPaymentLifecycle {
       maxFee,
       d.request.assistedRoutes,
       d.ignore,
-      Some(routeParams),
+      routeParams,
       allowMultiPart = true,
       d.pending.values.toSeq,
       Some(cfg.paymentContext))
@@ -390,7 +404,7 @@ object MultiPartPaymentLifecycle {
   private def remainingToSend(nodeParams: NodeParams, request: SendMultiPartPayment, pending: Iterable[Route]): (MilliSatoshi, MilliSatoshi) = {
     val sentAmount = pending.map(_.amount).sum
     val sentFees = pending.map(_.fee).sum
-    (request.totalAmount - sentAmount, request.getRouteParams(nodeParams, randomize = false).getMaxFee(request.totalAmount) - sentFees)
+    (request.totalAmount - sentAmount, request.routeParams.copy(randomize = false).getMaxFee(request.totalAmount) - sentFees)
   }
 
 }

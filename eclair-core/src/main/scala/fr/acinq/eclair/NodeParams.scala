@@ -27,7 +27,9 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
-import fr.acinq.eclair.router.Router.RouterConf
+import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.PathFindingExperimentConf
+import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
 import grizzled.slf4j.Logging
@@ -52,6 +54,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[NodeAddress],
+                      torAddress_opt: Option[NodeAddress],
                       features: Features,
                       private val overrideFeatures: Map[PublicKey, Features],
                       syncWhitelist: Set[PublicKey],
@@ -90,7 +93,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       socksProxy_opt: Option[Socks5ProxyParams],
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean,
-                      balanceCheckInterval: FiniteDuration) {
+                      balanceCheckInterval: FiniteDuration,
+                      blockchainWatchdogSources: Seq[String]) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -196,7 +200,19 @@ object NodeParams extends Logging {
       "feerate-provider-timeout" -> "on-chain-fees.provider-timeout",
       // v0.6.1
       "enable-db-backup" -> "file-backup.enabled",
-      "backup-notify-script" -> "file-backup.notify-script"
+      "backup-notify-script" -> "file-backup.notify-script",
+      // v0.6.2
+      "router.randomize-route-selection" -> "router.path-finding.default.randomize-route-selection",
+      "router.path-finding.max-route-length" -> "router.path-finding.default.boundaries.max-route-length",
+      "router.path-finding.max-cltv" -> "router.path-finding.default.boundaries.max-cltv",
+      "router.path-finding.fee-threshold-sat" -> "router.path-finding.default.boundaries.max-fee-flat-sat",
+      "router.path-finding.max-fee-pct" -> "router.path-finding.default.boundaries.max-fee-proportional-percent",
+      "router.path-finding.ratio-base" -> "router.path-finding.default.ratios.base",
+      "router.path-finding.ratio-cltv" -> "router.path-finding.default.ratios.cltv",
+      "router.path-finding.ratio-channel-age" -> "router.path-finding.default.ratios.channel-age",
+      "router.path-finding.ratio-channel-capacity" -> "router.path-finding.default.ratios.channel-capacity",
+      "router.path-finding.hop-cost-base-msat" -> "router.path-finding.default.hop-cost.fee-base-msat",
+      "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost.fee-proportional-millionths",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -282,10 +298,12 @@ object NodeParams extends Logging {
       None
     }
 
+    val publicTorAddress_opt = if (config.getBoolean("tor.publish-onion-address")) torAddress_opt else None
+
     val addresses = config.getStringList("server.public-ips")
       .asScala
       .toList
-      .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ torAddress_opt
+      .map(ip => NodeAddress.fromParts(ip, config.getInt("server.port")).get) ++ publicTorAddress_opt
 
     val feeTargets = FeeTargets(
       fundingBlockTarget = config.getInt("on-chain-fees.target-blocks.funding"),
@@ -302,6 +320,32 @@ object NodeParams extends Logging {
       RelayFees(feeBase, relayFeesConfig.getInt("fee-proportional-millionths"))
     }
 
+    def getPathFindingConf(config: Config, name: String): PathFindingConf = PathFindingConf(
+      randomize = config.getBoolean("randomize-route-selection"),
+      boundaries = SearchBoundaries(
+        maxRouteLength = config.getInt("boundaries.max-route-length"),
+        maxCltv = CltvExpiryDelta(config.getInt("boundaries.max-cltv")),
+        maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
+        maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
+      ratios = WeightRatios(
+        baseFactor = config.getDouble("ratios.base"),
+        cltvDeltaFactor = config.getDouble("ratios.cltv"),
+        ageFactor = config.getDouble("ratios.channel-age"),
+        capacityFactor = config.getDouble("ratios.channel-capacity"),
+        hopCost = getRelayFees(config.getConfig("hop-cost")),
+      ),
+      mpp = MultiPartParams(
+        Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
+        config.getInt("mpp.max-parts")),
+      experimentName = name,
+      experimentPercentage = config.getInt("percentage"))
+
+
+    def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
+      val experiments = config.root.asScala.keys.map(name => name -> getPathFindingConf(config.getConfig(name), name))
+      PathFindingExperimentConf(experiments.toMap)
+    }
+
     val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
       case "uncompressed" => EncodingType.UNCOMPRESSED
       case "zlib" => EncodingType.COMPRESSED_ZLIB
@@ -315,6 +359,7 @@ object NodeParams extends Logging {
       alias = nodeAlias,
       color = Color(color(0), color(1), color(2)),
       publicAddresses = addresses,
+      torAddress_opt = torAddress_opt,
       features = coreAndPluginFeatures,
       pluginParams = pluginParams,
       overrideFeatures = overrideFeatures,
@@ -383,28 +428,17 @@ object NodeParams extends Logging {
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         networkStatsRefreshInterval = FiniteDuration(config.getDuration("router.network-stats-interval").getSeconds, TimeUnit.SECONDS),
-        randomizeRouteSelection = config.getBoolean("router.randomize-route-selection"),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
         encodingType = routerSyncEncodingType,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
-        searchMaxRouteLength = config.getInt("router.path-finding.max-route-length"),
-        searchMaxCltv = CltvExpiryDelta(config.getInt("router.path-finding.max-cltv")),
-        searchMaxFeeBase = Satoshi(config.getLong("router.path-finding.fee-threshold-sat")),
-        searchMaxFeePct = config.getDouble("router.path-finding.max-fee-pct"),
-        searchRatioBase = config.getDouble("router.path-finding.ratio-base"),
-        searchRatioCltv = config.getDouble("router.path-finding.ratio-cltv"),
-        searchRatioChannelAge = config.getDouble("router.path-finding.ratio-channel-age"),
-        searchRatioChannelCapacity = config.getDouble("router.path-finding.ratio-channel-capacity"),
-        searchHopCostBase = MilliSatoshi(config.getLong("router.path-finding.hop-cost-base-msat")),
-        searchHopCostMillionths = config.getLong("router.path-finding.hop-cost-millionths"),
-        mppMinPartAmount = Satoshi(config.getLong("router.path-finding.mpp.min-amount-satoshis")).toMilliSatoshi,
-        mppMaxParts = config.getInt("router.path-finding.mpp.max-parts")
+        pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments"))
       ),
       socksProxy_opt = socksProxy_opt,
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
-      balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS)
+      balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
+      blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq
     )
   }
 }

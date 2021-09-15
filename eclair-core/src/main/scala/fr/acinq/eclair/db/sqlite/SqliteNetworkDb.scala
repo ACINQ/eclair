@@ -116,7 +116,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb with Logging {
   }
 
   override def updateChannel(u: ChannelUpdate): Unit = withMetrics("network/update-channel", DbBackends.Sqlite) {
-    val column = if (u.isNode1) "channel_update_1" else "channel_update_2"
+    val column = if (u.channelFlags.isNode1) "channel_update_1" else "channel_update_2"
     using(sqlite.prepareStatement(s"UPDATE channels SET $column=? WHERE short_channel_id=?")) { statement =>
       statement.setBytes(1, channelUpdateCodec.encode(u).require.toByteArray)
       statement.setLong(2, u.shortChannelId.toLong)

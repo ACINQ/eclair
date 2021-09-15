@@ -20,7 +20,8 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, PaymentRequest, RemoteFailure}
-import fr.acinq.eclair.router.{Announcements, Router}
+import fr.acinq.eclair.router.Router.RouteParams
+import fr.acinq.eclair.router.{Announcements, RouteCalculation, Router}
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, randomLong}
 import scodec.bits.ByteVector
@@ -64,7 +65,8 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
             ),
             ByteVector.empty)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=${fakeInvoice.paymentHash}")
-          paymentInitiator ! PaymentInitiator.SendPayment(PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1)
+          val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
+          paymentInitiator ! PaymentInitiator.SendPaymentToNode(PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1, routeParams = routeParams)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()
@@ -101,7 +103,7 @@ object Autoprobe {
     val peers = routingData.channels
       .collect {
         case (shortChannelId, c@Router.PublicChannel(ann, _, _, Some(u1), _, _))
-          if c.getNodeIdSameSideAs(u1) == nodeId && Announcements.isEnabled(u1.channelFlags) && routingData.channels.exists(_._1 == shortChannelId) => ann.nodeId2 // we only consider outgoing channels that are enabled and announced
+          if c.getNodeIdSameSideAs(u1) == nodeId && u1.channelFlags.isEnabled && routingData.channels.exists(_._1 == shortChannelId) => ann.nodeId2 // we only consider outgoing channels that are enabled and announced
       }
     if (peers.isEmpty) {
       None

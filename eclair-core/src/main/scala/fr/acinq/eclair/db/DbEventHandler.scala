@@ -40,7 +40,8 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[ChannelClosed])
-  context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
+  context.system.eventStream.subscribe(self, classOf[ChannelUpdateParametersChanged])
+  context.system.eventStream.subscribe(self, classOf[PathFindingExperimentMetrics])
 
   override def receive: Receive = {
 
@@ -117,16 +118,11 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
       auditDb.add(ChannelEvent(e.channelId, e.commitments.remoteParams.nodeId, e.commitments.commitInput.txOut.amount, e.commitments.localParams.isFunder, !e.commitments.announceChannel, event))
       channelsDb.updateChannelMeta(e.channelId, event)
 
-    case u: LocalChannelUpdate =>
-      u.previousChannelUpdate_opt match {
-        case Some(previous) if
-          u.channelUpdate.feeBaseMsat == previous.feeBaseMsat &&
-          u.channelUpdate.feeProportionalMillionths == previous.feeProportionalMillionths &&
-          u.channelUpdate.cltvExpiryDelta == previous.cltvExpiryDelta &&
-          u.channelUpdate.htlcMinimumMsat == previous.htlcMinimumMsat &&
-          u.channelUpdate.htlcMaximumMsat == previous.htlcMaximumMsat => ()
-        case _ => auditDb.addChannelUpdate(u)
-      }
+    case u: ChannelUpdateParametersChanged =>
+      auditDb.addChannelUpdate(u)
+
+    case m: PathFindingExperimentMetrics =>
+      auditDb.addPathFindingExperimentMetrics(m)
 
   }
 

@@ -148,6 +148,10 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     identifyHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)))
   }
 
+  test("identify htlc txs (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
+    identifyHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)))
+  }
+
   private def removeHtlcId(htlcTx: HtlcTx): HtlcTx = htlcTx match {
     case htlcTx: HtlcSuccessTx => htlcTx.copy(htlcId = 0)
     case htlcTx: HtlcTimeoutTx => htlcTx.copy(htlcId = 0)
@@ -216,6 +220,10 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
   test("find timed out htlcs (anchor outputs)", Tag(ChannelStateTestsTags.AnchorOutputs)) {
     findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputs)), withoutHtlcId = false)
+  }
+
+  test("find timed out htlcs (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
+    findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)), withoutHtlcId = false)
   }
 
   test("tell closing type") {

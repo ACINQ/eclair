@@ -86,14 +86,14 @@ object ChannelRelayer {
 
           case GetOutgoingChannels(replyTo, Relayer.GetOutgoingChannels(enabledOnly)) =>
             val channels = if (enabledOnly) {
-              channelUpdates.values.filter(o => Announcements.isEnabled(o.channelUpdate.channelFlags))
+              channelUpdates.values.filter(o => o.channelUpdate.channelFlags.isEnabled)
             } else {
               channelUpdates.values
             }
             replyTo ! Relayer.OutgoingChannels(channels.toSeq)
             Behaviors.same
 
-          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, _, commitments)) =>
+          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
             context.log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
             val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> Relayer.OutgoingChannel(remoteNodeId, channelUpdate, commitments))
             val node2channels1 = node2channels.addOne(remoteNodeId, channelUpdate.shortChannelId)

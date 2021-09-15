@@ -19,6 +19,7 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Btc, MilliBtc, Satoshi, SatoshiLong}
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
@@ -45,8 +46,12 @@ object Graph {
    * We use heuristics to calculate the weight of an edge based on channel age, cltv delta, capacity and a virtual hop cost to keep routes short.
    * We favor older channels, with bigger capacity and small cltv delta.
    */
-  case class WeightRatios(baseFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopCostBase: MilliSatoshi, hopCostMillionths: Long) {
+  case class WeightRatios(baseFactor: Double, cltvDeltaFactor: Double, ageFactor: Double, capacityFactor: Double, hopCost: RelayFees) {
     require(baseFactor + cltvDeltaFactor + ageFactor + capacityFactor == 1, "The sum of heuristics ratios must be 1")
+    require(baseFactor >= 0.0, "ratio-base must be nonnegative")
+    require(cltvDeltaFactor >= 0.0, "ratio-cltv must be nonnegative")
+    require(ageFactor >= 0.0, "ratio-channel-age must be nonnegative")
+    require(capacityFactor >= 0.0, "ratio-channel-capacity must be nonnegative")
   }
   case class WeightedNode(key: PublicKey, weight: RichWeight)
   case class WeightedPath(path: Seq[GraphEdge], weight: RichWeight)
@@ -272,7 +277,7 @@ object Graph {
   private def addEdgeWeight(sender: PublicKey, edge: GraphEdge, prev: RichWeight, currentBlockHeight: Long, weightRatios: WeightRatios, includeLocalChannelCost: Boolean): RichWeight = {
     val totalCost = if (edge.desc.a == sender && !includeLocalChannelCost) prev.cost else addEdgeFees(edge, prev.cost)
     val fee = totalCost - prev.cost
-    val hopCost = nodeFee(weightRatios.hopCostBase, weightRatios.hopCostMillionths, prev.cost)
+    val hopCost = nodeFee(weightRatios.hopCost.feeBase, weightRatios.hopCost.feeProportionalMillionths, prev.cost)
     val totalCltv = if (edge.desc.a == sender && !includeLocalChannelCost) prev.cltv else prev.cltv + edge.update.cltvExpiryDelta
     import RoutingHeuristics._
 

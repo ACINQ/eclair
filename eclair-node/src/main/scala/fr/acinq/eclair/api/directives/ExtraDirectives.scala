@@ -46,6 +46,7 @@ trait ExtraDirectives extends Directives {
   val toFormParam: NameReceptacle[Long] = "to".as[Long]
   val amountMsatFormParam: NameReceptacle[MilliSatoshi] = "amountMsat".as[MilliSatoshi]
   val invoiceFormParam: NameReceptacle[PaymentRequest] = "invoice".as[PaymentRequest]
+  val routeFormat: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {

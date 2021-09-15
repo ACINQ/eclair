@@ -16,9 +16,11 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.UInt64
+import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.channel.{ChannelType, ChannelTypes}
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
+import fr.acinq.eclair.{FeatureSupport, Features, UInt64}
 import scodec.Codec
 import scodec.bits.ByteVector
 import scodec.codecs._
@@ -30,9 +32,19 @@ sealed trait AcceptChannelTlv extends Tlv
 object ChannelTlv {
 
   /** Commitment to where the funds will go in case of a mutual close, which remote node will enforce in case we're compromised. */
-  case class UpfrontShutdownScript(script: ByteVector) extends OpenChannelTlv with AcceptChannelTlv {
+  case class UpfrontShutdownScriptTlv(script: ByteVector) extends OpenChannelTlv with AcceptChannelTlv {
     val isEmpty: Boolean = script.isEmpty
   }
+
+  val upfrontShutdownScriptCodec: Codec[UpfrontShutdownScriptTlv] = variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScriptTlv]
+
+  /** A channel type is a set of even feature bits that represent persistent features which affect channel operations. */
+  case class ChannelTypeTlv(channelType: ChannelType) extends OpenChannelTlv with AcceptChannelTlv
+
+  val channelTypeCodec: Codec[ChannelTypeTlv] = variableSizeBytesLong(varintoverflow, bytes).xmap(
+    b => ChannelTypeTlv(ChannelTypes.fromFeatures(Features(b))),
+    tlv => Features(tlv.channelType.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector
+  )
 
 }
 
@@ -41,7 +53,8 @@ object OpenChannelTlv {
   import ChannelTlv._
 
   val openTlvCodec: Codec[TlvStream[OpenChannelTlv]] = tlvStream(discriminated[OpenChannelTlv].by(varint)
-    .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript])
+    .typecase(UInt64(0), upfrontShutdownScriptCodec)
+    .typecase(UInt64(1), channelTypeCodec)
   )
 
 }
@@ -51,7 +64,8 @@ object AcceptChannelTlv {
   import ChannelTlv._
 
   val acceptTlvCodec: Codec[TlvStream[AcceptChannelTlv]] = tlvStream(discriminated[AcceptChannelTlv].by(varint)
-    .typecase(UInt64(0), variableSizeBytesLong(varintoverflow, bytes).as[UpfrontShutdownScript])
+    .typecase(UInt64(0), upfrontShutdownScriptCodec)
+    .typecase(UInt64(1), channelTypeCodec)
   )
 }
 
@@ -94,5 +108,13 @@ object ShutdownTlv {
 sealed trait ClosingSignedTlv extends Tlv
 
 object ClosingSignedTlv {
-  val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint))
+
+  case class FeeRange(min: Satoshi, max: Satoshi) extends ClosingSignedTlv
+
+  private val feeRange: Codec[FeeRange] = (("min_fee_satoshis" | satoshi) :: ("max_fee_satoshis" | satoshi)).as[FeeRange]
+
+  val closingSignedTlvCodec: Codec[TlvStream[ClosingSignedTlv]] = tlvStream(discriminated[ClosingSignedTlv].by(varint)
+    .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, feeRange))
+  )
+
 }

@@ -44,8 +44,9 @@ import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router.PredefinedNodeRoute
-import fr.acinq.eclair.router.{NetworkStats, Stats}
-import fr.acinq.eclair.wire.protocol.{Color, NodeAddress}
+import fr.acinq.eclair.router.{NetworkStats, Router, Stats}
+import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAddress}
+import org.json4s.JsonAST.{JArray, JString}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
@@ -229,6 +230,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       network = "regtest",
       blockHeight = 9999,
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
+      onionAddress = None,
       instanceId = "01234567-0123-4567-89ab-0123456789ab"
     ))
 
@@ -250,7 +252,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
 
     val eclair = mock[Eclair]
-    eclair.open(any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
     val mockService = new MockService(eclair)
 
     Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100002").toEntity) ~>
@@ -261,22 +263,110 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
-        eclair.open(nodeId, 100002 sat, None, None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.open(nodeId, 100002 sat, None, None, None, None, None)(any[Timeout]).wasCalled(once)
       }
   }
 
-  test("'close' method should accept channelIds and shortChannelIds") {
+  test("'open' channels with bad channelType") {
+    val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "100000", "channelType" -> "super_dope_channel").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.open) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+  }
+
+  test("'open' channels with standard channelType") {
+    val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+
+    val eclair = mock[Eclair]
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    val mockService = new MockService(eclair)
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "standard").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.Standard), None, None, None)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'open' channels with static_remotekey channelType") {
+    val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+
+    val eclair = mock[Eclair]
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    val mockService = new MockService(eclair)
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "static_remotekey").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.StaticRemoteKey), None, None, None)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'open' channels with anchor_outputs channelType") {
+    val nodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+
+    val eclair = mock[Eclair]
+    eclair.open(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(ChannelOpened(channelId))
+    val mockService = new MockService(eclair)
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "anchor_outputs").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputs), None, None, None)(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/open", FormData("nodeId" -> nodeId.toString(), "fundingSatoshis" -> "25000", "channelType" -> "anchor_outputs_zero_fee_htlc_tx").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[String] == "\"created channel 56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e\"")
+        eclair.open(nodeId, 25000 sat, None, Some(ChannelTypes.AnchorOutputsZeroFeeHtlcTx), None, None, None)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'close' method should accept shortChannelIds") {
     val shortChannelIdSerialized = "42000x27x3"
     val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
     val channelIdSerialized = channelId.toHex
     val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
-      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None), channelId)),
+      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), channelId)),
       Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
-      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
+      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
     )
 
     val eclair = mock[Eclair]
-    eclair.close(any, any)(any[Timeout]) returns Future.successful(response)
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
     val mockService = new MockService(eclair)
 
     Post("/close", FormData("shortChannelId" -> shortChannelIdSerialized).toEntity) ~>
@@ -287,9 +377,24 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Right(ShortChannelId(shortChannelIdSerialized)) :: Nil, None)(any[Timeout]).wasCalled(once)
+        eclair.close(Right(ShortChannelId(shortChannelIdSerialized)) :: Nil, None, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
+  }
+
+  test("'close' method should accept channelIds") {
+    val shortChannelIdSerialized = "42000x27x3"
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+    val channelIdSerialized = channelId.toHex
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), channelId)),
+      Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
+      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
+    )
+
+    val eclair = mock[Eclair]
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
+    val mockService = new MockService(eclair)
 
     Post("/close", FormData("channelId" -> channelIdSerialized).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -299,9 +404,24 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Left(channelId) :: Nil, None)(any[Timeout]).wasCalled(once)
+        eclair.close(Left(channelId) :: Nil, None, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
+  }
+
+  test("'close' method should accept channelIds and shortChannelIds") {
+    val shortChannelIdSerialized = "42000x27x3"
+    val channelId = ByteVector32(hex"56d7d6eda04d80138270c49709f1eadb5ab4939e5061309ccdacdb98ce637d0e")
+    val channelIdSerialized = channelId.toHex
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+      Left(channelId) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), channelId)),
+      Left(channelId.reverse) -> Left(new RuntimeException("channel not found")),
+      Right(ShortChannelId(shortChannelIdSerialized)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), ByteVector32.fromValidHex(channelIdSerialized.reverse)))
+    )
+
+    val eclair = mock[Eclair]
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
+    val mockService = new MockService(eclair)
 
     Post("/close", FormData("channelIds" -> channelIdSerialized, "shortChannelIds" -> "42000x27x3,42000x561x1").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -311,14 +431,101 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == OK)
         val resp = entityAs[String]
-        eclair.close(Left(channelId) :: Right(ShortChannelId("42000x27x3")) :: Right(ShortChannelId("42000x561x1")) :: Nil, None)(any[Timeout]).wasCalled(once)
+        eclair.close(Left(channelId) :: Right(ShortChannelId("42000x27x3")) :: Right(ShortChannelId("42000x561x1")) :: Nil, None, None)(any[Timeout]).wasCalled(once)
         matchTestJson("close", resp)
       }
   }
 
-  test("'connect' method should accept an URI and a triple with nodeId/host/port") {
+  test("'close' accepts custom closing feerates 1") {
+    val shortChannelId = "1701x42x3"
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+      Right(ShortChannelId(shortChannelId)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32()))
+    )
+
+    val eclair = mock[Eclair]
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
+    val mockService = new MockService(eclair)
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "preferredFeerateSatByte" -> "10", "minFeerateSatByte" -> "2", "maxFeerateSatByte" -> "50").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val expectedFeerates = ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(500 sat), FeeratePerKw(12500 sat))
+        eclair.close(Right(ShortChannelId(shortChannelId)) :: Nil, None, Some(expectedFeerates))(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'close' accepts custom closing feerates 2") {
+    val shortChannelId = "1701x42x3"
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+      Right(ShortChannelId(shortChannelId)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32()))
+    )
+
+    val eclair = mock[Eclair]
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
+    val mockService = new MockService(eclair)
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "preferredFeerateSatByte" -> "10").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val expectedFeerates = ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(1250 sat), FeeratePerKw(5000 sat))
+        eclair.close(Right(ShortChannelId(shortChannelId)) :: Nil, None, Some(expectedFeerates))(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'close' accepts custom closing feerates 3") {
+    val shortChannelId = "1701x42x3"
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+      Right(ShortChannelId(shortChannelId)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32()))
+    )
+
+    val eclair = mock[Eclair]
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
+    val mockService = new MockService(eclair)
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "preferredFeerateSatByte" -> "10", "minFeerateSatByte" -> "2").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val expectedFeerates = ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(500 sat), FeeratePerKw(5000 sat))
+        eclair.close(Right(ShortChannelId(shortChannelId)) :: Nil, None, Some(expectedFeerates))(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'close' accepts custom closing feerates 4") {
+    val shortChannelId = "1701x42x3"
+    val response = Map[ChannelIdentifier, Either[Throwable, CommandResponse[CMD_CLOSE]]](
+      Right(ShortChannelId(shortChannelId)) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), randomBytes32()))
+    )
+
+    val eclair = mock[Eclair]
+    eclair.close(any, any, any)(any[Timeout]) returns Future.successful(response)
+    val mockService = new MockService(eclair)
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "preferredFeerateSatByte" -> "10", "maxFeerateSatByte" -> "50").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val expectedFeerates = ClosingFeerates(FeeratePerKw(2500 sat), FeeratePerKw(1250 sat), FeeratePerKw(12500 sat))
+        eclair.close(Right(ShortChannelId(shortChannelId)) :: Nil, None, Some(expectedFeerates))(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'connect' method should accept a nodeId") {
     val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
-    val remoteUri = NodeURI.parse("030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735")
 
     val eclair = mock[Eclair]
     eclair.connect(any[Either[NodeURI, PublicKey]])(any[Timeout]) returns Future.successful("connected")
@@ -333,6 +540,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(entityAs[String] == "\"connected\"")
         eclair.connect(Right(remoteNodeId))(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'connect' method should accept an URI") {
+    val remoteUri = NodeURI.parse("030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87@93.137.102.239:9735")
+
+    val eclair = mock[Eclair]
+    eclair.connect(any[Either[NodeURI, PublicKey]])(any[Timeout]) returns Future.successful("connected")
+    val mockService = new MockService(eclair)
 
     Post("/connect", FormData("uri" -> remoteUri.toString).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -344,6 +559,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         eclair.connect(Left(remoteUri))(any[Timeout]).wasCalled(once) // must account for the previous, identical, invocation
       }
   }
+
 
   test("'send' method should handle payment failures") {
     val eclair = mock[Eclair]
@@ -409,7 +625,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'send' method should correctly forward amount parameters to EclairImpl") {
+  test("'send' method should correctly forward amount parameters to EclairImpl 1") {
     val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
 
     val eclair = mock[Eclair]
@@ -424,6 +640,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         eclair.send(None, 1258000 msat, any, any, any, any)(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'send' method should correctly forward amount parameters to EclairImpl 2") {
+    val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+
+    val eclair = mock[Eclair]
+    eclair.send(any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "123", "feeThresholdSat" -> "112233", "maxFeePct" -> "2.34", "externalId" -> "42").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -433,6 +657,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         eclair.send(Some("42"), 123 msat, any, any, Some(112233 sat), Some(2.34))(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'send' method should correctly forward amount parameters to EclairImpl 3") {
+    val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+
+    val eclair = mock[Eclair]
+    eclair.send(any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    val mockService = new MockService(eclair)
 
     Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "456", "feeThresholdSat" -> "10", "maxFeePct" -> "0.5").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -444,11 +676,26 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'sendtonode'") {
+  test("'send' method should correctly forward amount parameters to EclairImpl 4") {
+    val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+
     val eclair = mock[Eclair]
-    eclair.sendWithPreimage(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    eclair.send(any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
     val mockService = new MockService(eclair)
-    val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+
+    Post("/payinvoice", FormData("invoice" -> invoice, "amountMsat" -> "456", "feeThresholdSat" -> "10", "maxFeePct" -> "0.5", "pathFindingExperimentName" -> "my-test-experiment").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.route) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.send(None, 456 msat, any, any, Some(10 sat), Some(0.5), Some("my-test-experiment"))(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'sendtonode' 1") {
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
 
     Post("/sendtonode", FormData("amountMsat" -> "123").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -457,6 +704,11 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == BadRequest)
       }
+  }
+
+  test("'sendtonode' 2") {
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
 
     Post("/sendtonode", FormData("nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -465,6 +717,13 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(handled)
         assert(status == BadRequest)
       }
+  }
+
+  test("'sendtonode' 3") {
+    val eclair = mock[Eclair]
+    eclair.sendWithPreimage(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    val mockService = new MockService(eclair)
+    val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     Post("/sendtonode", FormData("amountMsat" -> "123", "nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -472,8 +731,15 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None)(any[Timeout]).wasCalled(once)
+        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None, None)(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'sendtonode' 4") {
+    val eclair = mock[Eclair]
+    eclair.sendWithPreimage(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    val mockService = new MockService(eclair)
+    val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
     Post("/sendtonode", FormData("amountMsat" -> "123", "nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87", "feeThresholdSat" -> "10000", "maxFeePct" -> "2.5", "externalId" -> "42").toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -481,22 +747,32 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.sendWithPreimage(Some("42"), remoteNodeId, 123 msat, any, any, Some(10000 sat), Some(2.5))(any[Timeout]).wasCalled(once)
+        eclair.sendWithPreimage(Some("42"), remoteNodeId, 123 msat, any, any, Some(10000 sat), Some(2.5), None)(any[Timeout]).wasCalled(once)
       }
   }
 
-  test("'getreceivedinfo'") {
+  test("'sendtonode' 5") {
+    val eclair = mock[Eclair]
+    eclair.sendWithPreimage(any, any, any, any, any, any, any, any)(any[Timeout]) returns Future.successful(UUID.randomUUID())
+    val mockService = new MockService(eclair)
+    val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
+
+    Post("/sendtonode", FormData("amountMsat" -> "123", "nodeId" -> "030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87", "pathFindingExperimentName" -> "my-test-experiment").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.sendToNode) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.sendWithPreimage(None, remoteNodeId, 123 msat, any, None, None, None, Some("my-test-experiment"))(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'getreceivedinfo' 1") {
     val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
     val defaultPayment = IncomingPayment(PaymentRequest.read(invoice), ByteVector32.One, PaymentType.Standard, 42, IncomingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val notFound = randomBytes32()
     eclair.receivedInfo(notFound)(any) returns Future.successful(None)
-    val pending = randomBytes32()
-    eclair.receivedInfo(pending)(any) returns Future.successful(Some(defaultPayment))
-    val expired = randomBytes32()
-    eclair.receivedInfo(expired)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Expired)))
-    val received = randomBytes32()
-    eclair.receivedInfo(received)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Received(42 msat, 45))))
     val mockService = new MockService(eclair)
 
     Post("/getreceivedinfo", FormData("paymentHash" -> notFound.toHex).toEntity) ~>
@@ -509,6 +785,15 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(resp == ErrorResponse("Not found"))
         eclair.receivedInfo(notFound)(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'getreceivedinfo' 2") {
+    val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
+    val defaultPayment = IncomingPayment(PaymentRequest.read(invoice), ByteVector32.One, PaymentType.Standard, 42, IncomingPaymentStatus.Pending)
+    val eclair = mock[Eclair]
+    val pending = randomBytes32()
+    eclair.receivedInfo(pending)(any) returns Future.successful(Some(defaultPayment))
+    val mockService = new MockService(eclair)
 
     Post("/getreceivedinfo", FormData("paymentHash" -> pending.toHex).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -520,6 +805,15 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         matchTestJson("received-pending", response)
         eclair.receivedInfo(pending)(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'getreceivedinfo' 3") {
+    val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
+    val defaultPayment = IncomingPayment(PaymentRequest.read(invoice), ByteVector32.One, PaymentType.Standard, 42, IncomingPaymentStatus.Pending)
+    val eclair = mock[Eclair]
+    val expired = randomBytes32()
+    eclair.receivedInfo(expired)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Expired)))
+    val mockService = new MockService(eclair)
 
     Post("/getreceivedinfo", FormData("paymentHash" -> expired.toHex).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -531,6 +825,15 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         matchTestJson("received-expired", response)
         eclair.receivedInfo(expired)(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'getreceivedinfo' 4") {
+    val invoice = "lnbc2500u1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdq5xysxxatsyp3k7enxv4jsxqzpuaztrnwngzn3kdzw5hydlzf03qdgm2hdq27cqv3agm2awhz5se903vruatfhq77w3ls4evs3ch9zw97j25emudupq63nyw24cg27h2rspfj9srp"
+    val defaultPayment = IncomingPayment(PaymentRequest.read(invoice), ByteVector32.One, PaymentType.Standard, 42, IncomingPaymentStatus.Pending)
+    val eclair = mock[Eclair]
+    val received = randomBytes32()
+    eclair.receivedInfo(received)(any) returns Future.successful(Some(defaultPayment.copy(status = IncomingPaymentStatus.Received(42 msat, 45))))
+    val mockService = new MockService(eclair)
 
     Post("/getreceivedinfo", FormData("paymentHash" -> received.toHex).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -544,15 +847,11 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'getsentinfo'") {
+  test("'getsentinfo' 1") {
     val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, 1, None, OutgoingPaymentStatus.Pending)
     val eclair = mock[Eclair]
     val pending = UUID.randomUUID()
     eclair.sentInfo(Left(pending))(any) returns Future.successful(Seq(defaultPayment))
-    val failed = UUID.randomUUID()
-    eclair.sentInfo(Left(failed))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Failed(Nil, 2))))
-    val sent = UUID.randomUUID()
-    eclair.sentInfo(Left(sent))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Succeeded(ByteVector32.One, 5 msat, Nil, 3))))
     val mockService = new MockService(eclair)
 
     Post("/getsentinfo", FormData("id" -> pending.toString).toEntity) ~>
@@ -565,6 +864,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         matchTestJson("sent-pending", response)
         eclair.sentInfo(Left(pending))(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'getsentinfo' 2") {
+    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, 1, None, OutgoingPaymentStatus.Pending)
+    val eclair = mock[Eclair]
+    val failed = UUID.randomUUID()
+    eclair.sentInfo(Left(failed))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Failed(Nil, 2))))
+    val mockService = new MockService(eclair)
 
     Post("/getsentinfo", FormData("id" -> failed.toString).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -576,6 +883,14 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         matchTestJson("sent-failed", response)
         eclair.sentInfo(Left(failed))(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'getsentinfo' 3") {
+    val defaultPayment = OutgoingPayment(UUID.fromString("00000000-0000-0000-0000-000000000000"), UUID.fromString("11111111-1111-1111-1111-111111111111"), None, ByteVector32.Zeroes, PaymentType.Standard, 42 msat, 50 msat, aliceNodeId, 1, None, OutgoingPaymentStatus.Pending)
+    val eclair = mock[Eclair]
+    val sent = UUID.randomUUID()
+    eclair.sentInfo(Left(sent))(any) returns Future.successful(Seq(defaultPayment.copy(status = OutgoingPaymentStatus.Succeeded(ByteVector32.One, 5 msat, Nil, 3))))
+    val mockService = new MockService(eclair)
 
     Post("/getsentinfo", FormData("id" -> sent.toString).toEntity) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
@@ -589,13 +904,12 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'sendtoroute' method should accept a both a json-encoded AND comma separated list of pubkeys") {
+  test("'sendtoroute' method should accept a json-encoded") {
     val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"), None)
     val expected = """{"paymentId":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","parentId":"2ad8c6d7-99cb-4238-8f67-89024b8eed0d"}"""
     val externalId = UUID.randomUUID().toString
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey(), Left("Some invoice"), CltvExpiryDelta(24))
     val expectedRoute = PredefinedNodeRoute(Seq(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28")))
-    val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
     val jsonNodes = serialization.write(expectedRoute.nodes)
 
     val eclair = mock[Eclair]
@@ -612,6 +926,18 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(entityAs[String] == expected)
         eclair.sendToRoute(1234 msat, None, Some(externalId), None, pr, CltvExpiryDelta(190), expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
       }
+  }
+
+  test("'sendtoroute' method should accept a comma separated list of pubkeys") {
+    val payment = SendPaymentToRouteResponse(UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f"), UUID.fromString("2ad8c6d7-99cb-4238-8f67-89024b8eed0d"), None)
+    val expected = """{"paymentId":"487da196-a4dc-4b1e-92b4-3e5e905e9f3f","parentId":"2ad8c6d7-99cb-4238-8f67-89024b8eed0d"}"""
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(1234 msat), ByteVector32.Zeroes, randomKey(), Left("Some invoice"), CltvExpiryDelta(24))
+    val expectedRoute = PredefinedNodeRoute(Seq(PublicKey(hex"0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9"), PublicKey(hex"0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3"), PublicKey(hex"026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28")))
+    val csvNodes = "0217eb8243c95f5a3b7d4c5682d10de354b7007eb59b6807ae407823963c7547a9, 0242a4ae0c5bef18048fbecf995094b74bfb0f7391418d71ed394784373f41e4f3, 026ac9fcd64fb1aa1c491fc490634dc33da41d4a17b554e0adf1b32fee88ee9f28"
+
+    val eclair = mock[Eclair]
+    eclair.sendToRoute(any[MilliSatoshi], any[Option[MilliSatoshi]], any[Option[String]], any[Option[UUID]], any[PaymentRequest], any[CltvExpiryDelta], any[PredefinedNodeRoute], any[Option[ByteVector32]], any[Option[MilliSatoshi]], any[Option[CltvExpiryDelta]], any[List[PublicKey]])(any[Timeout]) returns Future.successful(payment)
+    val mockService = new MockService(eclair)
 
     // this test uses CSV encoded route
     Post("/sendtoroute", FormData("nodeIds" -> csvNodes, "amountMsat" -> "1234", "finalCltvExpiry" -> "190", "invoice" -> PaymentRequest.write(pr)).toEntity) ~>
@@ -623,6 +949,95 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         assert(status == OK)
         assert(entityAs[String] == expected)
         eclair.sendToRoute(1234 msat, None, None, None, pr, CltvExpiryDelta(190), expectedRoute, None, None, None, Nil)(any[Timeout]).wasCalled(once)
+      }
+  }
+
+  test("'findroute' method response should support both a node ID and channel ID formats") {
+    val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
+
+
+    val mockChannelUpdate1 = ChannelUpdate(
+      signature = randomBytes64(),
+      chainHash = randomBytes32(),
+      shortChannelId = ShortChannelId(1, 2, 3),
+      timestamp = 0,
+      channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
+      cltvExpiryDelta = CltvExpiryDelta(0),
+      htlcMinimumMsat = MilliSatoshi(1),
+      feeBaseMsat = MilliSatoshi(1),
+      feeProportionalMillionths = 1,
+      htlcMaximumMsat = None
+    )
+
+    val mockHop1 =
+      Router.ChannelHop(nodeId = randomKey().publicKey, nextNodeId = randomKey().publicKey, mockChannelUpdate1)
+    val mockHop2 =
+      Router.ChannelHop(nodeId = mockHop1.nextNodeId, nextNodeId = randomKey().publicKey, mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 4)))
+    val mockHop3 =
+      Router.ChannelHop(nodeId = mockHop2.nextNodeId, nextNodeId = randomKey().publicKey, mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 5)))
+    val mockHops = Seq(mockHop1, mockHop2, mockHop3)
+
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+    eclair.findRoute(any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops))))
+
+    // invalid format
+    Post("/findroute", FormData("format"-> "invalid-output-format", "invoice" -> invoice, "amountMsat" -> "456")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasNever(called)
+      }
+
+    // default format
+    Post("/findroute", FormData("invoice" -> invoice, "amountMsat" -> "456")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse])) == JArray(List(
+          JString(mockHop1.nodeId.toString()),
+          JString(mockHop2.nodeId.toString()),
+          JString(mockHop3.nodeId.toString()),
+          JString(mockHop3.nextNodeId.toString())
+        )))
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/findroute", FormData("format" -> "nodeId", "invoice" -> invoice, "amountMsat" -> "456")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse])) == JArray(List(
+          JString(mockHop1.nodeId.toString()),
+          JString(mockHop2.nodeId.toString()),
+          JString(mockHop3.nodeId.toString()),
+          JString(mockHop3.nextNodeId.toString())
+        )))
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(twice)
+      }
+
+    Post("/findroute", FormData("format" -> "shortChannelId", "invoice" -> invoice, "amountMsat" -> "456")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        assert(entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse])) == JArray(List(
+          JString(mockHop1.lastUpdate.shortChannelId.toString()),
+          JString(mockHop2.lastUpdate.shortChannelId.toString()),
+          JString(mockHop3.lastUpdate.shortChannelId.toString())
+        )))
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(threeTimes)
       }
   }
 
