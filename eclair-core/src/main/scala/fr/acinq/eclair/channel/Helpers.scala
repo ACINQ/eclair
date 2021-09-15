@@ -518,12 +518,34 @@ object Helpers {
         Left(InvalidCloseFee(commitments.channelId, remoteClosingFee))
       } else {
         val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, ClosingFees(remoteClosingFee, remoteClosingFee, remoteClosingFee))
-        val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
-        Transactions.checkSpendable(signedClosingTx) match {
-          case Success(_) => Right(signedClosingTx, closingSigned)
-          case _ => Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+        if (checkClosingDustAmounts(closingTx)) {
+          val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
+          Transactions.checkSpendable(signedClosingTx) match {
+            case Success(_) => Right(signedClosingTx, closingSigned)
+            case _ => Left(InvalidCloseSignature(commitments.channelId, signedClosingTx.tx))
+          }
+        } else {
+          Left(InvalidCloseAmountBelowDust(commitments.channelId, closingTx.tx))
         }
       }
+    }
+
+    /**
+     * Check that all closing outputs are above bitcoin's dust limit for their script type, otherwise there is a risk
+     * that the closing transaction will not be relayed to miners' mempool and will not confirm.
+     * The various dust limits are detailed in https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#dust-limits
+     */
+    def checkClosingDustAmounts(closingTx: ClosingTx): Boolean = {
+      closingTx.tx.txOut.forall(txOut => {
+        Try(Script.parse(txOut.publicKeyScript)) match {
+          case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => txOut.amount >= 546.sat
+          case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => txOut.amount >= 540.sat
+          case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => txOut.amount >= 294.sat
+          case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => txOut.amount >= 330.sat
+          case Success((OP_1 | OP_2 | OP_3 | OP_4 | OP_5 | OP_6 | OP_7 | OP_8 | OP_9 | OP_10 | OP_11 | OP_12 | OP_13 | OP_14 | OP_15 | OP_16) :: OP_PUSHDATA(program, _) :: Nil) if 2 <= program.length && program.length <= 40 => txOut.amount >= 354.sat
+          case _ => txOut.amount >= 546.sat
+        }
+      })
     }
 
     /** Wraps transaction generation in a Try and filters failures to avoid one transaction negatively impacting a whole commitment. */
