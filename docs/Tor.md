@@ -175,3 +175,9 @@ eclair.blockchain-watchdog.sources = [
   "mempool.space"
 ]
 ```
+
+Also, you can disable Tor for all watchdog sources altogether using:
+
+```s
+eclair.socks5.use-for-watchdogs = false
+```

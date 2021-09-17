@@ -31,27 +31,27 @@ class Socks5ConnectionSpec extends AnyFunSuite {
 
     assert(Socks5ProxyParams.proxyAddress(
       socketAddress = new InetSocketAddress("1.2.3.4", 9735),
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true)).contains(proxyAddress))
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
       socketAddress = new InetSocketAddress("1.2.3.4", 9735),
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = false, useForIPv6 = true, useForTor = true)).isEmpty)
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = false, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).isEmpty)
 
     assert(Socks5ProxyParams.proxyAddress(
       socketAddress = new InetSocketAddress("[fc92:97a3:e057:b290:abd8:9bd6:135d:7e7]", 9735),
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true)).contains(proxyAddress))
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
       socketAddress = new InetSocketAddress("[fc92:97a3:e057:b290:abd8:9bd6:135d:7e7]", 9735),
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = false, useForTor = true)).isEmpty)
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = false, useForTor = true, useForWatchdogs = true)).isEmpty)
 
     assert(Socks5ProxyParams.proxyAddress(
       socketAddress = new InetSocketAddress("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735),
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true)).contains(proxyAddress))
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = true, useForWatchdogs = true)).contains(proxyAddress))
 
     assert(Socks5ProxyParams.proxyAddress(
       socketAddress = new InetSocketAddress("iq7zhmhck54vcax2vlrdcavq2m32wao7ekh6jyeglmnuuvv3js57r4id.onion", 9735),
-      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = false)).isEmpty)
+      proxyParams = Socks5ProxyParams(address = proxyAddress, credentials_opt = None, randomizeCredentials = false, useForIPv4 = true, useForIPv6 = true, useForTor = false, useForWatchdogs = true)).isEmpty)
 
   }
 
