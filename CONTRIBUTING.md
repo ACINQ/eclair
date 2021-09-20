@@ -72,6 +72,11 @@ When adding a new feature, thought must be given to the long term technical debt
 that feature may require after inclusion. Before proposing a new feature that will require
 maintenance, please consider if you are willing to maintain it (including bug fixing).
 
+We keep release notes directly [inside the repository](./docs/release-notes) and continuously
+update them as new features are added. If your change deserves to be included in the release notes
+(e.g. changes to the API, breaking changes, new feature), your pull request must also update the
+`eclair-vnext` release notes.
+
 When addressing pull request comments, we recommend using [fixup commits](https://robots.thoughtbot.com/autosquashing-git-commits).
 The reason for this is two fold: it makes it easier for the reviewer to see what changes have been
 made between versions (since Github doesn't easily show prior versions) and it makes it easier on
