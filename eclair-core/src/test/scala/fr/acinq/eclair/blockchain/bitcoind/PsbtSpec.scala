@@ -54,11 +54,11 @@ class PsbtSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLik
     bitcoinClient.fundPsbt(Seq(computeP2WpkhAddress(priv.publicKey, Block.RegtestGenesisBlock.hash) -> 100000.sat), 0, FundPsbtOptions(TestConstants.feeratePerKw, lockUtxos = false)).pipeTo(sender.ref)
     val FundPsbtResponse(psbt, _, _) = sender.expectMsgType[FundPsbtResponse]
 
-    // add our non-wallet input to the PSBT
-    val psbt1 = psbt.copy(
-      global = psbt.global.copy(tx = psbt.global.tx.addInput(TxIn(OutPoint(ourTx, index), Nil, 0))),
-      inputs = psbt.inputs :+ Psbt.PartiallySignedInput.empty.copy(witnessUtxo = Some(ourTx.txOut(index)), witnessScript = Some(Script.pay2pkh(priv.publicKey)))
-    )
+    val fakeTx = Transaction(version = 2, txIn = TxIn(OutPoint(ourTx, index), Nil, 0) :: Nil, txOut = Nil, lockTime = 0)
+    val fakePsbt = Psbt(fakeTx)
+    val joined = Psbt.join(psbt, fakePsbt).get
+    val psbt1 = joined.updateWitnessInput(OutPoint(ourTx, index), ourTx.txOut(index), witnessScript = Some(Script.pay2pkh(priv.publicKey))).get
+    val txWithAdditionalInput = psbt.global.tx.addInput(TxIn(OutPoint(ourTx, index), Nil, 0))
 
     // ask bitcoin core to sign its inputs
     bitcoinClient.processPsbt(psbt1).pipeTo(sender.ref)
@@ -66,10 +66,10 @@ class PsbtSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLik
 
     // sign our inputs
     val Success(psbt3) = psbt2.sign(priv, 1)
-    val sig = psbt3.inputs(1).partialSigs(priv.publicKey)
+    val sig = psbt3.sig
 
     // we now have a finalized PSBT
-    val Success(psbt4) = psbt3.finalize(1, ScriptWitness(sig :: priv.publicKey.value :: Nil))
+    val Success(psbt4) = psbt3.psbt.finalizeWitnessInput(1, ScriptWitness(sig :: priv.publicKey.value :: Nil))
     assert(psbt4.extract().isSuccess)
   }
 }

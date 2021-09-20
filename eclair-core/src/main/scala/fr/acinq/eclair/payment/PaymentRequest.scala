@@ -579,6 +579,6 @@ object PaymentRequest {
     val hrp = s"${pr.prefix}$hramount"
     val data = Codecs.bolt11DataCodec.encode(Bolt11Data(pr.timestamp, pr.tags, pr.signature)).require
     val int5s = eight2fiveCodec.decode(data).require.value
-    Bech32.encode(hrp, int5s.toArray)
+    Bech32.encode(hrp, int5s.toArray, Bech32.Bech32Encoding)
   }
 }

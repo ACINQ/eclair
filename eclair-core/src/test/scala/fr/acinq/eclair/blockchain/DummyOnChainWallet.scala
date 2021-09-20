@@ -90,9 +90,9 @@ object DummyOnChainWallet {
       txOut = TxOut(amount, pubkeyScript) :: Nil,
       lockTime = 0)
     val Success(psbt) = Psbt(fundingTx)
-      .update(baseTx, 0, witnessScript = Some(Script.pay2pkh(key.publicKey)))
+      .updateWitnessInputTx(baseTx, 0, witnessScript = Some(Script.pay2pkh(key.publicKey)))
       .flatMap(p => p.sign(key, 0))
-      .flatMap(p => p.finalize(0, Script.witnessPay2wpkh(key.publicKey, p.inputs(0).partialSigs(key.publicKey))))
+      .flatMap(p => p.psbt.finalizeWitnessInput(0, Script.witnessPay2wpkh(key.publicKey, p.sig)))
     MakeFundingTxResponse(psbt, 0, 420 sat)
   }
 

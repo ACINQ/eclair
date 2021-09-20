@@ -250,13 +250,11 @@ class BitcoinCoreClient(val chainHash: ByteVector32, val rpcClient: BitcoinJsonR
         case None => 0
         case Some(changePos) => 1 - changePos
       }
-      val output = psbt.outputs(outputIndex).copy(
-        derivationPaths = Map(
+      psbt.updateWitnessOutput(outputIndex, derivationPaths = Map(
           localFundingKey.publicKey -> Psbt.KeyPathWithMaster(localFundingKey.parent, ourbip32path),
           remoteFundingKey -> Psbt.KeyPathWithMaster(0L, DeterministicWallet.KeyPath("1/2/3/4"))
         )
-      )
-      psbt.copy(outputs = psbt.outputs.updated(outputIndex, output))
+      ).get
     }
 
     for {

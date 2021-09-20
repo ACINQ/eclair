@@ -293,7 +293,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         val claimAnchorSig = keyManager.sign(claimAnchorTx, keyManager.fundingPublicKey(cmd.commitments.localParams.fundingKeyPath), TxOwner.Local, cmd.commitments.commitmentFormat)
         val signedClaimAnchorTx = addSigs(claimAnchorTx, claimAnchorSig)
         // update our psbt with our signature for our input, and ask bitcoin core to sign its input
-        val psbt1 = psbt.finalize(0, signedClaimAnchorTx.tx.txIn(0).witness).get
+        val psbt1 = psbt.finalizeWitnessInput(0, signedClaimAnchorTx.tx.txIn(0).witness).get
         context.pipeToSelf(bitcoinClient.processPsbt(psbt1).map(processPbbtResponse => {
           // all inputs should be signed now
           processPbbtResponse.psbt.extract().get
@@ -312,7 +312,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         val signedHtlcTx = txWithWitnessData.addSigs(localSig, cmd.commitments.commitmentFormat)
 
         // update our psbt with our signature for our input, and ask bitcoin core to sign its input
-        val psbt1 = psbt.finalize(0, signedHtlcTx.tx.txIn(0).witness).get
+        val psbt1 = psbt.finalizeWitnessInput(0, signedHtlcTx.tx.txIn(0).witness).get
         context.pipeToSelf(bitcoinClient.processPsbt(psbt1).map(processPbbtResponse => {
           // all inputs should be signed now
           processPbbtResponse.psbt.extract().get
@@ -434,21 +434,20 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       unsignedTx = txInfo.copy(tx = psbt.global.tx.copy(txIn = txInfo.tx.txIn.head +: psbt.global.tx.txIn))
       (adjustedTx, fee) = adjustAnchorOutputChange(unsignedTx, commitTx, fundPsbtResponse.amountIn + AnchorOutputsCommitmentFormat.anchorAmount, commitFeerate, targetFeerate, dustLimit)
       // add a PSBT input for our input (i.e the one that spends our own anchor/htlc output and that we'll need to sign
-      psbtInput = Psbt.PartiallySignedInput.empty.copy(
-        witnessUtxo = Some(txInfo.input.txOut),
-        witnessScript = Some(Script.parse(txInfo.input.redeemScript))
-      )
-      psbt1 = psbt.copy(
-        global = psbt.global.copy(tx = adjustedTx.tx),
-        inputs = psbtInput +: psbt.inputs)
+      psbt1 = Psbt(adjustedTx.tx)
+      // update our txinfo input
+      psbt2 = psbt1.updateWitnessInput(txInfo.input.outPoint, txInfo.input.txOut, witnessScript = Some(Script.parse(txInfo.input.redeemScript))).get
+      // update the inputs selected by bitcoin core
+      psbt3 = psbt.outputs.zipWithIndex.tail.foldLeft(psbt2) {
+        case (psbt, (output, index)) => psbt.updateWitnessOutput(index, output.witnessScript, output.redeemScript, output.derivationPaths).get
+      }
     } yield {
-      (adjustedTx, fee, psbt1)
+      (adjustedTx, fee, psbt3)
     }
   }
 
   private def addInputs(txInfo: HtlcTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[(HtlcTx, Satoshi, Psbt)] = {
     // NB: fundrawtransaction doesn't support non-wallet inputs, so we clear the input and re-add it later.
-    val txNotFunded = txInfo.tx.copy(txIn = Nil, txOut = txInfo.tx.txOut.head.copy(amount = commitments.localParams.dustLimit) :: Nil)
     val htlcTxWeight = txInfo match {
       case _: HtlcSuccessTx => commitments.commitmentFormat.htlcSuccessWeight
       case _: HtlcTimeoutTx => commitments.commitmentFormat.htlcTimeoutWeight
@@ -478,10 +477,10 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = txWithHtlcInput)
       }
       val (adjustedTx, fee) = adjustHtlcTxChange(unsignedTx, fundPsbtResponse.amountIn + unsignedTx.input.txOut.amount, targetFeerate, commitments)
-      val psbt1 = fundPsbtResponse.psbt.copy(
-        global = fundPsbtResponse.psbt.global.copy(tx = adjustedTx.tx),
-        inputs = Psbt.PartiallySignedInput.empty.copy(witnessUtxo = Some(txInfo.input.txOut), witnessScript = Some(Script.parse(txInfo.input.redeemScript))) +: fundPsbtResponse.psbt.inputs
-      )
+      var psbt1 = Psbt(adjustedTx.tx).updateWitnessInput(txInfo.input.outPoint, txInfo.input.txOut, witnessScript = Some(Script.parse(txInfo.input.redeemScript))).get
+      fundPsbtResponse.psbt.outputs.zipWithIndex.tail.foreach {
+        case (output, index) => psbt1 = psbt1.updateWitnessOutput(index, output.witnessScript, output.redeemScript, output.derivationPaths).get
+      }
       (adjustedTx, fee, psbt1)
     })
   }

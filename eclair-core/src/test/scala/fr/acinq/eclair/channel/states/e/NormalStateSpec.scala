@@ -1089,7 +1089,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // actual test begins
-    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.Zeroes, Nil)
+    bob ! CommitSig(ByteVector32.Zeroes, ByteVector64.fromValidHex("01" * 64), Nil)
     val error = bob2alice.expectMsgType[Error]
     assert(new String(error.data.toArray).startsWith("invalid commitment signature"))
     awaitCond(bob.stateName == CLOSING)
