@@ -3,7 +3,6 @@
 [![Build Status](https://github.com/ACINQ/eclair/workflows/Build%20&%20Test/badge.svg)](https://github.com/ACINQ/eclair/actions?query=workflow%3A%22Build+%26+Test%22)
 [![codecov](https://codecov.io/gh/acinq/eclair/branch/master/graph/badge.svg)](https://codecov.io/gh/acinq/eclair)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
 **Eclair** (French for Lightning) is a Scala implementation of the Lightning Network.
 

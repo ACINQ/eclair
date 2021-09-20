@@ -16,7 +16,7 @@ This will help you understand the different parts of the codebase and how they w
 
 ## Communicating
 
-We recommend using our Gitter [developers channel](https://gitter.im/ACINQ/developers).
+We recommend using the [developers channel](https://github.com/ACINQ/eclair/discussions/categories/developers).
 Introducing yourself and explaining what you'd like to work on is always a good idea: you will get
 some pointers and feedback from experienced contributors. It will also ensure that you're not
 duplicating work that someone else is doing.
