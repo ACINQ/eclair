@@ -1809,14 +1809,14 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val start = randomKey().publicKey
     val g = DirectedGraph(List(
       makeEdge(0L, start, a, 0 msat, 0),
-      makeEdge(1L, a, b, 1000 msat, 1000, cltvDelta = CltvExpiryDelta(1000)),
-      makeEdge(2L, a, c, 400 msat, 500, cltvDelta = CltvExpiryDelta(10)),
-      makeEdge(3L, c, d, 400 msat, 500, cltvDelta = CltvExpiryDelta(10)),
-      makeEdge(4L, d, b, 400 msat, 500, cltvDelta = CltvExpiryDelta(10)),
+      makeEdge(1L, a, b, 1000 msat, 1000, cltvDelta = CltvExpiryDelta(10000)),
+      makeEdge(2L, a, c, 350 msat, 350, cltvDelta = CltvExpiryDelta(10)),
+      makeEdge(3L, c, d, 350 msat, 350, cltvDelta = CltvExpiryDelta(10)),
+      makeEdge(4L, d, b, 350 msat, 350, cltvDelta = CltvExpiryDelta(10)),
     ))
 
     val hc = HeuristicsConstants(
-      lockedFundsRisk = 1e-15,
+      lockedFundsRisk = 1e-10,
       failureCost = RelayFees(0 msat, 0),
       hopCost = RelayFees(0 msat, 0),
     )
