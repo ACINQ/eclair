@@ -144,6 +144,13 @@ object OnionTlv {
    */
   case class PaymentData(secret: ByteVector32, totalAmount: MilliSatoshi) extends OnionTlv
 
+  /**
+   * Route blinding lets the recipient provide some encrypted data for each intermediate node in the blinded part of the
+   * route. This data cannot be decrypted or modified by the sender and usually contains information to locate the next
+   * node without revealing it to the sender.
+   */
+  case class EncryptedRecipientData(data: ByteVector) extends OnionTlv
+
   /** Id of the next node. */
   case class OutgoingNodeId(nodeId: PublicKey) extends OnionTlv
 
@@ -327,6 +334,8 @@ object OnionCodecs {
 
   private val paymentData: Codec[PaymentData] = variableSizeBytesLong(varintoverflow, ("payment_secret" | bytes32) :: ("total_msat" | tmillisatoshi)).as[PaymentData]
 
+  private val encryptedRecipientData: Codec[EncryptedRecipientData] = variableSizeBytesLong(varintoverflow, "encrypted_data" | bytes).as[EncryptedRecipientData]
+
   private val outgoingNodeId: Codec[OutgoingNodeId] = variableSizeBytesLong(varintoverflow, "node_id" | publicKey).as[OutgoingNodeId]
 
   private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
@@ -342,6 +351,7 @@ object OnionCodecs {
     .typecase(UInt64(4), outgoingCltv)
     .typecase(UInt64(6), outgoingChannelId)
     .typecase(UInt64(8), paymentData)
+    .typecase(UInt64(10), encryptedRecipientData)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
     .typecase(UInt64(66097), invoiceFeatures)
     .typecase(UInt64(66098), outgoingNodeId)
