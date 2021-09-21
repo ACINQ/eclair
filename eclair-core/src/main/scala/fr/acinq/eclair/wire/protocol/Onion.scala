@@ -17,16 +17,13 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
-
-import scala.util.Try
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -99,8 +96,8 @@ TRAMPOLINE PAYMENT TO LEGACY RECIPIENT (the last trampoline node converts to a s
          |     (encrypted)       |     | trampoline_onion:         |     | trampoline_onion:               |  |     |     (encrypted)       |     +-------------------------+    of 2500 msat split between multiple trampoline routes (omitted if
          +-----------------------+     | +-----------------------+ |     | +-----------------------------+ |  |     +-----------------------+     |           EOF           |    MPP not supported by invoice).
                                        | | amount_fwd: 1600 msat | |     | | amount_fwd: 1500 msat       | |  |                                   +-------------------------+    The remaining 1000 msat needed to reach the total 2500 msat have
-                                       | | expiry: 600042        | |     | | expiry: 600000              | |--+                                                                  been sent by a via a completely separate trampoline route (not
-                                       | | node_id: t2           | |     | | total_amount: 2500 msat     | |  |     +-----------------------+     +-------------------------+    included in this diagram).
+                                       | | expiry: 600042        | |     | | expiry: 600000              | |--+                                                                  been sent via a completely separate trampoline route (not included
+                                       | | node_id: t2           | |     | | total_amount: 2500 msat     | |  |     +-----------------------+     +-------------------------+    in this diagram).
                                        | +-----------------------+ |     | | secret: xyz                 | |  |     | amount_fwd: 500 msat  |     | amount_fwd: 500 msat    |
                                        | |      (encrypted)      | |     | | node_id: f                  | |  |     | expiry: 600000        |     | expiry: 600000          |
                                        | +-----------------------+ |     | | invoice_features: 0x0a      | |  +---->| channel_id: 43        |---->| secret: xyz             |
@@ -153,6 +150,9 @@ object OnionTlv {
    * node without revealing it to the sender.
    */
   case class EncryptedRecipientData(data: ByteVector) extends OnionTlv
+
+  /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
+  case class BlindingPoint(publicKey: PublicKey) extends OnionTlv
 
   /** Id of the next node. */
   case class OutgoingNodeId(nodeId: PublicKey) extends OnionTlv
@@ -339,6 +339,8 @@ object OnionCodecs {
 
   private val encryptedRecipientData: Codec[EncryptedRecipientData] = variableSizeBytesLong(varintoverflow, "encrypted_data" | bytes).as[EncryptedRecipientData]
 
+  private val blindingPoint: Codec[BlindingPoint] = variableSizeBytesLong(varintoverflow, "blinding_key" | publicKey).as[BlindingPoint]
+
   private val outgoingNodeId: Codec[OutgoingNodeId] = variableSizeBytesLong(varintoverflow, "node_id" | publicKey).as[OutgoingNodeId]
 
   private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
@@ -355,6 +357,7 @@ object OnionCodecs {
     .typecase(UInt64(6), outgoingChannelId)
     .typecase(UInt64(8), paymentData)
     .typecase(UInt64(10), encryptedRecipientData)
+    .typecase(UInt64(12), blindingPoint)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
     .typecase(UInt64(66097), invoiceFeatures)
     .typecase(UInt64(66098), outgoingNodeId)
@@ -412,21 +415,6 @@ object OnionCodecs {
   def perHopPayloadCodecByPacketType[T <: PacketType](packetType: Sphinx.OnionRoutingPacket[T], isLastPacket: Boolean): Codec[PacketType] = packetType match {
     case Sphinx.PaymentPacket => if (isLastPacket) finalPerHopPayloadCodec.upcast[PacketType] else channelRelayPerHopPayloadCodec.upcast[PacketType]
     case Sphinx.TrampolinePacket => if (isLastPacket) finalPerHopPayloadCodec.upcast[PacketType] else nodeRelayPerHopPayloadCodec.upcast[PacketType]
-  }
-
-  /**
-   * Decrypt and decode the contents of an encrypted_recipient_data TLV field.
-   *
-   * @param nodePrivKey this node's private key.
-   * @param blinding    blinding point (usually provided in the lightning message).
-   * @param encrypted   encrypted recipient data (usually provided inside an onion).
-   * @return decrypted contents of the encrypted recipient data, which usually contain information about the next node,
-   *         and the blinding point that should be sent to the next node.
-   */
-  def decodeEncryptedRecipientData(nodePrivKey: PrivateKey, blinding: PublicKey, encrypted: EncryptedRecipientData): Try[(TlvStream[OnionTlv], PublicKey)] = {
-    RouteBlinding.decryptPayload(nodePrivKey, blinding, encrypted.data).flatMap {
-      case (payload, nextBlinding) => tlvPerHopPayloadCodec.decode(payload.bits).map(r => (r.value, nextBlinding)).toTry
-    }
   }
 
 }

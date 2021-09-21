@@ -411,7 +411,7 @@ object Sphinx extends Logging {
         val sharedSecret = computeSharedSecret(publicKey, e)
         val blindedPublicKey = blind(publicKey, generateKey("blinded_node_id", sharedSecret))
         val rho = generateKey("rho", sharedSecret)
-        val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(rho, zeroes(12), payload, blindingKey.value)
+        val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(rho, zeroes(12), payload, ByteVector.empty)
         e = e.multiply(PrivateKey(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes)))
         BlindedHop(blindedPublicKey, blindingKey, encryptedPayload ++ mac)
       }
@@ -441,7 +441,7 @@ object Sphinx extends Logging {
     def decryptPayload(privateKey: PrivateKey, blindingEphemeralKey: PublicKey, encryptedPayload: ByteVector): Try[(ByteVector, PublicKey)] = Try {
       val sharedSecret = computeSharedSecret(blindingEphemeralKey, privateKey)
       val rho = generateKey("rho", sharedSecret)
-      val decrypted = ChaCha20Poly1305.decrypt(rho, zeroes(12), encryptedPayload.dropRight(16), blindingEphemeralKey.value, encryptedPayload.takeRight(16))
+      val decrypted = ChaCha20Poly1305.decrypt(rho, zeroes(12), encryptedPayload.dropRight(16), ByteVector.empty, encryptedPayload.takeRight(16))
       val nextBlindingEphemeralKey = blind(blindingEphemeralKey, computeBlindingFactor(blindingEphemeralKey, sharedSecret))
       (decrypted, nextBlindingEphemeralKey)
     }
