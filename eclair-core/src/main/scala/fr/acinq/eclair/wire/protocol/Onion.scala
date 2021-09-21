@@ -17,13 +17,16 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
+
+import scala.util.Try
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -409,6 +412,21 @@ object OnionCodecs {
   def perHopPayloadCodecByPacketType[T <: PacketType](packetType: Sphinx.OnionRoutingPacket[T], isLastPacket: Boolean): Codec[PacketType] = packetType match {
     case Sphinx.PaymentPacket => if (isLastPacket) finalPerHopPayloadCodec.upcast[PacketType] else channelRelayPerHopPayloadCodec.upcast[PacketType]
     case Sphinx.TrampolinePacket => if (isLastPacket) finalPerHopPayloadCodec.upcast[PacketType] else nodeRelayPerHopPayloadCodec.upcast[PacketType]
+  }
+
+  /**
+   * Decrypt and decode the contents of an encrypted_recipient_data TLV field.
+   *
+   * @param nodePrivKey this node's private key.
+   * @param blinding    blinding point (usually provided in the lightning message).
+   * @param encrypted   encrypted recipient data (usually provided inside an onion).
+   * @return decrypted contents of the encrypted recipient data, which usually contain information about the next node,
+   *         and the blinding point that should be sent to the next node.
+   */
+  def decodeEncryptedRecipientData(nodePrivKey: PrivateKey, blinding: PublicKey, encrypted: EncryptedRecipientData): Try[(TlvStream[OnionTlv], PublicKey)] = {
+    RouteBlinding.decryptPayload(nodePrivKey, blinding, encrypted.data).flatMap {
+      case (payload, nextBlinding) => tlvPerHopPayloadCodec.decode(payload.bits).map(r => (r.value, nextBlinding)).toTry
+    }
   }
 
 }

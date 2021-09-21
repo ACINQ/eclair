@@ -17,16 +17,19 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.UInt64.Conversions._
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.protocol.Onion._
 import fr.acinq.eclair.wire.protocol.OnionCodecs._
 import fr.acinq.eclair.wire.protocol.OnionTlv._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Attempt
 import scodec.bits.HexStringSyntax
+
+import scala.util.Success
 
 /**
  * Created by t-bast on 05/07/2019.
@@ -248,6 +251,64 @@ class OnionCodecsSpec extends AnyFunSuite {
       assert(channelRelayPerHopPayloadCodec.decode(testCase.bits).isFailure)
       assert(nodeRelayPerHopPayloadCodec.decode(testCase.bits).isFailure)
       assert(finalPerHopPayloadCodec.decode(testCase.bits).isFailure)
+    }
+  }
+
+  test("decode encrypted recipient data (route blinding)") {
+    val e0 = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
+    val blinding0 = e0.publicKey
+    val nodePrivKeys = Seq(
+      PrivateKey(hex"4141414141414141414141414141414141414141414141414141414141414141"),
+      PrivateKey(hex"4242424242424242424242424242424242424242424242424242424242424242"),
+      PrivateKey(hex"4343434343434343434343434343434343434343434343434343434343434343"),
+    )
+    val payloads = Seq(
+      (TlvStream[OnionTlv](OutgoingChannelId(ShortChannelId(561))), hex"0a 06080000000000000231"),
+      (TlvStream[OnionTlv](OutgoingChannelId(ShortChannelId(1105))), hex"0a 06080000000000000451"),
+      (TlvStream[OnionTlv](Seq(OutgoingChannelId(ShortChannelId(42))), Seq(GenericTlv(65535, hex"06c1"))), hex"10 0608000000000000002a fdffff0206c1"),
+    )
+
+    val blindedRoute = RouteBlinding.create(e0, nodePrivKeys.map(_.publicKey), payloads.map(_._2))
+    assert(blindedRoute.nodeIds === Seq(
+      nodePrivKeys.head.publicKey, // the first node should not be blinded
+      PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
+      PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372")
+    ))
+    val encryptedPayloads = blindedRoute.blindedHops.map(_.encryptedPayload)
+    assert(encryptedPayloads === Seq(
+      hex"a741b767bd52520bdf8362f074f96c43bfe7156468b03efbe07b00",
+      hex"1f739e94ead7de2a54f812c80c5b540564e3eac69b3322e66de4aa",
+      hex"98d9ddd448f15208452b369c04f17d6a2358b107f0161ae1e3b64edae446d0d131"
+    ))
+
+    val Success((decryptedPayload0, blinding1)) = decodeEncryptedRecipientData(nodePrivKeys.head, blinding0, EncryptedRecipientData(encryptedPayloads.head))
+    val Success((decryptedPayload1, blinding2)) = decodeEncryptedRecipientData(nodePrivKeys(1), blinding1, EncryptedRecipientData(encryptedPayloads(1)))
+    val Success((decryptedPayload2, _)) = decodeEncryptedRecipientData(nodePrivKeys(2), blinding2, EncryptedRecipientData(encryptedPayloads(2)))
+    assert(Seq(decryptedPayload0, decryptedPayload1, decryptedPayload2) === payloads.map(_._1))
+  }
+
+  test("decode invalid encrypted recipient data (route blinding)") {
+    val testCases = Seq(
+      hex"0a 06080000000000000231 ff", // additional trailing bytes after tlv stream
+      hex"0b 06080000000000000231", // invalid length (too long)
+      hex"08 06080000000000000231", // invalid length (too short)
+      hex"0a 10080000000000000231", // unknown even tlv field
+    )
+
+    for (testCase <- testCases) {
+      val nodePrivKeys = Seq(randomKey(), randomKey())
+      val payloads = Seq(hex"0a 06080000000000000231", testCase)
+      val blindingPrivKey = randomKey()
+      val blindedRoute = RouteBlinding.create(blindingPrivKey, nodePrivKeys.map(_.publicKey), payloads)
+      // The payload for the first node is valid.
+      val blinding0 = blindingPrivKey.publicKey
+      val Success((_, blinding1)) = decodeEncryptedRecipientData(nodePrivKeys.head, blinding0, EncryptedRecipientData(blindedRoute.blindedHops.head.encryptedPayload))
+      // If the first node is given invalid decryption material, it cannot decrypt recipient data.
+      assert(decodeEncryptedRecipientData(nodePrivKeys.last, blinding0, EncryptedRecipientData(blindedRoute.blindedHops.head.encryptedPayload)).isFailure)
+      assert(decodeEncryptedRecipientData(nodePrivKeys.head, blinding1, EncryptedRecipientData(blindedRoute.blindedHops.head.encryptedPayload)).isFailure)
+      assert(decodeEncryptedRecipientData(nodePrivKeys.head, blinding0, EncryptedRecipientData(blindedRoute.blindedHops.last.encryptedPayload)).isFailure)
+      // The payload for the last node is invalid, even with valid decryption material.
+      assert(decodeEncryptedRecipientData(nodePrivKeys.last, blinding1, EncryptedRecipientData(blindedRoute.blindedHops.last.encryptedPayload)).isFailure)
     }
   }
 
