@@ -303,7 +303,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     }
     val now = System.currentTimeMillis
     val duration = now - start
-    if (cfg.recordMetrics) {
+    if (cfg.recordPathFindingMetrics) {
       val fees = result match {
         case Right(paymentSent: PaymentSent) => paymentSent.feesPaid
         case Left(_) => request match {
