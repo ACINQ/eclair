@@ -144,7 +144,7 @@ class ChannelConfigSerializer extends CustomSerializerOnly[ChannelConfig](_ => {
 })
 
 class ChannelFeaturesSerializer extends CustomSerializerOnly[ChannelFeatures](_ => {
-  case channelFeatures: ChannelFeatures => JArray(channelFeatures.activated.map(f => JString(f.rfcName)).toList)
+  case channelFeatures: ChannelFeatures => JArray(channelFeatures.features.map(f => JString(f.rfcName)).toList)
 })
 
 class ChannelOpenResponseSerializer extends CustomSerializerOnly[ChannelOpenResponse](_ => {

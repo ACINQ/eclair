@@ -28,7 +28,7 @@ import fr.acinq.eclair.{Feature, FeatureSupport, Features}
  * Even if one of these features is later disabled at the connection level, it will still apply to the channel until the
  * channel is upgraded or closed.
  */
-case class ChannelFeatures(activated: Set[Feature]) {
+case class ChannelFeatures(features: Set[Feature]) {
 
   val channelType: SupportedChannelType = {
     if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
@@ -45,9 +45,9 @@ case class ChannelFeatures(activated: Set[Feature]) {
   val paysDirectlyToWallet: Boolean = channelType.paysDirectlyToWallet
   val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 
-  def hasFeature(feature: Feature): Boolean = activated.contains(feature)
+  def hasFeature(feature: Feature): Boolean = features.contains(feature)
 
-  override def toString: String = activated.mkString(",")
+  override def toString: String = features.mkString(",")
 
 }
 
