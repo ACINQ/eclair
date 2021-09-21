@@ -249,7 +249,17 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     if (cfg.recordPathFindingMetrics) {
       val fees = event match {
         case Left(_) => request.routeParams.getMaxFee(cfg.recipientAmount)
-        case Right(paymentSent) => paymentSent.feesPaid
+        case Right(paymentSent) =>
+          val localFees = cfg.upstream match {
+            case _: Upstream.Local => 0.msat // no local fees when we are the origin of the payment
+            case _: Upstream.Trampoline =>
+              // in case of a relayed payment, we need to take into account the fee of the first channels
+              paymentSent.parts.collect {
+                // NB: the route attribute will always be defined here
+                case p@PartialPayment(_, _, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+              }.sum
+          }
+          paymentSent.feesPaid + localFees
       }
       context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId))
     }
