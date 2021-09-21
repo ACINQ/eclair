@@ -308,6 +308,7 @@ object PaymentOnionCodecs {
 
   import OnionPaymentPayloadTlv._
   import PaymentOnion._
+  import scodec.bits.HexStringSyntax
   import scodec.codecs._
   import scodec.{Attempt, Codec, DecodeResult, Decoder}
 
@@ -335,9 +336,9 @@ object PaymentOnionCodecs {
 
   private val encryptedRecipientData: Codec[EncryptedRecipientData] = variableSizeBytesLong(varintoverflow, "encrypted_data" | bytes).as[EncryptedRecipientData]
 
-  private val blindingPoint: Codec[BlindingPoint] = variableSizeBytesLong(varintoverflow, "blinding_key" | publicKey).as[BlindingPoint]
+  private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
 
-  private val outgoingNodeId: Codec[OutgoingNodeId] = variableSizeBytesLong(varintoverflow, "node_id" | publicKey).as[OutgoingNodeId]
+  private val outgoingNodeId: Codec[OutgoingNodeId] = (("length" | constant(hex"21")) :: ("node_id" | publicKey)).as[OutgoingNodeId]
 
   private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
 

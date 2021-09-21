@@ -360,7 +360,7 @@ object PaymentPacketSpec {
         case Attempt.Successful(bitVector) => bitVector.bytes
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
       }
-    Sphinx.create(sessionKey, packetPayloadLength, nodes, payloadsBin, associatedData).packet
+    Sphinx.create(sessionKey, packetPayloadLength, nodes, payloadsBin, Some(associatedData)).packet
   }
 
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat): Commitments = {

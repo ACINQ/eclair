@@ -196,7 +196,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
     val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion].packet
-    val Right(decrypted) = Sphinx.peel(priv_b.privateKey, pr.paymentHash, trampolineOnion)
+    val Right(decrypted) = Sphinx.peel(priv_b.privateKey, Some(pr.paymentHash), trampolineOnion)
     assert(!decrypted.isLastPacket)
     val trampolinePayload = PaymentOnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
     assert(trampolinePayload.amountToForward === finalAmount)
@@ -208,7 +208,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(trampolinePayload.invoiceFeatures === None)
 
     // Verify that the recipient can correctly peel the trampoline onion.
-    val Right(decrypted1) = Sphinx.peel(priv_c.privateKey, pr.paymentHash, decrypted.nextPacket)
+    val Right(decrypted1) = Sphinx.peel(priv_c.privateKey, Some(pr.paymentHash), decrypted.nextPacket)
     assert(decrypted1.isLastPacket)
     val finalPayload = PaymentOnionCodecs.finalPerHopPayloadCodec.decode(decrypted1.payload.bits).require.value
     assert(finalPayload.amount === finalAmount)
@@ -235,7 +235,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
     val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion].packet
-    val Right(decrypted) = Sphinx.peel(priv_b.privateKey, pr.paymentHash, trampolineOnion)
+    val Right(decrypted) = Sphinx.peel(priv_b.privateKey, Some(pr.paymentHash), trampolineOnion)
     assert(!decrypted.isLastPacket)
     val trampolinePayload = PaymentOnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
     assert(trampolinePayload.amountToForward === finalAmount)
@@ -372,7 +372,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(trampolineOnion.nonEmpty)
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
-    val Right(decrypted) = Sphinx.peel(priv_b.privateKey, pr.paymentHash, trampolineOnion.get.packet)
+    val Right(decrypted) = Sphinx.peel(priv_b.privateKey, Some(pr.paymentHash), trampolineOnion.get.packet)
     assert(!decrypted.isLastPacket)
     val trampolinePayload = PaymentOnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
     assert(trampolinePayload.amountToForward === finalAmount)
