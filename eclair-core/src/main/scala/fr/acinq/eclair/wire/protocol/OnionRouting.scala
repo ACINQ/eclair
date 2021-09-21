@@ -40,10 +40,20 @@ object OnionRoutingCodecs {
     // @formatter:on
   }
 
-  def onionRoutingPacketCodec(payloadLength: Int): Codec[OnionRoutingPacket] = (
-    ("version" | uint8) ::
-      ("publicKey" | bytes(33)) ::
-      ("onionPayload" | bytes(payloadLength)) ::
-      ("hmac" | bytes32)).as[OnionRoutingPacket]
+  case class ForbiddenTlv(tag: UInt64) extends Err {
+    // @formatter:off
+    val failureMessage: FailureMessage = InvalidOnionPayload(tag, 0)
+    override def message = failureMessage.message
+    override def context: List[String] = Nil
+    override def pushContext(ctx: String): Err = this
+    // @formatter:on
+  }
+
+  def onionRoutingPacketCodec(payloadLength: Codec[Int]): Codec[OnionRoutingPacket] = (
+    variableSizePrefixedBytes(payloadLength,
+      ("version" | uint8) ~
+        ("publicKey" | bytes(33)),
+      ("onionPayload" | bytes)) ~
+      ("hmac" | bytes32) flattenLeftPairs).as[OnionRoutingPacket]
 
 }

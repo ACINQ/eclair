@@ -23,6 +23,7 @@ import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
+import scodec.codecs.provide
 
 import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
@@ -162,12 +163,12 @@ object Sphinx extends Logging {
    *           failure messages upstream.
    *           or a BadOnion error containing the hash of the invalid onion.
    */
-  def peel(privateKey: PrivateKey, associatedData: ByteVector, packet: OnionRoutingPacket): Either[BadOnion, DecryptedPacket] = packet.version match {
+  def peel(privateKey: PrivateKey, associatedData: Option[ByteVector32], packet: OnionRoutingPacket): Either[BadOnion, DecryptedPacket] = packet.version match {
     case 0 => Try(PublicKey(packet.publicKey, checkValid = true)) match {
       case Success(packetEphKey) =>
         val sharedSecret = computeSharedSecret(packetEphKey, privateKey)
         val mu = generateKey("mu", sharedSecret)
-        val check = mac(mu, packet.payload ++ associatedData)
+        val check = mac(mu, associatedData.map(packet.payload ++ _).getOrElse(packet.payload))
         if (check == packet.hmac) {
           val rho = generateKey("rho", sharedSecret)
           // Since we don't know the length of the per-hop payload (we will learn it once we decode the first bytes),
@@ -208,7 +209,7 @@ object Sphinx extends Logging {
    * @param onionPayloadFiller optional onion payload filler, needed only when you're constructing the last packet.
    * @return the next packet.
    */
-  def wrap(payload: ByteVector, associatedData: ByteVector32, ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Either[ByteVector, OnionRoutingPacket], onionPayloadFiller: ByteVector = ByteVector.empty): OnionRoutingPacket = {
+  def wrap(payload: ByteVector, associatedData: Option[ByteVector32], ephemeralPublicKey: PublicKey, sharedSecret: ByteVector32, packet: Either[ByteVector, OnionRoutingPacket], onionPayloadFiller: ByteVector = ByteVector.empty): OnionRoutingPacket = {
     val packetPayloadLength = packet match {
       case Left(startingBytes) => startingBytes.length.toInt
       case Right(p) => p.payload.length.toInt
@@ -226,7 +227,7 @@ object Sphinx extends Logging {
       onionPayload2.dropRight(onionPayloadFiller.length) ++ onionPayloadFiller
     }
 
-    val nextHmac = mac(generateKey("mu", sharedSecret), nextOnionPayload ++ associatedData)
+    val nextHmac = mac(generateKey("mu", sharedSecret), associatedData.map(nextOnionPayload ++ _).getOrElse(nextOnionPayload))
     val nextPacket = OnionRoutingPacket(Version, ephemeralPublicKey.value, nextOnionPayload, nextHmac)
     nextPacket
   }
@@ -242,7 +243,7 @@ object Sphinx extends Logging {
    * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
    *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
    */
-  def create(sessionKey: PrivateKey, packetPayloadLength: Int, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: ByteVector32): PacketAndSecrets = {
+  def create(sessionKey: PrivateKey, packetPayloadLength: Int, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: Option[ByteVector32]): PacketAndSecrets = {
     require(payloads.map(_.length + MacLength).sum <= packetPayloadLength, s"packet per-hop payloads cannot exceed $packetPayloadLength bytes")
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", packetPayloadLength, sharedsecrets.dropRight(1), payloads.dropRight(1))
@@ -267,7 +268,7 @@ object Sphinx extends Logging {
    * When an invalid onion is received, its hash should be included in the failure message.
    */
   def hash(onion: OnionRoutingPacket): ByteVector32 =
-    Crypto.sha256(OnionRoutingCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
+    Crypto.sha256(OnionRoutingCodecs.onionRoutingPacketCodec(provide(onion.payload.length.toInt)).encode(onion).require.toByteVector)
 
   /**
    * A properly decrypted failure from a node in the route.
@@ -374,12 +375,19 @@ object Sphinx extends Logging {
     case class BlindedNode(blindedPublicKey: PublicKey, encryptedPayload: ByteVector)
 
     /**
-     * @param introductionNode the first node should not be blinded, otherwise the sender cannot locate it.
-     * @param blindedNodes     blinded nodes (not including the introduction node).
+     * @param introductionNodeId the first node, not be blinded so that the sender can locate it.
+     * @param blindingKey        blinding tweak that can be used by the introduction node to derive the private key that
+     *                           matches the blinded public key.
+     * @param blindedNodes       blinded nodes (including the introduction node).
      */
-    case class BlindedRoute(introductionNode: IntroductionNode, blindedNodes: Seq[BlindedNode]) {
-      val nodeIds: Seq[PublicKey] = introductionNode.publicKey +: blindedNodes.map(_.blindedPublicKey)
-      val encryptedPayloads: Seq[ByteVector] = introductionNode.encryptedPayload +: blindedNodes.map(_.encryptedPayload)
+    case class BlindedRoute(introductionNodeId: PublicKey, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) {
+      val introductionNode: IntroductionNode = IntroductionNode(introductionNodeId, blindedNodes.head.blindedPublicKey, blindingKey, blindedNodes.head.encryptedPayload)
+      val subsequentNodes: Seq[BlindedNode] = blindedNodes.tail
+
+      val blindedNodeIds: Seq[PublicKey] = blindedNodes.map(_.blindedPublicKey)
+      val encryptedPayloads: Seq[ByteVector] = blindedNodes.map(_.encryptedPayload)
+
+      val nodeIds: Seq[PublicKey] = introductionNodeId +: blindedNodeIds.tail
     }
 
     /**
@@ -402,8 +410,7 @@ object Sphinx extends Logging {
         e = e.multiply(PrivateKey(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes)))
         (BlindedNode(blindedPublicKey, encryptedPayload ++ mac), blindingKey)
       }.unzip
-      val introductionNode = IntroductionNode(publicKeys.head, blindedHops.head.blindedPublicKey, blindingKeys.head, blindedHops.head.encryptedPayload)
-      BlindedRoute(introductionNode, blindedHops.tail)
+      BlindedRoute(publicKeys.head, blindingKeys.head, blindedHops)
     }
 
     /**

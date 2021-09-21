@@ -33,6 +33,7 @@ import org.scalatest.Tag
 import scodec.bits.ByteVector
 
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
 

@@ -378,14 +378,14 @@ class SphinxSpec extends AnyFunSuite {
       PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
       PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
     ))
-    assert(blindedRoute.blindedNodes.map(_.blindedPublicKey) === Seq(
+    assert(blindedRoute.subsequentNodes.map(_.blindedPublicKey) === Seq(
       PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
       PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
       PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
       PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
     ))
-    assert(blindedRoute.encryptedPayloads === blindedRoute.introductionNode.encryptedPayload +: blindedRoute.blindedNodes.map(_.encryptedPayload))
-    assert(blindedRoute.blindedNodes.map(_.encryptedPayload) === Seq(
+    assert(blindedRoute.encryptedPayloads === blindedRoute.introductionNode.encryptedPayload +: blindedRoute.subsequentNodes.map(_.encryptedPayload))
+    assert(blindedRoute.subsequentNodes.map(_.encryptedPayload) === Seq(
       hex"146c9694ead7de2a54fc43e8bb927bfc377dda7ed5a2e36b327b739e368aa602e43e07e14b3d7ed493e7ea6245924d9a03d22f0fca56babd7da19f49b7",
       hex"8ad7d5d448f15208417a1840f82274101b3c254c24b1b49fd676fd0c4293c9aa66ed51da52579e934a869f016f213044d1b13b63bf586e9c9832106b59",
       hex"52a45a884542d180e76fe84fc13e71a01f65d943ff89aed29b94644a91b037b9143cfda8f1ff25ba61c37108a5ae57d9ddc5ab688ee8b2f9f6bd94522c",
@@ -495,7 +495,7 @@ class SphinxSpec extends AnyFunSuite {
     val tlvs4 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
     assert(tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
     val Success((recipientTlvs4, _)) = EncryptedRecipientDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs4.get[EncryptedRecipientDataTlv.RecipientSecret].map(_.data) === Some(associatedData.bytes))
+    assert(recipientTlvs4.get[EncryptedRecipientDataTlv.RecipientSecret].map(_.data) === associatedData.map(_.bytes))
 
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
@@ -590,5 +590,5 @@ object SphinxSpec {
     hex"0109000000000000000000 06204242424242424242424242424242424242424242424242424242424242424242",
   )
 
-  val associatedData = ByteVector32(hex"4242424242424242424242424242424242424242424242424242424242424242")
+  val associatedData = Some(ByteVector32(hex"4242424242424242424242424242424242424242424242424242424242424242"))
 }
