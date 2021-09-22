@@ -21,6 +21,7 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -35,7 +36,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
 import fr.acinq.eclair.router.Router.RouteParams
-import fr.acinq.eclair.router.{BalanceTooLow, RouteCalculation, RouteNotFound}
+import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
 
@@ -120,13 +121,11 @@ object NodeRelay {
 
   /** Compute route params that honor our fee and cltv requirements. */
   def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
-    val routeMaxCltv = expiryIn - expiryOut
-    val routeMaxFee = amountIn - amountOut
-    nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams.copy(
-      maxFeeFlat = routeMaxFee,
-      maxCltv = routeMaxCltv,
-      maxFeeProportional = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
-      includeLocalChannelCost = true)
+    nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
+      .modify(_.boundaries.maxFeeProportional).setTo(0) // we disable percent-based max fee calculation, we're only interested in collecting our node fee
+      .modify(_.boundaries.maxCltv).setTo(expiryIn - expiryOut)
+      .modify(_.boundaries.maxFeeFlat).setTo(amountIn - amountOut)
+      .modify(_.includeLocalChannelCost).setTo(true)
   }
 
   /**

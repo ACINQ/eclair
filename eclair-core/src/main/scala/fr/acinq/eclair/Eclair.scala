@@ -21,6 +21,7 @@ import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
 import akka.pattern._
 import akka.util.Timeout
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.TimestampQueryFilters._
@@ -282,19 +283,22 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false)(implicit timeout: Timeout): Future[RouteResponse] =
     findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, assistedRoutes, includeLocalChannelCost)
 
-  private def getRouteParams(pathFindingExperimentName_opt: Option[String]): Option[RouteParams] = {
+  private def getRouteParams(pathFindingExperimentName_opt: Option[String]): Either[IllegalArgumentException, RouteParams] = {
     pathFindingExperimentName_opt match {
-      case None => Some(appKit.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
-      case Some(name) => appKit.nodeParams.routerConf.pathFindingExperimentConf.getByName(name).map(_.getDefaultRouteParams)
+      case None => Right(appKit.nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+      case Some(name) => appKit.nodeParams.routerConf.pathFindingExperimentConf.getByName(name) match {
+        case Some(conf) => Right(conf.getDefaultRouteParams)
+        case None => Left(new IllegalArgumentException(s"Path-finding experiment ${pathFindingExperimentName_opt.get} does not exist."))
+      }
     }
   }
 
   override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false)(implicit timeout: Timeout): Future[RouteResponse] = {
     getRouteParams(pathFindingExperimentName_opt) match {
-      case Some(routeParams) =>
+      case Right(routeParams) =>
         val maxFee = routeParams.getMaxFee(amount)
         (appKit.router ? RouteRequest(sourceNodeId, targetNodeId, amount, maxFee, assistedRoutes, routeParams = routeParams.copy(includeLocalChannelCost = includeLocalChannelCost))).mapTo[RouteResponse]
-      case None => Future.failed(new IllegalArgumentException(s"Path-finding experiment ${pathFindingExperimentName_opt.get} does not exist."))
+      case Left(t) => Future.failed(t)
     }
   }
 
@@ -316,15 +320,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  private def createPaymentRequest(externalId_opt: Option[String], amount: MilliSatoshi, invoice: PaymentRequest, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String]): Either[IllegalArgumentException, SendPaymentToNode] = {
+  private def createSendPaymentRequest(externalId_opt: Option[String], amount: MilliSatoshi, invoice: PaymentRequest, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String]): Either[IllegalArgumentException, SendPaymentToNode] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     getRouteParams(pathFindingExperimentName_opt) match {
-      case Some(defaultRouteParams) =>
-        val routeParams = defaultRouteParams.copy(
-          maxFeeProportional = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeeProportional) / 100.0,
-          maxFeeFlat = maxFeeFlat_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeFlat)
-        )
-
+      case Right(defaultRouteParams) =>
+        val routeParams = defaultRouteParams
+          .modify(_.boundaries.maxFeeProportional).setToIfDefined(maxFeePct_opt.map(_ / 100))
+          .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
         externalId_opt match {
           case Some(externalId) if externalId.length > externalIdMaxLength => Left(new IllegalArgumentException(s"externalId is too long: cannot exceed $externalIdMaxLength characters"))
           case _ if invoice.isExpired => Left(new IllegalArgumentException("invoice has expired"))
@@ -333,19 +335,19 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
             case None => Right(SendPaymentToNode(amount, invoice, maxAttempts, externalId = externalId_opt, assistedRoutes = invoice.routingInfo, routeParams = routeParams))
           }
         }
-      case None => Left(new IllegalArgumentException(s"Path-finding experiment ${pathFindingExperimentName_opt.get} does not exist."))
+      case Left(t) => Left(t)
     }
   }
 
   override def send(externalId_opt: Option[String], amount: MilliSatoshi, invoice: PaymentRequest, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {
-    createPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt) match {
+    createSendPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt) match {
       case Left(ex) => Future.failed(ex)
       case Right(req) => (appKit.paymentInitiator ? req).mapTo[UUID]
     }
   }
 
   override def sendBlocking(externalId_opt: Option[String], amount: MilliSatoshi, invoice: PaymentRequest, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[Either[PreimageReceived, PaymentEvent]] = {
-    createPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt) match {
+    createSendPaymentRequest(externalId_opt, amount, invoice, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt) match {
       case Left(ex) => Future.failed(ex)
       case Right(req) => (appKit.paymentInitiator ? req.copy(blockUntilComplete = true)).map {
         case e: PreimageReceived => Left(e)
@@ -357,14 +359,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def sendWithPreimage(externalId_opt: Option[String], recipientNodeId: PublicKey, amount: MilliSatoshi, paymentPreimage: ByteVector32, maxAttempts_opt: Option[Int], maxFeeFlat_opt: Option[Satoshi], maxFeePct_opt: Option[Double], pathFindingExperimentName_opt: Option[String])(implicit timeout: Timeout): Future[UUID] = {
     val maxAttempts = maxAttempts_opt.getOrElse(appKit.nodeParams.maxPaymentAttempts)
     getRouteParams(pathFindingExperimentName_opt) match {
-      case Some(defaultRouteParams) =>
-        val routeParams = defaultRouteParams.copy(
-          maxFeeProportional = maxFeePct_opt.getOrElse(defaultRouteParams.maxFeeProportional),
-          maxFeeFlat = maxFeeFlat_opt.map(_.toMilliSatoshi).getOrElse(defaultRouteParams.maxFeeFlat)
-        )
+      case Right(defaultRouteParams) =>
+        val routeParams = defaultRouteParams
+          .modify(_.boundaries.maxFeeProportional).setToIfDefined(maxFeePct_opt.map(_ / 100))
+          .modify(_.boundaries.maxFeeFlat).setToIfDefined(maxFeeFlat_opt.map(_.toMilliSatoshi))
         val sendPayment = SendSpontaneousPayment(amount, recipientNodeId, paymentPreimage, maxAttempts, externalId_opt, routeParams)
         (appKit.paymentInitiator ? sendPayment).mapTo[UUID]
-      case None => Future.failed(new IllegalArgumentException(s"Path-finding experiment ${pathFindingExperimentName_opt.get} does not exist."))
+      case Left(t) => Future.failed(t)
     }
   }
 

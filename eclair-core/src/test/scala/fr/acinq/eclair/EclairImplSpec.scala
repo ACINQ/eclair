@@ -149,8 +149,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send3.recipientNodeId === nodePrivKey.publicKey)
     assert(send3.recipientAmount === 123.msat)
     assert(send3.paymentHash === ByteVector32.Zeroes)
-    assert(send3.routeParams.maxFeeFlat === 123000.msat) // conversion sat -> msat
-    assert(send3.routeParams.maxFeeProportional === 0.042)
+    assert(send3.routeParams.boundaries.maxFeeFlat === 123000.msat) // conversion sat -> msat
+    assert(send3.routeParams.boundaries.maxFeeProportional === 0.042)
 
     val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
     assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), 123 msat, invoice0), 50 millis))

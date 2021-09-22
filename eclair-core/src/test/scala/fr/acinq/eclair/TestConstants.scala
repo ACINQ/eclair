@@ -176,7 +176,7 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristicsParams = Left(WeightRatios(
+          heuristics = Left(WeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
@@ -302,7 +302,7 @@ object TestConstants {
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          heuristicsParams = Left(WeightRatios(
+          heuristics = Left(WeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
