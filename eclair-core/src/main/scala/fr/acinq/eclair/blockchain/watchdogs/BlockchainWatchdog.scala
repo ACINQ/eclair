@@ -68,10 +68,9 @@ object BlockchainWatchdog {
    */
   def apply(nodeParams: NodeParams, maxRandomDelay: FiniteDuration, blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
-      implicit val sttpBackend = ExplorerApi.createSttpBackend(nodeParams.socksProxy_opt)
-
+      val socksProxy_opt = nodeParams.socksProxy_opt.flatMap(params => if (params.useForWatchdogs) Some(params) else None)
+      implicit val sttpBackend = ExplorerApi.createSttpBackend(socksProxy_opt)
       val chainHash = nodeParams.chainHash
-      val socksProxy_opt = nodeParams.socksProxy_opt
       val sources = nodeParams.blockchainWatchdogSources
 
       val explorers = Seq(

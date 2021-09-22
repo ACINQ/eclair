@@ -292,7 +292,8 @@ object NodeParams extends Logging {
         randomizeCredentials = config.getBoolean("socks5.randomize-credentials"),
         useForIPv4 = config.getBoolean("socks5.use-for-ipv4"),
         useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
-        useForTor = config.getBoolean("socks5.use-for-tor")
+        useForTor = config.getBoolean("socks5.use-for-tor"),
+        useForWatchdogs = config.getBoolean("socks5.use-for-watchdogs"),
       ))
     } else {
       None
