@@ -158,9 +158,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
               // remote doesn't specify a channel type: we use spec-defined defaults
               case None => Right(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures))
               // remote explicitly specifies a channel type: we negotiate
-              case Some(remoteChannelType) => ChannelTypes.negotiateChannelType(d.localFeatures, remoteChannelType) match {
-                case Right(r) => Right(r)
-                case Left(rejectedChannelType) => Left(InvalidChannelType(msg.temporaryChannelId, ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures), rejectedChannelType))
+              case Some(remoteChannelType) => ChannelTypes.areCompatible(d.localFeatures, remoteChannelType) match {
+                case Some(acceptedChannelType) => Right(acceptedChannelType)
+                case None => Left(InvalidChannelType(msg.temporaryChannelId, ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures), remoteChannelType))
               }
             }
             chosenChannelType match {

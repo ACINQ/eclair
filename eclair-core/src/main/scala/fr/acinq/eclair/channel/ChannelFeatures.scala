@@ -135,16 +135,15 @@ object ChannelTypes {
     }
   }
 
-  /** If remote is requesting a non-default channel type, we accept it only if we support required features. */
-  def negotiateChannelType(localFeatures: Features, remoteChannelType: ChannelType): Either[ChannelType, SupportedChannelType] = remoteChannelType match {
-    case unsupportedChannelType: UnsupportedChannelType => Left(unsupportedChannelType)
+  /** Check if a given channel type is compatible with our features. */
+  def areCompatible(localFeatures: Features, remoteChannelType: ChannelType): Option[SupportedChannelType] = remoteChannelType match {
+    case _: UnsupportedChannelType => None
+    // We ensure that we support the features necessary for this channel type.
     case proposedChannelType: SupportedChannelType =>
-      // We ensure that we support the features necessary for this channel type.
-      val featuresSupported = proposedChannelType.features.forall(f => localFeatures.hasFeature(f))
-      if (featuresSupported) {
-        Right(proposedChannelType)
+      if (proposedChannelType.features.forall(f => localFeatures.hasFeature(f))) {
+        Some(proposedChannelType)
       } else {
-        Left(proposedChannelType)
+        None
       }
   }
 
