@@ -328,7 +328,7 @@ object NodeParams extends Logging {
         maxCltv = CltvExpiryDelta(config.getInt("boundaries.max-cltv")),
         maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
         maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
-      heuristicsParams = if (config.getBoolean("use-ratios")) {
+      heuristics = if (config.getBoolean("use-ratios")) {
         Left(WeightRatios(
           baseFactor = config.getDouble("ratios.base"),
           cltvDeltaFactor = config.getDouble("ratios.cltv"),

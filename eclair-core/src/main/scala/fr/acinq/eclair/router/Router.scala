@@ -304,20 +304,17 @@ object Router {
 
   case class PathFindingConf(randomize: Boolean,
                              boundaries: SearchBoundaries,
-                             heuristicsParams: Either[WeightRatios, HeuristicsConstants],
+                             heuristics: Either[WeightRatios, HeuristicsConstants],
                              mpp: MultiPartParams,
                              experimentName: String,
                              experimentPercentage: Int) {
     def getDefaultRouteParams: RouteParams = RouteParams(
       randomize = randomize,
-      maxFeeFlat = boundaries.maxFeeFlat,
-      maxFeeProportional = boundaries.maxFeeProportional,
-      maxRouteLength = boundaries.maxRouteLength,
-      maxCltv = boundaries.maxCltv,
-      includeLocalChannelCost = false,
-      ratios = heuristicsParams,
+      boundaries = boundaries,
+      heuristics = heuristics,
       mpp = mpp,
       experimentName = experimentName,
+      includeLocalChannelCost = false
     )
   }
 
@@ -447,17 +444,14 @@ object Router {
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
   case class RouteParams(randomize: Boolean,
-                         maxFeeFlat: MilliSatoshi,
-                         maxFeeProportional: Double,
-                         maxRouteLength: Int,
-                         maxCltv: CltvExpiryDelta,
-                         includeLocalChannelCost: Boolean,
-                         ratios: Either[WeightRatios, HeuristicsConstants],
+                         boundaries: SearchBoundaries,
+                         heuristics: Either[WeightRatios, HeuristicsConstants],
                          mpp: MultiPartParams,
-                         experimentName: String) {
+                         experimentName: String,
+                         includeLocalChannelCost: Boolean) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the proportional fee, not necessarily both.
-      maxFeeFlat.max(amount * maxFeeProportional)
+      boundaries.maxFeeFlat.max(amount * boundaries.maxFeeProportional)
     }
   }
 

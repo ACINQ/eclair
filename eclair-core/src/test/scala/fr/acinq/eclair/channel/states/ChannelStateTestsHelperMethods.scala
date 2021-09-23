@@ -134,7 +134,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.ShutdownAnySegwit))(_.updated(Features.ShutdownAnySegwit, FeatureSupport.Optional))
       .modify(_.activated).usingIf(tags.contains(ChannelStateTestsTags.OptionUpfrontShutdownScript))(_.updated(Features.OptionUpfrontShutdownScript, FeatureSupport.Optional))
 
-    val channelType = ChannelTypes.pickChannelType(aliceInitFeatures, bobInitFeatures)
+    val channelType = ChannelTypes.defaultFromFeatures(aliceInitFeatures, bobInitFeatures)
 
     implicit val ec: scala.concurrent.ExecutionContext = scala.concurrent.ExecutionContext.global
     val aliceParams = Alice.channelParams

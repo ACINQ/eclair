@@ -207,7 +207,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       case Upstream.Local(_) => Upstream.Local(childId)
       case _ => cfg.upstream
     }
-    val childCfg = cfg.copy(id = childId, publishEvent = false, recordMetrics = false, upstream = upstream)
+    val childCfg = cfg.copy(id = childId, publishEvent = false, recordPathFindingMetrics = false, upstream = upstream)
     paymentFactory.spawnOutgoingPayment(context, childCfg)
   }
 
@@ -246,9 +246,9 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     }
     val now = System.currentTimeMillis
     val duration = now - start
-    if (cfg.recordMetrics) {
+    if (cfg.recordPathFindingMetrics) {
       val fees = event match {
-        case Left(paymentFailed) => request.routeParams.getMaxFee(cfg.recipientAmount)
+        case Left(_) => request.routeParams.getMaxFee(cfg.recipientAmount)
         case Right(paymentSent) => paymentSent.feesPaid
       }
       context.system.eventStream.publish(PathFindingExperimentMetrics(cfg.recipientAmount, fees, status, duration, now, isMultiPart = true, request.routeParams.experimentName, cfg.recipientNodeId))
