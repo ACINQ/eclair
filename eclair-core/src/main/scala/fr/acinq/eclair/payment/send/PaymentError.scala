@@ -25,24 +25,24 @@ object PaymentError {
   // @formatter:off
   sealed trait InvalidInvoice extends PaymentError
   /** The invoice contains a feature we don't support. */
-  case class UnsupportedFeatures(features: Features) extends InvalidInvoice
+  case class UnsupportedFeatures(features: Features) extends InvalidInvoice { override def getMessage: String = s"unsupported invoice features: ${features.toByteVector.toHex}" }
   /** The invoice is missing a payment secret. */
-  case object PaymentSecretMissing extends InvalidInvoice
+  case object PaymentSecretMissing extends InvalidInvoice { override def getMessage: String = "invalid invoice: payment secret is missing" }
   // @formatter:on
 
   // @formatter:off
   sealed trait InvalidTrampolineArguments extends PaymentError
   /** Trampoline fees or cltv expiry delta is missing. */
-  case object TrampolineFeesMissing extends InvalidTrampolineArguments
+  case object TrampolineFeesMissing extends InvalidTrampolineArguments { override def getMessage: String = "cannot send payment: trampoline fees missing" }
   /** 0-value invoice should not be paid via trampoline-to-legacy (trampoline may steal funds). */
-  case object TrampolineLegacyAmountLessInvoice extends InvalidTrampolineArguments
+  case object TrampolineLegacyAmountLessInvoice extends InvalidTrampolineArguments { override def getMessage: String = "cannot send payment: unsafe trampoline-to-legacy amount-less invoice" }
   /** Only a single trampoline node is currently supported. */
-  case object TrampolineMultiNodeNotSupported extends InvalidTrampolineArguments
+  case object TrampolineMultiNodeNotSupported extends InvalidTrampolineArguments { override def getMessage: String = "cannot send payment: multiple trampoline hops not supported" }
   // @formatter:on
 
   // @formatter:off
   /** Payment attempts exhausted without success. */
-  case object RetryExhausted extends PaymentError
+  case object RetryExhausted extends PaymentError { override def getMessage: String = "payment attempts exhausted without success" }
   // @formatter:on
 
 }

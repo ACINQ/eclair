@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Tra
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
@@ -253,6 +253,28 @@ object RouteResponseSerializer extends MinimalSerializer({
     }
     JArray(nodeIds.toList.map(n => JString(n.toString)))
 })
+
+// @formatter:off
+case class PaymentFailureSummary(amount: MilliSatoshi, route: Seq[PublicKey], message: String)
+object PaymentFailureSummary {
+  def apply(failure: PaymentFailure): PaymentFailureSummary = {
+    val route = failure.route.map(_.nodeId) ++ failure.route.lastOption.map(_.nextNodeId)
+    val message = failure match {
+      case LocalFailure(_, _, t) => t.getMessage
+      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
+      case _: UnreadableRemoteFailure => "unreadable remote failure"
+    }
+    PaymentFailureSummary(failure.amount, route, message)
+  }
+}
+
+// NB: we don't provide an implicit conversion from PaymentFailure, as we don't always want payment failures to be
+// converted to this lighter format.
+case class PaymentFailedSummary(paymentHash: ByteVector32, totalAmount: MilliSatoshi, pathFindingExperiment: String, failures: Seq[PaymentFailureSummary])
+object PaymentFailedSummary {
+  def apply(paymentHash: ByteVector32, totalAmount: MilliSatoshi, pathFindingExperiment: String, paymentFailed: PaymentFailed): PaymentFailedSummary = PaymentFailedSummary(paymentHash, totalAmount, pathFindingExperiment, paymentFailed.failures.map(f => PaymentFailureSummary(f)))
+}
+// @formatter:on
 
 object ThrowableSerializer extends MinimalSerializer({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
