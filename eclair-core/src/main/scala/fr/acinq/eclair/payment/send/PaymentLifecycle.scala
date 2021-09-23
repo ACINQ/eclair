@@ -129,11 +129,11 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
 
   private def retry(failure: PaymentFailure, data: WaitingForComplete): FSM.State[PaymentLifecycle.State, PaymentLifecycle.Data] = {
     data.c match {
-      case (sendPaymentToNode: SendPaymentToNode) =>
+      case sendPaymentToNode: SendPaymentToNode =>
         val ignore1 = PaymentFailure.updateIgnored(failure, data.ignore)
         router ! RouteRequest(nodeParams.nodeId, data.c.targetNodeId, data.c.finalPayload.amount, sendPaymentToNode.maxFee, data.c.assistedRoutes, ignore1, sendPaymentToNode.routeParams, paymentContext = Some(cfg.paymentContext))
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(data.c, data.failures :+ failure, ignore1)
-      case (_: SendPaymentToRoute) =>
+      case _: SendPaymentToRoute =>
         log.error("unexpected retry during SendPaymentToRoute")
         stop(FSM.Normal)
     }
@@ -204,10 +204,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
           // let's try again, router will have updated its state
           c match {
-            case (_: SendPaymentToRoute) =>
+            case _: SendPaymentToRoute =>
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
-            case (c: SendPaymentToNode) =>
+            case c: SendPaymentToNode =>
               router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
           }
@@ -215,10 +215,10 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           // this node is fishy, it gave us a bad sig!! let's filter it out
           log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
           c match {
-            case (_: SendPaymentToRoute) =>
+            case _: SendPaymentToRoute =>
               log.error("unexpected retry during SendPaymentToRoute")
               stop(FSM.Normal)
-            case (c: SendPaymentToNode) =>
+            case c: SendPaymentToNode =>
               router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
               goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore + nodeId)
           }
@@ -288,11 +288,11 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       }
     }
     val event = result match {
-        case Left(event) => event
-        case Right(event) => event
-      }
+      case Left(event) => event
+      case Right(event) => event
+    }
     request.replyTo ! event
-    if (cfg.publishEvent)  context.system.eventStream.publish(event)
+    if (cfg.publishEvent) context.system.eventStream.publish(event)
     val status = result match {
       case Right(_: PaymentSent) => "SUCCESS"
       case Left(f: PaymentFailed) =>
@@ -330,7 +330,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
-      .withTag(Tags.Success, value = (status == "SUCCESS"))
+      .withTag(Tags.Success, value = status == "SUCCESS")
       .record(duration, TimeUnit.MILLISECONDS)
     stop(FSM.Normal)
   }

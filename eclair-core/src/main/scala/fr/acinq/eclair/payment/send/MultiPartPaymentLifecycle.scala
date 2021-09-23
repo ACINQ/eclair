@@ -16,9 +16,6 @@
 
 package fr.acinq.eclair.payment.send
 
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-
 import akka.actor.{ActorRef, FSM, Props, Status}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
@@ -35,6 +32,9 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams}
+
+import java.util.UUID
+import java.util.concurrent.TimeUnit
 
 /**
  * Created by t-bast on 18/07/2019.
@@ -71,7 +71,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     case Event(RouteResponse(routes), d: PaymentProgress) =>
       log.info("{} routes found (attempt={}/{})", routes.length, d.request.maxAttempts - d.remainingAttempts + 1, d.request.maxAttempts)
       // We may have already succeeded sending parts of the payment and only need to take care of the rest.
-      val (toSend, maxFee) = remainingToSend(nodeParams, d.request, d.pending.values)
+      val (toSend, maxFee) = remainingToSend(d.request, d.pending.values)
       if (routes.map(_.amount).sum == toSend) {
         val childPayments = routes.map(route => (UUID.randomUUID(), route)).toMap
         childPayments.foreach { case (childId, route) => spawnChildPaymentFsm(childId) ! createChildPayment(self, route, d.request) }
@@ -92,7 +92,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         // Channels are mostly ignored for temporary reasons, likely because they didn't have enough balance to forward
         // the payment. When we're retrying an MPP split, it may make sense to retry those ignored channels because with
         // a different split, they may have enough balance to forward the payment.
-        val (toSend, maxFee) = remainingToSend(nodeParams, d.request, d.pending.values)
+        val (toSend, maxFee) = remainingToSend(d.request, d.pending.values)
         log.debug("retry sending {} with maximum fee {} without ignoring channels ({})", toSend, maxFee, d.ignore.channels.map(_.shortChannelId).mkString(","))
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         router ! createRouteRequest(nodeParams, toSend, maxFee, routeParams, d, cfg).copy(ignore = d.ignore.emptyChannels())
@@ -140,7 +140,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         val ignore1 = PaymentFailure.updateIgnored(pf.failures, d.ignore)
         val assistedRoutes1 = PaymentFailure.updateRoutingHints(pf.failures, d.request.assistedRoutes)
         val stillPending = d.pending - pf.id
-        val (toSend, maxFee) = remainingToSend(nodeParams, d.request, stillPending.values)
+        val (toSend, maxFee) = remainingToSend(d.request, stillPending.values)
         log.debug("child payment failed, retry sending {} with maximum fee {}", toSend, maxFee)
         val routeParams = d.request.routeParams.copy(randomize = true) // we randomize route selection when we retry
         val d1 = d.copy(pending = stillPending, ignore = ignore1, failures = d.failures ++ pf.failures, request = d.request.copy(assistedRoutes = assistedRoutes1))
@@ -230,13 +230,14 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     event match {
       case Left(paymentFailed) =>
         log.warning("multi-part payment failed")
+        // TODO: print failure summary
         reply(request.replyTo, paymentFailed)
       case Right(paymentSent) =>
         log.info("multi-part payment succeeded")
         reply(request.replyTo, paymentSent)
     }
     val status = event match {
-      case Right(s: PaymentSent) => "SUCCESS"
+      case Right(_: PaymentSent) => "SUCCESS"
       case Left(f: PaymentFailed) =>
         if (f.failures.exists({ case r: RemoteFailure => r.e.originNode == cfg.recipientNodeId case _ => false })) {
           "RECIPIENT_FAILURE"
@@ -265,7 +266,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     }
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
-      .withTag(Tags.Success, value = (status == "SUCCESS"))
+      .withTag(Tags.Success, value = status == "SUCCESS")
       .record(duration, TimeUnit.MILLISECONDS)
     if (retriedFailedChannels) {
       Metrics.RetryFailedChannelsResult.withTag(Tags.Success, event.isRight).increment()
@@ -411,7 +412,7 @@ object MultiPartPaymentLifecycle {
     case _ => false
   }
 
-  private def remainingToSend(nodeParams: NodeParams, request: SendMultiPartPayment, pending: Iterable[Route]): (MilliSatoshi, MilliSatoshi) = {
+  private def remainingToSend(request: SendMultiPartPayment, pending: Iterable[Route]): (MilliSatoshi, MilliSatoshi) = {
     val sentAmount = pending.map(_.amount).sum
     val sentFees = pending.map(_.fee).sum
     (request.totalAmount - sentAmount, request.routeParams.copy(randomize = false).getMaxFee(request.totalAmount) - sentFees)
