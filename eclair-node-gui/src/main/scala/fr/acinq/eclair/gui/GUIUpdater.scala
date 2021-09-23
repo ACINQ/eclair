@@ -200,8 +200,8 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val distilledFailures = PaymentFailure.transformForUser(p.failures)
       val message = s"${distilledFailures.size} attempts:\n${
         distilledFailures.map {
-          case LocalFailure(_, t) => s"- (local) ${t.getMessage}"
-          case RemoteFailure(_, e) => s"- (remote) ${e.failureMessage.message}"
+          case LocalFailure(_, _, t) => s"- (local) ${t.getMessage}"
+          case RemoteFailure(_, _, e) => s"- (remote) ${e.failureMessage.message}"
           case _ => "- Unknown error"
         }.mkString("\n")
       }"
