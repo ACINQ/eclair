@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.RouteResponse
+import fr.acinq.eclair.router.Router.Route
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -221,13 +221,19 @@ class ColorSerializer extends CustomSerializerOnly[Color](_ => {
   case c: Color => JString(c.toString)
 })
 
-class RouteResponseSerializer extends CustomSerializerOnly[RouteResponse](_ => {
-  case route: RouteResponse =>
-    val nodeIds = route.routes.head.hops match {
-      case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
-      case Nil => Nil
-    }
-    JArray(nodeIds.toList.map(n => JString(n.toString)))
+class RouteSerializer extends CustomSerializerOnly[Route](_ => {
+  case route: Route =>
+    JObject(
+      ("amount", JLong(route.amount.toLong)),
+      ("hops", JArray(route.hops.map(hop => Extraction.decompose(hop)(
+        DefaultFormats +
+          new ByteVector32Serializer +
+          new ByteVectorSerializer +
+          new PublicKeySerializer +
+          new ShortChannelIdSerializer +
+          new MilliSatoshiSerializer +
+          new CltvExpiryDeltaSerializer
+      )).toList)))
 })
 
 class ThrowableSerializer extends CustomSerializerOnly[Throwable](_ => {
@@ -271,7 +277,7 @@ class PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ =>
         new ShortChannelIdSerializer +
         new MilliSatoshiSerializer +
         new CltvExpiryDeltaSerializer
-      )
+    )
     )
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
@@ -424,7 +430,7 @@ object JsonSerializers {
     new CommandResponseSerializer +
     new InputInfoSerializer +
     new ColorSerializer +
-    new RouteResponseSerializer +
+    new RouteSerializer +
     new ThrowableSerializer +
     new FailureMessageSerializer +
     new FailureTypeSerializer +

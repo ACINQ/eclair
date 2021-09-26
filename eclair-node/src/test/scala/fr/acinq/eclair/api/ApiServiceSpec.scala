@@ -46,7 +46,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router.PredefinedNodeRoute
 import fr.acinq.eclair.router.{NetworkStats, Router, Stats}
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAddress}
-import org.json4s.JsonAST.{JArray, JString}
+import org.json4s.JsonAST.{JArray, JInt, JObject, JString}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
@@ -952,7 +952,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
-  test("'findroute' method response should support both a node ID and channel ID formats") {
+  test("'findroute' method response should support nodeId, channelId and full formats") {
     val invoice = "lnbc12580n1pw2ywztpp554ganw404sh4yjkwnysgn3wjcxfcq7gtx53gxczkjr9nlpc3hzvqdq2wpskwctddyxqr4rqrzjqwryaup9lh50kkranzgcdnn2fgvx390wgj5jd07rwr3vxeje0glc7z9rtvqqwngqqqqqqqlgqqqqqeqqjqrrt8smgjvfj7sg38dwtr9kc9gg3era9k3t2hvq3cup0jvsrtrxuplevqgfhd3rzvhulgcxj97yjuj8gdx8mllwj4wzjd8gdjhpz3lpqqvk2plh"
 
 
@@ -1038,6 +1038,27 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
           JString(mockHop3.lastUpdate.shortChannelId.toString())
         )))
         eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(threeTimes)
+      }
+    Post("/findroute", FormData("format" -> "full", "invoice" -> invoice, "amountMsat" -> "456")) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.findRoute) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        val responseArray = entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
+        assert(responseArray.arr.size == 1)
+        assert(responseArray.arr.head.isInstanceOf[JObject])
+        val route = responseArray.arr.head.asInstanceOf[JObject]
+        assert(route.obj.head == ("amount", JInt(456)))
+        assert(route.obj.last._1 == "hops")
+        val hops = route.obj.last._2.asInstanceOf[JArray]
+        assert(hops.arr.size == 3)
+        val (hop1 :: hop2 :: hop3 :: Nil) = hops.arr
+        assert(hop1.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop1.nodeId.toString())))
+        assert(hop2.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop2.nodeId.toString())))
+        assert(hop3.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop3.nodeId.toString())))
+        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(fourTimes)
       }
   }
 
