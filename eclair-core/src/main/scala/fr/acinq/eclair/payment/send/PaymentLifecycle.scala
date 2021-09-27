@@ -25,6 +25,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.payment.OutgoingPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
@@ -305,7 +306,17 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     val duration = now - start
     if (cfg.recordPathFindingMetrics) {
       val fees = result match {
-        case Right(paymentSent: PaymentSent) => paymentSent.feesPaid
+        case Right(paymentSent) =>
+          val localFees = cfg.upstream match {
+            case _: Upstream.Local => 0.msat // no local fees when we are the origin of the payment
+            case _: Upstream.Trampoline =>
+              // in case of a relayed payment, we need to take into account the fee of the first channels
+              paymentSent.parts.collect {
+                // NB: the route attribute will always be defined here
+                case p@PartialPayment(_, _, _, _, Some(route), _) => route.head.fee(p.amountWithFees)
+              }.sum
+          }
+          paymentSent.feesPaid + localFees
         case Left(_) => request match {
           case s: SendPaymentToNode => s.routeParams.getMaxFee(cfg.recipientAmount)
           case _: SendPaymentToRoute => 0 msat
