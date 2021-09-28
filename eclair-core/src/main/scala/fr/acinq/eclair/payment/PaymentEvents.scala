@@ -153,20 +153,25 @@ object PaymentFailure {
   }
 
   /**
-   * Print a friendly summary of the payment failure.
+   * Print a friendly json summary of the payment failure.
    */
-  def print(failure: PaymentFailure): String = {
-    val route = failure.route.map(_.nextNodeId).mkString("->")
-    val details = failure match {
-      case LocalFailure(_, _, t) => t.getMessage
-      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
-      case _: UnreadableRemoteFailure => "unreadable remote failure"
-    }
-    if (failure.route.isEmpty) {
-      s"sending ${failure.amount} failed: $details"
-    } else {
-      s"sending ${failure.amount} to $route failed: $details"
-    }
+  def summary(paymentFailed: PaymentFailed): String = {
+    import org.json4s.JsonAST.{JArray, JField, JObject, JString}
+    import org.json4s.{DefaultFormats, jackson}
+    val failures = paymentFailed.failures.map(failure => {
+      val details = failure match {
+        case LocalFailure(_, _, t) => t.getMessage
+        case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
+        case _: UnreadableRemoteFailure => "unreadable remote failure"
+      }
+      val route = JArray(failure.route.map(r => JString(r.nextNodeId.value.toHex)).toList)
+      JObject(
+        JField("amount", JString(failure.amount.toString)),
+        JField("route", route),
+        JField("details", JString(details)),
+      )
+    })
+    jackson.Serialization.write(JObject(JField("failures", JArray(failures.toList))))(DefaultFormats)
   }
 
   /**

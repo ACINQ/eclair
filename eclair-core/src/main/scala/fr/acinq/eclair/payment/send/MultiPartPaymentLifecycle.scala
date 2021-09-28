@@ -230,7 +230,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     event match {
       case Left(paymentFailed) =>
         log.warning("multi-part payment failed")
-        log.info(s"failed payment attempts details:\n    + ${paymentFailed.failures.map(f => PaymentFailure.print(f)).mkString("\n    + ")}")
+        log.info(s"failed payment attempts details: ${PaymentFailure.summary(paymentFailed)}")
         reply(request.replyTo, paymentFailed)
       case Right(paymentSent) =>
         log.info("multi-part payment succeeded")
