@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Btc, OutPoint, SatoshiLong, Transaction, TxOut}
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
@@ -28,6 +28,7 @@ import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuiteLike
+import scodec.bits.HexStringSyntax
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -224,6 +225,32 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
   test("find timed out htlcs (anchor outputs zero fee htlc txs)", Tag(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)) {
     findTimedOutHtlcs(setupHtlcs(Set(ChannelStateTestsTags.AnchorOutputsZeroFeeHtlcTxs)), withoutHtlcId = false)
+  }
+
+  test("check closing tx amounts above dust") {
+    val p2pkhBelowDust = Seq(TxOut(545 sat, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000") :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil))
+    val p2shBelowDust = Seq(TxOut(539 sat, OP_HASH160 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000") :: OP_EQUAL :: Nil))
+    val p2wpkhBelowDust = Seq(TxOut(293 sat, OP_0 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000") :: Nil))
+    val p2wshBelowDust = Seq(TxOut(329 sat, OP_0 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000000000000000000000000000") :: Nil))
+    val futureSegwitBelowDust = Seq(TxOut(353 sat, OP_3 :: OP_PUSHDATA(hex"0000000000") :: Nil))
+    val allOutputsAboveDust = Seq(
+      TxOut(546 sat, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000") :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+      TxOut(540 sat, OP_HASH160 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000") :: OP_EQUAL :: Nil),
+      TxOut(294 sat, OP_0 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000") :: Nil),
+      TxOut(330 sat, OP_0 :: OP_PUSHDATA(hex"0000000000000000000000000000000000000000000000000000000000000000") :: Nil),
+      TxOut(354 sat, OP_3 :: OP_PUSHDATA(hex"0000000000") :: Nil),
+    )
+
+    def toClosingTx(txOut: Seq[TxOut]): ClosingTx = {
+      ClosingTx(InputInfo(OutPoint(ByteVector32.Zeroes, 0), TxOut(1000 sat, Nil), Nil), Transaction(2, Nil, txOut, 0), None)
+    }
+
+    assert(Closing.checkClosingDustAmounts(toClosingTx(allOutputsAboveDust)))
+    assert(!Closing.checkClosingDustAmounts(toClosingTx(p2pkhBelowDust)))
+    assert(!Closing.checkClosingDustAmounts(toClosingTx(p2shBelowDust)))
+    assert(!Closing.checkClosingDustAmounts(toClosingTx(p2wpkhBelowDust)))
+    assert(!Closing.checkClosingDustAmounts(toClosingTx(p2wshBelowDust)))
+    assert(!Closing.checkClosingDustAmounts(toClosingTx(futureSegwitBelowDust)))
   }
 
   test("tell closing type") {

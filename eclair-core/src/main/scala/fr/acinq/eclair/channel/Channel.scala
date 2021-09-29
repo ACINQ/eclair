@@ -79,8 +79,12 @@ object Channel {
   val MAX_FUNDING: Satoshi = 16777216 sat // = 2^24
   val MAX_ACCEPTED_HTLCS = 483
 
-  // we don't want the counterparty to use a dust limit lower than that, because they wouldn't only hurt themselves we may need them to publish their commit tx in certain cases (backup/restore)
-  val MIN_DUSTLIMIT: Satoshi = 546 sat
+  // We may need to rely on our peer's commit tx in certain cases (backup/restore) so we must ensure their transactions
+  // can propagate through the bitcoin network (assuming bitcoin core nodes with default policies).
+  // The various dust limits enforced by the bitcoin network are summarized here:
+  // https://github.com/lightningnetwork/lightning-rfc/blob/master/03-transactions.md#dust-limits
+  // A dust limit of 354 sat ensures all segwit outputs will relay with default relay policies.
+  val MIN_DUST_LIMIT: Satoshi = 354 sat
 
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20

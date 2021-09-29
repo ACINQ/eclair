@@ -106,6 +106,16 @@ This is fixed in this release: when using Tor, the watchdogs will now also be qu
 You can also now choose to disable some watchdogs by removing them from the `eclair.blockchain-watchdog.sources` list in `eclair.conf`.
 Head over to [reference.conf](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf) for more details.
 
+### Dust limit thresholds
+
+Eclair can now use dust limits as low as 354 satoshis.
+This value covers all current and future segwit versions, while ensuring that transactions can relay according to default bitcoin network policies.
+
+With this change, we also disallow non-segwit scripts when closing a channel.
+We still support receiving non-segwit remote scripts, but will force-close if the resulting mutual close transaction would be invalid according to default network policies.
+
+See the [spec discussions](https://github.com/lightningnetwork/lightning-rfc/pull/894) for more details.
+
 ### Sample GUI removed
 
 We previously included code for a sample GUI: `eclair-node-gui`.
@@ -122,6 +132,7 @@ This release contains many API updates:
 - `open` doesn't support the `--feeBaseMsat` and `--feeProportionalMillionths` parameters anymore: you should instead set these with the `updaterelayfee` API, which can now be called before opening a channel (#1890)
 - `updaterelayfee` must now be called with nodeIds instead of channelIds and will update the fees for all channels with the given node(s) at once (#1890)
 - `close` lets you specify a fee range when using quick close through the `--preferredFeerateSatByte`, `--minFeerateSatByte` and `--maxFeerateSatByte` (#1768)
+- `close` now rejects non-segwit `scriptPubKey`
 - `createinvoice` now lets you provide a `--descriptionHash` instead of a `--description` (#1919)
 - `sendtonode` doesn't support providing a `paymentHash` anymore since it uses `keysend` to send the payment (#1840)
 - `payinvoice`, `sendtonode`, `findroute`, `findroutetonode` and `findroutebetweennodes` let you specify `--pathFindingExperimentName` when using path-finding A/B testing (#1930)
