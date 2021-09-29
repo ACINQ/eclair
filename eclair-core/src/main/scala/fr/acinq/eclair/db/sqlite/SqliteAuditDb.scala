@@ -34,7 +34,7 @@ import java.util.UUID
 
 object SqliteAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 7
+  val CURRENT_VERSION = 8
 }
 
 class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
@@ -99,17 +99,25 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
     }
 
+    def migration78(statement: Statement): Unit = {
+      statement.executeUpdate("CREATE TABLE transaction_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE transaction_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE INDEX transaction_published_timestamp_idx ON transaction_published(timestamp)")
+      statement.executeUpdate("CREATE INDEX transaction_confirmed_timestamp_idx ON transaction_confirmed(timestamp)")
+    }
+
     getVersion(statement, DB_NAME) match {
       case None =>
         statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, next_node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
+        statement.executeUpdate("CREATE TABLE transaction_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE transaction_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
         statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
@@ -117,7 +125,6 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON relayed(payment_hash)")
         statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
         statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
-        statement.executeUpdate("CREATE INDEX network_fees_timestamp_idx ON network_fees(timestamp)")
         statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
         statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON channel_errors(timestamp)")
         statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
@@ -127,7 +134,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON path_finding_metrics(timestamp)")
         statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON path_finding_metrics(is_mpp)")
         statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
-      case Some(v@(1 | 2 | 3 | 4 | 5 | 6)) =>
+        statement.executeUpdate("CREATE INDEX transaction_published_timestamp_idx ON transaction_published(timestamp)")
+        statement.executeUpdate("CREATE INDEX transaction_confirmed_timestamp_idx ON transaction_confirmed(timestamp)")
+      case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
           migration12(statement)
@@ -146,6 +155,9 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         }
         if (v < 7) {
           migration67(statement)
+        }
+        if (v < 8) {
+          migration78(statement)
         }
       case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
       case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -228,14 +240,24 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def add(e: NetworkFeePaid): Unit = withMetrics("audit/add-network-fee", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, e.channelId.toArray)
-      statement.setBytes(2, e.remoteNodeId.value.toArray)
-      statement.setBytes(3, e.tx.txid.toArray)
+  override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transaction_published VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, e.tx.txid.toArray)
+      statement.setBytes(2, e.channelId.toArray)
+      statement.setBytes(3, e.remoteNodeId.value.toArray)
       statement.setLong(4, e.fee.toLong)
-      statement.setString(5, e.txType)
+      statement.setString(5, e.desc)
       statement.setLong(6, System.currentTimeMillis)
+      statement.executeUpdate()
+    }
+  }
+
+  override def add(e: TransactionConfirmed): Unit = withMetrics("audit/add-transaction-confirmed", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transaction_confirmed VALUES (?, ?, ?, ?)")) { statement =>
+      statement.setBytes(1, e.tx.txid.toArray)
+      statement.setBytes(2, e.channelId.toArray)
+      statement.setBytes(3, e.remoteNodeId.value.toArray)
+      statement.setLong(4, System.currentTimeMillis)
       statement.executeUpdate()
     }
   }
@@ -378,7 +400,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
-    using(sqlite.prepareStatement("SELECT * FROM network_fees WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM transaction_confirmed INNER JOIN transaction_published ON transaction_published.tx_id = transaction_confirmed.tx_id WHERE transaction_confirmed.timestamp >= ? AND transaction_confirmed.timestamp < ? ORDER BY transaction_confirmed.timestamp")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
       statement.executeQuery()
@@ -417,7 +439,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       }
       previous ++ current
     }
-    // Channels opened by our peers won't have any entry in the network_fees table, but we still want to compute stats for them.
+    // Channels opened by our peers won't have any network fees paid by us, but we still want to compute stats for them.
     val allChannels = networkFees.keySet ++ relayed.keySet
     allChannels.toSeq.flatMap(channelId => {
       val networkFee = networkFees.getOrElse(channelId, 0 sat)

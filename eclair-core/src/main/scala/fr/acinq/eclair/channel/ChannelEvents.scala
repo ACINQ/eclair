@@ -60,9 +60,12 @@ case class ChannelSignatureReceived(channel: ActorRef, commitments: Commitments)
 
 case class ChannelErrorOccurred(channel: ActorRef, channelId: ByteVector32, remoteNodeId: PublicKey, data: ChannelData, error: ChannelOpenError, isFatal: Boolean) extends ChannelEvent
 
-case class NetworkFeePaid(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, tx: Transaction, fee: Satoshi, txType: String) extends ChannelEvent
+// NB: the fee should be set to 0 when we're not paying it.
+case class TransactionPublished(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction, fee: Satoshi, desc: String) extends ChannelEvent
 
-// NB: this event is only sent when the channel is available
+case class TransactionConfirmed(channelId: ByteVector32, remoteNodeId: PublicKey, tx: Transaction) extends ChannelEvent
+
+// NB: this event is only sent when the channel is available.
 case class AvailableBalanceChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, commitments: AbstractCommitments) extends ChannelEvent
 
 case class ChannelPersisted(channel: ActorRef, remoteNodeId: PublicKey, channelId: ByteVector32, data: HasCommitments) extends ChannelEvent

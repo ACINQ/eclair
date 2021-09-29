@@ -16,27 +16,29 @@
 
 package fr.acinq.eclair.db
 
-import akka.actor.{Actor, ActorLogging, Props}
+import akka.actor.{Actor, DiagnosticActorLogging, Props}
+import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
-import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel.Monitoring.{Metrics => ChannelMetrics, Tags => ChannelTags}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.payment.Monitoring.{Metrics => PaymentMetrics, Tags => PaymentTags}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.{Logs, NodeParams}
 
 /**
  * This actor sits at the interface between our event stream and the database.
  */
-class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
+class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorLogging {
 
   val auditDb: AuditDb = nodeParams.db.audit
   val channelsDb: ChannelsDb = nodeParams.db.channels
 
   context.system.eventStream.subscribe(self, classOf[PaymentEvent])
-  context.system.eventStream.subscribe(self, classOf[NetworkFeePaid])
+  context.system.eventStream.subscribe(self, classOf[TransactionPublished])
+  context.system.eventStream.subscribe(self, classOf[TransactionConfirmed])
   context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[ChannelClosed])
@@ -82,7 +84,11 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
       }
       auditDb.add(e)
 
-    case e: NetworkFeePaid => auditDb.add(e)
+    case e: TransactionPublished =>
+      log.info(s"paying fee=${e.fee} for txid=${e.tx.txid} desc=${e.desc}")
+      auditDb.add(e)
+
+    case e: TransactionConfirmed => auditDb.add(e)
 
     case e: ChannelErrorOccurred =>
       // first pattern matching level is to ignore some errors, second level is to separate between different kind of errors
@@ -127,6 +133,14 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
   }
 
   override def unhandled(message: Any): Unit = log.warning(s"unhandled msg=$message")
+
+  override def mdc(currentMessage: Any): MDC = {
+    currentMessage match {
+      case msg: TransactionPublished => Logs.mdc(remoteNodeId_opt = Some(msg.remoteNodeId), channelId_opt = Some(msg.channelId))
+      case msg: TransactionConfirmed => Logs.mdc(remoteNodeId_opt = Some(msg.remoteNodeId), channelId_opt = Some(msg.channelId))
+      case _ => Logs.mdc()
+    }
+  }
 
 }
 

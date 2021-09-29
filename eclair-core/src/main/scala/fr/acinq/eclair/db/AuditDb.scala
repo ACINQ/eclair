@@ -35,7 +35,9 @@ trait AuditDb extends Closeable {
 
   def add(paymentRelayed: PaymentRelayed): Unit
 
-  def add(networkFeePaid: NetworkFeePaid): Unit
+  def add(txPublished: TransactionPublished): Unit
+
+  def add(txConfirmed: TransactionConfirmed): Unit
 
   def add(channelErrorOccurred: ChannelErrorOccurred): Unit
 

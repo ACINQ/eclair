@@ -43,7 +43,7 @@ import scala.concurrent.duration._
 
 class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, bobCommitTxs: List[CommitTxAndRemoteSig])
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, bob2blockchain: TestProbe, relayerA: TestProbe, relayerB: TestProbe, channelUpdateListener: TestProbe, txListener: TestProbe, bobCommitTxs: List[CommitTxAndRemoteSig])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -59,6 +59,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // Hence the WAIT_FOR_FUNDING_CONFIRMED->CLOSING or NORMAL->CLOSING transition will occur in the individual tests.
 
     val unconfirmedFundingTx = test.tags.contains("funding_unconfirmed")
+    val eventListener = TestProbe()
 
     if (unconfirmedFundingTx) {
       within(30 seconds) {
@@ -86,11 +87,15 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         bob2blockchain.expectMsgType[WatchFundingConfirmed]
         awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
         awaitCond(bob.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, Nil)))
+        system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+        system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
+        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, Nil)))
       }
     } else {
       within(30 seconds) {
         reachNormal(setup, test.tags)
+        system.eventStream.subscribe(eventListener.ref, classOf[TransactionPublished])
+        system.eventStream.subscribe(eventListener.ref, classOf[TransactionConfirmed])
         val bobCommitTxs: List[CommitTxAndRemoteSig] = (for (amt <- List(100000000 msat, 200000000 msat, 300000000 msat)) yield {
           val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
           crossSign(alice, bob, alice2bob, bob2alice)
@@ -108,7 +113,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
         awaitCond(alice.stateName == NORMAL)
         awaitCond(bob.stateName == NORMAL)
-        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, bobCommitTxs)))
+        withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayerA, relayerB, channelUpdateListener, eventListener, bobCommitTxs)))
       }
     }
   }
@@ -289,6 +294,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // actual test starts here
     bob ! WatchFundingSpentTriggered(mutualCloseTx.tx)
     bob ! WatchTxConfirmedTriggered(0, 0, mutualCloseTx.tx)
+    assert(txListener.expectMsgType[TransactionConfirmed].tx === mutualCloseTx.tx)
     awaitCond(bob.stateName == CLOSED)
   }
 
@@ -379,6 +385,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val htlcTimeoutTx = getHtlcTimeoutTxs(closingState).head.tx
     assert(closingState.claimHtlcDelayedTxs.length === 0)
     alice ! WatchTxConfirmedTriggered(42, 0, closingState.commitTx)
+    assert(txListener.expectMsgType[TransactionConfirmed].tx === closingState.commitTx)
     assert(listener.expectMsgType[LocalCommitConfirmed].refundAtBlock == 42 + bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localParams.toSelfDelay.toInt)
     assert(listener.expectMsgType[PaymentSettlingOnChain].paymentHash == htlca1.paymentHash)
     // htlcs below dust will never reach the chain, once the commit tx is confirmed we can consider them failed
@@ -627,6 +634,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingState.claimMainOutputTx.nonEmpty)
     assert(closingState.claimHtlcTxs.isEmpty)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].copy(remoteCommitPublished = None) == initialState)
+    val txPublished = txListener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx === bobCommitTx)
+    assert(txPublished.fee > 0.sat) // alice is funder, she pays the fee for the remote commit
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit)") { f =>
@@ -643,8 +653,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(closingState.claimMainOutputTx.nonEmpty)
     assert(closingState.claimHtlcTxs.isEmpty)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].copy(remoteCommitPublished = None) == initialState)
+    txListener.expectMsgType[TransactionPublished]
     alice ! WatchTxConfirmedTriggered(0, 0, bobCommitTx)
     alice ! WatchTxConfirmedTriggered(0, 0, closingState.claimMainOutputTx.get.tx)
+    assert(txListener.expectMsgType[TransactionConfirmed].tx === bobCommitTx)
     awaitCond(alice.stateName == CLOSED)
   }
 
@@ -843,8 +855,12 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (next remote commit)") { f =>
     import f._
     val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelFeatures())
+    val txPublished = txListener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx === bobCommitTx)
+    assert(txPublished.fee > 0.sat) // alice is funder, she pays the fee for the remote commit
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(42, 0, bobCommitTx)
+    assert(txListener.expectMsgType[TransactionConfirmed].tx === bobCommitTx)
     alice ! WatchTxConfirmedTriggered(45, 0, closingState.claimMainOutputTx.get.tx)
     relayerA.expectNoMessage(100 millis)
     alice ! WatchTxConfirmedTriggered(201, 0, claimHtlcTimeoutTxs(0))
@@ -1021,6 +1037,9 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
   test("recv WatchTxConfirmedTriggered (future remote commit)") { f =>
     import f._
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelFeatures())
+    val txPublished = txListener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx === bobCommitTx)
+    assert(txPublished.fee > 0.sat) // alice is funder, she pays the fee for the remote commit
     // alice is able to claim its main output
     val claimMainTx = alice2blockchain.expectMsgType[PublishRawTx].tx
     Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1031,6 +1050,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // actual test starts here
     alice ! WatchTxConfirmedTriggered(0, 0, bobCommitTx)
+    assert(txListener.expectMsgType[TransactionConfirmed].tx === bobCommitTx)
     alice ! WatchTxConfirmedTriggered(0, 0, claimMainTx)
     awaitCond(alice.stateName == CLOSED)
   }
@@ -1203,9 +1223,13 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     import f._
 
     val (bobRevokedTx, rvk) = setupFundingSpentRevokedTx(f, channelFeatures)
+    val txPublished = txListener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx === bobRevokedTx)
+    assert(txPublished.fee > 0.sat) // alice is funder, she pays the fee for the revoked commit
 
     // once all txs are confirmed, alice can move to the closed state
     alice ! WatchTxConfirmedTriggered(100, 3, bobRevokedTx)
+    assert(txListener.expectMsgType[TransactionConfirmed].tx === bobRevokedTx)
     alice ! WatchTxConfirmedTriggered(110, 1, rvk.mainPenaltyTx.get.tx)
     if (!channelFeatures.paysDirectlyToWallet) {
       alice ! WatchTxConfirmedTriggered(110, 2, rvk.claimMainOutputTx.get.tx)

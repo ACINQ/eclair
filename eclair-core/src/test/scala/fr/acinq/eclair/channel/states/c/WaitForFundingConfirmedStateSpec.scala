@@ -72,9 +72,16 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
 
   test("recv FundingLocked") { f =>
     import f._
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
     // make bob send a FundingLocked msg
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     bob ! WatchFundingConfirmedTriggered(42000, 42, fundingTx)
+    val txPublished = listener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx === fundingTx)
+    assert(txPublished.fee === 0.sat) // bob is fundee
+    assert(listener.expectMsgType[TransactionConfirmed].tx === fundingTx)
     val msg = bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].deferred.contains(msg))
@@ -83,8 +90,12 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
 
   test("recv WatchFundingConfirmedTriggered") { f =>
     import f._
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
+    system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
     alice ! WatchFundingConfirmedTriggered(42000, 42, fundingTx)
+    assert(listener.expectMsgType[TransactionConfirmed].tx === fundingTx)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
     alice2blockchain.expectMsgType[WatchFundingLost]
     alice2bob.expectMsgType[FundingLocked]
