@@ -19,6 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.json.JsonSerializers
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
@@ -26,6 +27,7 @@ import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, Temp
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import java.util.UUID
+import scala.util.Try
 
 /**
  * Created by PM on 01/02/2017.
@@ -155,23 +157,8 @@ object PaymentFailure {
   /**
    * Print a friendly json summary of the payment failure.
    */
-  def summary(paymentFailed: PaymentFailed): String = {
-    import org.json4s.JsonAST.{JArray, JField, JObject, JString}
-    import org.json4s.{DefaultFormats, jackson}
-    val failures = paymentFailed.failures.map(failure => {
-      val details = failure match {
-        case LocalFailure(_, _, t) => t.getMessage
-        case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
-        case _: UnreadableRemoteFailure => "unreadable remote failure"
-      }
-      val route = JArray((failure.route.map(_.nodeId) ++ failure.route.lastOption.map(_.nextNodeId)).map(n => JString(n.value.toHex)).toList)
-      JObject(
-        JField("amount", JString(failure.amount.toString)),
-        JField("route", route),
-        JField("details", JString(details)),
-      )
-    })
-    jackson.Serialization.write(JObject(JField("failures", JArray(failures.toList))))(DefaultFormats)
+  def jsonSummary(paymentFailed: PaymentFailed): String = {
+   Try(JsonSerializers.serialization.write(paymentFailed)(JsonSerializers.formats)).getOrElse("json serialization error")
   }
 
   /**

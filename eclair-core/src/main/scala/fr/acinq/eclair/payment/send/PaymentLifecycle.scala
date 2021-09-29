@@ -318,7 +318,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           }
           paymentSent.feesPaid + localFees
         case Left(paymentFailed) =>
-          log.info(s"failed payment attempts details: ${PaymentFailure.summary(paymentFailed)}")
+          log.info(s"failed payment attempts details: ${PaymentFailure.jsonSummary(paymentFailed)}")
           request match {
             case s: SendPaymentToNode => s.routeParams.getMaxFee(cfg.recipientAmount)
             case _: SendPaymentToRoute => 0 msat

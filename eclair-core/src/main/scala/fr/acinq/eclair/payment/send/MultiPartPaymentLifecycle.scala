@@ -249,7 +249,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     if (cfg.recordPathFindingMetrics) {
       val fees = event match {
         case Left(paymentFailed) =>
-          log.info(s"failed payment attempts details: ${PaymentFailure.summary(paymentFailed)}")
+          log.info(s"failed payment attempts details: ${PaymentFailure.jsonSummary(paymentFailed)}")
           request.routeParams.getMaxFee(cfg.recipientAmount)
         case Right(paymentSent) =>
           val localFees = cfg.upstream match {

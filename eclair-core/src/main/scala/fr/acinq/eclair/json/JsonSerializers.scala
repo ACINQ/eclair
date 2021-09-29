@@ -271,7 +271,7 @@ class PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ =>
         new ShortChannelIdSerializer +
         new MilliSatoshiSerializer +
         new CltvExpiryDeltaSerializer
-      )
+    )
     )
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
@@ -339,6 +339,26 @@ class GlobalBalanceSerializer extends CustomSerializerOnly[GlobalBalance](_ => {
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
 })
 
+class PaymentFailureSerializer extends CustomSerializerOnly[PaymentFailure](_ => {
+  case failure: PaymentFailure =>
+    val formats = DefaultFormats +
+      new PublicKeySerializer +
+      new FailureMessageSerializer
+    // NB: we can't use the type hints with custom serializers apparently, hence the manual handling for the "type" field
+    val details = failure match {
+      case local: LocalFailure => List(JField("type", JString("local")), JField("msg", JString(local.t.getMessage)))
+      case remote: RemoteFailure => List(JField("type", JString("remote")), JField("origin", Extraction.decompose(remote.e.originNode)(formats)),
+        JField("msg", Extraction.decompose(remote.e.failureMessage)(formats)))
+      case _: UnreadableRemoteFailure => List(JField("type", JString("unreadable-remote")))
+    }
+    JObject(
+      List(
+        JField("amount", JString(failure.amount.toString)),
+        JField("route", Extraction.decompose(failure.route.map(_.nodeId) ++ failure.route.lastOption.map(_.nextNodeId).toList)(formats)),
+      ) ++ details
+    )
+})
+
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
@@ -395,7 +415,7 @@ object JsonSerializers {
 
   implicit val serialization: Serialization.type = jackson.Serialization
 
-  implicit val formats: Formats = (org.json4s.DefaultFormats +
+  implicit val formats: Formats = DefaultFormats.withTypeHintFieldName("type") +
     new ByteVectorSerializer +
     new ByteVector32Serializer +
     new ByteVector64Serializer +
@@ -435,10 +455,11 @@ object JsonSerializers {
     new FeaturesSerializer +
     new OriginSerializer +
     new GlobalBalanceSerializer +
+    new PaymentFailureSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +
-    CustomTypeHints.channelStates).withTypeHintFieldName("type")
+    CustomTypeHints.channelStates
 
   def featuresToJson(features: Features): JObject = JObject(
     JField("activated", JObject(features.activated.map { case (feature, support) =>
