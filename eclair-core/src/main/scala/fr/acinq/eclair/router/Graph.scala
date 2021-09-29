@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Btc, ByteVector32, MilliBtc, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge, IgnoredEdges}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
 
@@ -109,7 +109,7 @@ object Graph {
                         sourceNode: PublicKey,
                         targetNode: PublicKey,
                         amount: MilliSatoshi,
-                        ignoredEdges: Set[ChannelDesc],
+                        ignoredEdges: IgnoredEdges,
                         ignoredVertices: Set[PublicKey],
                         extraEdges: Set[GraphEdge],
                         pathsToFind: Int,
@@ -153,12 +153,12 @@ object Graph {
           // [...] --> B --+--> D --> E
           //               |
           // [...] --> C --+
-          val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i) == rootPathEdges => p.p.path(p.p.path.length - 1 - i).desc }.toSet
+          val alreadyExploredEdges = shortestPaths.collect { case p if p.p.path.takeRight(i) == rootPathEdges => p.p.path(p.p.path.length - 1 - i) }
           // we also want to ignore any vertex on the root path to prevent loops
           val alreadyExploredVertices = rootPathEdges.map(_.desc.b).toSet
           val rootPathWeight = pathWeight(sourceNode, rootPathEdges, amount, currentBlockHeight, wr, includeLocalChannelCost)
           // find the "spur" path, a sub-path going from the spur node to the target avoiding previously found sub-paths
-          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges ++ alreadyExploredEdges, ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
+          val spurPath = dijkstraShortestPath(graph, sourceNode, spurNode, ignoredEdges.add(alreadyExploredEdges), ignoredVertices ++ alreadyExploredVertices, extraEdges, rootPathWeight, boundaries, currentBlockHeight, wr, includeLocalChannelCost)
           if (spurPath.nonEmpty) {
             val completePath = spurPath ++ rootPathEdges
             val candidatePath = WeightedPath(completePath, pathWeight(sourceNode, completePath, amount, currentBlockHeight, wr, includeLocalChannelCost))
@@ -199,7 +199,7 @@ object Graph {
   private def dijkstraShortestPath(g: DirectedGraph,
                                    sourceNode: PublicKey,
                                    targetNode: PublicKey,
-                                   ignoredEdges: Set[ChannelDesc],
+                                   ignoredEdges: IgnoredEdges,
                                    ignoredVertices: Set[PublicKey],
                                    extraEdges: Set[GraphEdge],
                                    initialWeight: RichWeight,
@@ -249,7 +249,7 @@ object Graph {
             edge.balance_opt.forall(current.weight.amount <= _) &&
             edge.update.htlcMaximumMsat.forall(current.weight.amount <= _) &&
             current.weight.amount >= edge.update.htlcMinimumMsat
-          if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge.desc) && !ignoredVertices.contains(neighbor)) {
+          if (canRelayAmount && boundaries(neighborWeight) && !ignoredEdges.contains(edge) && !ignoredVertices.contains(neighbor)) {
             val previousNeighborWeight = bestWeights.getOrElse(neighbor, RichWeight(MilliSatoshi(Long.MaxValue), Int.MaxValue, CltvExpiryDelta(Int.MaxValue), 0.0, MilliSatoshi(Long.MaxValue), MilliSatoshi(Long.MaxValue), Double.MaxValue))
             // if this path between neighbor and the target has a shorter distance than previously known, we select it
             if (neighborWeight.weight < previousNeighborWeight.weight) {
@@ -416,6 +416,34 @@ object Graph {
 
       def fee(amount: MilliSatoshi): MilliSatoshi = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, amount)
 
+    }
+
+    case class IgnoredEdges(ignoredLocalEdges: Set[ShortChannelId], ignoredRemoteEdges: Set[(PublicKey, PublicKey)]) {
+      def contains(edge: GraphEdge): Boolean = {
+        edge.balance_opt match {
+          case None => ignoredRemoteEdges.contains((edge.desc.a, edge.desc.b))
+          case Some(_) => ignoredLocalEdges.contains(edge.desc.shortChannelId)
+        }
+      }
+
+      def add(edge: GraphEdge): IgnoredEdges = {
+        edge.balance_opt match {
+          case None => copy(ignoredRemoteEdges = ignoredRemoteEdges + ((edge.desc.a, edge.desc.b)))
+          case Some(_) => copy(ignoredLocalEdges = ignoredLocalEdges + edge.desc.shortChannelId)
+        }
+      }
+
+      def add(edges: IterableOnce[GraphEdge]): IgnoredEdges = {
+        edges.iterator.foldLeft(this)((ignored, e) => ignored.add(e))
+      }
+    }
+
+    object IgnoredEdges {
+      val empty: IgnoredEdges = IgnoredEdges(Set.empty, Set.empty)
+
+      def apply(descs: Set[ChannelDesc]): IgnoredEdges = {
+        IgnoredEdges(descs.map(d => d.shortChannelId), descs.map(d => (d.a, d.b)))
+      }
     }
 
     /** A graph data structure that uses an adjacency list, stores the incoming edges of the neighbors */

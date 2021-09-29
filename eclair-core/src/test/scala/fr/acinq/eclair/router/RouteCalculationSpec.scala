@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Satoshi, SatoshiLong
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge, IgnoredEdges}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, RichWeight, WeightRatios}
 import fr.acinq.eclair.router.RouteCalculation._
 import fr.acinq.eclair.router.Router._
@@ -472,7 +472,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(4L, d, e, 0 msat, 0)
     ))
 
-    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, ignoredEdges = Set(ChannelDesc(ShortChannelId(3L), c, d)), routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
+    val route1 = findRoute(g, a, e, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, numRoutes = 1, ignoredEdges = IgnoredEdges(Set(ChannelDesc(ShortChannelId(3L), c, d))), routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(route1 === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
@@ -697,7 +697,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(7L, c, f, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT))
     ))
 
-    val fourShortestPaths = Graph.yenKshortestPaths(g1, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 4, Left(NO_WEIGHT_RATIOS), 0, noopBoundaries, false)
+    val fourShortestPaths = Graph.yenKshortestPaths(g1, d, f, DEFAULT_AMOUNT_MSAT, IgnoredEdges.empty, Set.empty, Set.empty, pathsToFind = 4, Left(NO_WEIGHT_RATIOS), 0, noopBoundaries, false)
     assert(fourShortestPaths.size === 4)
     assert(hops2Ids(fourShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
     assert(hops2Ids(fourShortestPaths(1).path.map(graphEdgeToHop)) === 1 :: 3 :: 5 :: Nil) // D -> A -> E -> F
@@ -706,7 +706,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
 
     // Update balance D -> A to evict the last path (balance too low)
     val g2 = g1.addEdge(makeEdge(1L, d, a, 1 msat, 0, balance_opt = Some(DEFAULT_AMOUNT_MSAT + 3.msat)))
-    val threeShortestPaths = Graph.yenKshortestPaths(g2, d, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 4, Left(NO_WEIGHT_RATIOS), 0, noopBoundaries, false)
+    val threeShortestPaths = Graph.yenKshortestPaths(g2, d, f, DEFAULT_AMOUNT_MSAT, IgnoredEdges.empty, Set.empty, Set.empty, pathsToFind = 4, Left(NO_WEIGHT_RATIOS), 0, noopBoundaries, false)
     assert(threeShortestPaths.size === 3)
     assert(hops2Ids(threeShortestPaths(0).path.map(graphEdgeToHop)) === 2 :: 5 :: Nil) // D -> E -> F
     assert(hops2Ids(threeShortestPaths(1).path.map(graphEdgeToHop)) === 1 :: 3 :: 5 :: Nil) // D -> A -> E -> F
@@ -735,7 +735,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
       makeEdge(90L, g, h, 2 msat, 0)
     ))
 
-    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 2, Left(NO_WEIGHT_RATIOS), 0, noopBoundaries, false)
+    val twoShortestPaths = Graph.yenKshortestPaths(graph, c, h, DEFAULT_AMOUNT_MSAT, IgnoredEdges.empty, Set.empty, Set.empty, pathsToFind = 2, Left(NO_WEIGHT_RATIOS), 0, noopBoundaries, false)
 
     assert(twoShortestPaths.size === 2)
     val shortest = twoShortestPaths(0)
@@ -766,7 +766,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     // we ask for 3 shortest paths but only 2 can be found
-    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, Set.empty, Set.empty, Set.empty, pathsToFind = 3, Left(NO_WEIGHT_RATIOS), 0, noopBoundaries, false)
+    val foundPaths = Graph.yenKshortestPaths(graph, a, f, DEFAULT_AMOUNT_MSAT, IgnoredEdges.empty, Set.empty, Set.empty, pathsToFind = 3, Left(NO_WEIGHT_RATIOS), 0, noopBoundaries, false)
     assert(foundPaths.size === 2)
     assert(hops2Ids(foundPaths(0).path.map(graphEdgeToHop)) === 1 :: 2 :: 3 :: Nil) // A -> B -> C -> F
     assert(hops2Ids(foundPaths(1).path.map(graphEdgeToHop)) === 1 :: 2 :: 4 :: 5 :: 6 :: Nil) // A -> B -> C -> D -> E -> F
@@ -948,7 +948,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     val targetNode = PublicKey(hex"024655b768ef40951b20053a5c4b951606d4d86085d51238f2c67c7dec29c792ca")
     val amount = 351000 msat
 
-    val Success(route :: Nil) = findRoute(g, thisNode, targetNode, amount, DEFAULT_MAX_FEE, 1, Set.empty, Set.empty, Set.empty, params, currentBlockHeight = 567634) // simulate mainnet block for heuristic
+    val Success(route :: Nil) = findRoute(g, thisNode, targetNode, amount, DEFAULT_MAX_FEE, 1, Set.empty, IgnoredEdges.empty, Set.empty, params, currentBlockHeight = 567634) // simulate mainnet block for heuristic
     assert(route.length == 2)
     assert(route.hops.last.nextNodeId == targetNode)
   }
@@ -1073,7 +1073,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val amount = 20000 msat
-    val ignoredEdges = Set(ChannelDesc(ShortChannelId(2L), a, b), ChannelDesc(ShortChannelId(3L), a, b))
+    val ignoredEdges = IgnoredEdges(Set(ChannelDesc(ShortChannelId(2L), a, b), ChannelDesc(ShortChannelId(3L), a, b)))
     val Success(routes) = findMultiPartRoute(g, a, b, amount, 1 msat, ignoredEdges = ignoredEdges, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     assert(routes.forall(_.length == 1), routes)
     checkIgnoredChannels(routes, 2L, 3L)
@@ -1428,7 +1428,7 @@ class RouteCalculationSpec extends AnyFunSuite with ParallelTestExecution {
     ))
 
     val ignoredNodes = Set(d)
-    val ignoredChannels = Set(ChannelDesc(ShortChannelId(2L), b, c))
+    val ignoredChannels = IgnoredEdges(Set(ChannelDesc(ShortChannelId(2L), b, c)))
     val Success(routes) = findMultiPartRoute(g, a, f, amount, maxFee, ignoredEdges = ignoredChannels, ignoredVertices = ignoredNodes, routeParams = DEFAULT_ROUTE_PARAMS, currentBlockHeight = 400000)
     checkRouteAmounts(routes, amount, maxFee)
     assert(routes2Ids(routes) === Set(Seq(8L), Seq(9L, 10L)))
@@ -1888,7 +1888,7 @@ object RouteCalculationSpec {
 
   def routes2Ids(routes: Seq[Route]): Set[Seq[Long]] = routes.map(route2Ids).toSet
 
-  def route2Edges(route: Route): Seq[GraphEdge] = route.hops.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate, 0 sat, None))
+  def route2Edges(route: Route): Seq[GraphEdge] = route.hops.map(hop => GraphEdge(ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId), hop.lastUpdate, route.amount.truncateToSatoshi, None))
 
   def route2Nodes(route: Route): Seq[(PublicKey, PublicKey)] = route.hops.map(hop => (hop.nodeId, hop.nextNodeId))
 

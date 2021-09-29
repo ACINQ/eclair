@@ -25,7 +25,7 @@ import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
-import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
+import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge, IgnoredEdges}
 import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
@@ -105,7 +105,7 @@ object RouteCalculation {
       val extraEdges = assistedChannels.values.map(ac =>
         GraphEdge(ChannelDesc(ac.extraHop.shortChannelId, ac.extraHop.nodeId, ac.nextNodeId), toFakeUpdate(ac.extraHop, ac.htlcMaximum), htlcMaxToCapacity(ac.htlcMaximum), Some(ac.htlcMaximum))
       ).toSet
-      val ignoredEdges = r.ignore.channels ++ d.excludedChannels
+      val ignoredEdges = IgnoredEdges(r.ignore.channels ++ d.excludedChannels)
       val params = r.routeParams
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
@@ -207,7 +207,7 @@ object RouteCalculation {
                 maxFee: MilliSatoshi,
                 numRoutes: Int,
                 extraEdges: Set[GraphEdge] = Set.empty,
-                ignoredEdges: Set[ChannelDesc] = Set.empty,
+                ignoredEdges: IgnoredEdges = IgnoredEdges.empty,
                 ignoredVertices: Set[PublicKey] = Set.empty,
                 routeParams: RouteParams,
                 currentBlockHeight: Long): Try[Seq[Route]] = Try {
@@ -224,9 +224,9 @@ object RouteCalculation {
                                 amount: MilliSatoshi,
                                 maxFee: MilliSatoshi,
                                 numRoutes: Int,
-                                extraEdges: Set[GraphEdge] = Set.empty,
-                                ignoredEdges: Set[ChannelDesc] = Set.empty,
-                                ignoredVertices: Set[PublicKey] = Set.empty,
+                                extraEdges: Set[GraphEdge],
+                                ignoredEdges: IgnoredEdges,
+                                ignoredVertices: Set[PublicKey],
                                 routeParams: RouteParams,
                                 currentBlockHeight: Long): Either[RouterException, Seq[Graph.WeightedPath]] = {
     require(amount > 0.msat, "route amount must be strictly positive")
@@ -282,7 +282,7 @@ object RouteCalculation {
                          amount: MilliSatoshi,
                          maxFee: MilliSatoshi,
                          extraEdges: Set[GraphEdge] = Set.empty,
-                         ignoredEdges: Set[ChannelDesc] = Set.empty,
+                         ignoredEdges: IgnoredEdges = IgnoredEdges.empty,
                          ignoredVertices: Set[PublicKey] = Set.empty,
                          pendingHtlcs: Seq[Route] = Nil,
                          routeParams: RouteParams,
@@ -305,10 +305,10 @@ object RouteCalculation {
                                          targetNodeId: PublicKey,
                                          amount: MilliSatoshi,
                                          maxFee: MilliSatoshi,
-                                         extraEdges: Set[GraphEdge] = Set.empty,
-                                         ignoredEdges: Set[ChannelDesc] = Set.empty,
-                                         ignoredVertices: Set[PublicKey] = Set.empty,
-                                         pendingHtlcs: Seq[Route] = Nil,
+                                         extraEdges: Set[GraphEdge],
+                                         ignoredEdges: IgnoredEdges,
+                                         ignoredVertices: Set[PublicKey],
+                                         pendingHtlcs: Seq[Route],
                                          routeParams: RouteParams,
                                          currentBlockHeight: Long): Either[RouterException, Seq[Route]] = {
     // We use Yen's k-shortest paths to find many paths for chunks of the total amount.
