@@ -164,7 +164,7 @@ object PaymentFailure {
         case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
         case _: UnreadableRemoteFailure => "unreadable remote failure"
       }
-      val route = JArray(failure.route.map(r => JString(r.nextNodeId.value.toHex)).toList)
+      val route = JArray((failure.route.map(_.nodeId) ++ failure.route.lastOption.map(_.nextNodeId)).map(n => JString(n.value.toHex)).toList)
       JObject(
         JField("amount", JString(failure.amount.toString)),
         JField("route", route),
