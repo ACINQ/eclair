@@ -113,43 +113,6 @@ class GraphSpec extends AnyFunSuite {
     assert(graph.edgeSet().size === 6)
   }
 
-  test("add edge without capacity") {
-    val edgeAB = makeEdge(1L, a, b, 0 msat, 0)
-    val edgeBC = makeEdge(2L, a, b, 0 msat, 0, capacity = 0 sat, maxHtlc = Some(10010 msat))
-    val edgeCD = makeEdge(3L, a, b, 0 msat, 0, capacity = 0 sat, maxHtlc = None)
-    val channels = SortedMap(
-      ShortChannelId(1L) -> PublicChannel(
-        makeChannel(1L, a, b),
-        ByteVector32.Zeroes,
-        DEFAULT_CAPACITY,
-        Some(makeUpdateShort(ShortChannelId(1L), a, b, 1 msat, 10, maxHtlc = Some(10000 msat))),
-        Some(makeUpdateShort(ShortChannelId(1L), b, a, 1 msat, 10, maxHtlc = Some(10000 msat))),
-        None),
-      ShortChannelId(2L) -> PublicChannel(
-        makeChannel(2L, a, b),
-        ByteVector32.Zeroes,
-        0 sat,
-        Some(makeUpdateShort(ShortChannelId(2L), a, b, 1 msat, 10, maxHtlc = Some(10010 msat))),
-        Some(makeUpdateShort(ShortChannelId(2L), b, a, 1 msat, 10, maxHtlc = Some(10010 msat))),
-        None),
-      ShortChannelId(3L) -> PublicChannel(
-        makeChannel(3L, a, b),
-        ByteVector32.Zeroes,
-        0 sat,
-        Some(makeUpdateShort(ShortChannelId(3L), a, b, 1 msat, 10, maxHtlc = None)),
-        Some(makeUpdateShort(ShortChannelId(3L), b, a, 1 msat, 10, maxHtlc = None)),
-        None))
-
-    {
-      val graph = DirectedGraph(edgeAB).addEdge(edgeBC).addEdge(edgeCD)
-      assert(graph.edgesOf(a).map(_.capacity).toSet === Set(11 sat, RoutingHeuristics.CAPACITY_CHANNEL_HIGH.truncateToSatoshi, DEFAULT_CAPACITY))
-    }
-    {
-      val graph = DirectedGraph.makeGraph(channels)
-      assert(graph.edgesOf(a).map(_.capacity).toSet === Set(11 sat, RoutingHeuristics.CAPACITY_CHANNEL_HIGH.truncateToSatoshi, DEFAULT_CAPACITY))
-    }
-  }
-
   test("containsEdge should return true if the graph contains that edge, false otherwise") {
     val graph = DirectedGraph(Seq(
       makeEdge(1L, a, b, 0 msat, 0),
