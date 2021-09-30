@@ -395,7 +395,11 @@ object JsonSerializers {
 
   implicit val serialization: Serialization.type = jackson.Serialization
 
-  implicit val formats: Formats = (org.json4s.DefaultFormats +
+  implicit val formats: Formats = org.json4s.DefaultFormats.withTypeHintFieldName("type") +
+    CustomTypeHints.incomingPaymentStatus +
+    CustomTypeHints.outgoingPaymentStatus +
+    CustomTypeHints.paymentEvent +
+    CustomTypeHints.channelStates +
     ByteVectorSerializer +
     ByteVector32Serializer +
     ByteVector64Serializer +
@@ -434,11 +438,7 @@ object JsonSerializers {
     JavaUUIDSerializer +
     FeaturesSerializer +
     OriginSerializer +
-    GlobalBalanceSerializer +
-    CustomTypeHints.incomingPaymentStatus +
-    CustomTypeHints.outgoingPaymentStatus +
-    CustomTypeHints.paymentEvent +
-    CustomTypeHints.channelStates).withTypeHintFieldName("type")
+    GlobalBalanceSerializer
 
   def featuresToJson(features: Features): JObject = JObject(
     JField("activated", JObject(features.activated.map { case (feature, support) =>
