@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.sqlite.SqlitePaymentsDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, UnknownNextPeer}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TestDatabases, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TestDatabases, TimestampMilli, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.time.Instant
@@ -197,9 +197,9 @@ class PaymentsDbSpec extends AnyFunSuite {
         val ps6 = OutgoingPayment(UUID.randomUUID(), UUID.randomUUID(), Some("3"), randomBytes32(), PaymentType.Standard, 789 msat, 789 msat, bob, 1250, None, OutgoingPaymentStatus.Failed(Nil, 1300))
         db.addOutgoingPayment(ps4)
         db.addOutgoingPayment(ps5.copy(status = OutgoingPaymentStatus.Pending))
-        db.updateOutgoingPayment(PaymentSent(ps5.parentId, ps5.paymentHash, preimage1, ps5.amount, ps5.recipientNodeId, Seq(PaymentSent.PartialPayment(ps5.id, ps5.amount, 42 msat, randomBytes32(), None, 1180))))
+        db.updateOutgoingPayment(PaymentSent(ps5.parentId, ps5.paymentHash, preimage1, ps5.amount, ps5.recipientNodeId, Seq(PaymentSent.PartialPayment(ps5.id, ps5.amount, 42 msat, randomBytes32(), None, TimestampMilli(1180)))))
         db.addOutgoingPayment(ps6.copy(status = OutgoingPaymentStatus.Pending))
-        db.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, 1300))
+        db.updateOutgoingPayment(PaymentFailed(ps6.id, ps6.paymentHash, Nil, TimestampMilli(1300)))
 
         assert(db.listOutgoingPayments(1, 2000) === Seq(ps1, ps2, ps3, ps4, ps5, ps6))
         assert(db.listIncomingPayments(1, System.currentTimeMillis) === Seq(pr1, pr2, pr3))
@@ -478,10 +478,10 @@ class PaymentsDbSpec extends AnyFunSuite {
       db.addOutgoingPayment(s3)
       db.addOutgoingPayment(s4)
 
-      db.updateOutgoingPayment(PaymentFailed(s3.id, s3.paymentHash, Nil, 310))
+      db.updateOutgoingPayment(PaymentFailed(s3.id, s3.paymentHash, Nil, TimestampMilli(310)))
       val ss3 = s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310))
       assert(db.getOutgoingPayment(s3.id) === Some(ss3))
-      db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(s4.amount, Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(s4.amount, Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320))
+      db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(s4.amount, Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(s4.amount, Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), TimestampMilli(320)))
       val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", List(HopSummary(alice, bob, Some(ShortChannelId(42))))), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)))), 320))
       assert(db.getOutgoingPayment(s4.id) === Some(ss4))
 
@@ -489,8 +489,8 @@ class PaymentsDbSpec extends AnyFunSuite {
       assertThrows[IllegalArgumentException](db.updateOutgoingPayment(PaymentSent(parentId, s3.paymentHash, preimage1, s3.recipientAmount, s3.recipientNodeId, Seq(PaymentSent.PartialPayment(s3.id, s3.amount, 42 msat, randomBytes32(), None)))))
 
       val paymentSent = PaymentSent(parentId, paymentHash1, preimage1, 600 msat, carol, Seq(
-        PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32(), None, 400),
-        PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32(), Some(Seq(hop_ab, hop_bc)), 410)
+        PaymentSent.PartialPayment(s1.id, s1.amount, 15 msat, randomBytes32(), None, TimestampMilli(400)),
+        PaymentSent.PartialPayment(s2.id, s2.amount, 20 msat, randomBytes32(), Some(Seq(hop_ab, hop_bc)), TimestampMilli(410))
       ))
       val ss1 = s1.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 15 msat, Nil, 400))
       val ss2 = s2.copy(status = OutgoingPaymentStatus.Succeeded(preimage1, 20 msat, Seq(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)), 410))
@@ -533,7 +533,7 @@ class PaymentsDbSpec extends AnyFunSuite {
     // 1st attempt, pending -> failed
     val outgoing1 = OutgoingPayment(UUID.randomUUID(), parentId1, None, paymentHash1, PaymentType.Standard, 123 msat, 123 msat, alice, 200, Some(invoice), OutgoingPaymentStatus.Pending)
     db.addOutgoingPayment(outgoing1)
-    db.updateOutgoingPayment(PaymentFailed(outgoing1.id, outgoing1.paymentHash, Nil, 210))
+    db.updateOutgoingPayment(PaymentFailed(outgoing1.id, outgoing1.paymentHash, Nil, TimestampMilli(210)))
     // 2nd attempt: pending
     val outgoing2 = OutgoingPayment(UUID.randomUUID(), parentId1, None, paymentHash1, PaymentType.Standard, 123 msat, 123 msat, alice, 211, Some(invoice), OutgoingPaymentStatus.Pending)
     db.addOutgoingPayment(outgoing2)
@@ -546,15 +546,15 @@ class PaymentsDbSpec extends AnyFunSuite {
     assert(check1.head.asInstanceOf[PlainOutgoingPayment].status == OutgoingPaymentStatus.Pending)
 
     // failed #2 and add a successful payment (made of 2 partial payments)
-    db.updateOutgoingPayment(PaymentFailed(outgoing2.id, outgoing2.paymentHash, Nil, 250))
+    db.updateOutgoingPayment(PaymentFailed(outgoing2.id, outgoing2.paymentHash, Nil, TimestampMilli(250)))
     val outgoing3 = OutgoingPayment(UUID.randomUUID(), parentId2, None, paymentHash1, PaymentType.Standard, 200 msat, 500 msat, bob, 300, Some(invoice), OutgoingPaymentStatus.Pending)
     val outgoing4 = OutgoingPayment(UUID.randomUUID(), parentId2, None, paymentHash1, PaymentType.Standard, 300 msat, 500 msat, bob, 310, Some(invoice), OutgoingPaymentStatus.Pending)
     db.addOutgoingPayment(outgoing3)
     db.addOutgoingPayment(outgoing4)
     // complete #2 and #3 partial payments
     val sent = PaymentSent(parentId2, paymentHash1, preimage1, outgoing3.recipientAmount, outgoing3.recipientNodeId, Seq(
-      PaymentSent.PartialPayment(outgoing3.id, outgoing3.amount, 15 msat, randomBytes32(), None, 400),
-      PaymentSent.PartialPayment(outgoing4.id, outgoing4.amount, 20 msat, randomBytes32(), None, 410)
+      PaymentSent.PartialPayment(outgoing3.id, outgoing3.amount, 15 msat, randomBytes32(), None, TimestampMilli(400)),
+      PaymentSent.PartialPayment(outgoing4.id, outgoing4.amount, 20 msat, randomBytes32(), None, TimestampMilli(410))
     ))
     db.updateOutgoingPayment(sent)
 

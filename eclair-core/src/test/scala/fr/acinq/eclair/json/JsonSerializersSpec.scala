@@ -27,6 +27,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs
 import fr.acinq.eclair.wire.protocol._
+import org.json4s.DefaultFormats
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
 import scodec.bits._
@@ -240,6 +241,19 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     assert(JsonSerializers.serialization.write(ChannelCodecs.stateDataCodec.decode(dataNegotiating.bits).require.value)(JsonSerializers.formats).contains(""""type":"DATA_NEGOTIATING""""))
     assert(JsonSerializers.serialization.write(ChannelCodecs.stateDataCodec.decode(dataClosingLocal.bits).require.value)(JsonSerializers.formats).contains(""""type":"DATA_CLOSING""""))
 
+  }
+
+  test("map serializer") {
+    val formats = DefaultFormats + new PublicKeyKeySerializer
+    val m = Map(randomKey().publicKey -> "foo", randomKey().publicKey -> "bar", randomKey().publicKey -> "baz").toList.toMap
+    println(JsonSerializers.serialization.writePretty(m)(formats))
+  }
+  case class Foo(a: (String, ByteVector32))
+  case class FooJson(a: String, b: ByteVector32)
+  test("test serializer") {
+    val formats = DefaultFormats + new ByteVector32Serializer + new ConvertClassSerializer[Foo](o => FooJson(o.a._1, o.a._2))
+    val o = Foo(("foo", randomBytes32()))
+    println(JsonSerializers.serialization.writePretty(o)(formats))
   }
 
   /** utility method that strips line breaks in the expected json */

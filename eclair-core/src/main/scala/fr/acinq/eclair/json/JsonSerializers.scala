@@ -31,7 +31,7 @@ import fr.acinq.eclair.router.Router.{Hop, RouteResponse}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampMilli, UInt64}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -40,7 +40,8 @@ import org.json4s.{DefaultFormats, Extraction, Formats, JDecimal, JValue, KeySer
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
-import java.util.UUID
+import java.time.Instant
+import java.util.{Date, UUID}
 
 /**
  * Custom serializer that only does serialization, not deserialization.
@@ -110,6 +111,21 @@ class ByteVector64Serializer extends CustomSerializerOnly[ByteVector64](_ => {
 
 class UInt64Serializer extends CustomSerializerOnly[UInt64](_ => {
   case x: UInt64 => JInt(x.toBigInt)
+})
+
+class TimestampMilliSerializer extends CustomSerializerOnly[TimestampMilli](_ => {
+  case x: TimestampMilli => JObject(
+    ("iso", {
+      import java.text.SimpleDateFormat
+      import java.util.TimeZone
+      val tz = TimeZone.getTimeZone("UTC")
+      val df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'")
+      df.setTimeZone(tz)
+      val s = df.format(Date.from(Instant.ofEpochMilli(x.toLong)))
+      JString(s)
+    }),
+    ("unix", JDecimal(x.toLong))
+  )
 })
 
 class BtcSerializer extends CustomSerializerOnly[Btc](_ => {
@@ -448,6 +464,7 @@ object JsonSerializers {
     new ByteVector64Serializer +
     new ChannelEventSerializer +
     new UInt64Serializer +
+    new TimestampMilliSerializer +
     new BtcSerializer +
     new SatoshiSerializer +
     new MilliSatoshiSerializer +
