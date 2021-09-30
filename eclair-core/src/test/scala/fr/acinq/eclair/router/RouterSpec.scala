@@ -681,11 +681,20 @@ class RouterSpec extends BaseRouterSpec {
     }
     assert(nodes.size === 8 && channels.size === 5 && updates.size === 10) // public channels only
 
+    // just making sure that we have been subscribed to network events, otherwise there is a possible race condition
+    awaitCond({
+      system.eventStream.publish(SyncProgress(42))
+      sender.msgAvailable
+    }, max = 30 seconds)
+
     // new announcements
     val update_ab_2 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, CltvExpiryDelta(7), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 10, htlcMaximumMsat = htlcMaximum, timestamp = update_ab.timestamp + 1)
     val peerConnection = TestProbe()
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab_2)
-    sender.expectMsg(ChannelUpdatesReceived(List(update_ab_2)))
+    sender.fishForMessage() {
+      case cu: ChannelUpdatesReceived => cu == ChannelUpdatesReceived(List(update_ab_2))
+      case _ => false
+    }
   }
 
 }
