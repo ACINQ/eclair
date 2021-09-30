@@ -70,6 +70,28 @@ class CustomKeySerializerOnly[A: Manifest](ser: Formats => PartialFunction[Any, 
   def serialize(implicit format: Formats): PartialFunction[Any, String] = ser(format)
 }
 
+/**
+ * Custom serializer where, instead of providing a `MyClass => JValue` conversion method, we provide a
+ * `MyClass => MyClassJson` method, with the assumption that `MyClassJson` is serializable using the base serializers.
+ *
+ * The rationale is that it's easier to define the structure with types rather than by building json objects.
+ *
+ * Usage:
+ * {{{
+ *   /** A type used in eclair */
+ *   case class Foo(a: String, b: Int, c: ByteVector32)
+ *
+ *   /** Special purpose type used only for serialization */
+ *   private[json] case class FooJson(a: String, c: ByteVector32)
+ *   object FooSerializer extends ConvertClassSerializer[Foo]({ foo: Foo =>
+ *     FooJson(foo.a, foo.c)
+ * }}}
+ *
+ */
+class ConvertClassSerializer[T: Manifest](f: T => Any) extends CustomSerializerOnly[T](formats => {
+  case o: T => Extraction.decompose(f(o))(formats)
+})
+
 class ByteVectorSerializer extends CustomSerializerOnly[ByteVector](_ => {
   case x: ByteVector => JString(x.toHex)
 })
@@ -339,24 +361,24 @@ class GlobalBalanceSerializer extends CustomSerializerOnly[GlobalBalance](_ => {
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
 })
 
-class PaymentFailureSerializer extends CustomSerializerOnly[PaymentFailure](_ => {
-  case failure: PaymentFailure =>
-    val formats = DefaultFormats +
-      new PublicKeySerializer +
-      new FailureMessageSerializer
-    // NB: we can't use the type hints with custom serializers apparently, hence the manual handling for the "type" field
-    val details = failure match {
-      case local: LocalFailure => List(JField("type", JString("local")), JField("msg", JString(local.t.getMessage)))
-      case remote: RemoteFailure => List(JField("type", JString("remote")), JField("origin", Extraction.decompose(remote.e.originNode)(formats)),
-        JField("msg", Extraction.decompose(remote.e.failureMessage)(formats)))
-      case _: UnreadableRemoteFailure => List(JField("type", JString("unreadable-remote")))
-    }
-    JObject(
-      List(
-        JField("amount", JString(failure.amount.toString)),
-        JField("route", Extraction.decompose(failure.route.map(_.nodeId) ++ failure.route.lastOption.map(_.nextNodeId).toList)(formats)),
-      ) ++ details
-    )
+private[json] case class PaymentFailureJson(amount: String,
+                                            route: Seq[PublicKey],
+                                            `type`: String,
+                                            localMsg: Option[String] = None,
+                                            remoteMsg: Option[FailureMessage] = None,
+                                            origin: Option[PublicKey] = None)
+
+object PaymentFailureSerializer extends ConvertClassSerializer[PaymentFailure]({ failure: PaymentFailure =>
+  val amount = failure.amount.toString
+  val route = failure.route.map(_.nodeId) ++ failure.route.lastOption.map(_.nextNodeId)
+  failure match {
+    case local: LocalFailure =>
+      PaymentFailureJson(amount = amount, route = route, `type` = "local", localMsg = Some(local.t.getMessage))
+    case remote: RemoteFailure =>
+      PaymentFailureJson(amount = amount, route = route, `type` = "remote", remoteMsg = Some(remote.e.failureMessage), origin = Some(remote.e.originNode))
+    case _: UnreadableRemoteFailure =>
+      PaymentFailureJson(amount = amount, route = route, `type` = "unreadable-remote")
+  }
 })
 
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
@@ -455,7 +477,7 @@ object JsonSerializers {
     new FeaturesSerializer +
     new OriginSerializer +
     new GlobalBalanceSerializer +
-    new PaymentFailureSerializer +
+    PaymentFailureSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +
