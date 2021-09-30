@@ -70,100 +70,100 @@ class CustomKeySerializerOnly[A: Manifest](ser: Formats => PartialFunction[Any, 
   def serialize(implicit format: Formats): PartialFunction[Any, String] = ser(format)
 }
 
-class ByteVectorSerializer extends CustomSerializerOnly[ByteVector](_ => {
+object ByteVectorSerializer extends CustomSerializerOnly[ByteVector](_ => {
   case x: ByteVector => JString(x.toHex)
 })
 
-class ByteVector32Serializer extends CustomSerializerOnly[ByteVector32](_ => {
+object ByteVector32Serializer extends CustomSerializerOnly[ByteVector32](_ => {
   case x: ByteVector32 => JString(x.toHex)
 })
 
-class ByteVector32KeySerializer extends CustomKeySerializerOnly[ByteVector32](_ => {
+object ByteVector32KeySerializer extends CustomKeySerializerOnly[ByteVector32](_ => {
   case x: ByteVector32 => x.toHex
 })
 
-class ByteVector64Serializer extends CustomSerializerOnly[ByteVector64](_ => {
+object ByteVector64Serializer extends CustomSerializerOnly[ByteVector64](_ => {
   case x: ByteVector64 => JString(x.toHex)
 })
 
-class UInt64Serializer extends CustomSerializerOnly[UInt64](_ => {
+object UInt64Serializer extends CustomSerializerOnly[UInt64](_ => {
   case x: UInt64 => JInt(x.toBigInt)
 })
 
-class BtcSerializer extends CustomSerializerOnly[Btc](_ => {
+object BtcSerializer extends CustomSerializerOnly[Btc](_ => {
   case x: Btc => JDecimal(x.toDouble)
 })
 
-class SatoshiSerializer extends CustomSerializerOnly[Satoshi](_ => {
+object SatoshiSerializer extends CustomSerializerOnly[Satoshi](_ => {
   case x: Satoshi => JInt(x.toLong)
 })
 
-class MilliSatoshiSerializer extends CustomSerializerOnly[MilliSatoshi](_ => {
+object MilliSatoshiSerializer extends CustomSerializerOnly[MilliSatoshi](_ => {
   case x: MilliSatoshi => JInt(x.toLong)
 })
 
-class CltvExpirySerializer extends CustomSerializerOnly[CltvExpiry](_ => {
+object CltvExpirySerializer extends CustomSerializerOnly[CltvExpiry](_ => {
   case x: CltvExpiry => JLong(x.toLong)
 })
 
-class CltvExpiryDeltaSerializer extends CustomSerializerOnly[CltvExpiryDelta](_ => {
+object CltvExpiryDeltaSerializer extends CustomSerializerOnly[CltvExpiryDelta](_ => {
   case x: CltvExpiryDelta => JInt(x.toInt)
 })
 
-class FeeratePerKwSerializer extends CustomSerializerOnly[FeeratePerKw](_ => {
+object FeeratePerKwSerializer extends CustomSerializerOnly[FeeratePerKw](_ => {
   case x: FeeratePerKw => JLong(x.toLong)
 })
 
-class ShortChannelIdSerializer extends CustomSerializerOnly[ShortChannelId](_ => {
+object ShortChannelIdSerializer extends CustomSerializerOnly[ShortChannelId](_ => {
   case x: ShortChannelId => JString(x.toString)
 })
 
-class ChannelIdentifierSerializer extends CustomKeySerializerOnly[ChannelIdentifier](_ => {
+object ChannelIdentifierSerializer extends CustomKeySerializerOnly[ChannelIdentifier](_ => {
   case Left(x: ByteVector32) => x.toHex
   case Right(x: ShortChannelId) => x.toString
 })
 
-class ChannelStateSerializer extends CustomSerializerOnly[ChannelState](_ => {
+object ChannelStateSerializer extends CustomSerializerOnly[ChannelState](_ => {
   case x: ChannelState => JString(x.toString)
 })
 
-class ShaChainSerializer extends CustomSerializerOnly[ShaChain](_ => {
+object ShaChainSerializer extends CustomSerializerOnly[ShaChain](_ => {
   case _: ShaChain => JNull
 })
 
-class PublicKeySerializer extends CustomSerializerOnly[PublicKey](_ => {
+object PublicKeySerializer extends CustomSerializerOnly[PublicKey](_ => {
   case x: PublicKey => JString(x.toString())
 })
 
-class PrivateKeySerializer extends CustomSerializerOnly[PrivateKey](_ => {
+object PrivateKeySerializer extends CustomSerializerOnly[PrivateKey](_ => {
   case _: PrivateKey => JString("XXX")
 })
 
-class ChannelConfigSerializer extends CustomSerializerOnly[ChannelConfig](_ => {
+object ChannelConfigSerializer extends CustomSerializerOnly[ChannelConfig](_ => {
   case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
 })
 
-class ChannelFeaturesSerializer extends CustomSerializerOnly[ChannelFeatures](_ => {
+object ChannelFeaturesSerializer extends CustomSerializerOnly[ChannelFeatures](_ => {
   case channelFeatures: ChannelFeatures => JArray(channelFeatures.features.map(f => JString(f.rfcName)).toList)
 })
 
-class ChannelOpenResponseSerializer extends CustomSerializerOnly[ChannelOpenResponse](_ => {
+object ChannelOpenResponseSerializer extends CustomSerializerOnly[ChannelOpenResponse](_ => {
   case x: ChannelOpenResponse => JString(x.toString)
 })
 
-class CommandResponseSerializer extends CustomSerializerOnly[CommandResponse[Command]](_ => {
+object CommandResponseSerializer extends CustomSerializerOnly[CommandResponse[Command]](_ => {
   case RES_SUCCESS(_: CloseCommand, channelId) => JString(s"closed channel $channelId")
   case RES_FAILURE(_: Command, ex: Throwable) => JString(ex.getMessage)
 })
 
-class TransactionSerializer extends CustomSerializerOnly[TransactionWithInputInfo](_ => {
+object TransactionSerializer extends CustomSerializerOnly[TransactionWithInputInfo](_ => {
   case x: Transaction => JObject(List(
     JField("txid", JString(x.txid.toHex)),
     JField("tx", JString(x.toString()))
   ))
 })
 
-class TransactionWithInputInfoSerializer extends CustomSerializerOnly[TransactionWithInputInfo](_ => {
+object TransactionWithInputInfoSerializer extends CustomSerializerOnly[TransactionWithInputInfo](_ => {
   case x: HtlcSuccessTx => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
@@ -201,27 +201,27 @@ class TransactionWithInputInfoSerializer extends CustomSerializerOnly[Transactio
   ))
 })
 
-class InetSocketAddressSerializer extends CustomSerializerOnly[InetSocketAddress](_ => {
+object InetSocketAddressSerializer extends CustomSerializerOnly[InetSocketAddress](_ => {
   case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
 })
 
-class OutPointSerializer extends CustomSerializerOnly[OutPoint](_ => {
+object OutPointSerializer extends CustomSerializerOnly[OutPoint](_ => {
   case x: OutPoint => JString(s"${x.txid}:${x.index}")
 })
 
-class OutPointKeySerializer extends CustomKeySerializerOnly[OutPoint](_ => {
+object OutPointKeySerializer extends CustomKeySerializerOnly[OutPoint](_ => {
   case x: OutPoint => s"${x.txid}:${x.index}"
 })
 
-class InputInfoSerializer extends CustomSerializerOnly[InputInfo](_ => {
+object InputInfoSerializer extends CustomSerializerOnly[InputInfo](_ => {
   case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
 })
 
-class ColorSerializer extends CustomSerializerOnly[Color](_ => {
+object ColorSerializer extends CustomSerializerOnly[Color](_ => {
   case c: Color => JString(c.toString)
 })
 
-class RouteResponseSerializer extends CustomSerializerOnly[RouteResponse](_ => {
+object RouteResponseSerializer extends CustomSerializerOnly[RouteResponse](_ => {
   case route: RouteResponse =>
     val nodeIds = route.routes.head.hops match {
       case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
@@ -230,34 +230,34 @@ class RouteResponseSerializer extends CustomSerializerOnly[RouteResponse](_ => {
     JArray(nodeIds.toList.map(n => JString(n.toString)))
 })
 
-class ThrowableSerializer extends CustomSerializerOnly[Throwable](_ => {
+object ThrowableSerializer extends CustomSerializerOnly[Throwable](_ => {
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
   case t: Throwable => JString(t.getClass.getSimpleName)
 })
 
-class FailureMessageSerializer extends CustomSerializerOnly[FailureMessage](_ => {
+object FailureMessageSerializer extends CustomSerializerOnly[FailureMessage](_ => {
   case m: FailureMessage => JString(m.message)
 })
 
-class FailureTypeSerializer extends CustomSerializerOnly[FailureType](_ => {
+object FailureTypeSerializer extends CustomSerializerOnly[FailureType](_ => {
   case ft: FailureType => JString(ft.toString)
 })
 
-class NodeAddressSerializer extends CustomSerializerOnly[NodeAddress](_ => {
+object NodeAddressSerializer extends CustomSerializerOnly[NodeAddress](_ => {
   case n: NodeAddress => JString(HostAndPort.fromParts(n.socketAddress.getHostString, n.socketAddress.getPort).toString)
 })
 
-class DirectedHtlcSerializer extends CustomSerializerOnly[DirectedHtlc](_ => {
+object DirectedHtlcSerializer extends CustomSerializerOnly[DirectedHtlc](_ => {
   case h: DirectedHtlc => new JObject(List(("direction", JString(h.direction)), ("add", Extraction.decompose(h.add)(
     DefaultFormats +
-      new ByteVector32Serializer +
-      new ByteVectorSerializer +
-      new PublicKeySerializer +
-      new MilliSatoshiSerializer +
-      new CltvExpirySerializer))))
+      ByteVector32Serializer +
+      ByteVectorSerializer +
+      PublicKeySerializer +
+      MilliSatoshiSerializer +
+      CltvExpirySerializer))))
 })
 
-class PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ => {
+object PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ => {
   case p: PaymentRequest =>
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
@@ -265,12 +265,12 @@ class PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ =>
     val features = JField("features", JsonSerializers.featuresToJson(Features(p.features.bitmask)))
     val routingInfo = JField("routingInfo", Extraction.decompose(p.routingInfo)(
       DefaultFormats +
-        new ByteVector32Serializer +
-        new ByteVectorSerializer +
-        new PublicKeySerializer +
-        new ShortChannelIdSerializer +
-        new MilliSatoshiSerializer +
-        new CltvExpiryDeltaSerializer
+        ByteVector32Serializer +
+        ByteVectorSerializer +
+        PublicKeySerializer +
+        ShortChannelIdSerializer +
+        MilliSatoshiSerializer +
+        CltvExpiryDeltaSerializer
       )
     )
     val fieldList = List(JField("prefix", JString(p.prefix)),
@@ -288,15 +288,15 @@ class PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ =>
     JObject(fieldList)
 })
 
-class FeaturesSerializer extends CustomSerializerOnly[Features](_ => {
+object FeaturesSerializer extends CustomSerializerOnly[Features](_ => {
   case features: Features => JsonSerializers.featuresToJson(features)
 })
 
-class JavaUUIDSerializer extends CustomSerializerOnly[UUID](_ => {
+object JavaUUIDSerializer extends CustomSerializerOnly[UUID](_ => {
   case id: UUID => JString(id.toString)
 })
 
-class ChannelEventSerializer extends CustomSerializerOnly[ChannelEvent](_ => {
+object ChannelEventSerializer extends CustomSerializerOnly[ChannelEvent](_ => {
   case e: ChannelCreated => JObject(
     JField("type", JString("channel-opened")),
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
@@ -319,7 +319,7 @@ class ChannelEventSerializer extends CustomSerializerOnly[ChannelEvent](_ => {
   )
 })
 
-class OriginSerializer extends CustomSerializerOnly[Origin](_ => {
+object OriginSerializer extends CustomSerializerOnly[Origin](_ => {
   case o: Origin.Local => JObject(JField("paymentId", JString(o.id.toString)))
   case o: Origin.ChannelRelayed => JObject(
     JField("channelId", JString(o.originChannelId.toHex)),
@@ -333,9 +333,9 @@ class OriginSerializer extends CustomSerializerOnly[Origin](_ => {
   })
 })
 
-class GlobalBalanceSerializer extends CustomSerializerOnly[GlobalBalance](_ => {
+object GlobalBalanceSerializer extends CustomSerializerOnly[GlobalBalance](_ => {
   case o: GlobalBalance =>
-    val formats = DefaultFormats + new ByteVector32KeySerializer + new BtcSerializer + new SatoshiSerializer
+    val formats = DefaultFormats + ByteVector32KeySerializer + BtcSerializer + SatoshiSerializer
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
 })
 
@@ -396,45 +396,45 @@ object JsonSerializers {
   implicit val serialization: Serialization.type = jackson.Serialization
 
   implicit val formats: Formats = (org.json4s.DefaultFormats +
-    new ByteVectorSerializer +
-    new ByteVector32Serializer +
-    new ByteVector64Serializer +
-    new ChannelEventSerializer +
-    new UInt64Serializer +
-    new BtcSerializer +
-    new SatoshiSerializer +
-    new MilliSatoshiSerializer +
-    new CltvExpirySerializer +
-    new CltvExpiryDeltaSerializer +
-    new FeeratePerKwSerializer +
-    new ShortChannelIdSerializer +
-    new ChannelIdentifierSerializer +
-    new ChannelStateSerializer +
-    new ShaChainSerializer +
-    new PublicKeySerializer +
-    new PrivateKeySerializer +
-    new TransactionSerializer +
-    new TransactionWithInputInfoSerializer +
-    new InetSocketAddressSerializer +
-    new OutPointSerializer +
-    new OutPointKeySerializer +
-    new ChannelConfigSerializer +
-    new ChannelFeaturesSerializer +
-    new ChannelOpenResponseSerializer +
-    new CommandResponseSerializer +
-    new InputInfoSerializer +
-    new ColorSerializer +
-    new RouteResponseSerializer +
-    new ThrowableSerializer +
-    new FailureMessageSerializer +
-    new FailureTypeSerializer +
-    new NodeAddressSerializer +
-    new DirectedHtlcSerializer +
-    new PaymentRequestSerializer +
-    new JavaUUIDSerializer +
-    new FeaturesSerializer +
-    new OriginSerializer +
-    new GlobalBalanceSerializer +
+    ByteVectorSerializer +
+    ByteVector32Serializer +
+    ByteVector64Serializer +
+    ChannelEventSerializer +
+    UInt64Serializer +
+    BtcSerializer +
+    SatoshiSerializer +
+    MilliSatoshiSerializer +
+    CltvExpirySerializer +
+    CltvExpiryDeltaSerializer +
+    FeeratePerKwSerializer +
+    ShortChannelIdSerializer +
+    ChannelIdentifierSerializer +
+    ChannelStateSerializer +
+    ShaChainSerializer +
+    PublicKeySerializer +
+    PrivateKeySerializer +
+    TransactionSerializer +
+    TransactionWithInputInfoSerializer +
+    InetSocketAddressSerializer +
+    OutPointSerializer +
+    OutPointKeySerializer +
+    ChannelConfigSerializer +
+    ChannelFeaturesSerializer +
+    ChannelOpenResponseSerializer +
+    CommandResponseSerializer +
+    InputInfoSerializer +
+    ColorSerializer +
+    RouteResponseSerializer +
+    ThrowableSerializer +
+    FailureMessageSerializer +
+    FailureTypeSerializer +
+    NodeAddressSerializer +
+    DirectedHtlcSerializer +
+    PaymentRequestSerializer +
+    JavaUUIDSerializer +
+    FeaturesSerializer +
+    OriginSerializer +
+    GlobalBalanceSerializer +
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +
