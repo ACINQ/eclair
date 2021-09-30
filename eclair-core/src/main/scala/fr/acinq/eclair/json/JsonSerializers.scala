@@ -43,11 +43,11 @@ import java.net.InetSocketAddress
 import java.util.UUID
 
 /**
- * Custom serializer that only does serialization, not deserialization.
+ * Minimal serializer that only does serialization, not deserialization, and does not depend on external formats.
  *
  * NB: this is a stripped-down version of [[org.json4s.CustomSerializer]]
  */
-class CustomSerializerOnly[A: Manifest](ser: Formats => PartialFunction[Any, JValue]) extends Serializer[A] {
+class MinimalSerializer[A: Manifest](ser: PartialFunction[Any, JValue]) extends Serializer[A] {
 
   val Class: Class[_] = implicitly[Manifest[A]].runtimeClass
 
@@ -55,115 +55,115 @@ class CustomSerializerOnly[A: Manifest](ser: Formats => PartialFunction[Any, JVa
     case (TypeInfo(Class, _), json) => throw new MappingException("Can't convert " + json + " to " + Class)
   }
 
-  def serialize(implicit format: Formats): PartialFunction[Any, JValue] = ser(format)
+  def serialize(implicit format: Formats): PartialFunction[Any, JValue] = ser
 }
 
 /** Same as above, but for [[org.json4s.CustomKeySerializer]] */
-class CustomKeySerializerOnly[A: Manifest](ser: Formats => PartialFunction[Any, String]) extends KeySerializer[A] {
+class MinimalKeySerializer[A: Manifest](ser: PartialFunction[Any, String]) extends KeySerializer[A] {
 
-  val Class = implicitly[Manifest[A]].runtimeClass
+  val Class: Class[_] = implicitly[Manifest[A]].runtimeClass
 
   def deserialize(implicit format: Formats): PartialFunction[(json4s.TypeInfo, String), A] = {
     case (TypeInfo(Class, _), json) => throw new MappingException("Can't convert " + json + " to " + Class)
   }
 
-  def serialize(implicit format: Formats): PartialFunction[Any, String] = ser(format)
+  def serialize(implicit format: Formats): PartialFunction[Any, String] = ser
 }
 
-object ByteVectorSerializer extends CustomSerializerOnly[ByteVector](_ => {
+object ByteVectorSerializer extends MinimalSerializer[ByteVector]({
   case x: ByteVector => JString(x.toHex)
 })
 
-object ByteVector32Serializer extends CustomSerializerOnly[ByteVector32](_ => {
+object ByteVector32Serializer extends MinimalSerializer[ByteVector32]({
   case x: ByteVector32 => JString(x.toHex)
 })
 
-object ByteVector32KeySerializer extends CustomKeySerializerOnly[ByteVector32](_ => {
+object ByteVector32KeySerializer extends MinimalKeySerializer[ByteVector32]({
   case x: ByteVector32 => x.toHex
 })
 
-object ByteVector64Serializer extends CustomSerializerOnly[ByteVector64](_ => {
+object ByteVector64Serializer extends MinimalSerializer[ByteVector64]({
   case x: ByteVector64 => JString(x.toHex)
 })
 
-object UInt64Serializer extends CustomSerializerOnly[UInt64](_ => {
+object UInt64Serializer extends MinimalSerializer[UInt64]({
   case x: UInt64 => JInt(x.toBigInt)
 })
 
-object BtcSerializer extends CustomSerializerOnly[Btc](_ => {
+object BtcSerializer extends MinimalSerializer[Btc]({
   case x: Btc => JDecimal(x.toDouble)
 })
 
-object SatoshiSerializer extends CustomSerializerOnly[Satoshi](_ => {
+object SatoshiSerializer extends MinimalSerializer[Satoshi]({
   case x: Satoshi => JInt(x.toLong)
 })
 
-object MilliSatoshiSerializer extends CustomSerializerOnly[MilliSatoshi](_ => {
+object MilliSatoshiSerializer extends MinimalSerializer[MilliSatoshi]({
   case x: MilliSatoshi => JInt(x.toLong)
 })
 
-object CltvExpirySerializer extends CustomSerializerOnly[CltvExpiry](_ => {
+object CltvExpirySerializer extends MinimalSerializer[CltvExpiry]({
   case x: CltvExpiry => JLong(x.toLong)
 })
 
-object CltvExpiryDeltaSerializer extends CustomSerializerOnly[CltvExpiryDelta](_ => {
+object CltvExpiryDeltaSerializer extends MinimalSerializer[CltvExpiryDelta]({
   case x: CltvExpiryDelta => JInt(x.toInt)
 })
 
-object FeeratePerKwSerializer extends CustomSerializerOnly[FeeratePerKw](_ => {
+object FeeratePerKwSerializer extends MinimalSerializer[FeeratePerKw]({
   case x: FeeratePerKw => JLong(x.toLong)
 })
 
-object ShortChannelIdSerializer extends CustomSerializerOnly[ShortChannelId](_ => {
+object ShortChannelIdSerializer extends MinimalSerializer[ShortChannelId]({
   case x: ShortChannelId => JString(x.toString)
 })
 
-object ChannelIdentifierSerializer extends CustomKeySerializerOnly[ChannelIdentifier](_ => {
+object ChannelIdentifierSerializer extends MinimalKeySerializer[ChannelIdentifier]({
   case Left(x: ByteVector32) => x.toHex
   case Right(x: ShortChannelId) => x.toString
 })
 
-object ChannelStateSerializer extends CustomSerializerOnly[ChannelState](_ => {
+object ChannelStateSerializer extends MinimalSerializer[ChannelState]({
   case x: ChannelState => JString(x.toString)
 })
 
-object ShaChainSerializer extends CustomSerializerOnly[ShaChain](_ => {
+object ShaChainSerializer extends MinimalSerializer[ShaChain]({
   case _: ShaChain => JNull
 })
 
-object PublicKeySerializer extends CustomSerializerOnly[PublicKey](_ => {
+object PublicKeySerializer extends MinimalSerializer[PublicKey]({
   case x: PublicKey => JString(x.toString())
 })
 
-object PrivateKeySerializer extends CustomSerializerOnly[PrivateKey](_ => {
+object PrivateKeySerializer extends MinimalSerializer[PrivateKey]({
   case _: PrivateKey => JString("XXX")
 })
 
-object ChannelConfigSerializer extends CustomSerializerOnly[ChannelConfig](_ => {
+object ChannelConfigSerializer extends MinimalSerializer[ChannelConfig]({
   case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
 })
 
-object ChannelFeaturesSerializer extends CustomSerializerOnly[ChannelFeatures](_ => {
+object ChannelFeaturesSerializer extends MinimalSerializer[ChannelFeatures]({
   case channelFeatures: ChannelFeatures => JArray(channelFeatures.features.map(f => JString(f.rfcName)).toList)
 })
 
-object ChannelOpenResponseSerializer extends CustomSerializerOnly[ChannelOpenResponse](_ => {
+object ChannelOpenResponseSerializer extends MinimalSerializer[ChannelOpenResponse]({
   case x: ChannelOpenResponse => JString(x.toString)
 })
 
-object CommandResponseSerializer extends CustomSerializerOnly[CommandResponse[Command]](_ => {
+object CommandResponseSerializer extends MinimalSerializer[CommandResponse[Command]]({
   case RES_SUCCESS(_: CloseCommand, channelId) => JString(s"closed channel $channelId")
   case RES_FAILURE(_: Command, ex: Throwable) => JString(ex.getMessage)
 })
 
-object TransactionSerializer extends CustomSerializerOnly[TransactionWithInputInfo](_ => {
+object TransactionSerializer extends MinimalSerializer[TransactionWithInputInfo]({
   case x: Transaction => JObject(List(
     JField("txid", JString(x.txid.toHex)),
     JField("tx", JString(x.toString()))
   ))
 })
 
-object TransactionWithInputInfoSerializer extends CustomSerializerOnly[TransactionWithInputInfo](_ => {
+object TransactionWithInputInfoSerializer extends MinimalSerializer[TransactionWithInputInfo]({
   case x: HtlcSuccessTx => JObject(List(
     JField("txid", JString(x.tx.txid.toHex)),
     JField("tx", JString(x.tx.toString())),
@@ -201,27 +201,27 @@ object TransactionWithInputInfoSerializer extends CustomSerializerOnly[Transacti
   ))
 })
 
-object InetSocketAddressSerializer extends CustomSerializerOnly[InetSocketAddress](_ => {
+object InetSocketAddressSerializer extends MinimalSerializer[InetSocketAddress]({
   case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
 })
 
-object OutPointSerializer extends CustomSerializerOnly[OutPoint](_ => {
+object OutPointSerializer extends MinimalSerializer[OutPoint]({
   case x: OutPoint => JString(s"${x.txid}:${x.index}")
 })
 
-object OutPointKeySerializer extends CustomKeySerializerOnly[OutPoint](_ => {
+object OutPointKeySerializer extends MinimalKeySerializer[OutPoint]({
   case x: OutPoint => s"${x.txid}:${x.index}"
 })
 
-object InputInfoSerializer extends CustomSerializerOnly[InputInfo](_ => {
+object InputInfoSerializer extends MinimalSerializer[InputInfo]({
   case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
 })
 
-object ColorSerializer extends CustomSerializerOnly[Color](_ => {
+object ColorSerializer extends MinimalSerializer[Color]({
   case c: Color => JString(c.toString)
 })
 
-object RouteResponseSerializer extends CustomSerializerOnly[RouteResponse](_ => {
+object RouteResponseSerializer extends MinimalSerializer[RouteResponse]({
   case route: RouteResponse =>
     val nodeIds = route.routes.head.hops match {
       case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
@@ -230,24 +230,24 @@ object RouteResponseSerializer extends CustomSerializerOnly[RouteResponse](_ => 
     JArray(nodeIds.toList.map(n => JString(n.toString)))
 })
 
-object ThrowableSerializer extends CustomSerializerOnly[Throwable](_ => {
+object ThrowableSerializer extends MinimalSerializer[Throwable]({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
   case t: Throwable => JString(t.getClass.getSimpleName)
 })
 
-object FailureMessageSerializer extends CustomSerializerOnly[FailureMessage](_ => {
+object FailureMessageSerializer extends MinimalSerializer[FailureMessage]({
   case m: FailureMessage => JString(m.message)
 })
 
-object FailureTypeSerializer extends CustomSerializerOnly[FailureType](_ => {
+object FailureTypeSerializer extends MinimalSerializer[FailureType]({
   case ft: FailureType => JString(ft.toString)
 })
 
-object NodeAddressSerializer extends CustomSerializerOnly[NodeAddress](_ => {
+object NodeAddressSerializer extends MinimalSerializer[NodeAddress]({
   case n: NodeAddress => JString(HostAndPort.fromParts(n.socketAddress.getHostString, n.socketAddress.getPort).toString)
 })
 
-object DirectedHtlcSerializer extends CustomSerializerOnly[DirectedHtlc](_ => {
+object DirectedHtlcSerializer extends MinimalSerializer[DirectedHtlc]({
   case h: DirectedHtlc => new JObject(List(("direction", JString(h.direction)), ("add", Extraction.decompose(h.add)(
     DefaultFormats +
       ByteVector32Serializer +
@@ -257,7 +257,7 @@ object DirectedHtlcSerializer extends CustomSerializerOnly[DirectedHtlc](_ => {
       CltvExpirySerializer))))
 })
 
-object PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ => {
+object PaymentRequestSerializer extends MinimalSerializer[PaymentRequest]({
   case p: PaymentRequest =>
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
@@ -271,7 +271,7 @@ object PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ =
         ShortChannelIdSerializer +
         MilliSatoshiSerializer +
         CltvExpiryDeltaSerializer
-      )
+    )
     )
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
@@ -288,15 +288,15 @@ object PaymentRequestSerializer extends CustomSerializerOnly[PaymentRequest](_ =
     JObject(fieldList)
 })
 
-object FeaturesSerializer extends CustomSerializerOnly[Features](_ => {
+object FeaturesSerializer extends MinimalSerializer[Features]({
   case features: Features => JsonSerializers.featuresToJson(features)
 })
 
-object JavaUUIDSerializer extends CustomSerializerOnly[UUID](_ => {
+object JavaUUIDSerializer extends MinimalSerializer[UUID]({
   case id: UUID => JString(id.toString)
 })
 
-object ChannelEventSerializer extends CustomSerializerOnly[ChannelEvent](_ => {
+object ChannelEventSerializer extends MinimalSerializer[ChannelEvent]({
   case e: ChannelCreated => JObject(
     JField("type", JString("channel-opened")),
     JField("remoteNodeId", JString(e.remoteNodeId.toString())),
@@ -319,7 +319,7 @@ object ChannelEventSerializer extends CustomSerializerOnly[ChannelEvent](_ => {
   )
 })
 
-object OriginSerializer extends CustomSerializerOnly[Origin](_ => {
+object OriginSerializer extends MinimalSerializer[Origin]({
   case o: Origin.Local => JObject(JField("paymentId", JString(o.id.toString)))
   case o: Origin.ChannelRelayed => JObject(
     JField("channelId", JString(o.originChannelId.toHex)),
@@ -333,7 +333,7 @@ object OriginSerializer extends CustomSerializerOnly[Origin](_ => {
   })
 })
 
-object GlobalBalanceSerializer extends CustomSerializerOnly[GlobalBalance](_ => {
+object GlobalBalanceSerializer extends MinimalSerializer[GlobalBalance]({
   case o: GlobalBalance =>
     val formats = DefaultFormats + ByteVector32KeySerializer + BtcSerializer + SatoshiSerializer
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
