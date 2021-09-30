@@ -71,17 +71,17 @@ class AuditDbSpec extends AnyFunSuite {
       val e4a = TransactionPublished(randomBytes32(), randomKey().publicKey, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
       val e4b = TransactionConfirmed(e4a.channelId, e4a.remoteNodeId, e4a.tx)
       val e4c = TransactionConfirmed(randomBytes32(), randomKey().publicKey, Transaction(2, Nil, TxOut(500 sat, hex"1234") :: Nil, 0))
-      val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = 0)
-      val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32(), None, timestamp = 1)
+      val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = TimestampMilli(0))
+      val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32(), None, timestamp = TimestampMilli(1))
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil)
-      val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = (System.currentTimeMillis.milliseconds + 10.minutes).toMillis)
+      val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = TimestampMilli((System.currentTimeMillis.milliseconds + 10.minutes).toMillis))
       val e6 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 42000 msat, randomKey().publicKey, pp6 :: Nil)
       val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, 456123000 sat, isFunder = true, isPrivate = false, ChannelEvent.EventType.Closed(MutualClose(null)))
       val e8 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
       val e9 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, null, RemoteError(Error(randomBytes32(), "remote oops")), isFatal = true)
       val e10 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(20000 msat, randomBytes32()), PaymentRelayed.Part(22000 msat, randomBytes32())), Seq(PaymentRelayed.Part(10000 msat, randomBytes32()), PaymentRelayed.Part(12000 msat, randomBytes32()), PaymentRelayed.Part(15000 msat, randomBytes32())), randomKey().publicKey, 30000 msat)
       val multiPartPaymentHash = randomBytes32()
-      val now = System.currentTimeMillis
+      val now = TimestampMilli.now
       val e11 = ChannelPaymentRelayed(13000 msat, 11000 msat, multiPartPaymentHash, randomBytes32(), randomBytes32(), now)
       val e12 = ChannelPaymentRelayed(15000 msat, 12500 msat, multiPartPaymentHash, randomBytes32(), randomBytes32(), now)
 
@@ -240,7 +240,7 @@ class AuditDbSpec extends AnyFunSuite {
           statement.setBytes(3, ps.paymentHash.toArray)
           statement.setBytes(4, ps.paymentPreimage.toArray)
           statement.setBytes(5, ps.parts.head.toChannelId.toArray)
-          statement.setLong(6, ps.timestamp)
+          statement.setLong(6, ps.timestamp.toLong)
           statement.executeUpdate()
         }
       },
@@ -317,12 +317,12 @@ class AuditDbSpec extends AnyFunSuite {
 
     val dbs = TestSqliteDatabases()
 
-    val pp1 = PaymentSent.PartialPayment(UUID.randomUUID(), 500 msat, 10 msat, randomBytes32(), None, 100)
-    val pp2 = PaymentSent.PartialPayment(UUID.randomUUID(), 600 msat, 5 msat, randomBytes32(), None, 110)
+    val pp1 = PaymentSent.PartialPayment(UUID.randomUUID(), 500 msat, 10 msat, randomBytes32(), None, TimestampMilli(100))
+    val pp2 = PaymentSent.PartialPayment(UUID.randomUUID(), 600 msat, 5 msat, randomBytes32(), None, TimestampMilli(110))
     val ps1 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 1100 msat, PrivateKey(ByteVector32.One).publicKey, pp1 :: pp2 :: Nil)
 
-    val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 105)
-    val relayed2 = ChannelPaymentRelayed(650 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 115)
+    val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), TimestampMilli(105))
+    val relayed2 = ChannelPaymentRelayed(650 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), TimestampMilli(115))
 
     migrationCheck(
       dbs = dbs,
@@ -355,7 +355,7 @@ class AuditDbSpec extends AnyFunSuite {
             statement.setBytes(3, ps1.paymentHash.toArray)
             statement.setBytes(4, ps1.paymentPreimage.toArray)
             statement.setBytes(5, pp.toChannelId.toArray)
-            statement.setLong(6, pp.timestamp)
+            statement.setLong(6, pp.timestamp.toLong)
             statement.setBytes(7, pp.id.toString.getBytes)
             statement.executeUpdate()
           }
@@ -368,7 +368,7 @@ class AuditDbSpec extends AnyFunSuite {
             statement.setBytes(3, relayed.paymentHash.toArray)
             statement.setBytes(4, relayed.fromChannelId.toArray)
             statement.setBytes(5, relayed.toChannelId.toArray)
-            statement.setLong(6, relayed.timestamp)
+            statement.setLong(6, relayed.timestamp.toLong)
             statement.executeUpdate()
           }
         }
@@ -391,10 +391,10 @@ class AuditDbSpec extends AnyFunSuite {
           assert(getVersion(statement, "audit").contains(SqliteAuditDb.CURRENT_VERSION))
         }
         val ps2 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 1100 msat, randomKey().publicKey, Seq(
-          PaymentSent.PartialPayment(UUID.randomUUID(), 500 msat, 10 msat, randomBytes32(), None, 160),
-          PaymentSent.PartialPayment(UUID.randomUUID(), 600 msat, 5 msat, randomBytes32(), None, 165)
+          PaymentSent.PartialPayment(UUID.randomUUID(), 500 msat, 10 msat, randomBytes32(), None, TimestampMilli(160)),
+          PaymentSent.PartialPayment(UUID.randomUUID(), 600 msat, 5 msat, randomBytes32(), None, TimestampMilli(165))
         ))
-        val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150)
+        val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, TimestampMilli(150))
         postMigrationDb.add(ps2)
         assert(postMigrationDb.listSent(155, 200) === Seq(ps2))
         postMigrationDb.add(relayed3)
@@ -405,8 +405,8 @@ class AuditDbSpec extends AnyFunSuite {
 
   test("migrate audit database v4 -> current") {
 
-    val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 105)
-    val relayed2 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(300 msat, randomBytes32()), PaymentRelayed.Part(350 msat, randomBytes32())), Seq(PaymentRelayed.Part(600 msat, randomBytes32())), PlaceHolderPubKey, 0 msat, 110)
+    val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), TimestampMilli(105))
+    val relayed2 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(300 msat, randomBytes32()), PaymentRelayed.Part(350 msat, randomBytes32())), Seq(PaymentRelayed.Part(600 msat, randomBytes32())), PlaceHolderPubKey, 0 msat, TimestampMilli(110))
 
     forAllDbs {
       case dbs: TestPgDatabases =>
@@ -439,7 +439,7 @@ class AuditDbSpec extends AnyFunSuite {
               statement.setString(3, relayed1.fromChannelId.toHex)
               statement.setString(4, "IN")
               statement.setString(5, "channel")
-              statement.setLong(6, relayed1.timestamp)
+              statement.setLong(6, relayed1.timestamp.toLong)
               statement.executeUpdate()
             }
             using(connection.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -448,7 +448,7 @@ class AuditDbSpec extends AnyFunSuite {
               statement.setString(3, relayed1.toChannelId.toHex)
               statement.setString(4, "OUT")
               statement.setString(5, "channel")
-              statement.setLong(6, relayed1.timestamp)
+              statement.setLong(6, relayed1.timestamp.toLong)
               statement.executeUpdate()
             }
             for (incoming <- relayed2.incoming) {
@@ -458,7 +458,7 @@ class AuditDbSpec extends AnyFunSuite {
                 statement.setString(3, incoming.channelId.toHex)
                 statement.setString(4, "IN")
                 statement.setString(5, "trampoline")
-                statement.setLong(6, relayed2.timestamp)
+                statement.setLong(6, relayed2.timestamp.toLong)
                 statement.executeUpdate()
               }
             }
@@ -469,7 +469,7 @@ class AuditDbSpec extends AnyFunSuite {
                 statement.setString(3, outgoing.channelId.toHex)
                 statement.setString(4, "OUT")
                 statement.setString(5, "trampoline")
-                statement.setLong(6, relayed2.timestamp)
+                statement.setLong(6, relayed2.timestamp.toLong)
                 statement.executeUpdate()
               }
             }
@@ -485,7 +485,7 @@ class AuditDbSpec extends AnyFunSuite {
             using(connection.createStatement()) { statement =>
               assert(getVersion(statement, "audit").contains(PgAuditDb.CURRENT_VERSION))
             }
-            val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150)
+            val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, TimestampMilli(150))
             postMigrationDb.add(relayed3)
             assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
           }
@@ -520,7 +520,7 @@ class AuditDbSpec extends AnyFunSuite {
               statement.setBytes(3, relayed1.fromChannelId.toArray)
               statement.setString(4, "IN")
               statement.setString(5, "channel")
-              statement.setLong(6, relayed1.timestamp)
+              statement.setLong(6, relayed1.timestamp.toLong)
               statement.executeUpdate()
             }
             using(connection.prepareStatement("INSERT INTO relayed VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
@@ -529,7 +529,7 @@ class AuditDbSpec extends AnyFunSuite {
               statement.setBytes(3, relayed1.toChannelId.toArray)
               statement.setString(4, "OUT")
               statement.setString(5, "channel")
-              statement.setLong(6, relayed1.timestamp)
+              statement.setLong(6, relayed1.timestamp.toLong)
               statement.executeUpdate()
             }
             for (incoming <- relayed2.incoming) {
@@ -539,7 +539,7 @@ class AuditDbSpec extends AnyFunSuite {
                 statement.setBytes(3, incoming.channelId.toArray)
                 statement.setString(4, "IN")
                 statement.setString(5, "trampoline")
-                statement.setLong(6, relayed2.timestamp)
+                statement.setLong(6, relayed2.timestamp.toLong)
                 statement.executeUpdate()
               }
             }
@@ -550,7 +550,7 @@ class AuditDbSpec extends AnyFunSuite {
                 statement.setBytes(3, outgoing.channelId.toArray)
                 statement.setString(4, "OUT")
                 statement.setString(5, "trampoline")
-                statement.setLong(6, relayed2.timestamp)
+                statement.setLong(6, relayed2.timestamp.toLong)
                 statement.executeUpdate()
               }
             }
@@ -568,7 +568,7 @@ class AuditDbSpec extends AnyFunSuite {
             using(connection.createStatement()) { statement =>
               assert(getVersion(statement, "audit").contains(SqliteAuditDb.CURRENT_VERSION))
             }
-            val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150)
+            val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, TimestampMilli(150))
             postMigrationDb.add(relayed3)
             assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
           }

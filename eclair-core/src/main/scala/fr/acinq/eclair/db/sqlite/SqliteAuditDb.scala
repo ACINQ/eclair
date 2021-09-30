@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.sql.{Connection, Statement}
@@ -43,7 +43,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   import ExtendedResultSet._
   import SqliteAuditDb._
 
-  case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
+  case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: TimestampMilli)
 
   using(sqlite.createStatement(), inTransaction = true) { statement =>
 
@@ -194,7 +194,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.setBytes(7, e.paymentPreimage.toArray)
         statement.setBytes(8, e.recipientNodeId.value.toArray)
         statement.setBytes(9, p.toChannelId.toArray)
-        statement.setLong(10, p.timestamp)
+        statement.setLong(10, p.timestamp.toLong)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -207,7 +207,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.setLong(1, p.amount.toLong)
         statement.setBytes(2, e.paymentHash.toArray)
         statement.setBytes(3, p.fromChannelId.toArray)
-        statement.setLong(4, p.timestamp)
+        statement.setLong(4, p.timestamp.toLong)
         statement.addBatch()
       })
       statement.executeBatch()
@@ -224,7 +224,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           statement.setBytes(1, e.paymentHash.toArray)
           statement.setLong(2, nextTrampolineAmount.toLong)
           statement.setBytes(3, nextTrampolineNodeId.value.toArray)
-          statement.setLong(4, e.timestamp)
+          statement.setLong(4, e.timestamp.toLong)
           statement.executeUpdate()
         }
         // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
@@ -238,7 +238,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.setBytes(3, p.channelId.toArray)
         statement.setString(4, p.direction)
         statement.setString(5, p.relayType)
-        statement.setLong(6, e.timestamp)
+        statement.setLong(6, e.timestamp.toLong)
         statement.executeUpdate()
       }
     }
@@ -323,7 +323,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
             MilliSatoshi(rs.getLong("fees_msat")),
             rs.getByteVector32("to_channel_id"),
             None, // we don't store the route in the audit DB
-            rs.getLong("timestamp"))
+            TimestampMilli(rs.getLong("timestamp")))
           val sent = sentByParentId.get(parentId) match {
             case Some(s) => s.copy(parts = s.parts :+ part)
             case None => PaymentSent(
@@ -348,7 +348,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
           val part = PaymentReceived.PartialPayment(
             MilliSatoshi(rs.getLong("amount_msat")),
             rs.getByteVector32("from_channel_id"),
-            rs.getLong("timestamp"))
+            TimestampMilli(rs.getLong("timestamp")))
           val received = receivedByHash.get(paymentHash) match {
             case Some(r) => r.copy(parts = r.parts :+ part)
             case None => PaymentReceived(paymentHash, Seq(part))
@@ -381,7 +381,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
             MilliSatoshi(rs.getLong("amount_msat")),
             rs.getString("direction"),
             rs.getString("relay_type"),
-            rs.getLong("timestamp"))
+            TimestampMilli(rs.getLong("timestamp")))
           relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
         }
     }
