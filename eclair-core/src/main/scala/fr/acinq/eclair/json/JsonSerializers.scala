@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.RouteResponse
+import fr.acinq.eclair.router.Router.{Hop, RouteResponse}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -155,6 +155,11 @@ class ShaChainSerializer extends CustomSerializerOnly[ShaChain](_ => {
 
 class PublicKeySerializer extends CustomSerializerOnly[PublicKey](_ => {
   case x: PublicKey => JString(x.toString())
+})
+
+/** not a typo, this is to serialize maps indexed by public keys */
+class PublicKeyKeySerializer extends CustomKeySerializerOnly[PublicKey](_ => {
+  case x: PublicKey => x.toString()
 })
 
 class PrivateKeySerializer extends CustomSerializerOnly[PrivateKey](_ => {
@@ -362,7 +367,7 @@ class GlobalBalanceSerializer extends CustomSerializerOnly[GlobalBalance](_ => {
 })
 
 private[json] case class PaymentFailureJson(amount: String,
-                                            route: Seq[PublicKey],
+                                            route: Map[PublicKey, Hop],
                                             `type`: String,
                                             localMsg: Option[String] = None,
                                             remoteMsg: Option[FailureMessage] = None,
@@ -370,7 +375,7 @@ private[json] case class PaymentFailureJson(amount: String,
 
 object PaymentFailureSerializer extends ConvertClassSerializer[PaymentFailure]({ failure: PaymentFailure =>
   val amount = failure.amount.toString
-  val route = failure.route.map(_.nodeId) ++ failure.route.lastOption.map(_.nextNodeId)
+  val route = (failure.route.map(r => r.nodeId -> r) ++ failure.route.lastOption.map(r => r.nextNodeId -> null)).toMap
   failure match {
     case local: LocalFailure =>
       PaymentFailureJson(amount = amount, route = route, `type` = "local", localMsg = Some(local.t.getMessage))
@@ -454,6 +459,7 @@ object JsonSerializers {
     new ChannelStateSerializer +
     new ShaChainSerializer +
     new PublicKeySerializer +
+    new PublicKeyKeySerializer +
     new PrivateKeySerializer +
     new TransactionSerializer +
     new TransactionWithInputInfoSerializer +
