@@ -96,6 +96,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE audit.transaction_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
         statement.executeUpdate("CREATE INDEX transaction_published_timestamp_idx ON audit.transaction_published(timestamp)")
         statement.executeUpdate("CREATE INDEX transaction_confirmed_timestamp_idx ON audit.transaction_confirmed(timestamp)")
+        // Migrate data from the network_fees table (which only stored data about confirmed transactions).
+        statement.executeUpdate("INSERT INTO audit.transaction_published (tx_id, channel_id, node_id, fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM audit.network_fees ON CONFLICT DO NOTHING")
+        statement.executeUpdate("INSERT INTO audit.transaction_confirmed (tx_id, channel_id, node_id, timestamp) SELECT tx_id, channel_id, node_id, timestamp FROM audit.network_fees ON CONFLICT DO NOTHING")
+        statement.executeUpdate("DROP TABLE audit.network_fees")
       }
 
       getVersion(statement, DB_NAME) match {

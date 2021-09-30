@@ -104,6 +104,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.executeUpdate("CREATE TABLE transaction_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
       statement.executeUpdate("CREATE INDEX transaction_published_timestamp_idx ON transaction_published(timestamp)")
       statement.executeUpdate("CREATE INDEX transaction_confirmed_timestamp_idx ON transaction_confirmed(timestamp)")
+      // Migrate data from the network_fees table (which only stored data about confirmed transactions).
+      statement.executeUpdate("INSERT OR IGNORE INTO transaction_published (tx_id, channel_id, node_id, fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM network_fees")
+      statement.executeUpdate("INSERT OR IGNORE INTO transaction_confirmed (tx_id, channel_id, node_id, timestamp) SELECT tx_id, channel_id, node_id, timestamp FROM network_fees")
+      statement.executeUpdate("DROP TABLE network_fees")
     }
 
     getVersion(statement, DB_NAME) match {
