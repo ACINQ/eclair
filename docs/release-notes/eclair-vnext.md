@@ -53,6 +53,23 @@ You **MUST** ensure you have some utxos available in your Bitcoin Core wallet fo
 
 Do note that anchor outputs may still be unsafe in high-fee environments until the Bitcoin network provides support for [package relay](https://bitcoinops.org/en/topics/package-relay/).
 
+### Configurable dust tolerance
+
+Dust HTLCs are converted to miner fees when a channel is force-closed and these HTLCs are still pending.
+Node operators can now configure the maximum amount of dust HTLCs that can be pending in a channel by setting `eclair.on-chain-fees.feerate-tolerance.max-dust-htlc-exposure-satoshis` in their `eclair.conf`.
+
+Choosing the right value for your node involves trade-offs.
+The lower you set it, the more protection it will offer against malicious peers.
+But if it's too low, your node may reject some dust HTLCs that it would have otherwise relayed, which lowers the amount of relay fees you will be able to collect.
+
+Another related parameter has been added: `eclair.on-chain-fees.feerate-tolerance.close-on-update-fee-dust-exposure-overflow`.
+When this parameter is set to `true`, your node will automatically close channels when the amount of dust HTLCs overflows your configured limits.
+This gives you a better protection against malicious peers, but may end up closing channels with honest peers as well.
+This parameter is deactivated by default and unnecessary when using `option_anchors_zero_fee_htlc_tx`.
+
+Note that you can override these values for specific peers, thanks to the `eclair.on-chain-fees.override-feerate-tolerance` mechanism.
+You can for example set a high `eclair.on-chain-fees.feerate-tolerance.max-dust-htlc-exposure-satoshis` with peers that you trust.
+
 ### Path-finding improvements
 
 This release contains many improvements to path-finding and paves the way for future experimentation.
