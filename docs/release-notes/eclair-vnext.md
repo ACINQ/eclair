@@ -116,6 +116,16 @@ We still support receiving non-segwit remote scripts, but will force-close if th
 
 See the [spec discussions](https://github.com/lightningnetwork/lightning-rfc/pull/894) for more details.
 
+### Audit trail for published transactions
+
+Eclair now records every transaction it publishes in the `audit` database, in a new `transaction-published` table.
+It also stores confirmed transactions that have an impact on existing channels (including transactions made by your peer) in a new `transaction-confirmed` table.
+
+This lets you audit the complete on-chain footprint of your channels and the on-chain fees paid.
+This information is exposed through the `networkfees` API (which was already available in previous versions).
+
+We removed the previous `network_fees` table which achieved the same result but contained less details.
+
 ### Sample GUI removed
 
 We previously included code for a sample GUI: `eclair-node-gui`.
