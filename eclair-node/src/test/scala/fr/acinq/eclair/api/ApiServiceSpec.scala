@@ -25,7 +25,7 @@ import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest, WSProbe
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueriesExtended, OptionDataLossProtect}
@@ -957,8 +957,8 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
 
     val mockChannelUpdate1 = ChannelUpdate(
-      signature = randomBytes64(),
-      chainHash = randomBytes32(),
+      signature = ByteVector64.fromValidHex("92cf3f12e161391986eb2cd7106ddab41a23c734f8f1ed120fb64f4b91f98f690ecf930388e62965f8aefbf1adafcd25a572669a125396dcfb83615208754679"),
+      chainHash = ByteVector32.fromValidHex("024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2"),
       shortChannelId = ShortChannelId(1, 2, 3),
       timestamp = 0,
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
@@ -970,11 +970,11 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     )
 
     val mockHop1 =
-      Router.ChannelHop(nodeId = randomKey().publicKey, nextNodeId = randomKey().publicKey, mockChannelUpdate1)
+      Router.ChannelHop(nodeId = PublicKey.fromBin(ByteVector.fromValidHex("03007e67dc5a8fd2b2ef21cb310ab6359ddb51f3f86a8b79b8b1e23bc3a6ea150a")), nextNodeId = PublicKey.fromBin(ByteVector.fromValidHex("026105f6cb4862810be989385d16f04b0f748f6f2a14040338b1a534d45b4be1c1")), mockChannelUpdate1)
     val mockHop2 =
-      Router.ChannelHop(nodeId = mockHop1.nextNodeId, nextNodeId = randomKey().publicKey, mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 4)))
+      Router.ChannelHop(nodeId = mockHop1.nextNodeId, nextNodeId = PublicKey.fromBin(ByteVector.fromValidHex("038cfa2b5857843ee90cff91b06f692c0d8fe201921ee6387aee901d64f43699f0")), mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 4)))
     val mockHop3 =
-      Router.ChannelHop(nodeId = mockHop2.nextNodeId, nextNodeId = randomKey().publicKey, mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 5)))
+      Router.ChannelHop(nodeId = mockHop2.nextNodeId, nextNodeId = PublicKey.fromBin(ByteVector.fromValidHex("02be60276e294c6921240daae33a361d214d02578656df0e74c61a09c3196e51df")), mockChannelUpdate1.copy(shortChannelId = ShortChannelId(1, 2, 5)))
     val mockHops = Seq(mockHop1, mockHop2, mockHop3)
 
     val eclair = mock[Eclair]
@@ -1039,6 +1039,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         )))
         eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(threeTimes)
       }
+
     Post("/findroute", FormData("format" -> "full", "invoice" -> invoice, "amountMsat" -> "456")) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
@@ -1046,19 +1047,24 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        val responseArray = entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
-        assert(responseArray.arr.size == 1)
-        assert(responseArray.arr.head.isInstanceOf[JObject])
-        val route = responseArray.arr.head.asInstanceOf[JObject]
-        assert(route.obj.head == ("amount", JInt(456)))
-        assert(route.obj.last._1 == "hops")
-        val hops = route.obj.last._2.asInstanceOf[JArray]
-        assert(hops.arr.size == 3)
-        val (hop1 :: hop2 :: hop3 :: Nil) = hops.arr
-        assert(hop1.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop1.nodeId.toString())))
-        assert(hop2.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop2.nodeId.toString())))
-        assert(hop3.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop3.nodeId.toString())))
-        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(fourTimes)
+
+        val response = entityAs[String]
+        matchTestJson("findroute", response)
+
+
+//        val responseArray = entityAs[JArray](Json4sSupport.unmarshaller, ClassTag(classOf[ErrorResponse]))
+//        assert(responseArray.arr.size == 1)
+//        assert(responseArray.arr.head.isInstanceOf[JObject])
+//        val route = responseArray.arr.head.asInstanceOf[JObject]
+//        assert(route.obj.head == ("amount", JInt(456)))
+//        assert(route.obj.last._1 == "hops")
+//        val hops = route.obj.last._2.asInstanceOf[JArray]
+//        assert(hops.arr.size == 3)
+//        val (hop1 :: hop2 :: hop3 :: Nil) = hops.arr
+//        assert(hop1.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop1.nodeId.toString())))
+//        assert(hop2.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop2.nodeId.toString())))
+//        assert(hop3.asInstanceOf[JObject].obj.head == ("nodeId", JString(mockHop3.nodeId.toString())))
+//        eclair.findRoute(PublicKey.fromBin(ByteVector.fromValidHex("036ded9bb8175d0c9fd3fad145965cf5005ec599570f35c682e710dc6001ff605e")), 456.msat, any, any)(any[Timeout]).wasCalled(fourTimes)
       }
   }
 
