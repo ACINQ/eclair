@@ -96,21 +96,21 @@ class FeeEstimatorSpec extends AnyFunSuite {
   test("fee difference too high (anchor outputs)") {
     val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat))
     val testCases = Seq(
-      (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
-      (FeeratePerKw(500 sat), FeeratePerKw(2500 sat), false),
-      (FeeratePerKw(500 sat), FeeratePerKw(10000 sat), false),
-      (FeeratePerKw(500 sat), FeeratePerKw(10001 sat), true),
-      (FeeratePerKw(2500 sat), FeeratePerKw(10000 sat), false),
-      (FeeratePerKw(2500 sat), FeeratePerKw(10001 sat), true),
-      (FeeratePerKw(2500 sat), FeeratePerKw(1250 sat), false),
-      (FeeratePerKw(2500 sat), FeeratePerKw(1249 sat), true),
-      (FeeratePerKw(2500 sat), FeeratePerKw(1000 sat), true),
-      (FeeratePerKw(1000 sat), FeeratePerKw(500 sat), false),
-      (FeeratePerKw(1000 sat), FeeratePerKw(499 sat), true),
+      (FeeratePerKw(500 sat), FeeratePerKw(500 sat)),
+      (FeeratePerKw(500 sat), FeeratePerKw(2500 sat)),
+      (FeeratePerKw(500 sat), FeeratePerKw(10000 sat)),
+      (FeeratePerKw(500 sat), FeeratePerKw(10001 sat)),
+      (FeeratePerKw(2500 sat), FeeratePerKw(10000 sat)),
+      (FeeratePerKw(2500 sat), FeeratePerKw(10001 sat)),
+      (FeeratePerKw(2500 sat), FeeratePerKw(1250 sat)),
+      (FeeratePerKw(2500 sat), FeeratePerKw(1249 sat)),
+      (FeeratePerKw(2500 sat), FeeratePerKw(1000 sat)),
+      (FeeratePerKw(1000 sat), FeeratePerKw(500 sat)),
+      (FeeratePerKw(1000 sat), FeeratePerKw(499 sat)),
     )
-    testCases.foreach { case (networkFeerate, proposedFeerate, expected) =>
-      assert(tolerance.isFeeDiffTooHigh(ChannelTypes.AnchorOutputs, networkFeerate, proposedFeerate) === expected)
-      assert(tolerance.isFeeDiffTooHigh(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, networkFeerate, proposedFeerate) === expected)
+    testCases.foreach { case (networkFeerate, proposedFeerate) =>
+      assert(!tolerance.isFeeDiffTooHigh(ChannelTypes.AnchorOutputs, networkFeerate, proposedFeerate))
+      assert(!tolerance.isFeeDiffTooHigh(ChannelTypes.AnchorOutputsZeroFeeHtlcTx, networkFeerate, proposedFeerate))
     }
   }
 

@@ -43,7 +43,8 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
       case ChannelTypes.Standard | ChannelTypes.StaticRemoteKey =>
         proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
       case ChannelTypes.AnchorOutputs | ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
-        proposedFeerate < networkFeerate * ratioLow || anchorOutputMaxCommitFeerate * ratioHigh < proposedFeerate
+        // when using anchor outputs, we allow any feerate: fees will be set with CPFP and RBF at broadcast time
+        false
     }
   }
 }
