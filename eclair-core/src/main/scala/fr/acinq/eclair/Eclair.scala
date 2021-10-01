@@ -124,9 +124,9 @@ trait Eclair {
 
   def sendOnChain(address: String, amount: Satoshi, confirmationTarget: Long): Future[ByteVector32]
 
-  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoredNodeIds: Seq[PublicKey] = Seq.empty, ignoredShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
+  def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
-  def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoredNodeIds: Seq[PublicKey] = Seq.empty, ignoredShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
+  def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse]
 
   def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32] = None, trampolineFees_opt: Option[MilliSatoshi] = None, trampolineExpiryDelta_opt: Option[CltvExpiryDelta] = None, trampolineNodes_opt: Seq[PublicKey] = Nil)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
 
@@ -281,8 +281,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoredNodeIds: Seq[PublicKey] = Seq.empty, ignoredShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] =
-    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, assistedRoutes, includeLocalChannelCost, ignoredNodeIds, ignoredShortChannelIds, maxFee_opt)
+  override def findRoute(targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] =
+    findRouteBetween(appKit.nodeParams.nodeId, targetNodeId, amount, pathFindingExperimentName_opt, assistedRoutes, includeLocalChannelCost, ignoreNodeIds, ignoreShortChannelIds, maxFee_opt)
 
   private def getRouteParams(pathFindingExperimentName_opt: Option[String]): Either[IllegalArgumentException, RouteParams] = {
     pathFindingExperimentName_opt match {
@@ -294,13 +294,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoredNodeIds: Seq[PublicKey] = Seq.empty, ignoredShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
+  override def findRouteBetween(sourceNodeId: PublicKey, targetNodeId: PublicKey, amount: MilliSatoshi, pathFindingExperimentName_opt: Option[String], assistedRoutes: Seq[Seq[PaymentRequest.ExtraHop]] = Seq.empty, includeLocalChannelCost: Boolean = false, ignoreNodeIds: Seq[PublicKey] = Seq.empty, ignoreShortChannelIds: Seq[ShortChannelId] = Seq.empty, maxFee_opt: Option[MilliSatoshi] = None)(implicit timeout: Timeout): Future[RouteResponse] = {
     getRouteParams(pathFindingExperimentName_opt) match {
       case Right(routeParams) =>
         val maxFee = maxFee_opt.getOrElse(routeParams.getMaxFee(amount))
         for {
-          ignoredChannels <- getChannelDescs(ignoredShortChannelIds.toSet)
-          ignore = Ignore(ignoredNodeIds.toSet, ignoredChannels)
+          ignoredChannels <- getChannelDescs(ignoreShortChannelIds.toSet)
+          ignore = Ignore(ignoreNodeIds.toSet, ignoredChannels)
           response <- (appKit.router ? RouteRequest(sourceNodeId, targetNodeId, amount, maxFee, assistedRoutes, ignore = ignore, routeParams = routeParams.copy(includeLocalChannelCost = includeLocalChannelCost))).mapTo[RouteResponse]
         } yield response
       case Left(t) => Future.failed(t)
