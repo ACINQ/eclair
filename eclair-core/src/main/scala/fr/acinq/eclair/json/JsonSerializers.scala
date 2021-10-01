@@ -60,6 +60,33 @@ class MinimalKeySerializer(ser: PartialFunction[Any, String]) extends KeySeriali
   def serialize(implicit format: Formats): PartialFunction[Any, String] = ser
 }
 
+/**
+ * Custom serializer where, instead of providing a `MyClass => JValue` conversion method, we provide a
+ * `MyClass => MyClassJson` method, with the assumption that `MyClassJson` is serializable using the base serializers.
+ *
+ * The rationale is that it's easier to define the structure with types rather than by building json objects.
+ *
+ * Usage:
+ * {{{
+ *   /** A type used in eclair */
+ *   case class Foo(a: String, b: Int, c: ByteVector32)
+ *
+ *   /** Special purpose type used only for serialization */
+ *   private[json] case class FooJson(a: String, c: ByteVector32)
+ *   object FooSerializer extends ConvertClassSerializer[Foo]({ foo: Foo =>
+ *     FooJson(foo.a, foo.c)
+ * }}}
+ *
+ */
+class ConvertClassSerializer[T: Manifest](f: T => Any) extends Serializer[Nothing] {
+
+  def deserialize(implicit format: Formats): PartialFunction[(json4s.TypeInfo, JValue), Nothing] = PartialFunction.empty
+
+  def serialize(implicit format: Formats): PartialFunction[Any, JValue] = {
+    case o: T => Extraction.decompose(f(o))
+  }
+}
+
 object ByteVectorSerializer extends MinimalSerializer({
   case x: ByteVector => JString(x.toHex)
 })
@@ -203,9 +230,12 @@ object OutPointKeySerializer extends MinimalKeySerializer({
   case x: OutPoint => s"${x.txid}:${x.index}"
 })
 
-object InputInfoSerializer extends MinimalSerializer({
-  case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.toLong)))
-})
+// @formatter:off
+private case class InputInfoJson(outPoint: String, amountSatoshis: Long)
+object InputInfoSerializer extends ConvertClassSerializer[InputInfo](i =>
+  InputInfoJson(outPoint = s"${i.outPoint.txid}:${i.outPoint.index}", amountSatoshis = i.txOut.amount.toLong)
+)
+// @formatter:on
 
 object ColorSerializer extends MinimalSerializer({
   case c: Color => JString(c.toString)
@@ -237,15 +267,10 @@ object NodeAddressSerializer extends MinimalSerializer({
   case n: NodeAddress => JString(HostAndPort.fromParts(n.socketAddress.getHostString, n.socketAddress.getPort).toString)
 })
 
-object DirectedHtlcSerializer extends MinimalSerializer({
-  case h: DirectedHtlc => new JObject(List(("direction", JString(h.direction)), ("add", Extraction.decompose(h.add)(
-    DefaultFormats +
-      ByteVector32Serializer +
-      ByteVectorSerializer +
-      PublicKeySerializer +
-      MilliSatoshiSerializer +
-      CltvExpirySerializer))))
-})
+// @formatter:off
+private case class DirectedHtlcJson(direction: String, add: UpdateAddHtlc)
+object DirectedHtlcSerializer extends ConvertClassSerializer[DirectedHtlc](h => DirectedHtlcJson(direction = h.direction, add = h.add))
+// @formatter:on
 
 object PaymentRequestSerializer extends MinimalSerializer({
   case p: PaymentRequest =>
