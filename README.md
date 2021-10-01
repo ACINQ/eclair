@@ -97,10 +97,6 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 
 You can then control your node via the [eclair-cli](https://github.com/ACINQ/eclair/wiki/Usage) or the [API](https://github.com/ACINQ/eclair/wiki/API).
 
-This repository also contains a sample GUI ([eclair-node-gui](https://github.com/ACINQ/eclair/tree/master/eclair-node-gui)).
-
-:rotating_light: The sample GUI should only be used for prototyping and demo purposes: using it on mainnet is unsafe.
-
 :warning: Be careful when following tutorials/guides that may be outdated or incomplete. You must thoroughly read the official eclair documentation before running your own node.
 
 ## Configuration

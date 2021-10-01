@@ -8,4 +8,3 @@ comment:
 
 ignore:
   - "eclair-node/**/*"
-  - "eclair-node-gui/**/*"
