@@ -30,7 +30,7 @@ import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -156,6 +156,12 @@ object PrivateKeySerializer extends MinimalSerializer({
   case _: PrivateKey => JString("XXX")
 })
 
+object FeatureKeySerializer extends MinimalKeySerializer({ case f: Feature => f.rfcName })
+
+object FeatureSupportSerializer extends MinimalSerializer({ case s: FeatureSupport => JString(s.toString) })
+
+object UnknownFeatureSerializer extends MinimalSerializer({ case f: UnknownFeature => JInt(f.bitIndex) })
+
 object ChannelConfigSerializer extends MinimalSerializer({
   case x: ChannelConfig => JArray(x.options.toList.map(o => JString(o.name)))
 })
@@ -275,7 +281,12 @@ object PaymentRequestSerializer extends MinimalSerializer({
     val expiry = p.expiry.map(ex => JField("expiry", JLong(ex))).toSeq
     val minFinalCltvExpiry = p.minFinalCltvExpiryDelta.map(mfce => JField("minFinalCltvExpiry", JInt(mfce.toInt))).toSeq
     val amount = p.amount.map(msat => JField("amount", JLong(msat.toLong))).toSeq
-    val features = JField("features", JsonSerializers.featuresToJson(Features(p.features.bitmask)))
+    val features = JField("features", Extraction.decompose(p.features.features)(
+      DefaultFormats +
+        FeatureKeySerializer +
+        FeatureSupportSerializer +
+        UnknownFeatureSerializer
+    ))
     val routingInfo = JField("routingInfo", Extraction.decompose(p.routingInfo)(
       DefaultFormats +
         ByteVector32Serializer +
@@ -284,8 +295,7 @@ object PaymentRequestSerializer extends MinimalSerializer({
         ShortChannelIdSerializer +
         MilliSatoshiSerializer +
         CltvExpiryDeltaSerializer
-    )
-    )
+    ))
     val fieldList = List(JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp)),
       JField("nodeId", JString(p.nodeId.toString())),
@@ -299,10 +309,6 @@ object PaymentRequestSerializer extends MinimalSerializer({
       routingInfo
 
     JObject(fieldList)
-})
-
-object FeaturesSerializer extends MinimalSerializer({
-  case features: Features => JsonSerializers.featuresToJson(features)
 })
 
 object JavaUUIDSerializer extends MinimalSerializer({
@@ -435,6 +441,9 @@ object JsonSerializers {
     InetSocketAddressSerializer +
     OutPointSerializer +
     OutPointKeySerializer +
+    FeatureKeySerializer +
+    FeatureSupportSerializer +
+    UnknownFeatureSerializer +
     ChannelConfigSerializer +
     ChannelFeaturesSerializer +
     ChannelOpenResponseSerializer +
@@ -449,15 +458,7 @@ object JsonSerializers {
     DirectedHtlcSerializer +
     PaymentRequestSerializer +
     JavaUUIDSerializer +
-    FeaturesSerializer +
     OriginSerializer +
     GlobalBalanceSerializer
-
-  def featuresToJson(features: Features): JObject = JObject(
-    JField("activated", JObject(features.activated.map { case (feature, support) =>
-      feature.rfcName -> JString(support.toString)
-    }.toList)),
-    JField("unknown", JArray(features.unknown.map(u => JInt(u.bitIndex)).toList))
-  )
 
 }

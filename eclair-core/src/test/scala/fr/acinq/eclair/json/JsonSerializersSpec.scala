@@ -141,6 +141,22 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     JsonSerializers.serialization.write(inputInfo)(JsonSerializers.formats) shouldBe """{"outPoint":"9f0b9c0ce92c175ca4e78acfd13a718099c73818b6d3140cfe6f04ec052b5b34:42","amountSatoshis":456651}"""
   }
 
+  test("Features serialization") {
+    val features = Features(
+      activated = Map(
+        Features.InitialRoutingSync -> FeatureSupport.Optional,
+        Features.PaymentSecret -> FeatureSupport.Mandatory,
+        Features.StaticRemoteKey -> FeatureSupport.Optional
+      ),
+      unknown = Set(
+        UnknownFeature(457),
+        UnknownFeature(5000),
+      )
+    )
+
+    JsonSerializers.serialization.write(features)(JsonSerializers.formats) shouldBe """{"activated":{"initial_routing_sync":"optional","payment_secret":"mandatory","option_static_remotekey":"optional"},"unknown":[457,5000]}"""
+  }
+
   test("Payment Request") {
     val ref = "lnbcrt50n1p0fm9cdpp5al3wvsfkc6p7fxy89eu8gm4aww9mseu9syrcqtpa4mvx42qelkwqdq9v9ekgxqrrss9qypqsqsp5wl2t45v0hj4lgud0zjxcnjccd29ts0p2kh4vpw75vnhyyzyjtjtqarpvqg33asgh3z5ghfuvhvtf39xtnu9e7aqczpgxa9quwsxkd9rnwmx06pve9awgeewxqh90dqgrhzgsqc09ek6uejr93z8puafm6gsqgrk0hy"
     val pr = PaymentRequest.read(ref)
