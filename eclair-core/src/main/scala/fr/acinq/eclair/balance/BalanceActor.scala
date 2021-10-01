@@ -1,8 +1,11 @@
 package fr.acinq.eclair.balance
 
+import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.ByteVector32
+import fr.acinq.bitcoin.{ByteVector32, MilliBtcDouble}
+import fr.acinq.eclair.NotificationsLogger
+import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.balance.BalanceActor._
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.Monitoring.{Metrics, Tags}
@@ -83,6 +86,9 @@ private class BalanceActor(context: ActorContext[Command],
         case Success(result) =>
           log.info("current balance: total={} onchain.confirmed={} onchain.unconfirmed={} offchain={}", result.total.toDouble, result.onChain.confirmed.toDouble, result.onChain.unconfirmed.toDouble, result.offChain.total.toDouble)
           log.debug("current balance details : {}", result)
+          if (result.onChain.confirmed < 1.millibtc) {
+            context.system.eventStream ! EventStream.Publish(NotifyNodeOperator(NotificationsLogger.Warning, s"on-chain confirmed balance is low (${result.onChain.confirmed.toMilliBtc}), eclair may not be able to guarantee funds safety in case channels force-close: you should add some utxos to your bitcoin wallet"))
+          }
           Metrics.GlobalBalance.withoutTags().update(result.total.toMilliBtc.toDouble)
           Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.OnchainConfirmed).update(result.onChain.confirmed.toMilliBtc.toDouble)
           Metrics.GlobalBalanceDetailed.withTag(Tags.BalanceType, Tags.BalanceTypes.OnchainUnconfirmed).update(result.onChain.unconfirmed.toMilliBtc.toDouble)

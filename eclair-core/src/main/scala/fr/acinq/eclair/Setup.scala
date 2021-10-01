@@ -87,6 +87,9 @@ class Setup(val datadir: File,
   randomGen.init()
   system.spawn(Behaviors.supervise(WeakEntropyPool(randomGen)).onFailure(typed.SupervisorStrategy.restart), "entropy-pool")
 
+  // start a system-wide actor to collect and log important notifications for the node operator
+  system.spawn(Behaviors.supervise(NotificationsLogger()).onFailure(typed.SupervisorStrategy.restart), "notifications-logger")
+
   datadir.mkdirs()
   val config = system.settings.config.getConfig("eclair")
   val Seeds(nodeSeed, channelSeed) = seeds_opt.getOrElse(NodeParams.getSeeds(datadir))
