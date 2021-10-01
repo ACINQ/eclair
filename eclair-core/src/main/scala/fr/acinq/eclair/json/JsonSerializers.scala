@@ -231,10 +231,8 @@ object OutPointKeySerializer extends MinimalKeySerializer({
 })
 
 // @formatter:off
-private case class InputInfoJson(outPoint: String, amountSatoshis: Long)
-object InputInfoSerializer extends ConvertClassSerializer[InputInfo](i =>
-  InputInfoJson(outPoint = s"${i.outPoint.txid}:${i.outPoint.index}", amountSatoshis = i.txOut.amount.toLong)
-)
+private case class InputInfoJson(outPoint: OutPoint, amountSatoshis: Satoshi)
+object InputInfoSerializer extends ConvertClassSerializer[InputInfo](i => InputInfoJson(i.outPoint, i.txOut.amount))
 // @formatter:on
 
 object ColorSerializer extends MinimalSerializer({

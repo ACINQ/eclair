@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.json
 
-import fr.acinq.bitcoin.{Btc, ByteVector32, OutPoint, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Btc, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
@@ -130,6 +130,15 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     val trampolineOrigin = Origin.TrampolineRelayedCold((ByteVector32(hex"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692"), 3L) :: (ByteVector32(hex"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), 7L) :: Nil)
     val expectedTrampolineOrigin = """[{"channelId":"9fcd45bbaa09c60c991ac0425704163c3f3d2d683c789fa409455b9c97792692","htlcId":3},{"channelId":"70685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","htlcId":7}]"""
     JsonSerializers.serialization.write(trampolineOrigin)(org.json4s.DefaultFormats + OriginSerializer) shouldBe expectedTrampolineOrigin
+  }
+
+  test("InputInfo serialization") {
+    val inputInfo = InputInfo(
+      outPoint = OutPoint(ByteVector32(hex"345b2b05ec046ffe0c14d3b61838c79980713ad1cf8ae7a45c172ce90c9c0b9f"), 42),
+      txOut = TxOut(456651 sat, hex"3c7a66997c681a3de1bae56438abeee4fc50a16554725a430ade1dc8db6bdd76704d45c6151c4051d710cf487e63"),
+      redeemScript = hex"00dc6c50f445ed53d2fb41067fdcb25686fe79492d90e6e5db43235726ace247210220773"
+    )
+    JsonSerializers.serialization.write(inputInfo)(JsonSerializers.formats) shouldBe """{"outPoint":"9f0b9c0ce92c175ca4e78acfd13a718099c73818b6d3140cfe6f04ec052b5b34:42","amountSatoshis":456651}"""
   }
 
   test("Payment Request") {
