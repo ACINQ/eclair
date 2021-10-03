@@ -3,35 +3,46 @@
 ---
 
 * [Configuration file](#configuration-file)
-* [Change your node's configuration](#change-your-nodes-configuration)
+  * [Changing the data directory](#changing-the-data-directory)
+  * [Splitting the configuration](#splitting-the-configuration)
 * [Options reference](#options-reference)
 * [Customize features](#customize-features)
 * [Customize feerate tolerance](#customize-feerate-tolerance)
 * [Examples](#examples)
-    * [Basic configuration](#basic-configuration)
-    * [Regtest mode](#regtest-mode)
-    * [Public node](#public-node)
-    * [AB-testing for path-finding](#ab-testing-for-path-finding)
+  * [Basic configuration](#basic-configuration)
+  * [Regtest mode](#regtest-mode)
+  * [Public node](#public-node)
+  * [AB-testing for path-finding](#ab-testing-for-path-finding)
 
 ---
 
 ## Configuration file
 
-The configuration file for Eclair is named `eclair.conf`. It is located in the data directory, which is `~/.eclair` by default.
-You can change the data directory with the `eclair.datadir` parameter:
+The configuration file for eclair is named `eclair.conf`. It is located in the data directory, which is `~/.eclair` by
+default. Note that eclair won't create a configuration file by itself: if you want to change eclair's configuration, you
+need to **actually create the configuration file first**. The encoding must be UTF-8.
 
+```sh
+# this is the default data directory, it will be created at eclair first startup
+mkdir ~/.eclair 
+vi ~/.eclair/eclair.conf
+```
+
+Options are set as key-value pairs and follow the [HOCON syntax](https://github.com/lightbend/config/blob/master/HOCON.md).
+Values do not need to be surrounded by quotes, except if they contain special characters.
+
+### Changing the data directory
+
+You can change the data directory with the `eclair.datadir` parameter:
 ```sh
 eclair-node.sh -Declair.datadir="/path/to/custom/eclair/data/folder"
 ```
 
-## Change your node's configuration
+### Splitting the configuration
 
-The first step is to **actually create the configuration file**.
-Go to `eclair.datadir` and create a file named `eclair.conf`.
-The encoding should be UTF-8.
-
-Options are set as key-value pairs and follow the [HOCON syntax](https://github.com/lightbend/config/blob/master/HOCON.md).
-Values do not need to be surrounded by quotes, except if they contain special characters.
+Note that HOCON allows you to have files include other files. This allows you to split your configuration file into
+several logical files, for easier management. For example, you could defined a file `routing.conf` file with parameters
+related to routing configuration, and include it from `eclair.conf`. 
 
 ## Options reference
 
