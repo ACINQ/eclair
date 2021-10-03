@@ -365,6 +365,12 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     runAsync(postgres.listOutgoingPayments(from, to))
     sqlite.listOutgoingPayments(from, to)
   }
+
+  override def removeIncomingPayment(paymentHash: ByteVector32): Unit = {
+    runAsync(postgres.removeIncomingPayment(paymentHash))
+    sqlite.removeIncomingPayment(paymentHash)
+  }
+
 }
 
 case class DualPendingCommandsDb(sqlite: SqlitePendingCommandsDb, postgres: PgPendingCommandsDb) extends PendingCommandsDb {

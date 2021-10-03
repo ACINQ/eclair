@@ -51,6 +51,8 @@ trait IncomingPaymentsDb {
 
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
   def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+
+  def removeIncomingPayment(paymentHash: ByteVector32): Unit
 }
 
 trait OutgoingPaymentsDb {

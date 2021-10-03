@@ -394,7 +394,7 @@ class PaymentsDbSpec extends AnyFunSuite {
     )
   }
 
-  test("add/retrieve/update incoming payments") {
+  test("add/retrieve/update/remove incoming payments") {
     forAllDbs { dbs =>
       val db = dbs.payments
 
@@ -444,6 +444,15 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.listIncomingPayments(now - 60.seconds.toMillis, now) === Seq(pendingPayment1, pendingPayment2, payment1, payment2))
       assert(db.listPendingIncomingPayments(0, now) === Seq(pendingPayment1, pendingPayment2))
       assert(db.listReceivedIncomingPayments(0, now) === Seq(payment1, payment2))
+
+      // cannot remove a paid invoice
+      assertThrows[IllegalArgumentException](db.removeIncomingPayment(paidInvoice1.paymentHash))
+      db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash)
+      // cannot remove a removed payment
+      assertThrows[IllegalArgumentException](db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash))
+      db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash)
+      // cannot remove a removed payment
+      assertThrows[IllegalArgumentException](db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash))
     }
   }
 

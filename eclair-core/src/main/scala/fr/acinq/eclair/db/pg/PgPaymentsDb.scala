@@ -30,7 +30,7 @@ import scodec.Attempt
 import scodec.bits.BitVector
 import scodec.codecs._
 
-import java.sql.{ResultSet, Statement, Timestamp}
+import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
@@ -281,10 +281,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
 
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = withMetrics("payments/get-incoming", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT * FROM payments.received WHERE payment_hash = ?")) { statement =>
-        statement.setString(1, paymentHash.toHex)
-        statement.executeQuery().map(parseIncomingPayment).headOption
-      }
+      getIncomingPaymentInternal(pg, paymentHash)
     }
   }
 
@@ -401,5 +398,32 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
+  override def removeIncomingPayment(paymentHash: ByteVector32): Unit = withMetrics("payments/remove-incoming", DbBackends.Postgres) {
+    withLock { pg =>
+      getIncomingPaymentInternal(pg, paymentHash) match {
+        case Some(incomingPayment) =>
+          incomingPayment.status match {
+            case _: IncomingPaymentStatus.Received =>
+              throw new IllegalArgumentException("Cannot remove a received incoming payment")
+            case _: IncomingPaymentStatus =>
+              using(pg.prepareStatement("DELETE FROM payments.received WHERE payment_hash = ?")) { delete =>
+                delete.setString(1, paymentHash.toHex)
+                delete.executeUpdate()
+              }
+          }
+        case None =>
+          throw new IllegalArgumentException("Unknown incoming payment")
+      }
+    }
+  }
+
   override def close(): Unit = ()
+
+  private def getIncomingPaymentInternal(pg: Connection, paymentHash: ByteVector32): Option[IncomingPayment] = {
+    using(pg.prepareStatement("SELECT * FROM payments.received WHERE payment_hash = ?")) { statement =>
+      statement.setString(1, paymentHash.toHex)
+      statement.executeQuery().map(parseIncomingPayment).headOption
+    }
+  }
+
 }

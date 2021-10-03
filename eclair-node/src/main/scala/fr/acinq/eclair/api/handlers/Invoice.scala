@@ -59,6 +59,12 @@ trait Invoice {
     }
   }
 
-  val invoiceRoutes: Route = createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ parseInvoice
+  val deleteInvoice: Route = postRequest("deleteinvoice") { implicit t =>
+    formFields(paymentHashFormParam) { paymentHash =>
+      complete(eclairApi.deleteInvoice(paymentHash))
+    }
+  }
+
+  val invoiceRoutes: Route = createInvoice ~ getInvoice ~ listInvoices ~ listPendingInvoices ~ parseInvoice ~ deleteInvoice
 
 }

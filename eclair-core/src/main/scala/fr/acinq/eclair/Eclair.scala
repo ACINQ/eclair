@@ -143,6 +143,8 @@ trait Eclair {
 
   def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
 
+  def deleteInvoice(paymentHash: ByteVector32): Future[ByteVector32]
+
   def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]]
 
   def allUpdates(nodeId_opt: Option[PublicKey])(implicit timeout: Timeout): Future[Iterable[ChannelUpdate]]
@@ -413,6 +415,11 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = Future {
     appKit.nodeParams.db.payments.getIncomingPayment(paymentHash).map(_.paymentRequest)
+  }
+
+  override def deleteInvoice(paymentHash: ByteVector32): Future[ByteVector32] = Future {
+    appKit.nodeParams.db.payments.removeIncomingPayment(paymentHash)
+    paymentHash
   }
 
   /**
