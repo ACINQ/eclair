@@ -137,8 +137,11 @@ This release contains many API updates:
 - `sendtonode` doesn't support providing a `paymentHash` anymore since it uses `keysend` to send the payment (#1840)
 - `payinvoice`, `sendtonode`, `findroute`, `findroutetonode` and `findroutebetweennodes` let you specify `--pathFindingExperimentName` when using path-finding A/B testing (#1930)
 - the `--maxFeePct` parameter used in `payinvoice` and `sendtonode` must now be an integer between 0 and 100: it was previously a value between 0 and 1, which was misleading for a percentage (#1930)
-- `findroute`, `findroutetonode` and `findroutebetweennodes` let you choose the format of the route returned with the `--routeFormat` parameter (supported values are `nodeId` and `shortChannelId`) (#1943)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` let you choose the format of the route returned with the `--routeFormat` parameter (supported values are `nodeId`, `shortChannelId` and `full`) (#1943, #1969)
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--includeLocalChannelCost` to specify if you want to count the fees from your node like trampoline payments do (#1942) 
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--ignoreNodeIds` to specify nodes you want to be ignored in path-finding (#1969)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--ignoreChannelIds` to specify channels you want to be ignored in path-finding (#1969)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--maxFeeMsat` to specify an upper bound of fees (#1969)
 
 Have a look at our [API documentation](https://acinq.github.io/eclair) for more details.
 
