@@ -29,6 +29,7 @@ import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 
 import java.io.File
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
@@ -60,20 +61,34 @@ trait BitcoindService extends Logging {
   var bitcoinrpcclient: BitcoinJsonRPCClient = _
   var bitcoincli: ActorRef = _
 
-  def startBitcoind(): Unit = {
+  def startBitcoind(useCookie: Boolean = false): Unit = {
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
     if (!Files.exists(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)) {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
-      val conf = Source.fromInputStream(is).mkString
+      var conf = Source.fromInputStream(is).mkString
         .replace("28333", bitcoindPort.toString)
         .replace("28332", bitcoindRpcPort.toString)
         .replace("28334", bitcoindZmqBlockPort.toString)
         .replace("28335", bitcoindZmqTxPort.toString)
+      if(useCookie){
+        conf = conf
+          .replace("rpcuser=foo","")
+          .replace("rpcpassword=bar","")
+      }
       Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
     }
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
-    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
+    val (user, password) = if(useCookie){
+      Thread.sleep(10000) //wait for bitcoind to create .cookie file
+      val path = new File(PATH_BITCOIND_DATADIR,"regtest/.cookie").toPath
+      assert(Files.exists(path))
+      val cookie =  Files.readString(path,StandardCharsets.UTF_8).split(":",2)
+      (cookie(0),cookie(1))
+    }else{
+      ("foo","bar")
+    }
+    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = user, password = password, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
         case BitcoinReq(method) => bitcoinrpcclient.invoke(method).pipeTo(sender())
