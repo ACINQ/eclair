@@ -51,6 +51,8 @@ import scodec.bits.ByteVector
 
 import java.io.File
 import java.net.InetSocketAddress
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
@@ -145,12 +147,19 @@ class Setup(val datadir: File,
       val name = config.getString("bitcoind.wallet")
       if (!name.isBlank) Some(name) else None
     }
+    val (rpcUser,rpcPassword) = config.getString("bitcoind.auth") match{
+      case "safecookie" =>
+        val cookie =  Files.readString(Path.of(config.getString("bitcoind.cookie")),StandardCharsets.UTF_8).split(":",2)
+        (cookie(0),cookie(1))
+      case "password" =>  (config.getString("bitcoind.rpcuser"),  config.getString("bitcoind.rpcpassword"))
+    }
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
+      user = rpcUser,
+      password = rpcPassword,
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"),
-      wallet = wallet)
+      wallet = wallet,
+    )
     val future = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
       // Make sure wallet support is enabled in bitcoind.
