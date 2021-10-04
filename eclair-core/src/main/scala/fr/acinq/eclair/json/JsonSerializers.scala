@@ -25,6 +25,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
@@ -255,25 +256,23 @@ object RouteResponseSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-case class PaymentFailureSummary(amount: MilliSatoshi, route: Seq[PublicKey], message: String)
-object PaymentFailureSummary {
-  def apply(failure: PaymentFailure): PaymentFailureSummary = {
-    val route = failure.route.map(_.nodeId) ++ failure.route.lastOption.map(_.nextNodeId)
-    val message = failure match {
+private case class PaymentFailureSummaryJson(amount: MilliSatoshi, route: Seq[PublicKey], message: String)
+private case class PaymentFailedSummaryJson(paymentHash: ByteVector32, destination: PublicKey, totalAmount: MilliSatoshi, pathFindingExperiment: String, failures: Seq[PaymentFailureSummaryJson])
+object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFailedSummary](p => PaymentFailedSummaryJson(
+  p.cfg.paymentHash,
+  p.cfg.recipientNodeId,
+  p.cfg.recipientAmount,
+  p.pathFindingExperiment,
+  p.paymentFailed.failures.map(f => {
+    val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)
+    val message = f match {
       case LocalFailure(_, _, t) => t.getMessage
       case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
       case _: UnreadableRemoteFailure => "unreadable remote failure"
     }
-    PaymentFailureSummary(failure.amount, route, message)
-  }
-}
-
-// NB: we don't provide an implicit conversion from PaymentFailure, as we don't always want payment failures to be
-// converted to this lighter format.
-case class PaymentFailedSummary(paymentHash: ByteVector32, totalAmount: MilliSatoshi, pathFindingExperiment: String, failures: Seq[PaymentFailureSummary])
-object PaymentFailedSummary {
-  def apply(paymentHash: ByteVector32, totalAmount: MilliSatoshi, pathFindingExperiment: String, paymentFailed: PaymentFailed): PaymentFailedSummary = PaymentFailedSummary(paymentHash, totalAmount, pathFindingExperiment, paymentFailed.failures.map(f => PaymentFailureSummary(f)))
-}
+    PaymentFailureSummaryJson(f.amount, route, message)
+  })
+))
 // @formatter:on
 
 object ThrowableSerializer extends MinimalSerializer({
@@ -481,6 +480,7 @@ object JsonSerializers {
     PaymentRequestSerializer +
     JavaUUIDSerializer +
     OriginSerializer +
-    GlobalBalanceSerializer
+    GlobalBalanceSerializer +
+    PaymentFailedSummarySerializer
 
 }

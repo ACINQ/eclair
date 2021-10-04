@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
 import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
@@ -153,9 +154,11 @@ object PaymentFailure {
     }
   }
 
-  def jsonSummary(paymentHash: ByteVector32, totalAmount: MilliSatoshi, pathFindingExperiment: String, paymentFailed: PaymentFailed): String = {
-    import fr.acinq.eclair.json.{JsonSerializers, PaymentFailedSummary}
-    Try(JsonSerializers.serialization.write(PaymentFailedSummary(paymentHash, totalAmount, pathFindingExperiment, paymentFailed))(JsonSerializers.formats)) match {
+  case class PaymentFailedSummary(cfg: SendPaymentConfig, pathFindingExperiment: String, paymentFailed: PaymentFailed)
+
+  def jsonSummary(cfg: SendPaymentConfig, pathFindingExperiment: String, paymentFailed: PaymentFailed): String = {
+    import fr.acinq.eclair.json.JsonSerializers
+    Try(JsonSerializers.serialization.write(PaymentFailedSummary(cfg, pathFindingExperiment, paymentFailed))(JsonSerializers.formats)) match {
       case Failure(e) => s"json serialization failed: ${e.getMessage}"
       case Success(json) => json
     }

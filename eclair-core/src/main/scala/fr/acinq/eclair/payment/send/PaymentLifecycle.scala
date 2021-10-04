@@ -322,7 +322,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
             case s: SendPaymentToNode => (s.routeParams.getMaxFee(cfg.recipientAmount), s.routeParams.experimentName)
             case _: SendPaymentToRoute => (0 msat, "n/a")
           }
-          log.info(s"failed payment attempts details: ${PaymentFailure.jsonSummary(cfg.paymentHash, request.finalPayload.totalAmount, pathFindingExperiment, paymentFailed)}")
+          log.info(s"failed payment attempts details: ${PaymentFailure.jsonSummary(cfg, pathFindingExperiment, paymentFailed)}")
           fees
       }
       request match {
