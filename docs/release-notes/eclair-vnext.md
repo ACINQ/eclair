@@ -148,6 +148,7 @@ Have a look at our [API documentation](https://acinq.github.io/eclair) for more 
 - Relay fees are now set per node and automatically apply to all channels with that node (#1890)
 - Eclair now supports [explicit channel type negotiation](https://github.com/lightningnetwork/lightning-rfc/pull/880)
 - Eclair now supports [quick close](https://github.com/lightningnetwork/lightning-rfc/pull/847), which provides more control over what feerate will be used when closing channels
+- Eclair now supports cookie authentication for Bitcoin Core RPC (#1986)
 
 ## Verifying signatures
 
