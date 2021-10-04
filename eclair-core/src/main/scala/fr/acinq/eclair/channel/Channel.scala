@@ -122,15 +122,6 @@ object Channel {
   // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitly specify the peer to allow for testing)
   case class RevocationTimeout(remoteCommitNumber: Long, peer: ActorRef)
 
-  /**
-   * Outgoing messages go through the [[Peer]] for logging purposes.
-   *
-   * [[Channel]] is notified asynchronously of disconnections and reconnections. To preserve sequentiality of messages,
-   * we need to also provide the connection that the message is valid for. If the actual connection was reset in the
-   * meantime, the [[Peer]] will simply drop the message.
-   */
-  case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
-
   /** We don't immediately process [[CurrentBlockCount]] to avoid herd effects */
   case class ProcessCurrentBlockCount(c: CurrentBlockCount)
 
@@ -2686,7 +2677,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   }
 
   private def send(msg: LightningMessage): Unit = {
-    peer ! OutgoingMessage(msg, activeConnection)
+    peer ! Peer.OutgoingMessage(msg, activeConnection)
   }
 
   override def mdc(currentMessage: Any): MDC = {
