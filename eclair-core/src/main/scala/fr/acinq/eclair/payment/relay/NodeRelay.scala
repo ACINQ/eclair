@@ -133,21 +133,21 @@ object NodeRelay {
    * should return upstream.
    */
   def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload): Option[FailureMessage] = {
-    val routeNotFound = failures.collectFirst { case f@LocalFailure(_, RouteNotFound) => f }.nonEmpty
+    val routeNotFound = failures.collectFirst { case f@LocalFailure(_, _, RouteNotFound) => f }.nonEmpty
     val routingFeeHigh = upstream.amountIn - nextPayload.amountToForward >= nodeFee(nodeParams.relayParams.minTrampolineFees.feeBase, nodeParams.relayParams.minTrampolineFees.feeProportionalMillionths, nextPayload.amountToForward) * 5
     failures match {
       case Nil => None
-      case LocalFailure(_, BalanceTooLow) :: Nil if routingFeeHigh =>
+      case LocalFailure(_, _, BalanceTooLow) :: Nil if routingFeeHigh =>
         // We have direct channels to the target node, but not enough outgoing liquidity to use those channels.
         // The routing fee proposed by the sender was high enough to find alternative, indirect routes, but didn't yield
         // any result so we tell them that we don't have enough outgoing liquidity at the moment.
         Some(TemporaryNodeFailure)
-      case LocalFailure(_, BalanceTooLow) :: Nil => Some(TrampolineFeeInsufficient) // a higher fee/cltv may find alternative, indirect routes
+      case LocalFailure(_, _, BalanceTooLow) :: Nil => Some(TrampolineFeeInsufficient) // a higher fee/cltv may find alternative, indirect routes
       case _ if routeNotFound => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.
-        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
-        val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, e) => e.failureMessage }
+        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, _, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
+        val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, _, e) => e.failureMessage }
         val failure = outgoingNodeFailure.getOrElse(otherNodeFailure.getOrElse(TemporaryNodeFailure))
         Some(failure)
     }

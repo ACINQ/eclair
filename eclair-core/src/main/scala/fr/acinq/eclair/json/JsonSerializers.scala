@@ -22,9 +22,10 @@ import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Tra
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
@@ -254,6 +255,26 @@ object RouteResponseSerializer extends MinimalSerializer({
     JArray(nodeIds.toList.map(n => JString(n.toString)))
 })
 
+// @formatter:off
+private case class PaymentFailureSummaryJson(amount: MilliSatoshi, route: Seq[PublicKey], message: String)
+private case class PaymentFailedSummaryJson(paymentHash: ByteVector32, destination: PublicKey, totalAmount: MilliSatoshi, pathFindingExperiment: String, failures: Seq[PaymentFailureSummaryJson])
+object PaymentFailedSummarySerializer extends ConvertClassSerializer[PaymentFailedSummary](p => PaymentFailedSummaryJson(
+  p.cfg.paymentHash,
+  p.cfg.recipientNodeId,
+  p.cfg.recipientAmount,
+  p.pathFindingExperiment,
+  p.paymentFailed.failures.map(f => {
+    val route = f.route.map(_.nodeId) ++ f.route.lastOption.map(_.nextNodeId)
+    val message = f match {
+      case LocalFailure(_, _, t) => t.getMessage
+      case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(origin, failureMessage)) => s"$origin returned: ${failureMessage.message}"
+      case _: UnreadableRemoteFailure => "unreadable remote failure"
+    }
+    PaymentFailureSummaryJson(f.amount, route, message)
+  })
+))
+// @formatter:on
+
 object ThrowableSerializer extends MinimalSerializer({
   case t: Throwable if t.getMessage != null => JString(t.getMessage)
   case t: Throwable => JString(t.getClass.getSimpleName)
@@ -459,6 +480,7 @@ object JsonSerializers {
     PaymentRequestSerializer +
     JavaUUIDSerializer +
     OriginSerializer +
-    GlobalBalanceSerializer
+    GlobalBalanceSerializer +
+    PaymentFailedSummarySerializer
 
 }

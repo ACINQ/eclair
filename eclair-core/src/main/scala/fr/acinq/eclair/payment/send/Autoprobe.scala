@@ -20,8 +20,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, PaymentRequest, RemoteFailure}
-import fr.acinq.eclair.router.Router.RouteParams
-import fr.acinq.eclair.router.{Announcements, RouteCalculation, Router}
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
 import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, randomLong}
 import scodec.bits.ByteVector
@@ -74,7 +73,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
 
     case paymentResult: PaymentEvent =>
       paymentResult match {
-        case PaymentFailed(_, _, _ :+ RemoteFailure(_, DecryptedFailurePacket(targetNodeId, IncorrectOrUnknownPaymentDetails(_, _))), _) =>
+        case PaymentFailed(_, _, _ :+ RemoteFailure(_, _, DecryptedFailurePacket(targetNodeId, IncorrectOrUnknownPaymentDetails(_, _))), _) =>
           log.info(s"payment probe successful to node=$targetNodeId")
         case _ =>
           log.info(s"payment probe failed with paymentResult=$paymentResult")
