@@ -251,7 +251,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
       }
 
       case WrappedCurrentBlockCount(currentBlockCount) =>
-        log.debug("retry publishing {} transactions at block {}", retryNextBlock.length, currentBlockCount)
+        log.info("{} transactions are still pending at block {}, retrying {} transactions that previously failed", pending.size, currentBlockCount, retryNextBlock.length)
         retryNextBlock.foreach(cmd => timers.startSingleTimer(cmd, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis))
         run(pending, Seq.empty, channelInfo)
 
