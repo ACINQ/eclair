@@ -78,7 +78,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     val tx = Transaction(2, TxIn(OutPoint(randomBytes32(), 1), Nil, 0) :: Nil, Nil, 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", None)
+    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", 5 sat, None)
     txPublisher ! cmd
     val child = factory.expectMsgType[RawTxPublisherSpawned].actor
     assert(child.expectMsgType[RawTxPublisher.Publish].cmd === cmd)
@@ -89,7 +89,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val input = OutPoint(randomBytes32(), 1)
     val tx1 = Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)
-    val cmd1 = PublishRawTx(tx1, input, "raw-tx", None)
+    val cmd1 = PublishRawTx(tx1, input, "raw-tx", 10 sat, None)
     txPublisher ! cmd1
     factory.expectMsgType[RawTxPublisherSpawned]
 
@@ -99,7 +99,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     // But a different tx spending the same main input is allowed:
     val tx2 = tx1.copy(txIn = tx1.txIn ++ Seq(TxIn(OutPoint(randomBytes32(), 0), Nil, 0)))
-    val cmd2 = PublishRawTx(tx2, input, "another-raw-tx", None)
+    val cmd2 = PublishRawTx(tx2, input, "another-raw-tx", 0 sat, None)
     txPublisher ! cmd2
     factory.expectMsgType[RawTxPublisherSpawned]
   }
@@ -148,13 +148,13 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val input = OutPoint(randomBytes32(), 3)
     val tx1 = Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)
-    val cmd1 = PublishRawTx(tx1, input, "raw-tx-1", None)
+    val cmd1 = PublishRawTx(tx1, input, "raw-tx-1", 5 sat, None)
     txPublisher ! cmd1
     val attempt1 = factory.expectMsgType[RawTxPublisherSpawned].actor
     attempt1.expectMsgType[RawTxPublisher.Publish]
 
     val tx2 = Transaction(2, TxIn(input, Nil, 0) :: TxIn(OutPoint(randomBytes32(), 0), Nil, 3) :: Nil, Nil, 0)
-    val cmd2 = PublishRawTx(tx2, input, "raw-tx-2", None)
+    val cmd2 = PublishRawTx(tx2, input, "raw-tx-2", 15 sat, None)
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[RawTxPublisherSpawned].actor
     attempt2.expectMsgType[RawTxPublisher.Publish]
@@ -176,7 +176,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val input = OutPoint(randomBytes32(), 3)
     val tx1 = Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)
-    val cmd1 = PublishRawTx(tx1, input, "raw-tx-1", None)
+    val cmd1 = PublishRawTx(tx1, input, "raw-tx-1", 0 sat, None)
     txPublisher ! cmd1
     val attempt1 = factory.expectMsgType[RawTxPublisherSpawned]
     attempt1.actor.expectMsgType[RawTxPublisher.Publish]
@@ -227,13 +227,13 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     val tx1 = Transaction(2, TxIn(OutPoint(randomBytes32(), 1), Nil, 0) :: Nil, Nil, 0)
-    val cmd1 = PublishRawTx(tx1, tx1.txIn.head.outPoint, "raw-tx-1", None)
+    val cmd1 = PublishRawTx(tx1, tx1.txIn.head.outPoint, "raw-tx-1", 0 sat, None)
     txPublisher ! cmd1
     val attempt1 = factory.expectMsgType[RawTxPublisherSpawned]
     attempt1.actor.expectMsgType[RawTxPublisher.Publish]
 
     val tx2 = Transaction(2, TxIn(OutPoint(randomBytes32(), 0), Nil, 0) :: Nil, Nil, 0)
-    val cmd2 = PublishRawTx(tx2, tx2.txIn.head.outPoint, "raw-tx-2", None)
+    val cmd2 = PublishRawTx(tx2, tx2.txIn.head.outPoint, "raw-tx-2", 5 sat, None)
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[RawTxPublisherSpawned]
     attempt2.actor.expectMsgType[RawTxPublisher.Publish]
@@ -254,7 +254,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     val tx = Transaction(2, TxIn(OutPoint(randomBytes32(), 1), Nil, 0) :: Nil, Nil, 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", None)
+    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", 5 sat, None)
     txPublisher ! cmd
     val attempt = factory.expectMsgType[RawTxPublisherSpawned]
     attempt.actor.expectMsgType[RawTxPublisher.Publish]
@@ -271,7 +271,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     val tx = Transaction(2, TxIn(OutPoint(randomBytes32(), 1), Nil, 0) :: Nil, Nil, 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", None)
+    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", 5 sat, None)
     txPublisher ! cmd
     val attempt = factory.expectMsgType[RawTxPublisherSpawned]
     attempt.actor.expectMsgType[RawTxPublisher.Publish]
@@ -288,7 +288,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     import f._
 
     val tx = Transaction(2, TxIn(OutPoint(randomBytes32(), 1), Nil, 0) :: Nil, Nil, 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", None)
+    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", 5 sat, None)
     txPublisher ! cmd
     val attempt = factory.expectMsgType[RawTxPublisherSpawned]
     attempt.actor.expectMsgType[RawTxPublisher.Publish]

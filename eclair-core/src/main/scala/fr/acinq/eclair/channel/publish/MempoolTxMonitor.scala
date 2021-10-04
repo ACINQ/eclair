@@ -19,11 +19,12 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.{OutPoint, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
+import fr.acinq.eclair.channel.{TransactionConfirmed, TransactionPublished}
 
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
@@ -36,7 +37,7 @@ object MempoolTxMonitor {
 
   // @formatter:off
   sealed trait Command
-  case class Publish(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint) extends Command
+  case class Publish(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint, desc: String, fee: Satoshi) extends Command
   private case object PublishOk extends Command
   private case class PublishFailed(reason: Throwable) extends Command
   private case class InputStatus(spentConfirmed: Boolean, spentUnconfirmed: Boolean) extends Command
@@ -57,14 +58,14 @@ object MempoolTxMonitor {
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(loggingInfo.mdc()) {
-        new MempoolTxMonitor(nodeParams, bitcoinClient, context).start()
+        new MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo, context).start()
       }
     }
   }
 
 }
 
-private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, context: ActorContext[MempoolTxMonitor.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext, context: ActorContext[MempoolTxMonitor.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import MempoolTxMonitor._
 
@@ -72,12 +73,12 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
 
   def start(): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case Publish(replyTo, tx, input) => publish(replyTo, tx, input)
+      case Publish(replyTo, tx, input, desc, fee) => publish(replyTo, tx, input, desc, fee)
       case Stop => Behaviors.stopped
     }
   }
 
-  def publish(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint): Behavior[Command] = {
+  def publish(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint, desc: String, fee: Satoshi): Behavior[Command] = {
     context.pipeToSelf(bitcoinClient.publishTransaction(tx)) {
       case Success(_) => PublishOk
       case Failure(reason) => PublishFailed(reason)
@@ -85,6 +86,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
     Behaviors.receiveMessagePartial {
       case PublishOk =>
         log.debug("txid={} was successfully published, waiting for confirmation...", tx.txid)
+        context.system.eventStream ! EventStream.Publish(TransactionPublished(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, tx, fee, desc))
         waitForConfirmation(replyTo, tx, input)
       case PublishFailed(reason) if reason.getMessage.contains("rejecting replacement") =>
         log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
@@ -133,6 +135,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
         }
         if (nodeParams.minDepthBlocks <= confirmations) {
           log.info("txid={} has reached min depth", tx.txid)
+          context.system.eventStream ! EventStream.Publish(TransactionConfirmed(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, tx))
           sendResult(replyTo, TxConfirmed, Some(messageAdapter))
         } else {
           Behaviors.same
