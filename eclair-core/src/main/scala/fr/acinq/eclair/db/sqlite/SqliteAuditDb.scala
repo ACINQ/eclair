@@ -100,13 +100,13 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
     def migration78(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE transaction_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-      statement.executeUpdate("CREATE TABLE transaction_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
-      statement.executeUpdate("CREATE INDEX transaction_published_timestamp_idx ON transaction_published(timestamp)")
-      statement.executeUpdate("CREATE INDEX transaction_confirmed_timestamp_idx ON transaction_confirmed(timestamp)")
+      statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
+      statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
       // Migrate data from the network_fees table (which only stored data about confirmed transactions).
-      statement.executeUpdate("INSERT OR IGNORE INTO transaction_published (tx_id, channel_id, node_id, fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM network_fees")
-      statement.executeUpdate("INSERT OR IGNORE INTO transaction_confirmed (tx_id, channel_id, node_id, timestamp) SELECT tx_id, channel_id, node_id, timestamp FROM network_fees")
+      statement.executeUpdate("INSERT OR IGNORE INTO transactions_published (tx_id, channel_id, node_id, fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM network_fees")
+      statement.executeUpdate("INSERT OR IGNORE INTO transactions_confirmed (tx_id, channel_id, node_id, timestamp) SELECT tx_id, channel_id, node_id, timestamp FROM network_fees")
       statement.executeUpdate("DROP TABLE network_fees")
     }
 
@@ -120,8 +120,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
-        statement.executeUpdate("CREATE TABLE transaction_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
-        statement.executeUpdate("CREATE TABLE transaction_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
         statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
@@ -138,8 +138,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON path_finding_metrics(timestamp)")
         statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON path_finding_metrics(is_mpp)")
         statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
-        statement.executeUpdate("CREATE INDEX transaction_published_timestamp_idx ON transaction_published(timestamp)")
-        statement.executeUpdate("CREATE INDEX transaction_confirmed_timestamp_idx ON transaction_confirmed(timestamp)")
+        statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
+        statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
       case Some(v@(1 | 2 | 3 | 4 | 5 | 6 | 7)) =>
         logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
         if (v < 2) {
@@ -245,7 +245,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transaction_published VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_published VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.tx.txid.toArray)
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
@@ -257,7 +257,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def add(e: TransactionConfirmed): Unit = withMetrics("audit/add-transaction-confirmed", DbBackends.Sqlite) {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transaction_confirmed VALUES (?, ?, ?, ?)")) { statement =>
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO transactions_confirmed VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, e.tx.txid.toArray)
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
@@ -404,7 +404,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
   }
 
   override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
-    using(sqlite.prepareStatement("SELECT * FROM transaction_confirmed INNER JOIN transaction_published ON transaction_published.tx_id = transaction_confirmed.tx_id WHERE transaction_confirmed.timestamp >= ? AND transaction_confirmed.timestamp < ? ORDER BY transaction_confirmed.timestamp")) { statement =>
+    using(sqlite.prepareStatement("SELECT * FROM transactions_confirmed INNER JOIN transactions_published ON transactions_published.tx_id = transactions_confirmed.tx_id WHERE transactions_confirmed.timestamp >= ? AND transactions_confirmed.timestamp < ? ORDER BY transactions_confirmed.timestamp")) { statement =>
       statement.setLong(1, from)
       statement.setLong(2, to)
       statement.executeQuery()

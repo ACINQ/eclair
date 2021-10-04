@@ -118,8 +118,8 @@ See the [spec discussions](https://github.com/lightningnetwork/lightning-rfc/pul
 
 ### Audit trail for published transactions
 
-Eclair now records every transaction it publishes in the `audit` database, in a new `transaction-published` table.
-It also stores confirmed transactions that have an impact on existing channels (including transactions made by your peer) in a new `transaction-confirmed` table.
+Eclair now records every transaction it publishes in the `audit` database, in a new `transactions_published` table.
+It also stores confirmed transactions that have an impact on existing channels (including transactions made by your peer) in a new `transactions_confirmed` table.
 
 This lets you audit the complete on-chain footprint of your channels and the on-chain fees paid.
 This information is exposed through the `networkfees` API (which was already available in previous versions).
