@@ -41,7 +41,7 @@ eclair-node.sh -Declair.datadir="/path/to/custom/eclair/data/folder"
 ### Splitting the configuration
 
 Note that HOCON allows you to have files include other files. This allows you to split your configuration file into
-several logical files, for easier management. For example, you could defined a file `routing.conf` file with parameters
+several logical files, for easier management. For example, you could define a file `routing.conf` file with parameters
 related to routing configuration, and include it from `eclair.conf`. 
 
 ## Options reference
