@@ -26,7 +26,7 @@ trait FeeEstimator {
   // @formatter:off
   def getFeeratePerKb(target: Int): FeeratePerKB
   def getFeeratePerKw(target: Int): FeeratePerKw
-  def mempoolMinFee(): FeeratePerKw
+  def getMempoolMinFeeratePerKw(): FeeratePerKw
   // @formatter:on
 }
 
@@ -70,7 +70,7 @@ case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, cl
   def getCommitmentFeerate(remoteNodeId: PublicKey, channelType: SupportedChannelType, channelCapacity: Satoshi, currentFeerates_opt: Option[CurrentFeerates]): FeeratePerKw = {
     val (networkFeerate, networkMinFee) = currentFeerates_opt match {
       case Some(currentFeerates) => (currentFeerates.feeratesPerKw.feePerBlock(feeTargets.commitmentBlockTarget), currentFeerates.feeratesPerKw.mempoolMinFee)
-      case None => (feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget), feeEstimator.mempoolMinFee())
+      case None => (feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget), feeEstimator.getMempoolMinFeeratePerKw())
     }
     channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate

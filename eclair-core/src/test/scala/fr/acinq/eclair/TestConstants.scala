@@ -53,7 +53,7 @@ object TestConstants {
     // @formatter:off
     override def getFeeratePerKb(target: Int): FeeratePerKB = FeeratePerKB(currentFeerates.feePerBlock(target))
     override def getFeeratePerKw(target: Int): FeeratePerKw = currentFeerates.feePerBlock(target)
-    override def mempoolMinFee(): FeeratePerKw = currentFeerates.mempoolMinFee
+    override def getMempoolMinFeeratePerKw(): FeeratePerKw = currentFeerates.mempoolMinFee
     // @formatter:on
 
     def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
