@@ -100,12 +100,12 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
 
     def migration78(statement: Statement): Unit = {
-      statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+      statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
       statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
       statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON transactions_published(timestamp)")
       statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON transactions_confirmed(timestamp)")
       // Migrate data from the network_fees table (which only stored data about confirmed transactions).
-      statement.executeUpdate("INSERT OR IGNORE INTO transactions_published (tx_id, channel_id, node_id, fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM network_fees")
+      statement.executeUpdate("INSERT OR IGNORE INTO transactions_published (tx_id, channel_id, node_id, mining_fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM network_fees")
       statement.executeUpdate("INSERT OR IGNORE INTO transactions_confirmed (tx_id, channel_id, node_id, timestamp) SELECT tx_id, channel_id, node_id, timestamp FROM network_fees")
       statement.executeUpdate("DROP TABLE network_fees")
     }
@@ -120,7 +120,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
-        statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+        statement.executeUpdate("CREATE TABLE transactions_published (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, mining_fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
         statement.executeUpdate("CREATE TABLE transactions_confirmed (tx_id BLOB NOT NULL PRIMARY KEY, channel_id BLOB NOT NULL, node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
 
         statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
@@ -249,7 +249,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(1, e.tx.txid.toArray)
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
-      statement.setLong(4, e.fee.toLong)
+      statement.setLong(4, e.miningFee.toLong)
       statement.setString(5, e.desc)
       statement.setLong(6, System.currentTimeMillis)
       statement.executeUpdate()
@@ -413,7 +413,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
             remoteNodeId = PublicKey(rs.getByteVector("node_id")),
             channelId = rs.getByteVector32("channel_id"),
             txId = rs.getByteVector32("tx_id"),
-            fee = Satoshi(rs.getLong("fee_sat")),
+            fee = Satoshi(rs.getLong("mining_fee_sat")),
             txType = rs.getString("tx_type"),
             timestamp = rs.getLong("timestamp"))
         }.toSeq

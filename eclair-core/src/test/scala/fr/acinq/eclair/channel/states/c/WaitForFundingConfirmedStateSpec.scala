@@ -80,7 +80,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     bob ! WatchFundingConfirmedTriggered(42000, 42, fundingTx)
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx === fundingTx)
-    assert(txPublished.fee === 0.sat) // bob is fundee
+    assert(txPublished.miningFee === 0.sat) // bob is fundee
     assert(listener.expectMsgType[TransactionConfirmed].tx === fundingTx)
     val msg = bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)

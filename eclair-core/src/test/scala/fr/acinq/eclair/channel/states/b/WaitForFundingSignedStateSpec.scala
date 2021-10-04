@@ -87,7 +87,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val fundingTxId = alice2blockchain.expectMsgType[WatchFundingSpent].txId
     val txPublished = listener.expectMsgType[TransactionPublished]
     assert(txPublished.tx.txid === fundingTxId)
-    assert(txPublished.fee > 0.sat)
+    assert(txPublished.miningFee > 0.sat)
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }

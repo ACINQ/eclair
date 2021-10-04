@@ -92,12 +92,12 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
 
       def migration910(statement: Statement): Unit = {
-        statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
         statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
         statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
         statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
         // Migrate data from the network_fees table (which only stored data about confirmed transactions).
-        statement.executeUpdate("INSERT INTO audit.transactions_published (tx_id, channel_id, node_id, fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM audit.network_fees ON CONFLICT DO NOTHING")
+        statement.executeUpdate("INSERT INTO audit.transactions_published (tx_id, channel_id, node_id, mining_fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM audit.network_fees ON CONFLICT DO NOTHING")
         statement.executeUpdate("INSERT INTO audit.transactions_confirmed (tx_id, channel_id, node_id, timestamp) SELECT tx_id, channel_id, node_id, timestamp FROM audit.network_fees ON CONFLICT DO NOTHING")
         statement.executeUpdate("DROP TABLE audit.network_fees")
       }
@@ -113,7 +113,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
 
           statement.executeUpdate("CREATE TABLE audit.channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
@@ -249,7 +249,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setString(1, e.tx.txid.toHex)
         statement.setString(2, e.channelId.toHex)
         statement.setString(3, e.remoteNodeId.value.toHex)
-        statement.setLong(4, e.fee.toLong)
+        statement.setLong(4, e.miningFee.toLong)
         statement.setString(5, e.desc)
         statement.setTimestamp(6, Timestamp.from(Instant.now()))
         statement.executeUpdate()
@@ -426,7 +426,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
             channelId = rs.getByteVector32FromHex("channel_id"),
             txId = rs.getByteVector32FromHex("tx_id"),
-            fee = Satoshi(rs.getLong("fee_sat")),
+            fee = Satoshi(rs.getLong("mining_fee_sat")),
             txType = rs.getString("tx_type"),
             timestamp = rs.getTimestamp("timestamp").getTime)
         }.toSeq

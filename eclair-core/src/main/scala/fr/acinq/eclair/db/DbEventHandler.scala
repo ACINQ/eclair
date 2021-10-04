@@ -85,7 +85,7 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
       auditDb.add(e)
 
     case e: TransactionPublished =>
-      log.info(s"paying fee=${e.fee} for txid=${e.tx.txid} desc=${e.desc}")
+      log.info(s"paying mining fee=${e.miningFee} for txid=${e.tx.txid} desc=${e.desc}")
       auditDb.add(e)
 
     case e: TransactionConfirmed => auditDb.add(e)

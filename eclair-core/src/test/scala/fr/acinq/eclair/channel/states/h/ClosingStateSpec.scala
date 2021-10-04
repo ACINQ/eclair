@@ -636,7 +636,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].copy(remoteCommitPublished = None) == initialState)
     val txPublished = txListener.expectMsgType[TransactionPublished]
     assert(txPublished.tx === bobCommitTx)
-    assert(txPublished.fee > 0.sat) // alice is funder, she pays the fee for the remote commit
+    assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the remote commit
   }
 
   test("recv WatchTxConfirmedTriggered (remote commit)") { f =>
@@ -857,7 +857,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val (bobCommitTx, closingState, htlcs) = testNextRemoteCommitTxConfirmed(f, ChannelFeatures())
     val txPublished = txListener.expectMsgType[TransactionPublished]
     assert(txPublished.tx === bobCommitTx)
-    assert(txPublished.fee > 0.sat) // alice is funder, she pays the fee for the remote commit
+    assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the remote commit
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(closingState).map(_.tx)
     alice ! WatchTxConfirmedTriggered(42, 0, bobCommitTx)
     assert(txListener.expectMsgType[TransactionConfirmed].tx === bobCommitTx)
@@ -1039,7 +1039,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobCommitTx = testFutureRemoteCommitTxConfirmed(f, ChannelFeatures())
     val txPublished = txListener.expectMsgType[TransactionPublished]
     assert(txPublished.tx === bobCommitTx)
-    assert(txPublished.fee > 0.sat) // alice is funder, she pays the fee for the remote commit
+    assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the remote commit
     // alice is able to claim its main output
     val claimMainTx = alice2blockchain.expectMsgType[PublishRawTx].tx
     Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1225,7 +1225,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val (bobRevokedTx, rvk) = setupFundingSpentRevokedTx(f, channelFeatures)
     val txPublished = txListener.expectMsgType[TransactionPublished]
     assert(txPublished.tx === bobRevokedTx)
-    assert(txPublished.fee > 0.sat) // alice is funder, she pays the fee for the revoked commit
+    assert(txPublished.miningFee > 0.sat) // alice is funder, she pays the fee for the revoked commit
 
     // once all txs are confirmed, alice can move to the closed state
     alice ! WatchTxConfirmedTriggered(100, 3, bobRevokedTx)
