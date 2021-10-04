@@ -158,8 +158,7 @@ class Setup(val datadir: File,
       password = rpcPassword,
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"),
-      wallet = wallet,
-    )
+      wallet = wallet)
     val future = for {
       json <- bitcoinClient.invoke("getblockchaininfo").recover { case e => throw BitcoinRPCConnectionException(e) }
       // Make sure wallet support is enabled in bitcoind.
