@@ -266,7 +266,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(bobOrigin)),
       updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + bobOrigin)) + (updates(10) -> Set(bobOrigin)),
       nodes.map(_ -> gossipOrigin).toMap + (nodes(4) -> Set(bobOrigin)))
-    val filter = protocol.GossipTimestampFilter(Alice.nodeParams.chainHash, 0, Long.MaxValue) // no filtering on timestamps
+    val filter = protocol.GossipTimestampFilter(Alice.nodeParams.chainHash, TimestampSecond(0), Long.MaxValue) // no filtering on timestamps
     transport.send(peerConnection, filter)
     transport.expectMsg(TransportHandler.ReadAck(filter))
     transport.send(peerConnection, rebroadcast)

@@ -56,7 +56,7 @@ object Monitoring {
     private val ChannelUpdateRefreshRate = Kamon.histogram("router.gossip.channel-update-refresh-rate", "Rate at which channels update their fee policy (minutes)")
 
     def channelUpdateRefreshed(update: ChannelUpdate, previous: ChannelUpdate, public: Boolean): Unit = {
-      val elapsed = (update.timestamp - previous.timestamp) / 60
+      val elapsed = (update.timestamp.toLong - previous.timestamp.toLong) / 60
       ChannelUpdateRefreshRate.withTag(Tags.Announced, public).record(elapsed)
     }
 

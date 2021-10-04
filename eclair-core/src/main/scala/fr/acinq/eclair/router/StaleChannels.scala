@@ -21,7 +21,7 @@ import akka.event.LoggingAdapter
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Router.{ChannelDesc, Data, PublicChannel, hasChannels}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.{ShortChannelId, TxCoordinates}
+import fr.acinq.eclair.{ShortChannelId, TimestampSecond, TxCoordinates}
 
 import scala.collection.mutable
 import scala.concurrent.duration._
@@ -65,16 +65,16 @@ object StaleChannels {
 
   def isStale(u: ChannelUpdate): Boolean = isStale(u.timestamp)
 
-  def isStale(timestamp: Long): Boolean = {
+  def isStale(timestamp: TimestampSecond): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThresholdSeconds = (System.currentTimeMillis.milliseconds - 14.days).toSeconds
+    val staleThresholdSeconds = TimestampSecond.now - 14.days
     timestamp < staleThresholdSeconds
   }
 
-  def isAlmostStale(timestamp: Long): Boolean = {
+  def isAlmostStale(timestamp: TimestampSecond): Boolean = {
     // we define almost stale as 2 weeks minus 4 days
-    val staleThresholdSeconds = (System.currentTimeMillis.milliseconds - 10.days).toSeconds
+    val staleThresholdSeconds = TimestampSecond.now - 10.days
     timestamp < staleThresholdSeconds
   }
 

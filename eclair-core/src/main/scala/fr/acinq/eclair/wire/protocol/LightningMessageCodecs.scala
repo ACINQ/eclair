@@ -210,7 +210,7 @@ object LightningMessageCodecs {
 
   val nodeAnnouncementWitnessCodec =
     ("features" | featuresCodec) ::
-      ("timestamp" | uint32) ::
+      ("timestamp" | timestampSecond) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
@@ -250,7 +250,7 @@ object LightningMessageCodecs {
   val channelUpdateWitnessCodec =
     (("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
-      ("timestamp" | uint32) ::
+      ("timestamp" | timestampSecond) ::
       (messageFlagsCodec >>:~ { messageFlags =>
         channelFlagsCodec ::
           ("cltvExpiryDelta" | cltvExpiryDelta) ::
@@ -304,7 +304,7 @@ object LightningMessageCodecs {
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | bytes32) ::
-      ("firstTimestamp" | uint32) ::
+      ("firstTimestamp" | timestampSecond) ::
       ("timestampRange" | uint32) ::
       ("tlvStream" | GossipTimestampFilterTlv.gossipTimestampFilterTlvCodec)).as[GossipTimestampFilter]
 

@@ -19,7 +19,7 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.crypto.Hmac256
 import fr.acinq.eclair.wire.protocol.FailureMessageCodecs._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, UInt64, randomBytes32, randomBytes64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, UInt64, randomBytes32, randomBytes64}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -32,7 +32,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
     signature = randomBytes64(),
     chainHash = Block.RegtestGenesisBlock.hash,
     shortChannelId = ShortChannelId(12345),
-    timestamp = 1234567L,
+    timestamp = TimestampSecond(1234567L),
     cltvExpiryDelta = CltvExpiryDelta(100),
     channelFlags = ChannelUpdate.ChannelFlags(isEnabled = true, isNode1 = false),
     htlcMinimumMsat = 1000 msat,
@@ -148,7 +148,7 @@ class FailureMessageCodecsSpec extends AnyFunSuite {
   test("support encoding of channel_update with/without type in failure messages") {
     val tmp_channel_failure_notype = hex"10070080cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001"
     val tmp_channel_failure_withtype = hex"100700820102cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f45782196fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d619000000000008260500041300005b91b52f0003000e00000000000003e80000000100000001"
-    val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), 1536275759, ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(14), 1000 msat, 1 msat, 1, None))
+    val ref = TemporaryChannelFailure(ChannelUpdate(ByteVector64(hex"cc3e80149073ed487c76e48e9622bf980f78267b8a34a3f61921f2d8fce6063b08e74f34a073a13f2097337e4915bb4c001f3b5c4d81e9524ed575e1f4578219"), Block.LivenetGenesisBlock.hash, ShortChannelId(0x826050004130000L), TimestampSecond(1536275759), ChannelUpdate.ChannelFlags(isEnabled = false, isNode1 = false), CltvExpiryDelta(14), 1000 msat, 1 msat, 1, None))
 
     val u = failureMessageCodec.decode(tmp_channel_failure_notype.toBitVector).require.value
     assert(u === ref)

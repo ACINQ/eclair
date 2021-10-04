@@ -24,7 +24,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{ShortChannelId, serializationResult}
+import fr.acinq.eclair.{ShortChannelId, TimestampSecond, serializationResult}
 import scodec.bits.ByteVector
 import shapeless.HNil
 
@@ -59,7 +59,7 @@ object Sync {
       // the first_timestamp field to the current date/time and timestamp_range to the maximum value
       // NB: we can't just set firstTimestamp to 0, because in that case peer would send us all past messages matching
       // that (i.e. the whole routing table)
-      val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = System.currentTimeMillis.milliseconds.toSeconds, timestampRange = Int.MaxValue)
+      val filter = GossipTimestampFilter(s.chainHash, firstTimestamp = TimestampSecond.now, timestampRange = Int.MaxValue)
       s.to ! filter
 
       // reset our sync state for this peer: we create an entry to ensure we reject duplicate queries and unsolicited reply_channel_range
@@ -224,7 +224,7 @@ object Sync {
     height >= firstBlockNum && height < (firstBlockNum + numberOfBlocks)
   }
 
-  def shouldRequestUpdate(ourTimestamp: Long, ourChecksum: Long, theirTimestamp_opt: Option[Long], theirChecksum_opt: Option[Long]): Boolean = {
+  def shouldRequestUpdate(ourTimestamp: TimestampSecond, ourChecksum: Long, theirTimestamp_opt: Option[TimestampSecond], theirChecksum_opt: Option[Long]): Boolean = {
     (theirTimestamp_opt, theirChecksum_opt) match {
       case (Some(theirTimestamp), Some(theirChecksum)) =>
         // we request their channel_update if all those conditions are met:
@@ -372,8 +372,8 @@ object Sync {
 
   def getChannelDigestInfo(channels: SortedMap[ShortChannelId, PublicChannel])(shortChannelId: ShortChannelId): (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
     val c = channels(shortChannelId)
-    val timestamp1 = c.update_1_opt.map(_.timestamp).getOrElse(0L)
-    val timestamp2 = c.update_2_opt.map(_.timestamp).getOrElse(0L)
+    val timestamp1 = c.update_1_opt.map(_.timestamp).getOrElse(TimestampSecond(0L))
+    val timestamp2 = c.update_2_opt.map(_.timestamp).getOrElse(TimestampSecond(0L))
     val checksum1 = c.update_1_opt.map(getChecksum).getOrElse(0L)
     val checksum2 = c.update_2_opt.map(getChecksum).getOrElse(0L)
     (ReplyChannelRangeTlv.Timestamps(timestamp1 = timestamp1, timestamp2 = timestamp2), ReplyChannelRangeTlv.Checksums(checksum1 = checksum1, checksum2 = checksum2))

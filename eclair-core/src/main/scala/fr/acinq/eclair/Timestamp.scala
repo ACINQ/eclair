@@ -18,19 +18,25 @@ package fr.acinq.eclair
 
 import java.time.Instant
 import java.sql
+import scala.concurrent.duration.FiniteDuration
 
-//case class TimestampSecond(private val underlying: Long) extends Ordered[TimestampSecond] {
-//  // @formatter: off
-//  def toLong: Long = underlying
-//  def toSqlTimestamp: sql.Timestamp = sql.Timestamp.from(Instant.ofEpochSecond(underlying))
-//  override def toString: String = underlying.toString
-//  override def compare(that: TimestampSecond): Int = underlying.compareTo(that.underlying)
-//  // @formatter: on
-//}
-//
-//object TimestampSecond {
-//  def now: TimestampSecond = TimestampSecond(System.currentTimeMillis() / 1000)
-//}
+case class TimestampSecond(private val underlying: Long) extends Ordered[TimestampSecond] {
+  // @formatter: off
+  def toLong: Long = underlying
+  def toSqlTimestamp: sql.Timestamp = sql.Timestamp.from(Instant.ofEpochSecond(underlying))
+  override def toString: String = underlying.toString
+  override def compare(that: TimestampSecond): Int = underlying.compareTo(that.underlying)
+  def +(x: Long): TimestampSecond = TimestampSecond(underlying + x)
+  def -(x: Long): TimestampSecond = TimestampSecond(underlying - x)
+  def +(x: FiniteDuration): TimestampSecond = TimestampSecond(underlying + x.toSeconds)
+  def -(x: FiniteDuration): TimestampSecond = TimestampSecond(underlying - x.toSeconds)
+  def -(x: TimestampSecond): Long = underlying - x.underlying
+  // @formatter: on
+}
+
+object TimestampSecond {
+  def now: TimestampSecond = TimestampSecond(System.currentTimeMillis() / 1000)
+}
 
 case class TimestampMilli(private val underlying: Long) extends Ordered[TimestampMilli] {
   // @formatter: off

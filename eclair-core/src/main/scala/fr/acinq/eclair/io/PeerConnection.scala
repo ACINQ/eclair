@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, Logs}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, Logs, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -563,7 +563,7 @@ object PeerConnection {
     // Otherwise we check if this message has a timestamp that matches the timestamp filter.
     val matchesFilter = (msg, gossipTimestampFilter_opt) match {
       case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
-      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange, _))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
+      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange, _))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= TimestampSecond(firstTimestamp.toLong + timestampRange)
       case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
     isOurGossip || matchesFilter
