@@ -310,10 +310,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }
   }
 
-  override def listSent(from: Long, to: Long): Seq[PaymentSent] =
+  override def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent] =
     using(sqlite.prepareStatement("SELECT * FROM sent WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
       statement.executeQuery()
         .foldLeft(Map.empty[UUID, PaymentSent]) { (sentByParentId, rs) =>
           val parentId = UUID.fromString(rs.getString("parent_payment_id"))
@@ -338,10 +338,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         }.values.toSeq.sortBy(_.timestamp)
     }
 
-  override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
+  override def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived] =
     using(sqlite.prepareStatement("SELECT * FROM received WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
       statement.executeQuery()
         .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
           val paymentHash = rs.getByteVector32("payment_hash")
@@ -357,10 +357,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         }.values.toSeq.sortBy(_.timestamp)
     }
 
-  override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] = {
+  override def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed] = {
     val trampolineByHash = using(sqlite.prepareStatement("SELECT * FROM relayed_trampoline WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
       statement.executeQuery()
         .map { rs =>
           val paymentHash = rs.getByteVector32("payment_hash")
@@ -371,8 +371,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
         .toMap
     }
     val relayedByHash = using(sqlite.prepareStatement("SELECT * FROM relayed WHERE timestamp >= ? AND timestamp < ?")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
       statement.executeQuery()
         .foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
           val paymentHash = rs.getByteVector32("payment_hash")
@@ -403,10 +403,10 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
     }.toSeq.sortBy(_.timestamp)
   }
 
-  override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
+  override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee] =
     using(sqlite.prepareStatement("SELECT * FROM transactions_confirmed INNER JOIN transactions_published ON transactions_published.tx_id = transactions_confirmed.tx_id WHERE transactions_confirmed.timestamp >= ? AND transactions_confirmed.timestamp < ? ORDER BY transactions_confirmed.timestamp")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
       statement.executeQuery()
         .map { rs =>
           NetworkFee(
@@ -415,11 +415,11 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
             txId = rs.getByteVector32("tx_id"),
             fee = Satoshi(rs.getLong("mining_fee_sat")),
             txType = rs.getString("tx_type"),
-            timestamp = rs.getLong("timestamp"))
+            timestamp = TimestampMilli(rs.getLong("timestamp")))
         }.toSeq
     }
 
-  override def stats(from: Long, to: Long): Seq[Stats] = {
+  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats] = {
     val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
       feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
     }

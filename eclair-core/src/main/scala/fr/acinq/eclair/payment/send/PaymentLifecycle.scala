@@ -60,7 +60,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         route => self ! RouteResponse(route :: Nil)
       )
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
 
@@ -68,7 +68,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       log.debug("sending {} to {}", c.finalPayload.amount, c.targetNodeId)
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
   }

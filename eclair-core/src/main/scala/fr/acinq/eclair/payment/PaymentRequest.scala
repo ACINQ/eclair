@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -38,7 +38,7 @@ import scala.util.{Failure, Success, Try}
  * @param tags      payment tags; must include a single PaymentHash tag and a single PaymentSecret tag.
  * @param signature request signature that will be checked against node id
  */
-case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
+case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: TimestampSecond, nodeId: PublicKey, tags: List[PaymentRequest.TaggedField], signature: ByteVector) {
 
   amount.foreach(a => require(a > 0.msat, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHash => }.size == 1, "there must be exactly one payment hash tag")
@@ -87,8 +87,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   lazy val features: PaymentRequestFeatures = tags.collectFirst { case f: PaymentRequestFeatures => f }.getOrElse(PaymentRequestFeatures(BitVector.empty))
 
   def isExpired: Boolean = expiry match {
-    case Some(expiryTime) => timestamp + expiryTime <= System.currentTimeMillis.milliseconds.toSeconds
-    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= System.currentTimeMillis.milliseconds.toSeconds
+    case Some(expiryTime) => timestamp + expiryTime <= TimestampSecond.now
+    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now
   }
 
   /**
@@ -118,7 +118,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
 object PaymentRequest {
 
-  val DEFAULT_EXPIRY_SECONDS = 3600
+  val DEFAULT_EXPIRY_SECONDS: Long = 3600
 
   val prefixes = Map(
     Block.RegtestGenesisBlock.hash -> "lnbcrt",
@@ -135,7 +135,7 @@ object PaymentRequest {
             fallbackAddress: Option[String] = None,
             expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil,
-            timestamp: Long = System.currentTimeMillis() / 1000L,
+            timestamp: TimestampSecond = TimestampSecond.now,
             paymentSecret: ByteVector32 = randomBytes32(),
             features: PaymentRequestFeatures = PaymentRequestFeatures(Features.VariableLengthOnion.mandatory, Features.PaymentSecret.mandatory)): PaymentRequest = {
     require(features.requirePaymentSecret, "invoices must require a payment secret")
@@ -163,7 +163,7 @@ object PaymentRequest {
     ).sign(privateKey)
   }
 
-  case class Bolt11Data(timestamp: Long, taggedFields: List[TaggedField], signature: ByteVector)
+  case class Bolt11Data(timestamp: TimestampSecond, taggedFields: List[TaggedField], signature: ByteVector)
 
   sealed trait TaggedField
 
@@ -444,7 +444,7 @@ object PaymentRequest {
     )
 
     val bolt11DataCodec: Codec[Bolt11Data] = (
-      ("timestamp" | ulong(35)) ::
+      ("timestamp" | ulong(35).xmapc(TimestampSecond(_))(_.toLong)) ::
         ("taggedFields" | fixedSizeTrailingCodec(list(taggedFieldCodec), 520)) ::
         ("signature" | bytes(65))
       ).as[Bolt11Data]
@@ -564,8 +564,8 @@ object PaymentRequest {
     }
     val timestamp = bolt11Data.timestamp
     expiry_opt match {
-      case Some(expiry) => timestamp + expiry.toLong <= System.currentTimeMillis.milliseconds.toSeconds
-      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= System.currentTimeMillis.milliseconds.toSeconds
+      case Some(expiry) => timestamp + expiry.toLong <= TimestampSecond.now
+      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now
     }
   }
 

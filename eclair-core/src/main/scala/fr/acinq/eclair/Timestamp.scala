@@ -16,22 +16,23 @@
 
 package fr.acinq.eclair
 
-import java.time.Instant
 import java.sql
+import java.time.Instant
 import scala.concurrent.duration.FiniteDuration
 
 case class TimestampSecond(private val underlying: Long) extends Ordered[TimestampSecond] {
-  // @formatter: off
+  // @formatter:off
   def toLong: Long = underlying
+  def toTimestampMilli: TimestampMilli = TimestampMilli(underlying * 1000)
   def toSqlTimestamp: sql.Timestamp = sql.Timestamp.from(Instant.ofEpochSecond(underlying))
-  override def toString: String = underlying.toString
+  override def toString: String = s"$underlying unixsec"
   override def compare(that: TimestampSecond): Int = underlying.compareTo(that.underlying)
   def +(x: Long): TimestampSecond = TimestampSecond(underlying + x)
   def -(x: Long): TimestampSecond = TimestampSecond(underlying - x)
   def +(x: FiniteDuration): TimestampSecond = TimestampSecond(underlying + x.toSeconds)
   def -(x: FiniteDuration): TimestampSecond = TimestampSecond(underlying - x.toSeconds)
   def -(x: TimestampSecond): Long = underlying - x.underlying
-  // @formatter: on
+  // @formatter:on
 }
 
 object TimestampSecond {
@@ -39,12 +40,15 @@ object TimestampSecond {
 }
 
 case class TimestampMilli(private val underlying: Long) extends Ordered[TimestampMilli] {
-  // @formatter: off
+  // @formatter:off
   def toLong: Long = underlying
   def toSqlTimestamp: sql.Timestamp = sql.Timestamp.from(Instant.ofEpochMilli(underlying))
-  override def toString: String = underlying.toString
+  override def toString: String = s"$underlying unixms"
   override def compare(that: TimestampMilli): Int = underlying.compareTo(that.underlying)
-  // @formatter: on
+  def +(x: FiniteDuration): TimestampMilli = TimestampMilli(underlying + x.toMillis)
+  def -(x: FiniteDuration): TimestampMilli = TimestampMilli(underlying - x.toMillis)
+  def -(x: TimestampMilli): Long = underlying - x.underlying
+  // @formatter:on
 }
 
 object TimestampMilli {

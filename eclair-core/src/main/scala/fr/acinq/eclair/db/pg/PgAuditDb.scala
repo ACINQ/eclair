@@ -319,11 +319,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
   }
 
-  override def listSent(from: Long, to: Long): Seq[PaymentSent] =
+  override def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent] =
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT * FROM audit.sent WHERE timestamp BETWEEN ? AND ?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery()
           .foldLeft(Map.empty[UUID, PaymentSent]) { (sentByParentId, rs) =>
             val parentId = UUID.fromString(rs.getString("parent_payment_id"))
@@ -349,11 +349,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
+  override def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived] =
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT * FROM audit.received WHERE timestamp BETWEEN ? AND ?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery()
           .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
@@ -370,11 +370,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
+  override def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed] =
     inTransaction { pg =>
       val trampolineByHash = using(pg.prepareStatement("SELECT * FROM audit.relayed_trampoline WHERE timestamp BETWEEN ? and ?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery()
           .foldLeft(Map.empty[ByteVector32, (MilliSatoshi, PublicKey)]) { (trampolineByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
@@ -384,8 +384,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           }
       }
       val relayedByHash = using(pg.prepareStatement("SELECT * FROM audit.relayed WHERE timestamp BETWEEN ? and ?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery()
           .foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
@@ -416,11 +416,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }.toSeq.sortBy(_.timestamp)
     }
 
-  override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
+  override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee] =
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id  WHERE audit.transactions_confirmed.timestamp BETWEEN ? and ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery().map { rs =>
           NetworkFee(
             remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
@@ -428,12 +428,12 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             txId = rs.getByteVector32FromHex("tx_id"),
             fee = Satoshi(rs.getLong("mining_fee_sat")),
             txType = rs.getString("tx_type"),
-            timestamp = rs.getTimestamp("timestamp").getTime)
+            timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
         }.toSeq
       }
     }
 
-  override def stats(from: Long, to: Long): Seq[Stats] = {
+  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats] = {
     val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
       feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
     }

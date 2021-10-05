@@ -22,7 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentFailed, PaymentRequest, RemoteFailure}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.IncorrectOrUnknownPaymentDetails
-import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, randomBytes32, randomLong}
+import fr.acinq.eclair.{MilliSatoshiLong, NodeParams, TimestampSecond, randomBytes32, randomLong}
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration._
@@ -56,7 +56,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
           val fakeInvoice = PaymentRequest(
             PaymentRequest.prefixes(nodeParams.chainHash),
             Some(PAYMENT_AMOUNT_MSAT),
-            System.currentTimeMillis(),
+            TimestampSecond.now,
             targetNodeId,
             List(
               PaymentRequest.PaymentHash(randomBytes32()), // we don't even know the preimage (this needs to be a secure random!)

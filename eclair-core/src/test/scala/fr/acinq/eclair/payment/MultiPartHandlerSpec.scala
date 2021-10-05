@@ -99,7 +99,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = TimestampMilli(0)))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = TimestampMilli(0)) :: Nil))
       val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
       assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = TimestampMilli(0)) === IncomingPaymentStatus.Received(amountMsat, TimestampMilli(0)))
 
       sender.expectNoMessage(50 millis)
     }
@@ -118,7 +118,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = TimestampMilli(0)))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = TimestampMilli(0)) :: Nil))
       val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
       assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = TimestampMilli(0)) === IncomingPaymentStatus.Received(amountMsat, TimestampMilli(0)))
 
       sender.expectNoMessage(50 millis)
     }
@@ -494,7 +494,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = TimestampMilli(0)))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = TimestampMilli(0)) :: Nil))
     val received = nodeParams.db.payments.getIncomingPayment(paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0) === IncomingPaymentStatus.Received(amountMsat, 0))
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = TimestampMilli(0)) === IncomingPaymentStatus.Received(amountMsat, TimestampMilli(0)))
   }
 
   test("PaymentHandler should reject KeySend payment when feature is disabled") { f =>

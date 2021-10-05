@@ -31,7 +31,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams}
+import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -104,7 +104,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
         if (cfg.storeInDb && d.pending.isEmpty && d.failures.isEmpty) {
           // In cases where we fail early (router error during the first attempt), the DB won't have an entry for that
           // payment, which may be confusing for users.
-          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending)
+          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now, cfg.paymentRequest, OutgoingPaymentStatus.Pending)
           nodeParams.db.payments.addOutgoingPayment(dummyPayment)
           nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, paymentHash, failure :: Nil))
         }

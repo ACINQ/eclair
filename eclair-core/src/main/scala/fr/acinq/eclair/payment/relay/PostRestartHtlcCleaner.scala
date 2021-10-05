@@ -155,7 +155,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
                 val succeeded = payments.collect {
                   case OutgoingPayment(id, _, _, _, _, amount, _, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
-                    PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, TimestampMilli(completedAt))
+                    PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
                 }
                 val sent = PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, succeeded)
                 log.info(s"payment id=${sent.id} paymentHash=${sent.paymentHash} successfully sent (amount=${sent.recipientAmount})")
@@ -167,7 +167,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               // dummy values in the DB (to make sure we store the preimage) but we don't emit an event.
               val dummyFinalAmount = fulfilledHtlc.amountMsat
               val dummyNodeId = nodeParams.nodeId
-              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, System.currentTimeMillis, None, OutgoingPaymentStatus.Pending))
+              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, TimestampMilli.now, None, OutgoingPaymentStatus.Pending))
               nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
           }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is

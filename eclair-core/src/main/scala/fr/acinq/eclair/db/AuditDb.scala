@@ -18,6 +18,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
+import fr.acinq.eclair.{TimestampMilli, TimestampSecond}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -45,21 +46,21 @@ trait AuditDb extends Closeable {
 
   def addPathFindingExperimentMetrics(metrics: PathFindingExperimentMetrics): Unit
 
-  def listSent(from: Long, to: Long): Seq[PaymentSent]
+  def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent]
 
-  def listReceived(from: Long, to: Long): Seq[PaymentReceived]
+  def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived]
 
-  def listRelayed(from: Long, to: Long): Seq[PaymentRelayed]
+  def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed]
 
-  def listNetworkFees(from: Long, to: Long): Seq[NetworkFee]
+  def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee]
 
-  def stats(from: Long, to: Long): Seq[Stats]
+  def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats]
 
 }
 
 object AuditDb {
 
-  case class NetworkFee(remoteNodeId: PublicKey, channelId: ByteVector32, txId: ByteVector32, fee: Satoshi, txType: String, timestamp: Long)
+  case class NetworkFee(remoteNodeId: PublicKey, channelId: ByteVector32, txId: ByteVector32, fee: Satoshi, txType: String, timestamp: TimestampMilli)
 
   case class Stats(channelId: ByteVector32, direction: String, avgPaymentAmount: Satoshi, paymentCount: Int, relayFee: Satoshi, networkFee: Satoshi)
 

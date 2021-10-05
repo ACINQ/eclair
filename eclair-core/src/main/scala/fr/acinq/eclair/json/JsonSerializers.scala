@@ -332,7 +332,7 @@ object PaymentRequestSerializer extends MinimalSerializer({
         CltvExpiryDeltaSerializer
     ))
     val fieldList = List(JField("prefix", JString(p.prefix)),
-      JField("timestamp", JLong(p.timestamp)),
+      JField("timestamp", JLong(p.timestamp.toLong)),
       JField("nodeId", JString(p.nodeId.toString())),
       JField("serialized", JString(PaymentRequest.write(p))),
       p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),

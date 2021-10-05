@@ -138,7 +138,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
             case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(paymentHash).foreach(record => {
               PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
               val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
-              db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp.toLong)
+              db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)
               ctx.system.eventStream.publish(received)
             })
           }
@@ -151,7 +151,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         val received = PaymentReceived(paymentHash, parts.map {
           case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
         })
-        db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp.toLong)
+        db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
         parts.collect {
           case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
         }
