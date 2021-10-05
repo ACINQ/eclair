@@ -56,6 +56,8 @@ Do note that anchor outputs may still be unsafe in high-fee environments until t
 ### Configurable dust tolerance
 
 Dust HTLCs are converted to miner fees when a channel is force-closed and these HTLCs are still pending.
+This can be used as a griefing attack by malicious peers, as described in [CVE-2021-41591](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-41591).
+
 Node operators can now configure the maximum amount of dust HTLCs that can be pending in a channel by setting `eclair.on-chain-fees.feerate-tolerance.max-dust-htlc-exposure-satoshis` in their `eclair.conf`.
 
 Choosing the right value for your node involves trade-offs.
@@ -69,6 +71,10 @@ This parameter is deactivated by default and unnecessary when using `option_anch
 
 Note that you can override these values for specific peers, thanks to the `eclair.on-chain-fees.override-feerate-tolerance` mechanism.
 You can for example set a high `eclair.on-chain-fees.feerate-tolerance.max-dust-htlc-exposure-satoshis` with peers that you trust.
+
+Note that if you were previously running eclair with the default configuration, your exposure to this issue was quite low because the default `max-accepted-htlc` is set to 30.
+With an on-chain feerate of `10 sat/byte`, your maximum exposure would be ~70 000 satoshis per channel.
+With an on-chain feerate of `5 sat/byte`, your maximum exposure would be ~40 000 satoshis per channel.
 
 ### Path-finding improvements
 
