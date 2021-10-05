@@ -263,7 +263,7 @@ private class ZmqWatcher(nodeParams: NodeParams, blockCount: AtomicLong, client:
       case CheckBlockCount(count) =>
         val current = blockCount.get()
         if (count > current) {
-          log.warn("block {} wasn't received via ZMQ, you should verify your bitcoind node", count)
+          log.warn("block {} wasn't received via ZMQ, you should verify that your bitcoind node is running", count)
           context.self ! TickNewBlock
         }
         Behaviors.same
