@@ -267,9 +267,10 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
   }
 
   test("serialize timestamps") {
-    val ts = TimestampSecond(1625746196)
-    println(JsonSerializers.serialization.write(ts)(JsonSerializers.formats))
-    //JsonSerializers.serialization.write(ts)(JsonSerializers.formats) shouldBe """{"iso":"2021-10-04T14:32:41Z","unix":1633357961}"""
+    val ts = TimestampSecond(1633357961)
+    JsonSerializers.serialization.write(ts)(JsonSerializers.formats) shouldBe """{"iso":"2021-10-04T14:32:41Z","unix":1633357961}"""
+    val tsms = TimestampMilli(1633357961456L)
+    JsonSerializers.serialization.write(ts)(JsonSerializers.formats) shouldBe """{"iso":"2021-10-04T14:32:41Z","unix":1633357961}"""
   }
 
   /** utility method that strips line breaks in the expected json */
