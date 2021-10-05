@@ -184,7 +184,7 @@ class StartupSpec extends AnyFunSuite {
         |        ratio-low = 0.75
         |        ratio-high = 5.0
         |        anchor-output-max-commit-feerate = 5
-        |        max-dust-htlc-exposure-satoshis = 50000
+        |        max-dust-htlc-exposure-satoshis = 40000
         |        close-on-update-fee-dust-exposure-overflow = false
         |      }
         |    },
@@ -194,8 +194,8 @@ class StartupSpec extends AnyFunSuite {
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
     assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")) === FeerateTolerance(0.1, 15.0, FeeratePerKw(FeeratePerByte(15 sat)), 25_000 sat, closeOnUpdateFeeDustExposureOverflow = true))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")) === FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat)), 50_000 sat, closeOnUpdateFeeDustExposureOverflow = false))
-    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat)), 100_000 sat, closeOnUpdateFeeDustExposureOverflow = false))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")) === FeerateTolerance(0.75, 5.0, FeeratePerKw(FeeratePerByte(5 sat)), 40_000 sat, closeOnUpdateFeeDustExposureOverflow = false))
+    assert(nodeParams.onChainFeeConf.feerateToleranceFor(PublicKey(hex"02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")) === FeerateTolerance(0.5, 10.0, FeeratePerKw(FeeratePerByte(10 sat)), 50_000 sat, closeOnUpdateFeeDustExposureOverflow = false))
   }
 
   test("NodeParams should fail if htlc-minimum-msat is set to 0") {
