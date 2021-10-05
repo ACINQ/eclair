@@ -18,13 +18,10 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
-import fr.acinq.eclair.router.Announcements.isNode1
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampSecond, serializationResult}
-import scodec.bits.{BitVector, ByteVector}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
+import scodec.bits.ByteVector
 import shapeless.HNil
-
-import scala.concurrent.duration._
 
 /**
  * Created by PM on 03/02/2017.
@@ -108,7 +105,7 @@ object Announcements {
    * @return true if channel updates are "equal"
    */
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
-    u1.copy(signature = ByteVector64.Zeroes, timestamp = TimestampSecond(0)) == u2.copy(signature = ByteVector64.Zeroes, timestamp = TimestampSecond(0))
+    u1.copy(signature = ByteVector64.Zeroes, timestamp = 0 unix) == u2.copy(signature = ByteVector64.Zeroes, timestamp = 0 unix)
 
   def areSameIgnoreFlags(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
     u1.feeBaseMsat == u2.feeBaseMsat &&

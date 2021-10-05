@@ -687,7 +687,7 @@ object MultiPartPaymentLifecycleSpec {
   val channelId_ce = ShortChannelId(13)
   val channelId_ad = ShortChannelId(21)
   val channelId_de = ShortChannelId(22)
-  val defaultChannelUpdate = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(0), TimestampSecond(0), ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, Some(2000000 msat))
+  val defaultChannelUpdate = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(0), 0 unix, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(12), 1 msat, 100 msat, 0, Some(2000000 msat))
   val channelUpdate_ab_1 = defaultChannelUpdate.copy(shortChannelId = channelId_ab_1)
   val channelUpdate_ab_2 = defaultChannelUpdate.copy(shortChannelId = channelId_ab_2)
   val channelUpdate_be = defaultChannelUpdate.copy(shortChannelId = channelId_be)

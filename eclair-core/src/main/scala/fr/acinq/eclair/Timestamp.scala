@@ -52,7 +52,8 @@ case class TimestampMilli(private val underlying: Long) extends Ordered[Timestam
 }
 
 object TimestampMilli {
+  // @formatter:off
   def now: TimestampMilli = TimestampMilli(System.currentTimeMillis())
-
   def fromSqlTimestamp(sqlTs: sql.Timestamp): TimestampMilli = TimestampMilli(sqlTs.getTime)
+  // @formatter:on
 }

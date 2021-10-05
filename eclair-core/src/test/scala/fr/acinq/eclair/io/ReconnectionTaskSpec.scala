@@ -48,7 +48,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
     if (test.tags.contains("with_node_announcements")) {
-      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(1), remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unix, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
@@ -116,7 +116,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // NB: we change the data to make it appear like we have been connected for a long time
-    reconnectionTask.setState(stateData = reconnectionTask.stateData.asInstanceOf[ReconnectionTask.IdleData].copy(since = TimestampMilli(0)))
+    reconnectionTask.setState(stateData = reconnectionTask.stateData.asInstanceOf[ReconnectionTask.IdleData].copy(since = 0 unixms))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // disconnection
@@ -208,7 +208,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // we create a dummy tcp server and update bob's announcement to point to it
     val (mockServer, serverAddress) = PeerSpec.createMockServer()
     val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
-    val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(1), remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unix, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(bobAnnouncement)
 
     val peer = TestProbe()

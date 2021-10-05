@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.Onion.FinalTlvPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, TimestampMilli, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -96,10 +96,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = TimestampMilli(0)))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = TimestampMilli(0)) :: Nil))
+      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
       val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
       assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = TimestampMilli(0)) === IncomingPaymentStatus.Received(amountMsat, TimestampMilli(0)))
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) === IncomingPaymentStatus.Received(amountMsat, 0 unixms))
 
       sender.expectNoMessage(50 millis)
     }
@@ -115,10 +115,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
 
       val paymentReceived = eventListener.expectMsgType[PaymentReceived]
-      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = TimestampMilli(0)))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = TimestampMilli(0)) :: Nil))
+      assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
       val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
       assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = TimestampMilli(0)) === IncomingPaymentStatus.Received(amountMsat, TimestampMilli(0)))
+      assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) === IncomingPaymentStatus.Received(amountMsat, 0 unixms))
 
       sender.expectNoMessage(50 millis)
     }
@@ -414,7 +414,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     )
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
-    assert(paymentReceived.parts.map(_.copy(timestamp = TimestampMilli(0))).toSet === Set(PartialPayment(800 msat, ByteVector32.One, TimestampMilli(0)), PartialPayment(200 msat, ByteVector32.Zeroes, TimestampMilli(0))))
+    assert(paymentReceived.parts.map(_.copy(timestamp = 0 unixms)).toSet === Set(PartialPayment(800 msat, ByteVector32.One, 0 unixms), PartialPayment(200 msat, ByteVector32.Zeroes, 0 unixms)))
     val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
     assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1000.msat)
@@ -465,7 +465,7 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val paymentReceived = f.eventListener.expectMsgType[PaymentReceived]
     assert(paymentReceived.paymentHash === pr.paymentHash)
-    assert(paymentReceived.parts.map(_.copy(timestamp = TimestampMilli(0))).toSet === Set(PartialPayment(300 msat, ByteVector32.One, TimestampMilli(0)), PartialPayment(700 msat, ByteVector32.Zeroes, TimestampMilli(0))))
+    assert(paymentReceived.parts.map(_.copy(timestamp = 0 unixms)).toSet === Set(PartialPayment(300 msat, ByteVector32.One, 0 unixms), PartialPayment(700 msat, ByteVector32.Zeroes, 0 unixms)))
     val received = nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
     assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].amount === 1000.msat)
@@ -491,10 +491,10 @@ class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
 
     val paymentReceived = eventListener.expectMsgType[PaymentReceived]
-    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = TimestampMilli(0)))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = TimestampMilli(0)) :: Nil))
+    assert(paymentReceived.copy(parts = paymentReceived.parts.map(_.copy(timestamp = 0 unixms))) === PaymentReceived(add.paymentHash, PartialPayment(amountMsat, add.channelId, timestamp = 0 unixms) :: Nil))
     val received = nodeParams.db.payments.getIncomingPayment(paymentHash)
     assert(received.isDefined && received.get.status.isInstanceOf[IncomingPaymentStatus.Received])
-    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = TimestampMilli(0)) === IncomingPaymentStatus.Received(amountMsat, TimestampMilli(0)))
+    assert(received.get.status.asInstanceOf[IncomingPaymentStatus.Received].copy(receivedAt = 0 unixms) === IncomingPaymentStatus.Received(amountMsat, 0 unixms))
   }
 
   test("PaymentHandler should reject KeySend payment when feature is disabled") { f =>

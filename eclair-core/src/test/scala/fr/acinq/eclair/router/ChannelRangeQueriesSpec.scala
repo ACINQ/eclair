@@ -23,7 +23,7 @@ import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.protocol.QueryShortChannelIdsTlv.QueryFlagType._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
 import fr.acinq.eclair.wire.protocol.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
-import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId, TimestampSecond, randomKey}
+import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
 
@@ -36,7 +36,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
 
   test("ask for update test") {
     // they don't provide anything => we always ask for the update
-    assert(shouldRequestUpdate(TimestampSecond(0), 0, None, None))
+    assert(shouldRequestUpdate(0 unix, 0, None, None))
     assert(shouldRequestUpdate(TimestampSecond(Int.MaxValue), 12345, None, None))
 
     // their update is older => don't ask
@@ -66,7 +66,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     assert(shouldRequestUpdate(now - 1, 12344, Some(now), Some(12345)))
 
     // they just provided a 0 checksum => don't ask
-    assert(!shouldRequestUpdate(TimestampSecond(0), 0, None, Some(0)))
+    assert(!shouldRequestUpdate(0 unix, 0, None, Some(0)))
     assert(!shouldRequestUpdate(now, 1234, None, Some(0)))
 
     // they just provided a checksum that is the same as us => don't ask

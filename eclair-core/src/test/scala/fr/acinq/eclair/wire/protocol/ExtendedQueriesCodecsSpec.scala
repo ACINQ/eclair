@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, UInt64}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, UInt64}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -118,7 +118,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       1, 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
-      Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(TimestampSecond(1), TimestampSecond(1)), Timestamps(TimestampSecond(2), TimestampSecond(2)), Timestamps(TimestampSecond(3), TimestampSecond(3))))),
+      Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unix, 1 unix), Timestamps(2 unix, 2 unix), Timestamps(3 unix, 3 unix)))),
       None)
 
     val encoded = replyChannelRangeCodec.encode(replyChannelRange).require
@@ -134,7 +134,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       TlvStream(
         List(
-          EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(TimestampSecond(1), TimestampSecond(1)), Timestamps(TimestampSecond(2), TimestampSecond(2)), Timestamps(TimestampSecond(3), TimestampSecond(3)))),
+          EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unix, 1 unix), Timestamps(2 unix, 2 unix), Timestamps(3 unix, 3 unix))),
           EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3)))
         ),
         GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef")) :: Nil

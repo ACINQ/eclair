@@ -18,13 +18,13 @@ package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.{MilliSatoshi, TimestampMilli}
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.protocol.CommonCodecs
+import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.BitVector
@@ -178,7 +178,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
           case Attempt.Successful(route) => route.value
           case Attempt.Failure(_) => Nil
         }).getOrElse(Nil),
-        completedAt_opt.getOrElse(TimestampMilli(0))
+        completedAt_opt.getOrElse(0 unixms)
       )
       case None => completedAt_opt match {
         // Otherwise if the payment was marked completed, it's a failure.
@@ -274,7 +274,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
 
   private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedPaymentRequest_opt: Option[String], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
     amount_opt match {
-      case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(TimestampMilli(0)))
+      case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0 unixms))
       case None if serializedPaymentRequest_opt.exists(PaymentRequest.fastHasExpired) => IncomingPaymentStatus.Expired
       case None => IncomingPaymentStatus.Pending
     }
