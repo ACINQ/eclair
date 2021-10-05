@@ -74,7 +74,7 @@ class AuditDbSpec extends AnyFunSuite {
       val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = TimestampMilli(0))
       val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32(), None, timestamp = TimestampMilli(1))
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil)
-      val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = TimestampMilli((System.currentTimeMillis.milliseconds + 10.minutes).toMillis))
+      val pp6 = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = TimestampMilli.now + 10.minutes)
       val e6 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 42000 msat, randomKey().publicKey, pp6 :: Nil)
       val e7 = ChannelEvent(randomBytes32(), randomKey().publicKey, 456123000 sat, isFunder = true, isPrivate = false, ChannelEvent.EventType.Closed(MutualClose(null)))
       val e8 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
@@ -760,7 +760,7 @@ class AuditDbSpec extends AnyFunSuite {
 
   test("add experiment metrics") {
     forAllDbs { dbs =>
-      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(100000000 msat, 3000 msat, status = "SUCCESS", 37, System.currentTimeMillis, isMultiPart = false, "my-test-experiment", randomKey().publicKey))
+      dbs.audit.addPathFindingExperimentMetrics(PathFindingExperimentMetrics(100000000 msat, 3000 msat, status = "SUCCESS", 37 millis, TimestampMilli.now, isMultiPart = false, "my-test-experiment", randomKey().publicKey))
     }
   }
 

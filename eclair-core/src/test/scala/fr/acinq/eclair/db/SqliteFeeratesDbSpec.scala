@@ -76,7 +76,7 @@ class SqliteFeeratesDbSpec extends AnyFunSuite {
       statement.setLong(5, feerate.blocks_36.toLong)
       statement.setLong(6, feerate.blocks_72.toLong)
       statement.setLong(7, feerate.blocks_144.toLong)
-      statement.setLong(8, System.currentTimeMillis())
+      statement.setLong(8, TimestampMilli.now.toLong)
       statement.executeUpdate()
     }
 

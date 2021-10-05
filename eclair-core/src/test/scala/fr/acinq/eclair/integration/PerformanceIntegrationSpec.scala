@@ -19,7 +19,7 @@ package fr.acinq.eclair.integration
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.SatoshiLong
-import fr.acinq.eclair.MilliSatoshiLong
+import fr.acinq.eclair.{MilliSatoshiLong, TimestampMilli}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -97,14 +97,14 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val SENDERS_COUNT = 16
     val PAYMENTS_COUNT = 3_000
     val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(SENDERS_COUNT))
-    val start = System.currentTimeMillis()
+    val start = TimestampMilli.now
     val futures = (0 until PAYMENTS_COUNT).map(_ => sendPayment()(ec))
     implicit val dummyEc: ExecutionContext = ExecutionContext.Implicits.global
     val f = Future.sequence(futures)
     Await.result(f, 1 hour)
-    val end = System.currentTimeMillis()
+    val end = TimestampMilli.now
     val duration = end - start
-    println(s"$PAYMENTS_COUNT payments in ${duration}ms ${PAYMENTS_COUNT * 1000 / duration}htlc/s (senders=$SENDERS_COUNT)")
+    println(s"$PAYMENTS_COUNT payments in ${duration.toMillis}ms ${PAYMENTS_COUNT * 1000 / duration.toMillis}htlc/s (senders=$SENDERS_COUNT)")
   }
 
 }

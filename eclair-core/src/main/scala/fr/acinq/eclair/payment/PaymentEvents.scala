@@ -27,6 +27,7 @@ import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, Temp
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
 
 import java.util.UUID
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -250,8 +251,8 @@ object PaymentFailure {
 case class PathFindingExperimentMetrics(amount: MilliSatoshi,
                                         fees: MilliSatoshi,
                                         status: String,
-                                        duration: Long,
-                                        timestamp: Long,
+                                        duration: FiniteDuration,
+                                        timestamp: TimestampMilli,
                                         isMultiPart: Boolean,
                                         experimentName: String,
                                         recipientNodeId: PublicKey)

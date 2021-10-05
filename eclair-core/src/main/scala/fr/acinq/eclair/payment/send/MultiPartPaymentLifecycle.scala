@@ -52,7 +52,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
 
   val id = cfg.id
   val paymentHash = cfg.paymentHash
-  val start = System.currentTimeMillis
+  val start = TimestampMilli.now
   private var retriedFailedChannels = false
 
   startWith(WAIT_FOR_PAYMENT_REQUEST, WaitingForRequest)
@@ -244,7 +244,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
           "FAILURE"
         }
     }
-    val now = System.currentTimeMillis
+    val now = TimestampMilli.now
     val duration = now - start
     if (cfg.recordPathFindingMetrics) {
       val fees = event match {
@@ -268,7 +268,7 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, Tags.MultiPartType.Parent)
       .withTag(Tags.Success, value = status == "SUCCESS")
-      .record(duration, TimeUnit.MILLISECONDS)
+      .record(duration.toMillis, TimeUnit.MILLISECONDS)
     if (retriedFailedChannels) {
       Metrics.RetryFailedChannelsResult.withTag(Tags.Success, event.isRight).increment()
     }

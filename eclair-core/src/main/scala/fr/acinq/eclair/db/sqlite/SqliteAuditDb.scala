@@ -177,7 +177,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBoolean(4, e.isFunder)
       statement.setBoolean(5, e.isPrivate)
       statement.setString(6, e.event.label)
-      statement.setLong(7, System.currentTimeMillis)
+      statement.setLong(7, TimestampMilli.now.toLong)
       statement.executeUpdate()
     }
   }
@@ -251,7 +251,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(3, e.remoteNodeId.value.toArray)
       statement.setLong(4, e.miningFee.toLong)
       statement.setString(5, e.desc)
-      statement.setLong(6, System.currentTimeMillis)
+      statement.setLong(6, TimestampMilli.now.toLong)
       statement.executeUpdate()
     }
   }
@@ -261,7 +261,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setBytes(1, e.tx.txid.toArray)
       statement.setBytes(2, e.channelId.toArray)
       statement.setBytes(3, e.remoteNodeId.value.toArray)
-      statement.setLong(4, System.currentTimeMillis)
+      statement.setLong(4, TimestampMilli.now.toLong)
       statement.executeUpdate()
     }
   }
@@ -277,7 +277,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setString(3, errorName)
       statement.setString(4, errorMessage)
       statement.setBoolean(5, e.isFatal)
-      statement.setLong(6, System.currentTimeMillis)
+      statement.setLong(6, TimestampMilli.now.toLong)
       statement.executeUpdate()
     }
   }
@@ -291,7 +291,7 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(5, u.channelUpdate.cltvExpiryDelta.toInt)
       statement.setLong(6, u.channelUpdate.htlcMinimumMsat.toLong)
       statement.setLong(7, u.channelUpdate.htlcMaximumMsat.map(_.toLong).getOrElse(-1))
-      statement.setLong(8, System.currentTimeMillis)
+      statement.setLong(8, TimestampMilli.now.toLong)
       statement.executeUpdate()
     }
   }
@@ -301,8 +301,8 @@ class SqliteAuditDb(sqlite: Connection) extends AuditDb with Logging {
       statement.setLong(1, m.amount.toLong)
       statement.setLong(2, m.fees.toLong)
       statement.setString(3, m.status)
-      statement.setLong(4, m.duration)
-      statement.setLong(5, m.timestamp)
+      statement.setLong(4, m.duration.toMillis)
+      statement.setLong(5, m.timestamp.toLong)
       statement.setBoolean(6, m.isMultiPart)
       statement.setString(7, m.experimentName)
       statement.setBytes(8, m.recipientNodeId.value.toArray)

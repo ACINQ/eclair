@@ -51,9 +51,9 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     import org.scalatest.matchers.should.Matchers._
     implicit val log: akka.event.DiagnosticLoggingAdapter = NoLoggingDiagnostics
     Helpers.nextChannelUpdateRefresh(TimestampSecond(1544400000)).toSeconds should equal(0)
-    Helpers.nextChannelUpdateRefresh(TimestampSecond((System.currentTimeMillis.milliseconds - 9.days).toSeconds)).toSeconds should equal(24 * 3600L +- 100)
-    Helpers.nextChannelUpdateRefresh(TimestampSecond((System.currentTimeMillis.milliseconds - 3.days).toSeconds)).toSeconds should equal(7 * 24 * 3600L +- 100)
-    Helpers.nextChannelUpdateRefresh(TimestampSecond(System.currentTimeMillis.milliseconds.toSeconds)).toSeconds should equal(10 * 24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh(TimestampSecond.now - 9.days).toSeconds should equal(24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh(TimestampSecond.now - 3.days).toSeconds should equal(7 * 24 * 3600L +- 100)
+    Helpers.nextChannelUpdateRefresh(TimestampSecond.now).toSeconds should equal(10 * 24 * 3600L +- 100)
   }
 
   case class Fixture(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceCommitPublished: LocalCommitPublished, aliceHtlcs: Set[UpdateAddHtlc], bob: TestFSMRef[ChannelState, ChannelData, Channel], bobCommitPublished: RemoteCommitPublished, bobHtlcs: Set[UpdateAddHtlc], probe: TestProbe)

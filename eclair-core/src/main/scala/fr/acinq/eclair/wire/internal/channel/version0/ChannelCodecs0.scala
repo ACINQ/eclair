@@ -18,6 +18,7 @@ package fr.acinq.eclair.wire.internal.channel.version0
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.TimestampSecond
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -352,7 +353,7 @@ private[channel] object ChannelCodecs0 {
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | provide[Option[Transaction]](None)) ::
-        ("waitingSince" | provide(System.currentTimeMillis.milliseconds.toSeconds)) ::
+        ("waitingSince" | provide(TimestampSecond.now.toLong)) ::
         ("deferred" | optional(bool, fundingLockedCodec)) ::
         ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
@@ -411,7 +412,7 @@ private[channel] object ChannelCodecs0 {
     val DATA_CLOSING_COMPAT_06_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | provide[Option[Transaction]](None)) ::
-        ("waitingSince" | provide(System.currentTimeMillis.milliseconds.toSeconds)) ::
+        ("waitingSince" | provide(TimestampSecond.now.toLong)) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
         ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.{CltvExpiry, TimestampMilli}
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -120,7 +120,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
    */
   private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
     using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
-      statement.setLong(1, System.currentTimeMillis)
+      statement.setLong(1, TimestampMilli.now.toLong)
       statement.setBytes(2, channelId.toArray)
       statement.executeUpdate()
     }

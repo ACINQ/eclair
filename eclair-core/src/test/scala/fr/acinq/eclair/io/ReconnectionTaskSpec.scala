@@ -116,7 +116,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // NB: we change the data to make it appear like we have been connected for a long time
-    reconnectionTask.setState(stateData = reconnectionTask.stateData.asInstanceOf[ReconnectionTask.IdleData].copy(since = 0.seconds))
+    reconnectionTask.setState(stateData = reconnectionTask.stateData.asInstanceOf[ReconnectionTask.IdleData].copy(since = TimestampMilli(0)))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // disconnection

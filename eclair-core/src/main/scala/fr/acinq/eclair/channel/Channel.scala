@@ -544,7 +544,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             originChannels = Map.empty,
             remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
             commitInput, ShaChain.init)
-          val now = System.currentTimeMillis.milliseconds.toSeconds
+          val blockHeight = nodeParams.currentBlockHeight
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
           watchFundingTx(commitments)
@@ -567,7 +567,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             }
           }
 
-          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), now, None, Left(fundingCreated)) storing() calling publishFundingTx()
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, Some(fundingTx), blockHeight, None, Left(fundingCreated)) storing() calling publishFundingTx()
       }
 
     case Event(c: CloseCommand, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
@@ -1019,7 +1019,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       goto(NORMAL) using d.copy(channelUpdate = channelUpdate1) storing()
 
     case Event(BroadcastChannelUpdate(reason), d: DATA_NORMAL) =>
-      val age = (TimestampSecond.now - d.channelUpdate.timestamp).seconds
+      val age = TimestampSecond.now - d.channelUpdate.timestamp
       val channelUpdate1 = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, d.commitments.capacity.toMilliSatoshi, enable = Helpers.aboveReserve(d.commitments))
       reason match {
         case Reconnected if d.commitments.announceChannel && Announcements.areSame(channelUpdate1, d.channelUpdate) && age < REFRESH_CHANNEL_UPDATE_INTERVAL =>
