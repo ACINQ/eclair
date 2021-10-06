@@ -24,7 +24,6 @@ import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
@@ -57,18 +56,9 @@ case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, co
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
-case class TimestampQueryFilters(from: TimestampMilli, to: TimestampMilli)
-
 case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector)
 
 case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
-
-object TimestampQueryFilters {
-  def getDefaultTimestampFilters(from: TimestampSecond, to: TimestampSecond): TimestampQueryFilters = {
-    // NB: we expect callers to use seconds, but internally we use milli-seconds everywhere.
-    TimestampQueryFilters(from = TimestampMilli(from.toLong * 1000), to = TimestampMilli(to.toLong * 1000))
-  }
-}
 
 object SignedMessage {
   def signedBytes(message: ByteVector): ByteVector32 =
@@ -375,34 +365,30 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def audit(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[AuditResponse] = {
-    val filter = getDefaultTimestampFilters(from, to)
     Future(AuditResponse(
-      sent = appKit.nodeParams.db.audit.listSent(filter.from, filter.to),
-      received = appKit.nodeParams.db.audit.listReceived(filter.from, filter.to),
-      relayed = appKit.nodeParams.db.audit.listRelayed(filter.from, filter.to)
+      sent = appKit.nodeParams.db.audit.listSent(from.toTimestampMilli, to.toTimestampMilli),
+      received = appKit.nodeParams.db.audit.listReceived(from.toTimestampMilli, to.toTimestampMilli),
+      relayed = appKit.nodeParams.db.audit.listRelayed(from.toTimestampMilli, to.toTimestampMilli)
     ))
   }
 
   override def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]] = {
-    val filter = getDefaultTimestampFilters(from, to)
-    Future(appKit.nodeParams.db.audit.listNetworkFees(filter.from, filter.to))
+    //val filter = TimestampQueryFilters(from, to)
+    Future(appKit.nodeParams.db.audit.listNetworkFees(from.toTimestampMilli, to.toTimestampMilli))
   }
 
   override def channelStats(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Stats]] = {
-    val filter = getDefaultTimestampFilters(from, to)
-    Future(appKit.nodeParams.db.audit.stats(filter.from, filter.to))
+    Future(appKit.nodeParams.db.audit.stats(from.toTimestampMilli, to.toTimestampMilli))
   }
 
   override def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]] = (appKit.router ? GetNetworkStats).mapTo[GetNetworkStatsResponse].map(_.stats)
 
   override def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
-    val filter = getDefaultTimestampFilters(from, to)
-    appKit.nodeParams.db.payments.listIncomingPayments(filter.from, filter.to).map(_.paymentRequest)
+    appKit.nodeParams.db.payments.listIncomingPayments(from.toTimestampMilli, to.toTimestampMilli).map(_.paymentRequest)
   }
 
   override def pendingInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
-    val filter = getDefaultTimestampFilters(from, to)
-    appKit.nodeParams.db.payments.listPendingIncomingPayments(filter.from, filter.to).map(_.paymentRequest)
+    appKit.nodeParams.db.payments.listPendingIncomingPayments(from.toTimestampMilli, to.toTimestampMilli).map(_.paymentRequest)
   }
 
   override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = Future {
