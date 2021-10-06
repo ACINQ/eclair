@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64}
+import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -79,10 +79,15 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
 
   test("recv FundingSigned with valid signature") { f =>
     import f._
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-    alice2blockchain.expectMsgType[WatchFundingSpent]
+    val fundingTxId = alice2blockchain.expectMsgType[WatchFundingSpent].txId
+    val txPublished = listener.expectMsgType[TransactionPublished]
+    assert(txPublished.tx.txid === fundingTxId)
+    assert(txPublished.miningFee > 0.sat)
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
   }

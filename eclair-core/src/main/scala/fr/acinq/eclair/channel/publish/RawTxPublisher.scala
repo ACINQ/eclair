@@ -119,7 +119,7 @@ private class RawTxPublisher(nodeParams: NodeParams,
 
   def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishRawTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input)
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, cmd.desc, cmd.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, cmd.tx))
       case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) => sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, reason))

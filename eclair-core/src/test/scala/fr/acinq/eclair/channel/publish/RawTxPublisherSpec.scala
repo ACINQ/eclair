@@ -80,7 +80,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val priv = dumpPrivateKey(address)
     val parentTx = sendToAddress(address, 125_000 sat, probe)
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, sequence = 5, lockTime = 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-time-locks", None)
+    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-time-locks", 0 sat, None)
     publisher ! Publish(probe.ref, cmd)
 
     val w = watcher.expectMsgType[WatchParentTxConfirmed]
@@ -111,7 +111,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val ancestorTx = sendToAddress(address, 125_000 sat, probe)
     val parentTx = createSpendP2WPKH(ancestorTx, priv, priv.publicKey, 2_500 sat, 0, 0)
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_000 sat, 0, 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-with-parent", Some(parentTx.txid))
+    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-with-parent", 10 sat, Some(parentTx.txid))
     publisher ! Publish(probe.ref, cmd)
 
     // Since the parent is not published yet, we can't publish the child tx either:
@@ -135,7 +135,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val priv = dumpPrivateKey(address)
     val parentTx = sendToAddress(address, 125_000 sat, probe)
     val tx1 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, 0, 0)
-    val cmd = PublishRawTx(tx1, tx1.txIn.head.outPoint, "tx-time-locks", None)
+    val cmd = PublishRawTx(tx1, tx1.txIn.head.outPoint, "tx-time-locks", 10 sat, None)
     publisher ! Publish(probe.ref, cmd)
     waitTxInMempool(bitcoinClient, tx1.txid, probe)
 
@@ -160,7 +160,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     import f._
 
     val tx = sendToAddress(getNewAddress(probe), 125_000 sat, probe)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", None)
+    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", 10 sat, None)
     publisher ! Publish(probe.ref, cmd)
 
     probe.watch(publisher.toClassic)

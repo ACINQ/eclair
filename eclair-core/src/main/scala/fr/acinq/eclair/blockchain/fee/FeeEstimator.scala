@@ -26,6 +26,7 @@ trait FeeEstimator {
   // @formatter:off
   def getFeeratePerKb(target: Int): FeeratePerKB
   def getFeeratePerKw(target: Int): FeeratePerKw
+  def getMempoolMinFeeratePerKw(): FeeratePerKw
   // @formatter:on
 }
 
@@ -43,7 +44,8 @@ case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMax
       case ChannelTypes.Standard | ChannelTypes.StaticRemoteKey =>
         proposedFeerate < networkFeerate * ratioLow || networkFeerate * ratioHigh < proposedFeerate
       case ChannelTypes.AnchorOutputs | ChannelTypes.AnchorOutputsZeroFeeHtlcTx =>
-        proposedFeerate < networkFeerate * ratioLow || anchorOutputMaxCommitFeerate * ratioHigh < proposedFeerate
+        // when using anchor outputs, we allow any feerate: fees will be set with CPFP and RBF at broadcast time
+        false
     }
   }
 }
@@ -66,13 +68,16 @@ case class OnChainFeeConf(feeTargets: FeeTargets, feeEstimator: FeeEstimator, cl
    * @param currentFeerates_opt if provided, will be used to compute the most up-to-date network fee, otherwise we rely on the fee estimator
    */
   def getCommitmentFeerate(remoteNodeId: PublicKey, channelType: SupportedChannelType, channelCapacity: Satoshi, currentFeerates_opt: Option[CurrentFeerates]): FeeratePerKw = {
-    val networkFeerate = currentFeerates_opt match {
-      case Some(currentFeerates) => currentFeerates.feeratesPerKw.feePerBlock(feeTargets.commitmentBlockTarget)
-      case None => feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
+    val (networkFeerate, networkMinFee) = currentFeerates_opt match {
+      case Some(currentFeerates) => (currentFeerates.feeratesPerKw.feePerBlock(feeTargets.commitmentBlockTarget), currentFeerates.feeratesPerKw.mempoolMinFee)
+      case None => (feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget), feeEstimator.getMempoolMinFeeratePerKw())
     }
     channelType.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat => networkFeerate
-      case _: Transactions.AnchorOutputsCommitmentFormat => networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
+      case _: Transactions.AnchorOutputsCommitmentFormat =>
+        val targetFeerate = networkFeerate.min(feerateToleranceFor(remoteNodeId).anchorOutputMaxCommitFeerate)
+        // We make sure the feerate is always greater than the propagation threshold.
+        targetFeerate.max(networkMinFee * 1.25)
     }
   }
 }
