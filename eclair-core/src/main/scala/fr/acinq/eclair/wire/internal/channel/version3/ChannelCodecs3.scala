@@ -94,7 +94,7 @@ private[channel] object ChannelCodecs3 {
         ("delayedPaymentBasepoint" | publicKey) ::
         ("htlcBasepoint" | publicKey) ::
         ("features" | combinedFeaturesCodec) ::
-        ("shutdownScript" | optional(bool8, bytes))).as[RemoteParams]
+        ("shutdownScript" | optional(bool8, lengthDelimited(bytes)))).as[RemoteParams]
 
     def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 

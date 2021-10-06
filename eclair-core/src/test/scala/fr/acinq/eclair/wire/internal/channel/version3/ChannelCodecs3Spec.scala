@@ -94,6 +94,12 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     assert(remoteParamsCodec.decodeValue(remoteParamsCodec.encode(remoteParams).require).require === remoteParams)
     val remoteParams1 = remoteParams.copy(shutdownScript = Some(ByteVector.fromValidHex("deadbeef")))
     assert(remoteParamsCodec.decodeValue(remoteParamsCodec.encode(remoteParams1).require).require === remoteParams1)
+
+    val dataWithoutRemoteShutdownScript = normal.copy(commitments = normal.commitments.copy(remoteParams = remoteParams))
+    assert(DATA_NORMAL_Codec.decode(DATA_NORMAL_Codec.encode(dataWithoutRemoteShutdownScript).require).require.value === dataWithoutRemoteShutdownScript)
+
+    val dataWithRemoteShutdownScript = normal.copy(commitments = normal.commitments.copy(remoteParams = remoteParams1))
+    assert(DATA_NORMAL_Codec.decode(DATA_NORMAL_Codec.encode(dataWithRemoteShutdownScript).require).require.value === dataWithRemoteShutdownScript)
   }
 
   test("backward compatibility DATA_NORMAL_COMPAT_02_Codec") {
