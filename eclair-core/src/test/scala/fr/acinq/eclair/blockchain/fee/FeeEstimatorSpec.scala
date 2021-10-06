@@ -25,7 +25,7 @@ import org.scalatest.funsuite.AnyFunSuite
 
 class FeeEstimatorSpec extends AnyFunSuite {
 
-  val defaultFeerateTolerance = FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat), 15000 sat, closeOnUpdateFeeDustExposureOverflow = false)
+  val defaultFeerateTolerance = FeerateTolerance(0.5, 2.0, FeeratePerKw(2500 sat), DustTolerance(15000 sat, closeOnUpdateFeeOverflow = false))
 
   test("should update fee when diff ratio exceeded") {
     val feeConf = OnChainFeeConf(FeeTargets(1, 1, 1, 1), new TestFeeEstimator(), closeOnOfflineMismatch = true, updateFeeMinDiffRatio = 0.1, defaultFeerateTolerance, Map.empty)
@@ -89,7 +89,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
   }
 
   test("fee difference too high") {
-    val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), maxDustHtlcExposure = 25000 sat, closeOnUpdateFeeDustExposureOverflow = false)
+    val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), DustTolerance(25000 sat, closeOnUpdateFeeOverflow = false))
     val channelType = ChannelTypes.Standard
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat), false),
@@ -108,7 +108,7 @@ class FeeEstimatorSpec extends AnyFunSuite {
   }
 
   test("fee difference too high (anchor outputs)") {
-    val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), maxDustHtlcExposure = 25000 sat, closeOnUpdateFeeDustExposureOverflow = false)
+    val tolerance = FeerateTolerance(ratioLow = 0.5, ratioHigh = 4.0, anchorOutputMaxCommitFeerate = FeeratePerKw(2500 sat), DustTolerance(25000 sat, closeOnUpdateFeeOverflow = false))
     val testCases = Seq(
       (FeeratePerKw(500 sat), FeeratePerKw(500 sat)),
       (FeeratePerKw(500 sat), FeeratePerKw(2500 sat)),

@@ -426,7 +426,7 @@ object Commitments {
     }
 
     // If sending this htlc would overflow our dust exposure, we reject it.
-    val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).maxDustHtlcExposure
+    val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.maxExposure
     val (localCommitDustExposure, remoteCommitDustExposure) = commitments.currentDustExposure()
     val (contributesToLocalCommitDustExposure, contributesToRemoteCommitDustExposure) = commitments.contributesToDustExposure(add)
     if (contributesToLocalCommitDustExposure && localCommitDustExposure + add.amountMsat > maxDustExposure) {
@@ -592,8 +592,8 @@ object Commitments {
       }
 
       // if we would overflow our dust exposure with the new feerate, we avoid sending this fee update
-      if (feeConf.feerateToleranceFor(commitments.remoteNodeId).closeOnUpdateFeeDustExposureOverflow) {
-        val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).maxDustHtlcExposure
+      if (feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
+        val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.maxExposure
         val dustExposureAfterFeeUpdate = Seq(
           CommitmentSpec.dustExposure(commitments1.localCommit.spec, cmd.feeratePerKw, commitments1.localParams.dustLimit, commitments1.commitmentFormat),
           CommitmentSpec.dustExposure(reduced, cmd.feeratePerKw, commitments1.remoteParams.dustLimit, commitments1.commitmentFormat)
@@ -637,8 +637,8 @@ object Commitments {
         }
 
         // if we would overflow our dust exposure with the new feerate, we reject this fee update
-        if (feeConf.feerateToleranceFor(commitments.remoteNodeId).closeOnUpdateFeeDustExposureOverflow) {
-          val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).maxDustHtlcExposure
+        if (feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
+          val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.maxExposure
           val dustExposureAfterFeeUpdate = Seq(
             CommitmentSpec.dustExposure(commitments1.localCommit.spec, fee.feeratePerKw, commitments1.localParams.dustLimit, commitments1.commitmentFormat),
             CommitmentSpec.dustExposure(reduced, fee.feeratePerKw, commitments1.remoteParams.dustLimit, commitments1.commitmentFormat),

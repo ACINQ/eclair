@@ -32,7 +32,13 @@ trait FeeEstimator {
 
 case class FeeTargets(fundingBlockTarget: Int, commitmentBlockTarget: Int, mutualCloseBlockTarget: Int, claimMainBlockTarget: Int)
 
-case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMaxCommitFeerate: FeeratePerKw, maxDustHtlcExposure: Satoshi, closeOnUpdateFeeDustExposureOverflow: Boolean) {
+/**
+ * @param maxExposure              maximum exposure to pending dust htlcs we tolerate: we will automatically fail HTLCs when going above this threshold.
+ * @param closeOnUpdateFeeOverflow force-close channels when an update_fee forces us to go above our max exposure.
+ */
+case class DustTolerance(maxExposure: Satoshi, closeOnUpdateFeeOverflow: Boolean)
+
+case class FeerateTolerance(ratioLow: Double, ratioHigh: Double, anchorOutputMaxCommitFeerate: FeeratePerKw, dustTolerance: DustTolerance) {
   /**
    * @param channelType     channel type
    * @param networkFeerate  reference fee rate (value we estimate from our view of the network)

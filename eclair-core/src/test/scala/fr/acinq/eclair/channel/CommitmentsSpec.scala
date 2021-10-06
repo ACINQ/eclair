@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
-import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee.{DustTolerance, FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
@@ -46,7 +46,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     new TestFeeEstimator(),
     closeOnOfflineMismatch = false,
     1.0,
-    FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw, 100000 sat, closeOnUpdateFeeDustExposureOverflow = false),
+    FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw, DustTolerance(100000 sat, closeOnUpdateFeeOverflow = false)),
     Map.empty
   )
 
