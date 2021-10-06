@@ -583,13 +583,15 @@ object Commitments {
       val fees = commitTxTotalCost(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
       val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
       if (missing < 0.sat) {
-        return Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
+        return Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.remoteParams.channelReserve, fees = fees))
       }
 
       // if we would overflow our dust exposure with the new feerate, we avoid sending this fee update
       if (feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
         val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.maxExposure
-        val localDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(commitments1.localCommit.spec, cmd.feeratePerKw, commitments1.localParams.dustLimit, commitments1.commitmentFormat)
+        // we apply the other pending changes before evaluating our future dust exposure
+        val localReduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.proposed, commitments1.remoteChanges.acked)
+        val localDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(localReduced, cmd.feeratePerKw, commitments1.localParams.dustLimit, commitments1.commitmentFormat)
         if (localDustExposureAfterFeeUpdate > maxDustExposure) {
           return Left(LocalDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
         }
@@ -626,7 +628,7 @@ object Commitments {
         val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
         // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-        val fees = commitTxTotalCost(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
+        val fees = commitTxTotalCost(commitments1.localParams.dustLimit, reduced, commitments.commitmentFormat)
         val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
         if (missing < 0.sat) {
           return Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
@@ -635,11 +637,12 @@ object Commitments {
         // if we would overflow our dust exposure with the new feerate, we reject this fee update
         if (feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
           val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.maxExposure
-          val localDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(commitments1.localCommit.spec, fee.feeratePerKw, commitments1.localParams.dustLimit, commitments1.commitmentFormat)
+          val localDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(reduced, fee.feeratePerKw, commitments1.localParams.dustLimit, commitments1.commitmentFormat)
           if (localDustExposureAfterFeeUpdate > maxDustExposure) {
             return Left(LocalDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
           }
-          val remoteDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(reduced, fee.feeratePerKw, commitments1.remoteParams.dustLimit, commitments1.commitmentFormat)
+          val remoteReduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.proposed, commitments1.localChanges.acked)
+          val remoteDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(remoteReduced, fee.feeratePerKw, commitments1.remoteParams.dustLimit, commitments1.commitmentFormat)
           if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
             return Left(RemoteDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
           }
