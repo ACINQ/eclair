@@ -19,13 +19,13 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
-import fr.acinq.eclair.blockchain.fee.{DustTolerance, FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
+import fr.acinq.eclair.transactions.{CommitmentSpec, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{TestKitBaseClass, _}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -475,9 +475,9 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     assert(ac0.currentDustExposure() === (0 msat, 0 msat))
-    assert(ac0.contributesToDustExposure(UpdateAddHtlc(channelId(alice), 0, 9000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)) === (true, true))
-    assert(ac0.contributesToDustExposure(UpdateAddHtlc(channelId(alice), 0, 9500.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)) === (false, true))
-    assert(ac0.contributesToDustExposure(UpdateAddHtlc(channelId(alice), 0, 10000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket)) === (false, false))
+    assert(ac0.contributesToDustExposure(OutgoingHtlc(UpdateAddHtlc(channelId(alice), 0, 9000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (true, true))
+    assert(ac0.contributesToDustExposure(OutgoingHtlc(UpdateAddHtlc(channelId(alice), 0, 9500.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (false, true))
+    assert(ac0.contributesToDustExposure(OutgoingHtlc(UpdateAddHtlc(channelId(alice), 0, 10000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (false, false))
 
     addHtlc(9000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
     addHtlc(9500.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)

@@ -132,13 +132,13 @@ object CommitmentSpec {
    * the risk that we'll overflow our dust exposure.
    * However, this cannot fully protect us if the feerate increases too much (in which case we may have to force-close).
    */
-  def dustBufferFeerate(currentFeerate: FeeratePerKw): FeeratePerKw = {
+  def feerateForDustExposure(currentFeerate: FeeratePerKw): FeeratePerKw = {
     (currentFeerate * 1.25).max(currentFeerate + FeeratePerKw(FeeratePerByte(10 sat)))
   }
 
   /** Test whether the given HTLC contributes to our dust exposure. */
   def contributesToDustExposure(htlc: DirectedHtlc, spec: CommitmentSpec, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): Boolean = {
-    val feerate = dustBufferFeerate(spec.htlcTxFeerate(commitmentFormat))
+    val feerate = feerateForDustExposure(spec.htlcTxFeerate(commitmentFormat))
     val threshold = htlc match {
       case _: IncomingHtlc => Transactions.receivedHtlcTrimThreshold(dustLimit, feerate, commitmentFormat)
       case _: OutgoingHtlc => Transactions.offeredHtlcTrimThreshold(dustLimit, feerate, commitmentFormat)
@@ -148,7 +148,7 @@ object CommitmentSpec {
 
   /** Compute our exposure to dust pending HTLCs (which will be lost as miner fees in case the channel force-closes). */
   def dustExposure(spec: CommitmentSpec, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): MilliSatoshi = {
-    val feerate = dustBufferFeerate(spec.htlcTxFeerate(commitmentFormat))
+    val feerate = feerateForDustExposure(spec.htlcTxFeerate(commitmentFormat))
     dustExposure(spec, feerate, dustLimit, commitmentFormat)
   }
 

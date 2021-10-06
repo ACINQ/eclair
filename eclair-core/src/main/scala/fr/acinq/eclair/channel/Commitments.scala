@@ -32,8 +32,6 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 
-import scala.annotation.tailrec
-
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
@@ -192,35 +190,32 @@ case class Commitments(channelId: ByteVector32,
     (localCommitDustExposure, remoteCommitDustExposure)
   }
 
-  /** Test whether the given incoming htlc contributes to the dust exposure in the local or remote commit tx. */
-  def contributesToDustExposure(add: UpdateAddHtlc): (Boolean, Boolean) = {
-    val contributesToLocalCommitDustExposure = CommitmentSpec.contributesToDustExposure(OutgoingHtlc(add), localCommit.spec, localParams.dustLimit, commitmentFormat)
-    val contributesToRemoteCommitDustExposure = CommitmentSpec.contributesToDustExposure(IncomingHtlc(add), remoteCommit.spec, remoteParams.dustLimit, commitmentFormat)
+  /** Test whether the given htlc contributes to the dust exposure in the local or remote commit tx. */
+  def contributesToDustExposure(htlc: DirectedHtlc): (Boolean, Boolean) = {
+    val contributesToLocalCommitDustExposure = CommitmentSpec.contributesToDustExposure(htlc, localCommit.spec, localParams.dustLimit, commitmentFormat)
+    val contributesToRemoteCommitDustExposure = CommitmentSpec.contributesToDustExposure(htlc.opposite, remoteCommit.spec, remoteParams.dustLimit, commitmentFormat)
     (contributesToLocalCommitDustExposure, contributesToRemoteCommitDustExposure)
   }
 
-  /** Select which incoming HTLCs we should accept and which HTLCs we should reject to avoid overflowing our dust exposure. */
-  @tailrec
-  final def addHtlcsUntilDustExposureReached(maxDustExposure: Satoshi,
-                                             localCommitDustExposure: MilliSatoshi,
-                                             remoteCommitDustExposure: MilliSatoshi,
-                                             receivedHtlcs: Seq[UpdateAddHtlc],
-                                             acceptedHtlcs: Seq[UpdateAddHtlc] = Nil,
-                                             rejectedHtlcs: Seq[UpdateAddHtlc] = Nil): (Seq[UpdateAddHtlc], Seq[UpdateAddHtlc]) = {
-    receivedHtlcs match {
-      case add :: remaining =>
-        val (contributesToLocalCommitDustExposure, contributesToRemoteCommitDustExposure) = contributesToDustExposure(add)
-        val rejectHtlc = (contributesToLocalCommitDustExposure && localCommitDustExposure + add.amountMsat > maxDustExposure) ||
-          (contributesToRemoteCommitDustExposure && remoteCommitDustExposure + add.amountMsat > maxDustExposure)
+  /** Accept as many incoming HTLCs as possible, in the order they are provided, while not overflowing our dust exposure. */
+  def addHtlcsUntilDustExposureReached(maxDustExposure: Satoshi,
+                                       localCommitDustExposure: MilliSatoshi,
+                                       remoteCommitDustExposure: MilliSatoshi,
+                                       receivedHtlcs: Seq[UpdateAddHtlc]): (Seq[UpdateAddHtlc], Seq[UpdateAddHtlc]) = {
+    val (_, _, acceptedHtlcs, rejectedHtlcs) = receivedHtlcs.foldLeft((localCommitDustExposure, remoteCommitDustExposure, Seq.empty[UpdateAddHtlc], Seq.empty[UpdateAddHtlc])) {
+      case ((currentLocalCommitDustExposure, currentRemoteCommitDustExposure, acceptedHtlcs, rejectedHtlcs), add) =>
+        val (contributesToLocalCommitDustExposure, contributesToRemoteCommitDustExposure) = contributesToDustExposure(IncomingHtlc(add))
+        val rejectHtlc = (contributesToLocalCommitDustExposure && currentLocalCommitDustExposure + add.amountMsat > maxDustExposure) ||
+          (contributesToRemoteCommitDustExposure && currentRemoteCommitDustExposure + add.amountMsat > maxDustExposure)
         if (rejectHtlc) {
-          addHtlcsUntilDustExposureReached(maxDustExposure, localCommitDustExposure, remoteCommitDustExposure, remaining, acceptedHtlcs, rejectedHtlcs :+ add)
+          (currentLocalCommitDustExposure, currentRemoteCommitDustExposure, acceptedHtlcs, rejectedHtlcs :+ add)
         } else {
-          val localCommitDustExposure1 = if (contributesToLocalCommitDustExposure) localCommitDustExposure + add.amountMsat else localCommitDustExposure
-          val remoteCommitDustExposure1 = if (contributesToRemoteCommitDustExposure) remoteCommitDustExposure + add.amountMsat else remoteCommitDustExposure
-          addHtlcsUntilDustExposureReached(maxDustExposure, localCommitDustExposure1, remoteCommitDustExposure1, remaining, acceptedHtlcs :+ add, rejectedHtlcs)
+          val nextLocalCommitDustExposure = if (contributesToLocalCommitDustExposure) currentLocalCommitDustExposure + add.amountMsat else currentLocalCommitDustExposure
+          val nextRemoteCommitDustExposure = if (contributesToRemoteCommitDustExposure) currentRemoteCommitDustExposure + add.amountMsat else currentRemoteCommitDustExposure
+          (nextLocalCommitDustExposure, nextRemoteCommitDustExposure, acceptedHtlcs :+ add, rejectedHtlcs)
         }
-      case Nil => (acceptedHtlcs, rejectedHtlcs)
     }
+    (acceptedHtlcs, rejectedHtlcs)
   }
 
   /**
@@ -428,7 +423,7 @@ object Commitments {
     // If sending this htlc would overflow our dust exposure, we reject it.
     val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.maxExposure
     val (localCommitDustExposure, remoteCommitDustExposure) = commitments.currentDustExposure()
-    val (contributesToLocalCommitDustExposure, contributesToRemoteCommitDustExposure) = commitments.contributesToDustExposure(add)
+    val (contributesToLocalCommitDustExposure, contributesToRemoteCommitDustExposure) = commitments.contributesToDustExposure(OutgoingHtlc(add))
     if (contributesToLocalCommitDustExposure && localCommitDustExposure + add.amountMsat > maxDustExposure) {
       return Left(DustHtlcExposureTooHighInFlight(commitments.channelId, maxDustExposure, localCommitDustExposure + add.amountMsat))
     }

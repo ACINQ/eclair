@@ -852,17 +852,12 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             case PostRevocationAction.RejectHtlc(add) =>
               log.debug("rejecting incoming htlc {}", add)
               // NB: we don't set commit = true, we will sign all updates at once afterwards.
-              self ! CMD_FAIL_HTLC(add.id, Right(TemporaryChannelFailure(d.channelUpdate)))
+              self ! CMD_FAIL_HTLC(add.id, Right(TemporaryChannelFailure(d.channelUpdate)), commit = true)
             case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result
           }
-          val signAsap = actions.exists {
-            case _: PostRevocationAction.RejectHtlc => true
-            case _: PostRevocationAction.RelayHtlc => false
-            case _: PostRevocationAction.RelayFailure => false
-          } || (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true))
-          if (signAsap) {
+          if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN()
           }
           if (d.remoteShutdown.isDefined && !Commitments.localHasUnsignedOutgoingHtlcs(commitments1)) {
@@ -1218,11 +1213,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             case PostRevocationAction.RelayHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: failing {}", add)
-              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure))
+              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure), commit = true)
             case PostRevocationAction.RejectHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
               log.debug("closing in progress: rejecting {}", add)
-              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure))
+              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure), commit = true)
             case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result
@@ -1238,12 +1233,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
               goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingTxProposed = List(List()), bestUnpublishedClosingTx_opt = None) storing()
             }
           } else {
-            val signAsap = actions.exists {
-              case _: PostRevocationAction.RelayHtlc => true
-              case _: PostRevocationAction.RejectHtlc => true
-              case _: PostRevocationAction.RelayFailure => false
-            } || (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true))
-            if (signAsap) {
+            if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
               self ! CMD_SIGN()
             }
             stay() using d.copy(commitments = commitments1) storing()
