@@ -366,7 +366,7 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     sqlite.listOutgoingPayments(from, to)
   }
 
-  override def removeIncomingPayment(paymentHash: ByteVector32): Unit = {
+  override def removeIncomingPayment(paymentHash: ByteVector32): Try[Boolean] = {
     runAsync(postgres.removeIncomingPayment(paymentHash))
     sqlite.removeIncomingPayment(paymentHash)
   }

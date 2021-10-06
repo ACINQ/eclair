@@ -24,6 +24,7 @@ import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
 
 import java.io.Closeable
 import java.util.UUID
+import scala.util.Try
 
 trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
@@ -52,7 +53,7 @@ trait IncomingPaymentsDb {
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
   def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
 
-  def removeIncomingPayment(paymentHash: ByteVector32): Unit
+  def removeIncomingPayment(paymentHash: ByteVector32): Try[Boolean]
 }
 
 trait OutgoingPaymentsDb {

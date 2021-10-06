@@ -32,6 +32,7 @@ import org.scalatest.funsuite.AnyFunSuite
 import java.time.Instant
 import java.util.UUID
 import scala.concurrent.duration._
+import scala.util.Success
 
 class PaymentsDbSpec extends AnyFunSuite {
 
@@ -446,13 +447,13 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.listReceivedIncomingPayments(0, now) === Seq(payment1, payment2))
 
       // cannot remove a paid invoice
-      assertThrows[IllegalArgumentException](db.removeIncomingPayment(paidInvoice1.paymentHash))
-      db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash)
-      // cannot remove a removed payment
-      assertThrows[IllegalArgumentException](db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash))
-      db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash)
-      // cannot remove a removed payment
-      assertThrows[IllegalArgumentException](db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash))
+      assertThrows[IllegalArgumentException](db.removeIncomingPayment(paidInvoice1.paymentHash).get)
+      assert(db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash) == Success(true))
+      // trying to remove a removed payment
+      assert(db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash) == Success(false))
+      assert(db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash) == Success(true))
+      // trying to remove a removed payment
+      assert(db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash) == Success(false))
     }
   }
 

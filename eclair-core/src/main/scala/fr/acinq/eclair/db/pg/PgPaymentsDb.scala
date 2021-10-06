@@ -34,6 +34,7 @@ import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
+import scala.util.Try
 
 object PgPaymentsDb {
   val DB_NAME = "payments"
@@ -398,21 +399,23 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def removeIncomingPayment(paymentHash: ByteVector32): Unit = withMetrics("payments/remove-incoming", DbBackends.Postgres) {
-    withLock { pg =>
-      getIncomingPaymentInternal(pg, paymentHash) match {
-        case Some(incomingPayment) =>
-          incomingPayment.status match {
-            case _: IncomingPaymentStatus.Received =>
-              throw new IllegalArgumentException("Cannot remove a received incoming payment")
-            case _: IncomingPaymentStatus =>
-              using(pg.prepareStatement("DELETE FROM payments.received WHERE payment_hash = ?")) { delete =>
-                delete.setString(1, paymentHash.toHex)
-                delete.executeUpdate()
-              }
-          }
-        case None =>
-          throw new IllegalArgumentException("Unknown incoming payment")
+  override def removeIncomingPayment(paymentHash: ByteVector32): Try[Boolean] = withMetrics("payments/remove-incoming", DbBackends.Postgres) {
+    Try {
+      withLock { pg =>
+        getIncomingPaymentInternal(pg, paymentHash) match {
+          case Some(incomingPayment) =>
+            incomingPayment.status match {
+              case _: IncomingPaymentStatus.Received =>
+                throw new IllegalArgumentException("Cannot remove a received incoming payment")
+              case _: IncomingPaymentStatus =>
+                using(pg.prepareStatement("DELETE FROM payments.received WHERE payment_hash = ?")) { delete =>
+                  delete.setString(1, paymentHash.toHex)
+                  delete.executeUpdate()
+                  true
+                }
+            }
+          case None => false
+        }
       }
     }
   }

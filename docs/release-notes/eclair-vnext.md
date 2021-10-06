@@ -128,6 +128,7 @@ We completely removed it from this release to prevent it from happening again.
 
 This release contains many API updates:
 
+- `deleteinvoice` allows you to remove unpaid invoices
 - `open` lets you specify the channel type through the `--channelType` parameter, which can be one of `standard`, `static_remotekey`, `anchor_outputs` or `anchor_outputs_zero_fee_htlc_tx` (#1867)
 - `open` doesn't support the `--feeBaseMsat` and `--feeProportionalMillionths` parameters anymore: you should instead set these with the `updaterelayfee` API, which can now be called before opening a channel (#1890)
 - `updaterelayfee` must now be called with nodeIds instead of channelIds and will update the fees for all channels with the given node(s) at once (#1890)

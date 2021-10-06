@@ -33,6 +33,7 @@ import scodec.codecs._
 import java.sql.{Connection, ResultSet, Statement}
 import java.util.UUID
 import scala.concurrent.duration._
+import scala.util.Try
 
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
@@ -390,20 +391,22 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def removeIncomingPayment(paymentHash: ByteVector32): Unit = withMetrics("payments/remove-incoming", DbBackends.Sqlite) {
-    getIncomingPayment(paymentHash) match {
-      case Some(incomingPayment) =>
-        incomingPayment.status match {
-          case _: IncomingPaymentStatus.Received =>
-            throw new IllegalArgumentException("Cannot remove a received incoming payment")
-          case _: IncomingPaymentStatus =>
-            using(sqlite.prepareStatement("DELETE FROM received_payments WHERE payment_hash = ?")) { delete =>
-              delete.setBytes(1, paymentHash.toArray)
-              delete.executeUpdate()
-            }
-        }
-      case None =>
-        throw new IllegalArgumentException("Unknown incoming payment")
+  override def removeIncomingPayment(paymentHash: ByteVector32): Try[Boolean] = withMetrics("payments/remove-incoming", DbBackends.Sqlite) {
+    Try {
+      getIncomingPayment(paymentHash) match {
+        case Some(incomingPayment) =>
+          incomingPayment.status match {
+            case _: IncomingPaymentStatus.Received =>
+              throw new IllegalArgumentException("Cannot remove a received incoming payment")
+            case _: IncomingPaymentStatus =>
+              using(sqlite.prepareStatement("DELETE FROM received_payments WHERE payment_hash = ?")) { delete =>
+                delete.setBytes(1, paymentHash.toArray)
+                delete.executeUpdate()
+                true
+              }
+          }
+        case None => false
+      }
     }
   }
 
