@@ -17,10 +17,10 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.transactions.Transactions.{CommitmentFormat, ZeroFeeHtlcTxAnchorOutputsCommitmentFormat}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 
 /**
  * Created by PM on 07/12/2016.
@@ -136,9 +136,14 @@ object CommitmentSpec {
     (currentFeerate * 1.25).max(currentFeerate + FeeratePerKw(FeeratePerByte(10 sat)))
   }
 
-  /** Test whether the given HTLC contributes to our dust exposure. */
+  /** Test whether the given HTLC contributes to our dust exposure with the default dust feerate calculation. */
   def contributesToDustExposure(htlc: DirectedHtlc, spec: CommitmentSpec, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): Boolean = {
     val feerate = feerateForDustExposure(spec.htlcTxFeerate(commitmentFormat))
+    contributesToDustExposure(htlc, feerate, dustLimit, commitmentFormat)
+  }
+
+  /** Test whether the given HTLC contributes to our dust exposure at the given feerate. */
+  def contributesToDustExposure(htlc: DirectedHtlc, feerate: FeeratePerKw, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): Boolean = {
     val threshold = htlc match {
       case _: IncomingHtlc => Transactions.receivedHtlcTrimThreshold(dustLimit, feerate, commitmentFormat)
       case _: OutgoingHtlc => Transactions.offeredHtlcTrimThreshold(dustLimit, feerate, commitmentFormat)
@@ -146,21 +151,16 @@ object CommitmentSpec {
     htlc.add.amountMsat < threshold
   }
 
-  /** Compute our exposure to dust pending HTLCs (which will be lost as miner fees in case the channel force-closes). */
+  /** Compute our exposure to dust pending HTLCs (which will be lost as miner fees in case the channel force-closes) with the default dust feerate calculation. */
   def dustExposure(spec: CommitmentSpec, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     val feerate = feerateForDustExposure(spec.htlcTxFeerate(commitmentFormat))
     dustExposure(spec, feerate, dustLimit, commitmentFormat)
   }
 
-  /** Compute our exposure to dust pending HTLCs (which will be lost as miner fees in case the channel force-closes). */
+  /** Compute our exposure to dust pending HTLCs (which will be lost as miner fees in case the channel force-closes) at the given feerate. */
   def dustExposure(spec: CommitmentSpec, feerate: FeeratePerKw, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): MilliSatoshi = {
-    val incomingHtlcThreshold = Transactions.receivedHtlcTrimThreshold(dustLimit, feerate, commitmentFormat)
-    val outgoingHtlcThreshold = Transactions.offeredHtlcTrimThreshold(dustLimit, feerate, commitmentFormat)
-    spec.htlcs.foldLeft(0 msat) {
-      case (exposure, IncomingHtlc(add)) if add.amountMsat < incomingHtlcThreshold => exposure + add.amountMsat
-      case (exposure, OutgoingHtlc(add)) if add.amountMsat < outgoingHtlcThreshold => exposure + add.amountMsat
-      case (exposure, _) => exposure
-    }
+    // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since `spec.htlcs` is a Set).
+    spec.htlcs.filter(htlc => contributesToDustExposure(htlc, feerate, dustLimit, commitmentFormat)).toSeq.map(_.add.amountMsat).sum
   }
 
   def reduce(localCommitSpec: CommitmentSpec, localChanges: List[UpdateMessage], remoteChanges: List[UpdateMessage]): CommitmentSpec = {
