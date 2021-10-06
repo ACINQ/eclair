@@ -403,13 +403,13 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // HTLCs that take Alice's dust exposure above her threshold are rejected.
     val dustAdd = CMD_ADD_HTLC(sender.ref, 501.sat.toMilliSatoshi, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! dustAdd
-    sender.expectMsg(RES_ADD_FAILED(dustAdd, DustHtlcExposureTooHighInFlight(channelId(alice), 25000.sat, 25001.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
+    sender.expectMsg(RES_ADD_FAILED(dustAdd, LocalDustHtlcExposureTooHigh(channelId(alice), 25000.sat, 25001.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
     val trimmedAdd = CMD_ADD_HTLC(sender.ref, 5000.sat.toMilliSatoshi, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! trimmedAdd
-    sender.expectMsg(RES_ADD_FAILED(trimmedAdd, DustHtlcExposureTooHighInFlight(channelId(alice), 25000.sat, 29500.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
+    sender.expectMsg(RES_ADD_FAILED(trimmedAdd, LocalDustHtlcExposureTooHigh(channelId(alice), 25000.sat, 29500.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
     val justAboveTrimmedAdd = CMD_ADD_HTLC(sender.ref, 8500.sat.toMilliSatoshi, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
     alice ! justAboveTrimmedAdd
-    sender.expectMsg(RES_ADD_FAILED(justAboveTrimmedAdd, DustHtlcExposureTooHighInFlight(channelId(alice), 25000.sat, 33000.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
+    sender.expectMsg(RES_ADD_FAILED(justAboveTrimmedAdd, LocalDustHtlcExposureTooHigh(channelId(alice), 25000.sat, 33000.sat.toMilliSatoshi), Some(initialState.channelUpdate)))
 
     // HTLCs that don't contribute to dust exposure are accepted.
     alice ! CMD_ADD_HTLC(sender.ref, 25000.sat.toMilliSatoshi, randomBytes32(), CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight), TestConstants.emptyOnionPacket, localOrigin(sender.ref))
@@ -1778,7 +1778,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val sender = TestProbe()
     val cmd = CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
     alice ! cmd
-    sender.expectMsg(RES_FAILURE(cmd, DustHtlcExposureTooHighInFlight(channelId(alice), 25000 sat, 29000000 msat)))
+    sender.expectMsg(RES_FAILURE(cmd, RemoteDustHtlcExposureTooHigh(channelId(alice), 25000 sat, 29000000 msat)))
   }
 
   test("recv CMD_UPDATE_FEE (two in a row)") { f =>
@@ -1953,7 +1953,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(25000 sat)))
     bob ! UpdateFee(channelId(bob), FeeratePerKw(25000 sat))
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === DustHtlcExposureTooHighInFlight(channelId(bob), 50000 sat, 59000000 msat).getMessage)
+    assert(new String(error.data.toArray) === LocalDustHtlcExposureTooHigh(channelId(bob), 50000 sat, 59000000 msat).getMessage)
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid)
     awaitCond(bob.stateName == CLOSING)
   }
