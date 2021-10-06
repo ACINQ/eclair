@@ -70,23 +70,23 @@ trait BitcoindService extends Logging {
         .replace("28332", bitcoindRpcPort.toString)
         .replace("28334", bitcoindZmqBlockPort.toString)
         .replace("28335", bitcoindZmqTxPort.toString)
-      if(useCookie){
+      if (useCookie) {
         conf = conf
-          .replace("rpcuser=foo","")
-          .replace("rpcpassword=bar","")
+          .replace("rpcuser=foo", "")
+          .replace("rpcpassword=bar", "")
       }
       Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
     }
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
-    val (user, password) = if(useCookie){
+    val (user, password) = if (useCookie) {
       Thread.sleep(10000) //wait for bitcoind to create .cookie file
-      val path = new File(PATH_BITCOIND_DATADIR,"regtest/.cookie").toPath
+      val path = new File(PATH_BITCOIND_DATADIR, "regtest/.cookie").toPath
       assert(Files.exists(path))
-      val cookie =  Files.readString(path,StandardCharsets.UTF_8).split(":",2)
-      (cookie(0),cookie(1))
-    }else{
-      ("foo","bar")
+      val cookie = Files.readString(path, StandardCharsets.UTF_8).split(":", 2)
+      (cookie(0), cookie(1))
+    } else {
+      ("foo", "bar")
     }
     bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = user, password = password, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
     bitcoincli = system.actorOf(Props(new Actor {
@@ -106,9 +106,9 @@ trait BitcoindService extends Logging {
     bitcoind.exitValue()
   }
 
-  def restartBitcoind(sender: TestProbe = TestProbe()): Unit = {
+  def restartBitcoind(sender: TestProbe = TestProbe(), useCookie: Boolean = false): Unit = {
     stopBitcoind()
-    startBitcoind()
+    startBitcoind(useCookie = useCookie)
     waitForBitcoindUp(sender)
     sender.send(bitcoincli, BitcoinReq("loadwallet", defaultWallet))
     sender.expectMsgType[JValue]

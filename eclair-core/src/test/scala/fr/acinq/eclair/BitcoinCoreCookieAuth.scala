@@ -16,41 +16,40 @@
 
 package fr.acinq.eclair
 
-import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.integration.IntegrationSpec
-import org.json4s.JsonAST.{JInt, JValue}
+import org.scalatest.concurrent.ScalaFutures.whenReady
 
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.jdk.CollectionConverters.MapHasAsJava
 
-class BitcoinCoreCookieAuth extends IntegrationSpec{
+class BitcoinCoreCookieAuth extends IntegrationSpec {
 
 
   override def beforeAll(): Unit = {
-    startBitcoind(useCookie = true)
-    waitForBitcoindReady()
+    //do nothing
   }
 
   test("bitcoind cookie authentication") {
-    val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
-    assert(sender.expectMsgType[Any] match {
-      case j: JValue => j\ "version" match {
-        case JInt(_) => true
-        case _ => false
-      }
-      case _ => false
-    })
+    startBitcoind(useCookie = true)
+    waitForBitcoindReady()
 
     instantiateEclairNode("cookie_test", ConfigFactory.parseMap(
       Map(
-          "eclair.node-alias" -> "cookie_test",
-          "eclair.server.port" -> 29750,
-          "eclair.api.port" -> 28090,
-          "eclair.channel-flags" -> 0,
-          "eclair.bitcoind.auth" -> "safecookie",
-          "eclair.bitcoind.cookie" -> (PATH_BITCOIND_DATADIR.toString+"/regtest/.cookie")).asJava
+        "eclair.node-alias" -> "cookie_test",
+        "eclair.server.port" -> 29750,
+        "eclair.api.port" -> 28090,
+        "eclair.channel-flags" -> 0,
+        "eclair.bitcoind.auth" -> "safecookie",
+        "eclair.bitcoind.cookie" -> (PATH_BITCOIND_DATADIR.toString + "/regtest/.cookie")).asJava
     ).withFallback(commonConfig))
+
+    // test getting onchainbalance.
+    whenReady(nodes("cookie_test").wallet.onChainBalance()) { _ => assert(true) }
+
+    restartBitcoind(useCookie = true)
+
+    // test getting onchainbalance again after restarting bitcoin. (will fail)
+    //whenReady(nodes("cookie_test").wallet.onChainBalance()) { _ => assert(true) }
   }
 }

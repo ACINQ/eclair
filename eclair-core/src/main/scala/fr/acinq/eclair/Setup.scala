@@ -147,11 +147,11 @@ class Setup(val datadir: File,
       val name = config.getString("bitcoind.wallet")
       if (!name.isBlank) Some(name) else None
     }
-    val (rpcUser,rpcPassword) = config.getString("bitcoind.auth") match{
+    val (rpcUser, rpcPassword) = config.getString("bitcoind.auth") match {
       case "safecookie" =>
-        val cookie =  Files.readString(Path.of(config.getString("bitcoind.cookie")),StandardCharsets.UTF_8).split(":",2)
-        (cookie(0),cookie(1))
-      case "password" =>  (config.getString("bitcoind.rpcuser"),  config.getString("bitcoind.rpcpassword"))
+        val cookie = Files.readString(Path.of(config.getString("bitcoind.cookie")), StandardCharsets.UTF_8).split(":", 2)
+        (cookie(0), cookie(1))
+      case "password" => (config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       user = rpcUser,
