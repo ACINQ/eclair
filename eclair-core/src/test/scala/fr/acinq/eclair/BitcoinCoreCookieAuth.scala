@@ -22,7 +22,8 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.integration.IntegrationSpec
 import org.json4s.JsonAST.{JInt, JValue}
 
-import java.util
+import scala.jdk.CollectionConverters.MapHasAsJava
+
 class BitcoinCoreCookieAuth extends IntegrationSpec{
 
 
@@ -43,11 +44,13 @@ class BitcoinCoreCookieAuth extends IntegrationSpec{
     })
 
     instantiateEclairNode("cookie_test", ConfigFactory.parseMap(
-        util.Map.of("eclair.node-alias", "cookie_test",
-          "eclair.server.port", 29750,
-          "eclair.api.port", 28090,
-          "eclair.channel-flags", 0,
-          "eclair.bitcoind.auth", "safecookie",
-          "eclair.bitcoind.cookie", PATH_BITCOIND_DATADIR.toString+"/regtest/.cookie")).withFallback(commonConfig))
+      Map(
+          "eclair.node-alias" -> "cookie_test",
+          "eclair.server.port" -> 29750,
+          "eclair.api.port" -> 28090,
+          "eclair.channel-flags" -> 0,
+          "eclair.bitcoind.auth" -> "safecookie",
+          "eclair.bitcoind.cookie" -> (PATH_BITCOIND_DATADIR.toString+"/regtest/.cookie")).asJava
+    ).withFallback(commonConfig))
   }
 }
