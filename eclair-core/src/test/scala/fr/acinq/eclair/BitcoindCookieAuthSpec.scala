@@ -18,12 +18,14 @@ package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.integration.IntegrationSpec
+import org.scalatest.concurrent.PatienceConfiguration.Timeout
 import org.scalatest.concurrent.ScalaFutures.whenReady
+import org.scalatest.time.SpanSugar.convertIntToGrainOfTime
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.jdk.CollectionConverters.MapHasAsJava
 
-class BitcoinCoreCookieAuth extends IntegrationSpec {
+class BitcoindCookieAuthSpec extends IntegrationSpec {
 
 
   override def beforeAll(): Unit = {
@@ -44,12 +46,12 @@ class BitcoinCoreCookieAuth extends IntegrationSpec {
         "eclair.bitcoind.cookie" -> (PATH_BITCOIND_DATADIR.toString + "/regtest/.cookie")).asJava
     ).withFallback(commonConfig))
 
-    // test getting onchainbalance.
-    whenReady(nodes("cookie_test").wallet.onChainBalance()) { _ => assert(true) }
+    // test getting on chain balance.
+    whenReady(nodes("cookie_test").wallet.onChainBalance(), Timeout(1 second)) { _ => assert(true) }
 
     restartBitcoind(useCookie = true)
 
-    // test getting onchainbalance again after restarting bitcoin. (will fail)
-    //whenReady(nodes("cookie_test").wallet.onChainBalance()) { _ => assert(true) }
+    // test getting on chain balance again after restarting bitcoin.
+    whenReady(nodes("cookie_test").wallet.onChainBalance(), Timeout(1 second)) { _ => assert(true) }
   }
 }

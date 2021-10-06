@@ -23,7 +23,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.TestUtils
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient, RPCAuthMethod, RPCPassword, RPCSafeCookie}
 import fr.acinq.eclair.integration.IntegrationSpec
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
@@ -59,6 +59,7 @@ trait BitcoindService extends Logging {
 
   var bitcoind: Process = _
   var bitcoinrpcclient: BitcoinJsonRPCClient = _
+  var bitcoinrpcauthmethod: RPCAuthMethod = _
   var bitcoincli: ActorRef = _
 
   def startBitcoind(useCookie: Boolean = false): Unit = {
@@ -79,16 +80,15 @@ trait BitcoindService extends Logging {
     }
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
-    val (user, password) = if (useCookie) {
+    bitcoinrpcauthmethod = if (useCookie) {
       Thread.sleep(10000) //wait for bitcoind to create .cookie file
       val path = new File(PATH_BITCOIND_DATADIR, "regtest/.cookie").toPath
       assert(Files.exists(path))
-      val cookie = Files.readString(path, StandardCharsets.UTF_8).split(":", 2)
-      (cookie(0), cookie(1))
+      RPCSafeCookie(path)
     } else {
-      ("foo", "bar")
+      RPCPassword("foo", "bar")
     }
-    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = user, password = password, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
+    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
         case BitcoinReq(method) => bitcoinrpcclient.invoke(method).pipeTo(sender())
@@ -163,7 +163,7 @@ trait BitcoindService extends Logging {
   def createWallet(walletName: String, sender: TestProbe = TestProbe()): BitcoinJsonRPCClient = {
     sender.send(bitcoincli, BitcoinReq("createwallet", walletName))
     sender.expectMsgType[JValue]
-    new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
+    new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
   }
 
   def getNewAddress(sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): String = {

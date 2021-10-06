@@ -21,13 +21,19 @@ import com.softwaremill.sttp.json4s._
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.KamonExt
 import fr.acinq.eclair.blockchain.Monitoring.{Metrics, Tags}
+import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, JValue}
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomSerializer, DefaultFormats}
 
+import java.net.ConnectException
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
+import java.util.NoSuchElementException
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success}
 
-class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient {
+class BasicBitcoinJsonRPCClient(rpcAuthMethod: RPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient with Logging {
 
   // necessary to properly serialize ByteVector32 into String readable by bitcoind
   object ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {
@@ -41,6 +47,10 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
   private val serviceUri = wallet match {
     case Some(name) => uri"$scheme://$host:$port/wallet/$name"
     case None => uri"$scheme://$host:$port"
+  }
+  private var (user, password) = rpcAuthMethod match {
+    case RPCSafeCookie(path) => readCookie(path)
+    case RPCPassword(user, password) => (user, password)
   }
   implicit val serialization = Serialization
 
@@ -65,7 +75,37 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
           .response(asJson[Seq[JsonRPCResponse]])
           .send()
       } yield res.unsafeBody
+    }.transform {
+      case Success(value) => Success(value)
+      case Failure(exception) => exception match {
+        case e: NoSuchElementException if e.getMessage.contains("Status code 401") => Failure(RPCAuthenticationException(e))
+        case e => Failure(e)
+      }
+    }.recoverWith {
+      case e: RPCAuthenticationException => rpcAuthMethod match {
+        case RPCSafeCookie(path) =>
+          val (newUser, newPassword) = readCookie(path)
+          if (!(newUser.equals(user) && newPassword.equals(password))) {
+            user = newUser
+            password = newPassword
+            invoke(requests)
+          } else {
+            Future.failed(e)
+          }
+        case RPCPassword(_, _) => Future.failed(e)
+      }
     }
   }
 
+  private def readCookie(path: Path): (String, String) = {
+    logger.info("reading values from bitcoind RPC cookie")
+    val cookieStrings = Files.readString(path, StandardCharsets.UTF_8).split(":")
+    (cookieStrings(0), cookieStrings(1))
+  }
 }
+
+sealed abstract class RPCAuthMethod
+case class RPCSafeCookie(path: Path) extends RPCAuthMethod
+case class RPCPassword(user: String, password: String) extends RPCAuthMethod
+
+case class RPCAuthenticationException(e: Throwable) extends RuntimeException("could not authenticate to bitcoind RPC server", e)

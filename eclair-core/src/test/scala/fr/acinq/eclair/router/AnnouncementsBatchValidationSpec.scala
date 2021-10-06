@@ -23,7 +23,7 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Block, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.ValidateResult
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, RPCPassword}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
@@ -48,7 +48,7 @@ class AnnouncementsBatchValidationSpec extends AnyFunSuite {
     implicit val system = ActorSystem("test")
     implicit val sttpBackend = OkHttpFutureBackend()
 
-    val bitcoinClient = new BitcoinCoreClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
+    val bitcoinClient = new BitcoinCoreClient(new BasicBitcoinJsonRPCClient(rpcAuthMethod = RPCPassword("foo", "bar"), host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {
       // let's generate a block every 10 txs so that we can compute short ids

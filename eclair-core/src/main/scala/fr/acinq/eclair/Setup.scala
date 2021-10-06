@@ -28,7 +28,7 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, RPCPassword, RPCSafeCookie}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.{Channel, Register}
@@ -51,8 +51,7 @@ import scodec.bits.ByteVector
 
 import java.io.File
 import java.net.InetSocketAddress
-import java.nio.charset.StandardCharsets
-import java.nio.file.{Files, Path}
+import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
@@ -147,15 +146,12 @@ class Setup(val datadir: File,
       val name = config.getString("bitcoind.wallet")
       if (!name.isBlank) Some(name) else None
     }
-    val (rpcUser, rpcPassword) = config.getString("bitcoind.auth") match {
-      case "safecookie" =>
-        val cookie = Files.readString(Path.of(config.getString("bitcoind.cookie")), StandardCharsets.UTF_8).split(":", 2)
-        (cookie(0), cookie(1))
-      case "password" => (config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
+    val rpcAuthMethod = config.getString("bitcoind.auth") match {
+      case "safecookie" => RPCSafeCookie(Path.of(config.getString("bitcoind.cookie")))
+      case "password" => RPCPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = rpcUser,
-      password = rpcPassword,
+      rpcAuthMethod,
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"),
       wallet = wallet)
