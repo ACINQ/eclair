@@ -54,7 +54,7 @@ path-finding using `--ignoreNodeIds` parameter:
 eclair-cli findroutebetweennodes --sourceNodeId=<Bob`s node ID> \
                                  --targetNodeId=<Diana`s node ID> \
                                  --ignoreNodeIds=<Alice`s node ID`> \
-                                 --format=shortChannelIds
+                                 --format=shortChannelId
 ```
 
 Then `Alice` simply appends the outgoing channel ID to the beginning of the found route and the incoming channel ID to 
