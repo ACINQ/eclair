@@ -67,15 +67,15 @@ object DustExposure {
   }
 
   /** Accept as many incoming HTLCs as possible, in the order they are provided, while not overflowing our dust exposure. */
-  def filterIncomingHtlcsUntilDustExposureReached(maxDustExposure: Satoshi,
-                                                  localSpec: CommitmentSpec,
-                                                  localDustLimit: Satoshi,
-                                                  localCommitDustExposure: MilliSatoshi,
-                                                  remoteSpec: CommitmentSpec,
-                                                  remoteDustLimit: Satoshi,
-                                                  remoteCommitDustExposure: MilliSatoshi,
-                                                  receivedHtlcs: Seq[UpdateAddHtlc],
-                                                  commitmentFormat: CommitmentFormat): (Seq[UpdateAddHtlc], Seq[UpdateAddHtlc]) = {
+  def filterBeforeForward(maxDustExposure: Satoshi,
+                          localSpec: CommitmentSpec,
+                          localDustLimit: Satoshi,
+                          localCommitDustExposure: MilliSatoshi,
+                          remoteSpec: CommitmentSpec,
+                          remoteDustLimit: Satoshi,
+                          remoteCommitDustExposure: MilliSatoshi,
+                          receivedHtlcs: Seq[UpdateAddHtlc],
+                          commitmentFormat: CommitmentFormat): (Seq[UpdateAddHtlc], Seq[UpdateAddHtlc]) = {
     val (_, _, acceptedHtlcs, rejectedHtlcs) = receivedHtlcs.foldLeft((localCommitDustExposure, remoteCommitDustExposure, Seq.empty[UpdateAddHtlc], Seq.empty[UpdateAddHtlc])) {
       case ((currentLocalCommitDustExposure, currentRemoteCommitDustExposure, acceptedHtlcs, rejectedHtlcs), add) =>
         val contributesToLocalCommitDustExposure = contributesToDustExposure(IncomingHtlc(add), localSpec, localDustLimit, commitmentFormat)

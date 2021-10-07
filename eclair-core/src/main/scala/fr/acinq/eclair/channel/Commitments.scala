@@ -788,7 +788,7 @@ object Commitments {
           val remoteCommitDustExposure = DustExposure.compute(remoteReduced, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
           // we sort incoming htlcs by decreasing amount: we want to prioritize higher amounts.
           val sortedReceivedHtlcs = receivedHtlcs.sortBy(_.amountMsat).reverse
-          DustExposure.filterIncomingHtlcsUntilDustExposureReached(
+          DustExposure.filterBeforeForward(
             maxDustExposure,
             localReduced,
             commitments.localParams.dustLimit,

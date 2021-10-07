@@ -110,7 +110,7 @@ class DustExposureSpec extends AnyFunSuiteLike {
     }
   }
 
-  test("add incoming htlcs until we reach our maximum dust exposure") {
+  test("filter incoming htlcs before forwarding") {
     val dustLimit = 1000.sat
     val initialSpec = CommitmentSpec(Set.empty, FeeratePerKw(10000 sat), 0 msat, 0 msat)
     assert(DustExposure.compute(initialSpec, dustLimit, Transactions.DefaultCommitmentFormat) === 0.msat)
@@ -138,7 +138,7 @@ class DustExposureSpec extends AnyFunSuiteLike {
       createHtlc(9, 400.sat.toMilliSatoshi),
       createHtlc(10, 50000.sat.toMilliSatoshi),
     )
-    val (accepted, rejected) = DustExposure.filterIncomingHtlcsUntilDustExposureReached(25000 sat, updatedSpec, dustLimit, 10000.sat.toMilliSatoshi, initialSpec, dustLimit, 15000.sat.toMilliSatoshi, receivedHtlcs, Transactions.DefaultCommitmentFormat)
+    val (accepted, rejected) = DustExposure.filterBeforeForward(25000 sat, updatedSpec, dustLimit, 10000.sat.toMilliSatoshi, initialSpec, dustLimit, 15000.sat.toMilliSatoshi, receivedHtlcs, Transactions.DefaultCommitmentFormat)
     assert(accepted.map(_.id).toSet === Set(5, 6, 8, 10))
     assert(rejected.map(_.id).toSet === Set(7, 9))
   }
