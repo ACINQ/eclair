@@ -101,28 +101,28 @@ object CommitmentSpec {
   def fulfillIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findIncomingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
+      case None => spec
     }
   }
 
   def fulfillOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findOutgoingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
+      case None => spec
     }
   }
 
   def failIncomingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findIncomingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
+      case None => spec
     }
   }
 
   def failOutgoingHtlc(spec: CommitmentSpec, htlcId: Long): CommitmentSpec = {
     spec.findOutgoingHtlcById(htlcId) match {
       case Some(htlc) => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=$htlcId")
+      case None => spec
     }
   }
 
@@ -161,6 +161,33 @@ object CommitmentSpec {
   def dustExposure(spec: CommitmentSpec, feerate: FeeratePerKw, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since `spec.htlcs` is a Set).
     spec.htlcs.filter(htlc => contributesToDustExposure(htlc, feerate, dustLimit, commitmentFormat)).toSeq.map(_.add.amountMsat).sum
+  }
+
+  /** Accept as many incoming HTLCs as possible, in the order they are provided, while not overflowing our dust exposure. */
+  def addIncomingHtlcsUntilDustExposureReached(maxDustExposure: Satoshi,
+                                               localSpec: CommitmentSpec,
+                                               localDustLimit: Satoshi,
+                                               localCommitDustExposure: MilliSatoshi,
+                                               remoteSpec: CommitmentSpec,
+                                               remoteDustLimit: Satoshi,
+                                               remoteCommitDustExposure: MilliSatoshi,
+                                               receivedHtlcs: Seq[UpdateAddHtlc],
+                                               commitmentFormat: CommitmentFormat): (Seq[UpdateAddHtlc], Seq[UpdateAddHtlc]) = {
+    val (_, _, acceptedHtlcs, rejectedHtlcs) = receivedHtlcs.foldLeft((localCommitDustExposure, remoteCommitDustExposure, Seq.empty[UpdateAddHtlc], Seq.empty[UpdateAddHtlc])) {
+      case ((currentLocalCommitDustExposure, currentRemoteCommitDustExposure, acceptedHtlcs, rejectedHtlcs), add) =>
+        val contributesToLocalCommitDustExposure = contributesToDustExposure(IncomingHtlc(add), localSpec, localDustLimit, commitmentFormat)
+        val overflowsLocalCommitDustExposure = contributesToLocalCommitDustExposure && currentLocalCommitDustExposure + add.amountMsat > maxDustExposure
+        val contributesToRemoteCommitDustExposure = contributesToDustExposure(OutgoingHtlc(add), remoteSpec, remoteDustLimit, commitmentFormat)
+        val overflowsRemoteCommitDustExposure = contributesToRemoteCommitDustExposure && currentRemoteCommitDustExposure + add.amountMsat > maxDustExposure
+        if (overflowsLocalCommitDustExposure || overflowsRemoteCommitDustExposure) {
+          (currentLocalCommitDustExposure, currentRemoteCommitDustExposure, acceptedHtlcs, rejectedHtlcs :+ add)
+        } else {
+          val nextLocalCommitDustExposure = if (contributesToLocalCommitDustExposure) currentLocalCommitDustExposure + add.amountMsat else currentLocalCommitDustExposure
+          val nextRemoteCommitDustExposure = if (contributesToRemoteCommitDustExposure) currentRemoteCommitDustExposure + add.amountMsat else currentRemoteCommitDustExposure
+          (nextLocalCommitDustExposure, nextRemoteCommitDustExposure, acceptedHtlcs :+ add, rejectedHtlcs)
+        }
+    }
+    (acceptedHtlcs, rejectedHtlcs)
   }
 
   def reduce(localCommitSpec: CommitmentSpec, localChanges: List[UpdateMessage], remoteChanges: List[UpdateMessage]): CommitmentSpec = {

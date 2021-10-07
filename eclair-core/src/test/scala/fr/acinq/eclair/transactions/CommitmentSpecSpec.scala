@@ -75,8 +75,8 @@ class CommitmentSpecSpec extends AnyFunSuite {
     assert(spec.htlcTxFeerate(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === FeeratePerKw(0 sat))
   }
 
-  def createHtlc(amount: MilliSatoshi): UpdateAddHtlc = {
-    UpdateAddHtlc(ByteVector32.Zeroes, 0, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket)
+  def createHtlc(amount: MilliSatoshi, id: Long = 0): UpdateAddHtlc = {
+    UpdateAddHtlc(ByteVector32.Zeroes, id, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket)
   }
 
   test("compute dust exposure") {
@@ -158,6 +158,39 @@ class CommitmentSpecSpec extends AnyFunSuite {
       assert(!CommitmentSpec.contributesToDustExposure(IncomingHtlc(createHtlc(19000.sat.toMilliSatoshi)), spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       assert(!CommitmentSpec.contributesToDustExposure(OutgoingHtlc(createHtlc(18000.sat.toMilliSatoshi)), spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
     }
+  }
+
+  test("add incoming htlcs until we reach our maximum dust exposure") {
+    val dustLimit = 1000.sat
+    val initialSpec = CommitmentSpec(Set.empty, FeeratePerKw(10000 sat), 0 msat, 0 msat)
+    assert(CommitmentSpec.dustExposure(initialSpec, dustLimit, Transactions.DefaultCommitmentFormat) === 0.msat)
+    assert(CommitmentSpec.contributesToDustExposure(IncomingHtlc(createHtlc(9000.sat.toMilliSatoshi)), initialSpec, dustLimit, Transactions.DefaultCommitmentFormat))
+    assert(CommitmentSpec.contributesToDustExposure(OutgoingHtlc(createHtlc(9000.sat.toMilliSatoshi)), initialSpec, dustLimit, Transactions.DefaultCommitmentFormat))
+    // NB: HTLC-success transactions are bigger than HTLC-timeout transactions: that means incoming htlcs have a higher
+    // dust threshold than outgoing htlcs in our commitment.
+    assert(CommitmentSpec.contributesToDustExposure(IncomingHtlc(createHtlc(9500.sat.toMilliSatoshi)), initialSpec, dustLimit, Transactions.DefaultCommitmentFormat))
+    assert(!CommitmentSpec.contributesToDustExposure(OutgoingHtlc(createHtlc(9500.sat.toMilliSatoshi)), initialSpec, dustLimit, Transactions.DefaultCommitmentFormat))
+    assert(!CommitmentSpec.contributesToDustExposure(IncomingHtlc(createHtlc(10000.sat.toMilliSatoshi)), initialSpec, dustLimit, Transactions.DefaultCommitmentFormat))
+    assert(!CommitmentSpec.contributesToDustExposure(OutgoingHtlc(createHtlc(10000.sat.toMilliSatoshi)), initialSpec, dustLimit, Transactions.DefaultCommitmentFormat))
+
+    val updatedSpec = initialSpec.copy(htlcs = Set(
+      OutgoingHtlc(createHtlc(9000.sat.toMilliSatoshi)),
+      OutgoingHtlc(createHtlc(9500.sat.toMilliSatoshi)),
+      IncomingHtlc(createHtlc(9500.sat.toMilliSatoshi)),
+    ))
+    assert(CommitmentSpec.dustExposure(updatedSpec, dustLimit, Transactions.DefaultCommitmentFormat) === 18500.sat.toMilliSatoshi)
+
+    val receivedHtlcs = Seq(
+      createHtlc(id = 5, amount = 9500.sat.toMilliSatoshi),
+      createHtlc(id = 6, amount = 5000.sat.toMilliSatoshi),
+      createHtlc(id = 7, amount = 1000.sat.toMilliSatoshi),
+      createHtlc(id = 8, amount = 400.sat.toMilliSatoshi),
+      createHtlc(id = 9, amount = 400.sat.toMilliSatoshi),
+      createHtlc(id = 10, amount = 50000.sat.toMilliSatoshi),
+    )
+    val (accepted, rejected) = CommitmentSpec.addIncomingHtlcsUntilDustExposureReached(25000 sat, updatedSpec, dustLimit, 10000.sat.toMilliSatoshi, initialSpec, dustLimit, 15000.sat.toMilliSatoshi, receivedHtlcs, Transactions.DefaultCommitmentFormat)
+    assert(accepted.map(_.id).toSet === Set(5, 6, 8, 10))
+    assert(rejected.map(_.id).toSet === Set(7, 9))
   }
 
 }

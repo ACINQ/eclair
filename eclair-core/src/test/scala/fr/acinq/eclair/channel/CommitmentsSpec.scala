@@ -24,8 +24,8 @@ import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.transactions.{CommitmentSpec, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.protocol.{IncorrectOrUnknownPaymentDetails, UpdateAddHtlc}
 import fr.acinq.eclair.{TestKitBaseClass, _}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -468,39 +468,6 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
         case Left(e) => fail(s"$t -> $e")
       }
     }
-  }
-
-  test("add htlcs until we reach our maximum dust exposure") { f =>
-    import f._
-
-    val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(ac0.currentDustExposure() === (0 msat, 0 msat))
-    assert(ac0.contributesToDustExposure(OutgoingHtlc(UpdateAddHtlc(channelId(alice), 0, 9000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (true, true))
-    assert(ac0.contributesToDustExposure(IncomingHtlc(UpdateAddHtlc(channelId(alice), 0, 9000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (true, true))
-    // NB: HTLC-success transactions are bigger than HTLC-timeout transactions. That means outgoing htlcs have a lower
-    // dust threshold than incoming htlcs in our local commit (and the opposite in the remote commit).
-    assert(ac0.contributesToDustExposure(OutgoingHtlc(UpdateAddHtlc(channelId(alice), 0, 9500.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (false, true))
-    assert(ac0.contributesToDustExposure(IncomingHtlc(UpdateAddHtlc(channelId(alice), 0, 9500.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (true, false))
-    assert(ac0.contributesToDustExposure(OutgoingHtlc(UpdateAddHtlc(channelId(alice), 0, 10000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (false, false))
-    assert(ac0.contributesToDustExposure(IncomingHtlc(UpdateAddHtlc(channelId(alice), 0, 10000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket))) === (false, false))
-
-    addHtlc(9000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
-    addHtlc(9500.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
-    crossSign(bob, alice, bob2alice, alice2bob)
-    val ac1 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(ac1.currentDustExposure() === (18500.sat.toMilliSatoshi, 9000.sat.toMilliSatoshi))
-
-    val receivedHtlcs = Seq(
-      UpdateAddHtlc(channelId(alice), 5, 9500.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(channelId(alice), 6, 5000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(channelId(alice), 7, 1000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(channelId(alice), 8, 400.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(channelId(alice), 9, 400.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
-      UpdateAddHtlc(channelId(alice), 10, 50000.sat.toMilliSatoshi, randomBytes32(), CltvExpiry(f.currentBlockHeight), TestConstants.emptyOnionPacket),
-    )
-    val (accepted, rejected) = ac1.addHtlcsUntilDustExposureReached(25000 sat, 10000.sat.toMilliSatoshi, 10000.sat.toMilliSatoshi, receivedHtlcs)
-    assert(accepted.map(_.id).toSet === Set(5, 6, 8, 10))
-    assert(rejected.map(_.id).toSet === Set(7, 9))
   }
 
 }
