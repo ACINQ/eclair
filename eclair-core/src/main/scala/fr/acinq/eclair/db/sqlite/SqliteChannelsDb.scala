@@ -34,7 +34,7 @@ object SqliteChannelsDb {
   val CURRENT_VERSION = 4
 }
 
-class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
+class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   import SqliteChannelsDb._
   import SqliteUtils.ExtendedResultSet._
