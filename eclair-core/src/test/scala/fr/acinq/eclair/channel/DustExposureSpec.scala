@@ -42,9 +42,9 @@ class DustExposureSpec extends AnyFunSuiteLike {
         OutgoingHtlc(createHtlc(3, 500.sat.toMilliSatoshi)),
       )
       val spec = CommitmentSpec(htlcs, FeeratePerKw(FeeratePerByte(50 sat)), 50000 msat, 75000 msat)
-      assert(DustExposure.compute(spec, 450 sat, Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === 898.sat.toMilliSatoshi)
-      assert(DustExposure.compute(spec, 500 sat, Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === 2796.sat.toMilliSatoshi)
-      assert(DustExposure.compute(spec, 500 sat, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === 3796.sat.toMilliSatoshi)
+      assert(DustExposure.computeExposure(spec, 450 sat, Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === 898.sat.toMilliSatoshi)
+      assert(DustExposure.computeExposure(spec, 500 sat, Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === 2796.sat.toMilliSatoshi)
+      assert(DustExposure.computeExposure(spec, 500 sat, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === 3796.sat.toMilliSatoshi)
     }
     {
       // Low feerate: buffer adds 10 sat/byte
@@ -70,8 +70,8 @@ class DustExposureSpec extends AnyFunSuiteLike {
       )
       val spec = CommitmentSpec(htlcs, feerate, 50000 msat, 75000 msat)
       val expected = 450.sat + 450.sat + 2250.sat + 2150.sat + 4010.sat + 3810.sat
-      assert(DustExposure.compute(spec, dustLimit, Transactions.DefaultCommitmentFormat) === expected.toMilliSatoshi)
-      assert(DustExposure.compute(spec, feerate * 2, dustLimit, Transactions.DefaultCommitmentFormat) === DustExposure.compute(spec, dustLimit, Transactions.DefaultCommitmentFormat))
+      assert(DustExposure.computeExposure(spec, dustLimit, Transactions.DefaultCommitmentFormat) === expected.toMilliSatoshi)
+      assert(DustExposure.computeExposure(spec, feerate * 2, dustLimit, Transactions.DefaultCommitmentFormat) === DustExposure.computeExposure(spec, dustLimit, Transactions.DefaultCommitmentFormat))
       assert(DustExposure.contributesToDustExposure(IncomingHtlc(createHtlc(4, 4010.sat.toMilliSatoshi)), spec, dustLimit, Transactions.DefaultCommitmentFormat))
       assert(DustExposure.contributesToDustExposure(OutgoingHtlc(createHtlc(4, 3810.sat.toMilliSatoshi)), spec, dustLimit, Transactions.DefaultCommitmentFormat))
       assert(!DustExposure.contributesToDustExposure(IncomingHtlc(createHtlc(5, 4020.sat.toMilliSatoshi)), spec, dustLimit, Transactions.DefaultCommitmentFormat))
@@ -101,8 +101,8 @@ class DustExposureSpec extends AnyFunSuiteLike {
       )
       val spec = CommitmentSpec(htlcs, feerate, 50000 msat, 75000 msat)
       val expected = 900.sat + 900.sat + 15000.sat + 14000.sat + 18000.sat + 17000.sat
-      assert(DustExposure.compute(spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === expected.toMilliSatoshi)
-      assert(DustExposure.compute(spec, feerate * 1.25, dustLimit, Transactions.DefaultCommitmentFormat) === DustExposure.compute(spec, dustLimit, Transactions.DefaultCommitmentFormat))
+      assert(DustExposure.computeExposure(spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === expected.toMilliSatoshi)
+      assert(DustExposure.computeExposure(spec, feerate * 1.25, dustLimit, Transactions.DefaultCommitmentFormat) === DustExposure.computeExposure(spec, dustLimit, Transactions.DefaultCommitmentFormat))
       assert(DustExposure.contributesToDustExposure(IncomingHtlc(createHtlc(4, 18000.sat.toMilliSatoshi)), spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       assert(DustExposure.contributesToDustExposure(OutgoingHtlc(createHtlc(4, 17000.sat.toMilliSatoshi)), spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
       assert(!DustExposure.contributesToDustExposure(IncomingHtlc(createHtlc(5, 19000.sat.toMilliSatoshi)), spec, dustLimit, Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat))
@@ -113,7 +113,7 @@ class DustExposureSpec extends AnyFunSuiteLike {
   test("filter incoming htlcs before forwarding") {
     val dustLimit = 1000.sat
     val initialSpec = CommitmentSpec(Set.empty, FeeratePerKw(10000 sat), 0 msat, 0 msat)
-    assert(DustExposure.compute(initialSpec, dustLimit, Transactions.DefaultCommitmentFormat) === 0.msat)
+    assert(DustExposure.computeExposure(initialSpec, dustLimit, Transactions.DefaultCommitmentFormat) === 0.msat)
     assert(DustExposure.contributesToDustExposure(IncomingHtlc(createHtlc(0, 9000.sat.toMilliSatoshi)), initialSpec, dustLimit, Transactions.DefaultCommitmentFormat))
     assert(DustExposure.contributesToDustExposure(OutgoingHtlc(createHtlc(0, 9000.sat.toMilliSatoshi)), initialSpec, dustLimit, Transactions.DefaultCommitmentFormat))
     // NB: HTLC-success transactions are bigger than HTLC-timeout transactions: that means incoming htlcs have a higher
@@ -128,7 +128,7 @@ class DustExposureSpec extends AnyFunSuiteLike {
       OutgoingHtlc(createHtlc(3, 9500.sat.toMilliSatoshi)),
       IncomingHtlc(createHtlc(4, 9500.sat.toMilliSatoshi)),
     ))
-    assert(DustExposure.compute(updatedSpec, dustLimit, Transactions.DefaultCommitmentFormat) === 18500.sat.toMilliSatoshi)
+    assert(DustExposure.computeExposure(updatedSpec, dustLimit, Transactions.DefaultCommitmentFormat) === 18500.sat.toMilliSatoshi)
 
     val receivedHtlcs = Seq(
       createHtlc(5, 9500.sat.toMilliSatoshi),

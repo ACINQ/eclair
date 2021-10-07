@@ -55,13 +55,13 @@ object DustExposure {
   }
 
   /** Compute our exposure to dust pending HTLCs (which will be lost as miner fees in case the channel force-closes) with the default dust feerate calculation. */
-  def compute(spec: CommitmentSpec, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): MilliSatoshi = {
+  def computeExposure(spec: CommitmentSpec, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     val feerate = feerateForDustExposure(spec.htlcTxFeerate(commitmentFormat))
-    compute(spec, feerate, dustLimit, commitmentFormat)
+    computeExposure(spec, feerate, dustLimit, commitmentFormat)
   }
 
   /** Compute our exposure to dust pending HTLCs (which will be lost as miner fees in case the channel force-closes) at the given feerate. */
-  def compute(spec: CommitmentSpec, feerate: FeeratePerKw, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): MilliSatoshi = {
+  def computeExposure(spec: CommitmentSpec, feerate: FeeratePerKw, dustLimit: Satoshi, commitmentFormat: CommitmentFormat): MilliSatoshi = {
     // NB: we need the `toSeq` because otherwise duplicate amountMsat would be removed (since `spec.htlcs` is a Set).
     spec.htlcs.filter(htlc => contributesToDustExposure(htlc, feerate, dustLimit, commitmentFormat)).toSeq.map(_.add.amountMsat).sum
   }
