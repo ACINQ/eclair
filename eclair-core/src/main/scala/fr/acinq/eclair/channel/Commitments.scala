@@ -388,12 +388,12 @@ object Commitments {
     // If sending this htlc would overflow our dust exposure, we reject it.
     val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.maxExposure
     val localReduced = CommitmentSpec.reduce(commitments.localCommit.spec, commitments1.localChanges.all, commitments.remoteChanges.all)
-    val localDustExposureAfterAdd = CommitmentSpec.dustExposure(localReduced, commitments.localParams.dustLimit, commitments.commitmentFormat)
+    val localDustExposureAfterAdd = DustExposure.compute(localReduced, commitments.localParams.dustLimit, commitments.commitmentFormat)
     if (localDustExposureAfterAdd > maxDustExposure) {
       return Left(LocalDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, localDustExposureAfterAdd))
     }
     val remoteReduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments.remoteChanges.all, commitments1.localChanges.all)
-    val remoteDustExposureAfterAdd = CommitmentSpec.dustExposure(remoteReduced, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
+    val remoteDustExposureAfterAdd = DustExposure.compute(remoteReduced, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
     if (remoteDustExposureAfterAdd > maxDustExposure) {
       return Left(RemoteDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, remoteDustExposureAfterAdd))
     }
@@ -559,12 +559,12 @@ object Commitments {
         // this is the commitment as it would be if our update_fee was immediately signed by both parties (it is only an
         // estimate because there can be concurrent updates)
         val localReduced = CommitmentSpec.reduce(commitments.localCommit.spec, commitments1.localChanges.all, commitments.remoteChanges.all)
-        val localDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(localReduced, cmd.feeratePerKw, commitments.localParams.dustLimit, commitments.commitmentFormat)
+        val localDustExposureAfterFeeUpdate = DustExposure.compute(localReduced, cmd.feeratePerKw, commitments.localParams.dustLimit, commitments.commitmentFormat)
         if (localDustExposureAfterFeeUpdate > maxDustExposure) {
           return Left(LocalDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
         }
         val remoteReduced = CommitmentSpec.reduce(commitments.remoteCommit.spec, commitments.remoteChanges.all, commitments1.localChanges.all)
-        val remoteDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(remoteReduced, cmd.feeratePerKw, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
+        val remoteDustExposureAfterFeeUpdate = DustExposure.compute(remoteReduced, cmd.feeratePerKw, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
         if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
           return Left(RemoteDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
         }
@@ -607,14 +607,14 @@ object Commitments {
         if (feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.closeOnUpdateFeeOverflow) {
           val maxDustExposure = feeConf.feerateToleranceFor(commitments.remoteNodeId).dustTolerance.maxExposure
           val localReduced = CommitmentSpec.reduce(commitments.localCommit.spec, commitments.localChanges.all, commitments1.remoteChanges.all)
-          val localDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(localReduced, fee.feeratePerKw, commitments.localParams.dustLimit, commitments.commitmentFormat)
+          val localDustExposureAfterFeeUpdate = DustExposure.compute(localReduced, fee.feeratePerKw, commitments.localParams.dustLimit, commitments.commitmentFormat)
           if (localDustExposureAfterFeeUpdate > maxDustExposure) {
             return Left(LocalDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, localDustExposureAfterFeeUpdate))
           }
           // this is the commitment as it would be if their update_fee was immediately signed by both parties (it is only an
           // estimate because there can be concurrent updates)
           val remoteReduced = CommitmentSpec.reduce(commitments.remoteCommit.spec, commitments1.remoteChanges.all, commitments.localChanges.all)
-          val remoteDustExposureAfterFeeUpdate = CommitmentSpec.dustExposure(remoteReduced, fee.feeratePerKw, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
+          val remoteDustExposureAfterFeeUpdate = DustExposure.compute(remoteReduced, fee.feeratePerKw, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
           if (remoteDustExposureAfterFeeUpdate > maxDustExposure) {
             return Left(RemoteDustHtlcExposureTooHigh(commitments.channelId, maxDustExposure, remoteDustExposureAfterFeeUpdate))
           }
@@ -783,12 +783,12 @@ object Commitments {
             case _ => true
           })
           val localReduced = CommitmentSpec.reduce(localSpecWithoutNewHtlcs, commitments.localChanges.all, commitments.remoteChanges.acked)
-          val localCommitDustExposure = CommitmentSpec.dustExposure(localReduced, commitments.localParams.dustLimit, commitments.commitmentFormat)
+          val localCommitDustExposure = DustExposure.compute(localReduced, commitments.localParams.dustLimit, commitments.commitmentFormat)
           val remoteReduced = CommitmentSpec.reduce(remoteSpecWithoutNewHtlcs, commitments.remoteChanges.acked, commitments.localChanges.all)
-          val remoteCommitDustExposure = CommitmentSpec.dustExposure(remoteReduced, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
+          val remoteCommitDustExposure = DustExposure.compute(remoteReduced, commitments.remoteParams.dustLimit, commitments.commitmentFormat)
           // we sort incoming htlcs by decreasing amount: we want to prioritize higher amounts.
           val sortedReceivedHtlcs = receivedHtlcs.sortBy(_.amountMsat).reverse
-          CommitmentSpec.addIncomingHtlcsUntilDustExposureReached(
+          DustExposure.filterIncomingHtlcsUntilDustExposureReached(
             maxDustExposure,
             localReduced,
             commitments.localParams.dustLimit,

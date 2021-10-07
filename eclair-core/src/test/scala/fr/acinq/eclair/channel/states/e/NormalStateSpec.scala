@@ -1940,8 +1940,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     addHtlc(14000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(CommitmentSpec.dustExposure(aliceCommitments.localCommit.spec, aliceCommitments.localParams.dustLimit, aliceCommitments.commitmentFormat) === 0.msat)
-    assert(CommitmentSpec.dustExposure(aliceCommitments.remoteCommit.spec, aliceCommitments.remoteParams.dustLimit, aliceCommitments.commitmentFormat) === 0.msat)
+    assert(DustExposure.compute(aliceCommitments.localCommit.spec, aliceCommitments.localParams.dustLimit, aliceCommitments.commitmentFormat) === 0.msat)
+    assert(DustExposure.compute(aliceCommitments.remoteCommit.spec, aliceCommitments.remoteParams.dustLimit, aliceCommitments.commitmentFormat) === 0.msat)
 
     // A large feerate increase would make these HTLCs overflow alice's dust exposure, so she rejects it:
     val sender = TestProbe()
@@ -1965,8 +1965,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // Alice sends another HTLC to Bob that is not included in the dust exposure at the current feerate.
     addHtlc(14000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
     val aliceCommitments = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(CommitmentSpec.dustExposure(aliceCommitments.localCommit.spec, aliceCommitments.localParams.dustLimit, aliceCommitments.commitmentFormat) === 0.msat)
-    assert(CommitmentSpec.dustExposure(aliceCommitments.remoteCommit.spec, aliceCommitments.remoteParams.dustLimit, aliceCommitments.commitmentFormat) === 0.msat)
+    assert(DustExposure.compute(aliceCommitments.localCommit.spec, aliceCommitments.localParams.dustLimit, aliceCommitments.commitmentFormat) === 0.msat)
+    assert(DustExposure.compute(aliceCommitments.remoteCommit.spec, aliceCommitments.remoteParams.dustLimit, aliceCommitments.commitmentFormat) === 0.msat)
 
     // A large feerate increase would make these HTLCs overflow alice's dust exposure, so she rejects it:
     val cmd = CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
@@ -1988,10 +1988,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val higherDustLimit = Seq(aliceCommitments.localParams.dustLimit, aliceCommitments.remoteParams.dustLimit).max
     val lowerDustLimit = Seq(aliceCommitments.localParams.dustLimit, aliceCommitments.remoteParams.dustLimit).min
     // We have the following dust thresholds at the current feerate
-    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = CommitmentSpec.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 6989.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = CommitmentSpec.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 7109.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = CommitmentSpec.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 2989.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = CommitmentSpec.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 3109.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 6989.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 7109.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 2989.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 3109.sat)
     // And the following thresholds after the feerate update
     // NB: we apply the real feerate when sending update_fee, not the one adjusted for dust
     val updatedFeerate = FeeratePerKw(4000 sat)
@@ -2195,8 +2195,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     addHtlc(14000.sat.toMilliSatoshi, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(CommitmentSpec.dustExposure(bobCommitments.localCommit.spec, bobCommitments.localParams.dustLimit, bobCommitments.commitmentFormat) === 0.msat)
-    assert(CommitmentSpec.dustExposure(bobCommitments.remoteCommit.spec, bobCommitments.remoteParams.dustLimit, bobCommitments.commitmentFormat) === 0.msat)
+    assert(DustExposure.compute(bobCommitments.localCommit.spec, bobCommitments.localParams.dustLimit, bobCommitments.commitmentFormat) === 0.msat)
+    assert(DustExposure.compute(bobCommitments.remoteCommit.spec, bobCommitments.remoteParams.dustLimit, bobCommitments.commitmentFormat) === 0.msat)
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
 
     // A large feerate increase would make these HTLCs overflow Bob's dust exposure, so he force-closes:
@@ -2224,8 +2224,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // Bob sends another HTLC to Alice that is not included in the dust exposure at the current feerate.
     addHtlc(14000.sat.toMilliSatoshi, bob, alice, bob2alice, alice2bob)
     val bobCommitments = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
-    assert(CommitmentSpec.dustExposure(bobCommitments.localCommit.spec, bobCommitments.localParams.dustLimit, bobCommitments.commitmentFormat) === 0.msat)
-    assert(CommitmentSpec.dustExposure(bobCommitments.remoteCommit.spec, bobCommitments.remoteParams.dustLimit, bobCommitments.commitmentFormat) === 0.msat)
+    assert(DustExposure.compute(bobCommitments.localCommit.spec, bobCommitments.localParams.dustLimit, bobCommitments.commitmentFormat) === 0.msat)
+    assert(DustExposure.compute(bobCommitments.remoteCommit.spec, bobCommitments.remoteParams.dustLimit, bobCommitments.commitmentFormat) === 0.msat)
 
     // A large feerate increase would make these HTLCs overflow Bob's dust exposure, so he force-close:
     val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
@@ -2251,10 +2251,10 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val higherDustLimit = Seq(aliceCommitments.localParams.dustLimit, aliceCommitments.remoteParams.dustLimit).max
     val lowerDustLimit = Seq(aliceCommitments.localParams.dustLimit, aliceCommitments.remoteParams.dustLimit).min
     // We have the following dust thresholds at the current feerate
-    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = CommitmentSpec.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 6989.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = CommitmentSpec.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 7109.sat)
-    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = CommitmentSpec.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 2989.sat)
-    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = CommitmentSpec.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 3109.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(higherDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 6989.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(higherDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 7109.sat)
+    assert(Transactions.offeredHtlcTrimThreshold(lowerDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 2989.sat)
+    assert(Transactions.receivedHtlcTrimThreshold(lowerDustLimit, aliceCommitments.localCommit.spec.copy(commitTxFeerate = DustExposure.feerateForDustExposure(initialFeerate)), aliceCommitments.commitmentFormat) === 3109.sat)
     // And the following thresholds after the feerate update
     // NB: we apply the real feerate when sending update_fee, not the one adjusted for dust
     val updatedFeerate = FeeratePerKw(4000 sat)
