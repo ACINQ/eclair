@@ -136,7 +136,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
     // Forward the commit tx to the publisher.
-    val publishCommitTx = alice2blockchain.expectMsg(PublishRawTx(commitTx, None))
+    val publishCommitTx = alice2blockchain.expectMsg(PublishRawTx(commitTx, commitTx.fee, None))
     // Forward the anchor tx to the publisher.
     val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishAnchor.txInfo.input.outPoint.txid === commitTx.tx.txid)
@@ -425,7 +425,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
           txIn = anchorTxInfo.tx.txIn ++ walletInputs,
           txOut = TxOut(amountOut, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
         ))
-        val adjustedTx = ReplaceableTxPublisher.adjustAnchorOutputChange(unsignedTx, commitTx.tx, amountIn, commitFeerate, TestConstants.feeratePerKw, dustLimit)
+        val (adjustedTx, fee) = ReplaceableTxPublisher.adjustAnchorOutputChange(unsignedTx, commitTx.tx, amountIn, commitFeerate, TestConstants.feeratePerKw, dustLimit)
+        assert(fee === amountIn - adjustedTx.tx.txOut.map(_.amount).sum)
         assert(adjustedTx.tx.txIn.size === unsignedTx.tx.txIn.size)
         assert(adjustedTx.tx.txOut.size === 1)
         assert(adjustedTx.tx.txOut.head.amount >= dustLimit)
@@ -463,7 +464,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
     // We make the commit tx confirm because htlc txs have a relative delay.
-    alice2blockchain.expectMsg(PublishRawTx(commitTx, None))
+    alice2blockchain.expectMsg(PublishRawTx(commitTx, commitTx.fee, None))
     wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
     probe.expectMsg(commitTx.tx.txid)
     generateBlocks(1)
@@ -477,6 +478,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim main output
+    alice2blockchain.expectMsgType[WatchOutputSpent] // claim-anchor tx
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc-success tx
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc-timeout tx
     alice2blockchain.expectNoMessage(100 millis)
@@ -683,7 +685,8 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
         ))
         for (unsignedTx <- Seq(unsignedHtlcSuccessTx, unsignedHtlcTimeoutTx)) {
           val totalAmountIn = unsignedTx.input.txOut.amount + walletAmountIn
-          val adjustedTx = ReplaceableTxPublisher.adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, commitments)
+          val (adjustedTx, fee) = ReplaceableTxPublisher.adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, commitments)
+          assert(fee === totalAmountIn - adjustedTx.tx.txOut.map(_.amount).sum)
           assert(adjustedTx.tx.txIn.size === unsignedTx.tx.txIn.size)
           assert(adjustedTx.tx.txOut.size === 1 || adjustedTx.tx.txOut.size === 2)
           if (adjustedTx.tx.txOut.size == 2) {

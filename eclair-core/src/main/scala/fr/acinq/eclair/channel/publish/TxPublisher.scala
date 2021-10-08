@@ -20,7 +20,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -81,9 +81,9 @@ object TxPublisher {
    * NB: the parent tx should only be provided when it's being concurrently published, it's unnecessary when it is
    * confirmed or when the tx has a relative delay.
    */
-  case class PublishRawTx(tx: Transaction, input: OutPoint, desc: String, parentTx_opt: Option[ByteVector32]) extends PublishTx
+  case class PublishRawTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[ByteVector32]) extends PublishTx
   object PublishRawTx {
-    def apply(txInfo: TransactionWithInputInfo, parentTx_opt: Option[ByteVector32]): PublishRawTx = PublishRawTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, parentTx_opt)
+    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishRawTx = PublishRawTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
   case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments) extends PublishTx {
@@ -91,9 +91,7 @@ object TxPublisher {
     override def desc: String = txInfo.desc
   }
 
-  sealed trait PublishTxResult extends Command {
-    def cmd: PublishTx
-  }
+  sealed trait PublishTxResult extends Command { def cmd: PublishTx }
   /**
    * The requested transaction has been confirmed.
    *
@@ -253,7 +251,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
       }
 
       case WrappedCurrentBlockCount(currentBlockCount) =>
-        log.debug("retry publishing {} transactions at block {}", retryNextBlock.length, currentBlockCount)
+        log.info("{} transactions are still pending at block {}, retrying {} transactions that previously failed", pending.size, currentBlockCount, retryNextBlock.length)
         retryNextBlock.foreach(cmd => timers.startSingleTimer(cmd, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis))
         run(pending, Seq.empty, channelInfo)
 

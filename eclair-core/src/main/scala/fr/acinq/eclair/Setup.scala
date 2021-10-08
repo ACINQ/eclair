@@ -124,6 +124,7 @@ class Setup(val datadir: File,
     // @formatter:off
     override def getFeeratePerKb(target: Int): FeeratePerKB = feeratesPerKB.get().feePerBlock(target)
     override def getFeeratePerKw(target: Int): FeeratePerKw = feeratesPerKw.get().feePerBlock(target)
+    override def getMempoolMinFeeratePerKw(): FeeratePerKw = feeratesPerKw.get().mempoolMinFee
     // @formatter:on
   }
 

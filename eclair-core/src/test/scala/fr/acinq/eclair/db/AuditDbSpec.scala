@@ -17,12 +17,12 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Helpers.Closing.MutualClose
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.AuditDb.Stats
+import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
 import fr.acinq.eclair.db.jdbc.JdbcUtils.using
 import fr.acinq.eclair.db.pg.PgAuditDb
@@ -34,6 +34,7 @@ import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.wire.protocol.Error
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
+import scodec.bits.HexStringSyntax
 
 import java.sql.Timestamp
 import java.time.Instant
@@ -67,7 +68,9 @@ class AuditDbSpec extends AnyFunSuite {
       val pp2b = PaymentReceived.PartialPayment(42100 msat, randomBytes32())
       val e2 = PaymentReceived(randomBytes32(), pp2a :: pp2b :: Nil)
       val e3 = ChannelPaymentRelayed(42000 msat, 1000 msat, randomBytes32(), randomBytes32(), randomBytes32())
-      val e4 = NetworkFeePaid(null, randomKey().publicKey, randomBytes32(), Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
+      val e4a = TransactionPublished(randomBytes32(), randomKey().publicKey, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
+      val e4b = TransactionConfirmed(e4a.channelId, e4a.remoteNodeId, e4a.tx)
+      val e4c = TransactionConfirmed(randomBytes32(), randomKey().publicKey, Transaction(2, Nil, TxOut(500 sat, hex"1234") :: Nil, 0))
       val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = 0)
       val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32(), None, timestamp = 1)
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil)
@@ -85,7 +88,9 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(e1)
       db.add(e2)
       db.add(e3)
-      db.add(e4)
+      db.add(e4a)
+      db.add(e4b)
+      db.add(e4c)
       db.add(e5)
       db.add(e6)
       db.add(e7)
@@ -127,10 +132,19 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(25000 msat, c6)), Seq(PaymentRelayed.Part(20000 msat, c4)), randomKey().publicKey, 15000 msat))
       db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(46000 msat, c6)), Seq(PaymentRelayed.Part(16000 msat, c2), PaymentRelayed.Part(10000 msat, c4), PaymentRelayed.Part(14000 msat, c4)), randomKey().publicKey, 37000 msat))
 
-      db.add(NetworkFeePaid(null, n2, c2, Transaction(0, Seq.empty, Seq.empty, 0), 200 sat, "funding"))
-      db.add(NetworkFeePaid(null, n2, c2, Transaction(0, Seq.empty, Seq.empty, 0), 300 sat, "mutual"))
-      db.add(NetworkFeePaid(null, n3, c3, Transaction(0, Seq.empty, Seq.empty, 0), 400 sat, "funding"))
-      db.add(NetworkFeePaid(null, n4, c4, Transaction(0, Seq.empty, Seq.empty, 0), 500 sat, "funding"))
+      // The following confirmed txs will be taken into account.
+      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0), 200 sat, "funding"))
+      db.add(TransactionConfirmed(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0)))
+      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(4000 sat, hex"00112233")), 0), 300 sat, "mutual"))
+      db.add(TransactionConfirmed(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(4000 sat, hex"00112233")), 0)))
+      db.add(TransactionPublished(c3, n3, Transaction(0, Seq.empty, Seq(TxOut(8000 sat, hex"deadbeef")), 0), 400 sat, "funding"))
+      db.add(TransactionConfirmed(c3, n3, Transaction(0, Seq.empty, Seq(TxOut(8000 sat, hex"deadbeef")), 0)))
+      db.add(TransactionPublished(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(6000 sat, hex"0000000000")), 0), 500 sat, "funding"))
+      db.add(TransactionConfirmed(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(6000 sat, hex"0000000000")), 0)))
+      // The following txs will not be taken into account.
+      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0), 1000 sat, "funding")) // duplicate
+      db.add(TransactionPublished(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(4500 sat, hex"1111222233")), 0), 500 sat, "funding")) // unconfirmed
+      db.add(TransactionConfirmed(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(2500 sat, hex"ffffff")), 0))) // doesn't match a published tx
 
       // NB: we only count a relay fee for the outgoing channel, no the incoming one.
       assert(db.stats(0, System.currentTimeMillis + 1).toSet === Set(
@@ -161,7 +175,9 @@ class AuditDbSpec extends AnyFunSuite {
       // Fund channels.
       channelIds.foreach(channelId => {
         val nodeId = nodeIds(Random.nextInt(nodeCount))
-        db.add(NetworkFeePaid(null, nodeId, channelId, Transaction(0, Seq.empty, Seq.empty, 0), 100 sat, "funding"))
+        val fundingTx = Transaction(0, Seq.empty, Seq(TxOut(5000 sat, Script.pay2wpkh(nodeId))), 0)
+        db.add(TransactionPublished(channelId, nodeId, fundingTx, 100 sat, "funding"))
+        db.add(TransactionConfirmed(channelId, nodeId, fundingTx))
       })
       // Add relay events.
       (1 to eventCount).foreach(_ => {
@@ -555,6 +571,134 @@ class AuditDbSpec extends AnyFunSuite {
             val relayed3 = TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(450 msat, randomBytes32()), PaymentRelayed.Part(500 msat, randomBytes32())), Seq(PaymentRelayed.Part(800 msat, randomBytes32())), randomKey().publicKey, 700 msat, 150)
             postMigrationDb.add(relayed3)
             assert(postMigrationDb.listRelayed(100, 160) === Seq(relayed1, relayed2, relayed3))
+          }
+        )
+    }
+  }
+
+  test("migrate audit database v7 -> current") {
+    val networkFees = Seq(
+      NetworkFee(randomKey().publicKey, randomBytes32(), randomBytes32(), 50 sat, "test-tx-1", 500),
+      NetworkFee(randomKey().publicKey, randomBytes32(), randomBytes32(), 0 sat, "test-tx-2", 600),
+    )
+
+    forAllDbs {
+      case dbs: TestPgDatabases =>
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // simulate existing previous version db
+            using(connection.createStatement()) { statement =>
+              statement.executeUpdate("CREATE SCHEMA audit")
+
+              statement.executeUpdate("CREATE TABLE audit.sent (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, recipient_amount_msat BIGINT NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash TEXT NOT NULL, payment_preimage TEXT NOT NULL, recipient_node_id TEXT NOT NULL, to_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.network_fees (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, tx_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL)")
+
+              statement.executeUpdate("CREATE TABLE audit.channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+              statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON audit.sent(timestamp)")
+              statement.executeUpdate("CREATE INDEX received_timestamp_idx ON audit.received(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON audit.relayed(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON audit.relayed(payment_hash)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON audit.relayed_trampoline(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
+              statement.executeUpdate("CREATE INDEX network_fees_timestamp_idx ON audit.network_fees(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON audit.channel_errors(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON audit.channel_updates(channel_id)")
+              statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON audit.channel_updates(node_id)")
+              statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON audit.channel_updates(timestamp)")
+              statement.executeUpdate("CREATE INDEX metrics_status_idx ON audit.path_finding_metrics(status)")
+              statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON audit.path_finding_metrics(timestamp)")
+              statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON audit.path_finding_metrics(is_mpp)")
+              statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
+
+              setVersion(statement, "audit", 9)
+            }
+
+            // We insert some transactions in the table.
+            // NB: the first transaction is explicitly duplicated to test the primary key addition.
+            for (tx <- networkFees.head +: networkFees) {
+              using(connection.prepareStatement("INSERT INTO audit.network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+                statement.setString(1, tx.channelId.toHex)
+                statement.setString(2, tx.remoteNodeId.value.toHex)
+                statement.setString(3, tx.txId.toHex)
+                statement.setLong(4, tx.fee.toLong)
+                statement.setString(5, tx.txType)
+                statement.setTimestamp(6, Timestamp.from(Instant.ofEpochMilli(tx.timestamp)))
+                statement.executeUpdate()
+              }
+            }
+          },
+          dbName = PgAuditDb.DB_NAME,
+          targetVersion = PgAuditDb.CURRENT_VERSION,
+          postCheck = connection => {
+            val migratedDb = dbs.audit
+            using(connection.createStatement()) { statement => assert(getVersion(statement, "audit").contains(PgAuditDb.CURRENT_VERSION)) }
+            assert(migratedDb.listNetworkFees(0, 700) === networkFees)
+          }
+        )
+      case dbs: TestSqliteDatabases =>
+        migrationCheck(
+          dbs = dbs,
+          initializeTables = connection => {
+            // simulate existing previous version db
+            using(connection.createStatement()) { statement =>
+              statement.executeUpdate("CREATE TABLE sent (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, recipient_amount_msat INTEGER NOT NULL, payment_id TEXT NOT NULL, parent_payment_id TEXT NOT NULL, payment_hash BLOB NOT NULL, payment_preimage BLOB NOT NULL, recipient_node_id BLOB NOT NULL, to_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE received (amount_msat INTEGER NOT NULL, payment_hash BLOB NOT NULL, from_channel_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE relayed (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, channel_id BLOB NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE relayed_trampoline (payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, next_node_id BLOB NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE network_fees (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, tx_id BLOB NOT NULL, fee_sat INTEGER NOT NULL, tx_type TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE channel_events (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, capacity_sat INTEGER NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE channel_errors (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE channel_updates (channel_id BLOB NOT NULL, node_id BLOB NOT NULL, fee_base_msat INTEGER NOT NULL, fee_proportional_millionths INTEGER NOT NULL, cltv_expiry_delta INTEGER NOT NULL, htlc_minimum_msat INTEGER NOT NULL, htlc_maximum_msat INTEGER NOT NULL, timestamp INTEGER NOT NULL)")
+              statement.executeUpdate("CREATE TABLE path_finding_metrics (amount_msat INTEGER NOT NULL, fees_msat INTEGER NOT NULL, status TEXT NOT NULL, duration_ms INTEGER NOT NULL, timestamp INTEGER NOT NULL, is_mpp INTEGER NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id BLOB NOT NULL)")
+
+              statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON sent(timestamp)")
+              statement.executeUpdate("CREATE INDEX received_timestamp_idx ON received(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_timestamp_idx ON relayed(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON relayed(payment_hash)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON relayed_trampoline(timestamp)")
+              statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON relayed_trampoline(payment_hash)")
+              statement.executeUpdate("CREATE INDEX network_fees_timestamp_idx ON network_fees(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON channel_events(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON channel_errors(timestamp)")
+              statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON channel_updates(channel_id)")
+              statement.executeUpdate("CREATE INDEX channel_updates_nid_idx ON channel_updates(node_id)")
+              statement.executeUpdate("CREATE INDEX channel_updates_timestamp_idx ON channel_updates(timestamp)")
+              statement.executeUpdate("CREATE INDEX metrics_status_idx ON path_finding_metrics(status)")
+              statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON path_finding_metrics(timestamp)")
+              statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON path_finding_metrics(is_mpp)")
+              statement.executeUpdate("CREATE INDEX metrics_name_idx ON path_finding_metrics(experiment_name)")
+
+              setVersion(statement, "audit", 7)
+            }
+
+            // We insert some transactions in the table.
+            // NB: the first transaction is explicitly duplicated to test the primary key addition.
+            for (tx <- networkFees.head +: networkFees) {
+              using(connection.prepareStatement("INSERT INTO network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
+                statement.setBytes(1, tx.channelId.toArray)
+                statement.setBytes(2, tx.remoteNodeId.value.toArray)
+                statement.setBytes(3, tx.txId.toArray)
+                statement.setLong(4, tx.fee.toLong)
+                statement.setString(5, tx.txType)
+                statement.setLong(6, tx.timestamp)
+                statement.executeUpdate()
+              }
+            }
+          },
+          dbName = SqliteAuditDb.DB_NAME,
+          targetVersion = SqliteAuditDb.CURRENT_VERSION,
+          postCheck = connection => {
+            val migratedDb = dbs.audit
+            using(connection.createStatement()) { statement => assert(getVersion(statement, "audit").contains(SqliteAuditDb.CURRENT_VERSION)) }
+            assert(migratedDb.listNetworkFees(0, 700) === networkFees)
           }
         )
     }

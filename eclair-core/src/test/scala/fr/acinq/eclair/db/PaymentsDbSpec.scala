@@ -371,7 +371,7 @@ class PaymentsDbSpec extends AnyFunSuite {
         }
 
         import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
-        assert(connection.createStatement().executeQuery("SELECT * FROM received_payments").map(rs => rs.getString("payment_hash")).toSeq.size > 0)
+        assert(connection.createStatement().executeQuery("SELECT * FROM received_payments").map(rs => rs.getString("payment_hash")).toSeq.nonEmpty)
 
       },
       dbName = PgPaymentsDb.DB_NAME,
@@ -491,7 +491,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       db.updateOutgoingPayment(PaymentFailed(s3.id, s3.paymentHash, Nil, 310))
       val ss3 = s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310))
       assert(db.getOutgoingPayment(s3.id) === Some(ss3))
-      db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320))
+      db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(s4.amount, Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(s4.amount, Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320))
       val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", List(HopSummary(alice, bob, Some(ShortChannelId(42))))), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)))), 320))
       assert(db.getOutgoingPayment(s4.id) === Some(ss4))
 
