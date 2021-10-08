@@ -53,6 +53,29 @@ You **MUST** ensure you have some utxos available in your Bitcoin Core wallet fo
 
 Do note that anchor outputs may still be unsafe in high-fee environments until the Bitcoin network provides support for [package relay](https://bitcoinops.org/en/topics/package-relay/).
 
+### Configurable dust tolerance
+
+Dust HTLCs are converted to miner fees when a channel is force-closed and these HTLCs are still pending.
+This can be used as a griefing attack by malicious peers, as described in [CVE-2021-41591](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-41591).
+
+Node operators can now configure the maximum amount of dust HTLCs that can be pending in a channel by setting `eclair.on-chain-fees.feerate-tolerance.dust-tolerance.max-exposure-satoshis` in their `eclair.conf`.
+
+Choosing the right value for your node involves trade-offs.
+The lower you set it, the more protection it will offer against malicious peers.
+But if it's too low, your node may reject some dust HTLCs that it would have otherwise relayed, which lowers the amount of relay fees you will be able to collect.
+
+Another related parameter has been added: `eclair.on-chain-fees.feerate-tolerance.dust-tolerance.close-on-update-fee-overflow`.
+When this parameter is set to `true`, your node will automatically close channels when the amount of dust HTLCs overflows your configured limits.
+This gives you a better protection against malicious peers, but may end up closing channels with honest peers as well.
+This parameter is deactivated by default and unnecessary when using `option_anchors_zero_fee_htlc_tx`.
+
+Note that you can override these values for specific peers, thanks to the `eclair.on-chain-fees.override-feerate-tolerance` mechanism.
+You can for example set a high `eclair.on-chain-fees.feerate-tolerance.dust-tolerance.max-exposure-satoshis` with peers that you trust.
+
+Note that if you were previously running eclair with the default configuration, your exposure to this issue was quite low because the default `max-accepted-htlc` is set to 30.
+With an on-chain feerate of `10 sat/byte`, your maximum exposure would be ~70 000 satoshis per channel.
+With an on-chain feerate of `5 sat/byte`, your maximum exposure would be ~40 000 satoshis per channel.
+
 ### Path-finding improvements
 
 This release contains many improvements to path-finding and paves the way for future experimentation.

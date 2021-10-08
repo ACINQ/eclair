@@ -86,6 +86,7 @@ final case class CommitmentSpec(htlcs: Set[DirectedHtlc], commitTxFeerate: Feera
 }
 
 object CommitmentSpec {
+
   def removeHtlc(changes: List[UpdateMessage], id: Long): List[UpdateMessage] = changes.filterNot {
     case u: UpdateAddHtlc => u.id == id
     case _ => false

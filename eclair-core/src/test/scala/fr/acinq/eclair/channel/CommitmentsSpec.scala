@@ -19,7 +19,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector64, DeterministicWallet, Satoshi, SatoshiLong, Transaction}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
-import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw, FeerateTolerance, OnChainFeeConf}
+import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Commitments._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
@@ -41,7 +41,14 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
   implicit val log: akka.event.LoggingAdapter = akka.event.NoLogging
 
-  val feeConfNoMismatch = OnChainFeeConf(FeeTargets(6, 2, 2, 6), new TestFeeEstimator, closeOnOfflineMismatch = false, 1.0, FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw), Map.empty)
+  val feeConfNoMismatch = OnChainFeeConf(
+    FeeTargets(6, 2, 2, 6),
+    new TestFeeEstimator(),
+    closeOnOfflineMismatch = false,
+    1.0,
+    FeerateTolerance(0.00001, 100000.0, TestConstants.anchorOutputsFeeratePerKw, DustTolerance(100000 sat, closeOnUpdateFeeOverflow = false)),
+    Map.empty
+  )
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -61,6 +68,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val b = 190000000 msat // initial balance bob
     val p = 42000000 msat // a->b payment
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+    val maxDustExposure = 500000 sat
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -88,7 +96,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac3, _)) = receiveRevocation(ac2, revocation1)
+    val Right((ac3, _)) = receiveRevocation(ac2, revocation1, maxDustExposure)
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
@@ -100,7 +108,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac4.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b)
 
-    val Right((bc4, _)) = receiveRevocation(bc3, revocation2)
+    val Right((bc4, _)) = receiveRevocation(bc3, revocation2, maxDustExposure)
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -121,7 +129,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac6.availableBalanceForSend == a - p)
     assert(ac6.availableBalanceForReceive == b + p)
 
-    val Right((bc7, _)) = receiveRevocation(bc6, revocation3)
+    val Right((bc7, _)) = receiveRevocation(bc6, revocation3, maxDustExposure)
     assert(bc7.availableBalanceForSend == b + p)
     assert(bc7.availableBalanceForReceive == a - p)
 
@@ -133,7 +141,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc8.availableBalanceForSend == b + p)
     assert(bc8.availableBalanceForReceive == a - p)
 
-    val Right((ac8, _)) = receiveRevocation(ac7, revocation4)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation4, maxDustExposure)
     assert(ac8.availableBalanceForSend == a - p)
     assert(ac8.availableBalanceForReceive == b + p)
   }
@@ -145,6 +153,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val b = 190000000 msat // initial balance bob
     val p = 42000000 msat // a->b payment
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+    val maxDustExposure = 500000 sat
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -172,7 +181,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc2.availableBalanceForSend == b)
     assert(bc2.availableBalanceForReceive == a - p - htlcOutputFee)
 
-    val Right((ac3, _)) = receiveRevocation(ac2, revocation1)
+    val Right((ac3, _)) = receiveRevocation(ac2, revocation1, maxDustExposure)
     assert(ac3.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac3.availableBalanceForReceive == b)
 
@@ -184,7 +193,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac4.availableBalanceForSend == a - p - htlcOutputFee)
     assert(ac4.availableBalanceForReceive == b)
 
-    val Right((bc4, _)) = receiveRevocation(bc3, revocation2)
+    val Right((bc4, _)) = receiveRevocation(bc3, revocation2, maxDustExposure)
     assert(bc4.availableBalanceForSend == b)
     assert(bc4.availableBalanceForReceive == a - p - htlcOutputFee)
 
@@ -205,7 +214,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac6.availableBalanceForSend == a)
     assert(ac6.availableBalanceForReceive == b)
 
-    val Right((bc7, _)) = receiveRevocation(bc6, revocation3)
+    val Right((bc7, _)) = receiveRevocation(bc6, revocation3, maxDustExposure)
     assert(bc7.availableBalanceForSend == b)
     assert(bc7.availableBalanceForReceive == a)
 
@@ -217,7 +226,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc8.availableBalanceForSend == b)
     assert(bc8.availableBalanceForReceive == a)
 
-    val Right((ac8, _)) = receiveRevocation(ac7, revocation4)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation4, maxDustExposure)
     assert(ac8.availableBalanceForSend == a)
     assert(ac8.availableBalanceForReceive == b)
   }
@@ -231,6 +240,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val p2 = 20000000 msat // a->b payment
     val p3 = 40000000 msat // b->a payment
     val htlcOutputFee = 2 * 1720000 msat // fee due to the additional htlc output; we count it twice because we keep a reserve for a x2 feerate increase
+    val maxDustExposure = 500000 sat
 
     val ac0 = alice.stateData.asInstanceOf[DATA_NORMAL].commitments
     val bc0 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments
@@ -277,7 +287,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc4.availableBalanceForSend == b - p3)
     assert(bc4.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
 
-    val Right((ac5, _)) = receiveRevocation(ac4, revocation1)
+    val Right((ac5, _)) = receiveRevocation(ac4, revocation1, maxDustExposure)
     assert(ac5.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee)
     assert(ac5.availableBalanceForReceive == b - p3)
 
@@ -289,7 +299,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac6.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee) // alice has acknowledged b's hltc so it needs to pay the fee for it
     assert(ac6.availableBalanceForReceive == b - p3)
 
-    val Right((bc6, _)) = receiveRevocation(bc5, revocation2)
+    val Right((bc6, _)) = receiveRevocation(bc5, revocation2, maxDustExposure)
     assert(bc6.availableBalanceForSend == b - p3)
     assert(bc6.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
@@ -301,7 +311,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc7.availableBalanceForSend == b - p3)
     assert(bc7.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
 
-    val Right((ac8, _)) = receiveRevocation(ac7, revocation3)
+    val Right((ac8, _)) = receiveRevocation(ac7, revocation3, maxDustExposure)
     assert(ac8.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee - htlcOutputFee)
     assert(ac8.availableBalanceForReceive == b - p3)
 
@@ -340,7 +350,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc11.availableBalanceForSend == b + p1 - p3)
     assert(bc11.availableBalanceForReceive == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
 
-    val Right((ac13, _)) = receiveRevocation(ac12, revocation4)
+    val Right((ac13, _)) = receiveRevocation(ac12, revocation4, maxDustExposure)
     assert(ac13.availableBalanceForSend == a - p1 - htlcOutputFee - p2 - htlcOutputFee + p3)
     assert(ac13.availableBalanceForReceive == b + p1 - p3)
 
@@ -352,7 +362,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(ac14.availableBalanceForSend == a - p1 + p3)
     assert(ac14.availableBalanceForReceive == b + p1 - p3)
 
-    val Right((bc13, _)) = receiveRevocation(bc12, revocation5)
+    val Right((bc13, _)) = receiveRevocation(bc12, revocation5, maxDustExposure)
     assert(bc13.availableBalanceForSend == b + p1 - p3)
     assert(bc13.availableBalanceForReceive == a - p1 + p3)
 
@@ -364,7 +374,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bc14.availableBalanceForSend == b + p1 - p3)
     assert(bc14.availableBalanceForReceive == a - p1 + p3)
 
-    val Right((ac16, _)) = receiveRevocation(ac15, revocation6)
+    val Right((ac16, _)) = receiveRevocation(ac15, revocation6, maxDustExposure)
     assert(ac16.availableBalanceForSend == a - p1 + p3)
     assert(ac16.availableBalanceForReceive == b + p1 - p3)
   }
@@ -378,7 +388,7 @@ class CommitmentsSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(c1.availableBalanceForSend === 0.msat)
 
     // We should be able to handle a fee increase.
-    val Right((c2, _)) = sendFee(c1, CMD_UPDATE_FEE(FeeratePerKw(3000 sat)))
+    val Right((c2, _)) = sendFee(c1, CMD_UPDATE_FEE(FeeratePerKw(3000 sat)), feeConfNoMismatch)
 
     // Now we shouldn't be able to send until we receive enough to handle the updated commit tx fee (even trimmed HTLCs shouldn't be sent).
     val (_, cmdAdd1) = makeCmdAdd(100 msat, randomKey().publicKey, f.currentBlockHeight)
