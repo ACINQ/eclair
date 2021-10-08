@@ -47,18 +47,22 @@ eclair-cli getinfo
 
 ```json
 {
-  "version": "0.4.1-SNAPSHOT-adf4da6",
+  "version": "0.6.2-6817d6f",
   "nodeId": "03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f",
   "alias": "ACINQ",
   "color": "#000102",
   "features": {
     "activated": {
-      "basic_mpp": "optional",
-      "initial_routing_sync": "optional",
-      "option_data_loss_protect": "optional",
       "gossip_queries_ex": "optional",
-      "payment_secret": "optional",
-      "var_onion_optin": "optional",
+      "option_anchor_outputs": "optional",
+      "option_data_loss_protect": "optional",
+      "var_onion_optin": "mandatory",
+      "option_static_remotekey": "optional",
+      "option_support_large_channel": "optional",
+      "option_anchors_zero_fee_htlc_tx": "optional",
+      "payment_secret": "mandatory",
+      "option_shutdown_anysegwit": "optional",
+      "basic_mpp": "optional",
       "gossip_queries": "optional"
     },
     "unknown": []
@@ -70,7 +74,7 @@ eclair-cli getinfo
     "34.239.230.56:9735",
     "of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"
   ],
-  "instanceId": "53e081ac-989b-4c35-ab0c-07f86457156d"
+  "instanceId": "3d084f1c-6835-496b-949f-9db1ae4a610d"
 }
 ```
 
@@ -200,13 +204,10 @@ nodeId    | The **nodeId** of the node you want to disconnect from | No       | 
 ## Open
 
 ```shell
-curl -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> \
-  -F feeBaseMsat=<feebase> \
-  -F feeProportionalMillionths=<feeproportional> \
-  "http://localhost:8080/open" -u :<eclair_api_password>
+curl -X POST -F nodeId=<node_id> -F fundingSatoshis=<funding_satoshis> "http://localhost:8080/open" -u :<eclair_api_password>
 
 # with eclair-cli
-eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis> --feeBaseMsat=<feebase> --feeProportionalMillionths=<feeproportional>
+eclair-cli open --nodeId=<node_id> --fundingSatoshis=<funding_satoshis>
 ```
 
 > The above command returns the channelId of the newly created channel:
@@ -218,7 +219,10 @@ created channel e872f515dc5d8a3d61ccbd2127f33141eaa115807271dcc5c5c727f3eca914d3
 Open a channel to another lightning node. You must specify the target **nodeId** and the funding satoshis for the new channel. Optionally
 you can send to the remote a _pushMsat_ value and you can specify whether this should be a public or private channel (default is set in the config).
 
-You can optionally set the initial routing fees that this channel will use (_feeBaseMsat_ and _feeProportionalMillionths_).
+If you already have another channel to the same node, the routing fees that will be used for this new channel will be the same as your existing channel.
+Otherwise the values from `eclair.conf` will be used (see `eclair.relay.fees` in your `eclair.conf`).
+
+If you want to override the routing fees that will be used, you must use the `updaterelayfee` API before opening the channel.
 
 ### HTTP Request
 
@@ -226,16 +230,15 @@ You can optionally set the initial routing fees that this channel will use (_fee
 
 ### Parameters
 
-Parameter                 | Description                                                     | Optional | Type
---------------------------| --------------------------------------------------------------- | -------- | ---------------------------
-nodeId                    | The **nodeId** of the node you want to open a channel with      | No       | 33-bytes-HexString (String)
-fundingSatoshis           | Amount of satoshis to spend in the funding of the channel       | No       | Satoshis (Integer)
-pushMsat                  | Amount of millisatoshi to unilaterally push to the counterparty | Yes      | Millisatoshis (Integer)
-feeBaseMsat               | The base fee to use when relaying payments                      | Yes      | Millisatoshi (Integer)
-feeProportionalMillionths | The proportional fee to use when relaying payments              | Yes      | Integer
-fundingFeerateSatByte     | Feerate in sat/byte to apply to the funding transaction         | Yes      | Satoshis (Integer)
-channelFlags              | Flags for the new channel: 0 = private, 1 = public              | Yes      | Integer
-openTimeoutSeconds        | Timeout for the operation to complete                           | Yes      | Seconds (Integer)
+Parameter             | Description                                                                | Optional | Type
+--------------------- | -------------------------------------------------------------------------- | -------- | ---------------------------
+nodeId                | The **nodeId** of the node you want to open a channel with                 | No       | 33-bytes-HexString (String)
+fundingSatoshis       | Amount of satoshis to spend in the funding of the channel                  | No       | Satoshis (Integer)
+channelType           | Channel type (standard, static_remotekey, anchor_outputs_zero_fee_htlc_tx) | Yes      | String
+pushMsat              | Amount of millisatoshi to unilaterally push to the counterparty            | Yes      | Millisatoshis (Integer)
+fundingFeerateSatByte | Feerate in sat/byte to apply to the funding transaction                    | Yes      | Satoshis (Integer)
+channelFlags          | Flags for the new channel: 0 = private, 1 = public                         | Yes      | Integer
+openTimeoutSeconds    | Timeout for the operation to complete                                      | Yes      | Seconds (Integer)
 
 # Close
 
@@ -256,9 +259,13 @@ eclair-cli close --channelId=<channel>
 }
 ```
 
-Initiates a cooperative close for given channels that belong to this eclair node. The API returns once the _funding_signed_ message has been negotiated.
-If you specified a scriptPubKey then the closing transaction will spend to that address.
+Initiates a cooperative close for given channels that belong to this eclair node.
+The API returns once the _closing_signed_ message has been negotiated.
 The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channels, you can use the parameters `channelIds` or `shortChannelIds` below.
+
+If you specified a `scriptPubKey` then the closing transaction will spend to that address.
+
+You can specify a fee range for the closing transaction with the `preferredFeerateSatByte`, `minFeerateSatByte` and `maxFeerateSatByte`.
 
 ### HTTP Request
 
@@ -266,13 +273,16 @@ The endpoint supports receiving multiple channel id(s) or short channel id(s); t
 
 ### Parameters
 
-Parameter      | Description                                                         | Optional | Type
--------------- | ------------------------------------------------------------------- | -------- | ---------------------------
-channelId      | The channelId of the channel you want to close                      | No       | 32-bytes-HexString (String)
-shortChannelId | The shortChannelId of the channel you want to close                 | Yes      | ShortChannelId (String)
-channelIds     | List of channelIds to close                                         | Yes      | CSV or JSON list of channelId
-shortChannelIds| List of shortChannelIds to close                                    | Yes      | CSV or JSON list of shortChannelId
-scriptPubKey   | A serialized scriptPubKey that you want to use to close the channel | Yes      | HexString (String)
+Parameter               | Description                                                         | Optional | Type
+----------------------- | ------------------------------------------------------------------- | -------- | ---------------------------
+channelId               | The channelId of the channel you want to close                      | No       | 32-bytes-HexString (String)
+shortChannelId          | The shortChannelId of the channel you want to close                 | Yes      | ShortChannelId (String)
+channelIds              | List of channelIds to close                                         | Yes      | CSV or JSON list of channelId
+shortChannelIds         | List of shortChannelIds to close                                    | Yes      | CSV or JSON list of shortChannelId
+scriptPubKey            | A serialized scriptPubKey that you want to use to close the channel | Yes      | HexString (String)
+preferredFeerateSatByte | Preferred feerate (sat/byte) for the closing transaction            | Yes      | Satoshis (Integer)
+minFeerateSatByte       | Minimum feerate (sat/byte) for the closing transaction              | Yes      | Satoshis (Integer)
+maxFeerateSatByte       | Maximum feerate (sat/byte) for the closing transaction              | Yes      | Satoshis (Integer)
 
 ## ForceClose
 
@@ -291,8 +301,8 @@ eclair-cli forceclose --channelId=<channel>
 }
 ```
 
-Initiates a unilateral close for given channels that belong to this eclair node. Once the commitment has been broadcast, the API returns its
-transaction id.
+Initiates a unilateral close for given channels that belong to this eclair node.
+Once the commitment has been broadcast, the API returns its transaction id.
 The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channels, you can use the parameters `channelIds` or `shortChannelIds` below.
 
 ### HTTP Request
@@ -313,13 +323,13 @@ shortChannelIds| List of shortChannelIds to force-close              | Yes      
 ## UpdateRelayFee
 
 ```shell
-curl -u :<eclair_api_password> -X POST -F channelId=<channel> \
+curl -u :<eclair_api_password> -X POST -F nodeId=<node_id> \
      -F feeBaseMsat=<feebase> -F feeProportionalMillionths=<feeproportional> \
      "http://localhost:8080/updaterelayfee"
 
 #eclair-cli
 eclair-cli updaterelayfee \
-  --channelId=<channel> \
+  --nodeId=<node_id> \
   --feeBaseMsat=<feebase> \
   --feeProportionalMillionths=<feeproportional>
 ```
@@ -328,20 +338,21 @@ eclair-cli updaterelayfee \
 
 ```shell
 {
-  "<channel>": {
-    "cmd": {
-      "feeBase": <feebase>,
-      "feeProportionalMillionths": <feeProportionalMillionths>
-    },
-    "channelId":"<channel>"
+  "<channelId>": {
+    "feeBase": <feebase>,
+    "feeProportionalMillionths": <feeProportionalMillionths>
   }
 }
 ```
 
 Returned `feeBase` is in msat.
 
-Updates the fee policy for the specified _channelId_. A new update for this channel will be broadcast to the network.
-The endpoint supports receiving multiple channel id(s) or short channel id(s); to update multiple channels, you can use the parameters `channelIds` or `shortChannelIds` below.
+Updates the fee policy for the specified _nodeId_.
+The endpoint supports receiving multiple node id(s); to update multiple nodes, you can use the `nodeIds` parameter instead of `nodeId`.
+
+New updates for every channel you have with the selected node(s) will be broadcast to the network.
+Note that you can call this API even without having any channel with the selected node(s).
+That will ensure that when you open channels to the selected node(s), the fees you have configured will be automatically applied (instead of the default fees from your `eclair.conf`).
 
 ### HTTP Request
 
@@ -350,13 +361,13 @@ The endpoint supports receiving multiple channel id(s) or short channel id(s); t
 ### Parameters
 
 Parameter                 | Description                                          | Optional | Type
-------------------------- | ---------------------------------------------------- | -------- | ---------------------------
-channelId                 | The channelId of the channel you want to update      | No       | 32-bytes-HexString (String)
-shortChannelId            | The shortChannelId of the channel you want to update | Yes      | ShortChannelId (String)
-channelIds                | List of channelIds to update                         | Yes      | CSV or JSON list of channelId
-shortChannelIds           | List of shortChannelIds to update                    | Yes      | CSV or JSON list of shortChannelId
+------------------------- | ---------------------------------------------------- | -------- | -----------------------------------------------
+nodeId                    | The **nodeId** of the peer you want to update        | Yes (*)  | 32-bytes-HexString (String)
+nodeIds                   | The **nodeIds** of the peers you want to update      | Yes (*)  | CSV or JSON list of 33-bytes-HexString (String)
 feeBaseMsat               | The new base fee to use                              | No       | Millisatoshi (Integer)
 feeProportionalMillionths | The new proportional fee to use                      | No       | Integer
+
+(*): you must specify either nodeId or nodeIds, but not both.
 
 # Peers
 
@@ -406,37 +417,46 @@ eclair-cli channels
 
 The units of returned fields that are not obvious from their names:
 
-field          | unit
----------------|-----
-dustLimit      | sats
-channelReserve | sats
-htlcMinimum    | msats
-toSelfDelay    | blocks
-feeratePerKw   | sats
+field           | unit
+----------------|--------
+dustLimit       | sats
+channelReserve  | sats
+htlcMinimum     | msats
+toSelfDelay     | blocks
+commitTxFeerate | sats/kw
 
 > The above command returns:
 
 ```json
 [
   {
-    "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
-    "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+    "nodeId": "02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24",
+    "channelId": "4881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca",
     "state": "NORMAL",
     "data": {
+      "type": "DATA_NORMAL",
       "commitments": {
-        "channelVersion": "00000000000000000000000000000001",
+        "channelId": "4881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca",
+        "channelConfig": [
+          "funding_pubkey_based_channel_keypath"
+        ],
+        "channelFeatures": [
+          "option_static_remotekey",
+          "option_anchors_zero_fee_htlc_tx",
+          "option_support_large_channel"
+        ],
         "localParams": {
-          "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+          "nodeId": "024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1",
           "fundingKeyPath": {
             "path": [
-              2285452814,
-              3138980649,
-              3800551753,
-              1747192007,
-              941051304,
-              3416368401,
-              48609846,
-              1910237561,
+              2376346446,
+              2845139278,
+              845530815,
+              116517134,
+              3208648948,
+              1623539631,
+              2381994817,
+              1990484890,
               2147483649
             ]
           },
@@ -447,37 +467,48 @@ feeratePerKw   | sats
           "toSelfDelay": 720,
           "maxAcceptedHtlcs": 30,
           "isFunder": true,
-          "defaultFinalScriptPubKey": "a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087",
-          "features": {
+          "defaultFinalScriptPubKey": "0014b6490f48e48551a84d33fafad1eee38798ef86b0",
+          "initFeatures": {
             "activated": {
-              "initial_routing_sync": "optional",
-              "option_data_loss_protect": "optional",
               "gossip_queries_ex": "optional",
-              "var_onion_optin": "optional",
+              "option_anchor_outputs": "optional",
+              "option_data_loss_protect": "optional",
+              "var_onion_optin": "mandatory",
+              "option_static_remotekey": "optional",
+              "option_support_large_channel": "optional",
+              "option_anchors_zero_fee_htlc_tx": "optional",
+              "payment_secret": "mandatory",
+              "option_shutdown_anysegwit": "optional",
+              "basic_mpp": "optional",
               "gossip_queries": "optional"
             },
             "unknown": []
           }
         },
         "remoteParams": {
-          "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+          "nodeId": "02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24",
           "dustLimit": 546,
           "maxHtlcValueInFlightMsat": 5000000000,
           "channelReserve": 3000,
           "htlcMinimum": 1,
           "toSelfDelay": 720,
           "maxAcceptedHtlcs": 30,
-          "fundingPubKey": "021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d",
-          "revocationBasepoint": "028743ddd812e0e8d09a1a097df5a203e30ab355e430cf8e167216a65376aea793",
-          "paymentBasepoint": "02ebc5bd154facc6ce58e77f649a05faa7b33e45d08defbd3fc3eb07aa7e20835c",
-          "delayedPaymentBasepoint": "026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5",
-          "htlcBasepoint": "037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf",
-          "features": {
+          "fundingPubKey": "03586aa3567bcb1f174d133c5cbe1e965feb8d26acd555f77737e3a5196bb5e242",
+          "revocationBasepoint": "03c96420f568447d7497a5cf69da0708b2ab9dfcded395d3628901c9460fc48f57",
+          "paymentBasepoint": "035f27cc965ad7f18087325bc6c48d64181a07ccadf818cd056ea09e300e3f1fbe",
+          "delayedPaymentBasepoint": "033e835b582c476a0d8c4dddd446485ce7ee1b60854c6b2fa263bc955160b61a10",
+          "htlcBasepoint": "0363ee0e9873e19a2457f1fe2c79e464e5a40976ebbe724b29f805383fa65b9c3e",
+          "initFeatures": {
             "activated": {
-              "initial_routing_sync": "optional",
-              "option_data_loss_protect": "optional",
               "gossip_queries_ex": "optional",
-              "var_onion_optin": "optional",
+              "option_data_loss_protect": "optional",
+              "var_onion_optin": "mandatory",
+              "option_static_remotekey": "optional",
+              "option_support_large_channel": "optional",
+              "option_anchors_zero_fee_htlc_tx": "optional",
+              "payment_secret": "mandatory",
+              "option_shutdown_anysegwit": "optional",
+              "basic_mpp": "optional",
               "gossip_queries": "optional"
             },
             "unknown": []
@@ -485,31 +516,32 @@ feeratePerKw   | sats
         },
         "channelFlags": 1,
         "localCommit": {
-          "index": 6,
+          "index": 0,
           "spec": {
             "htlcs": [],
-            "feeratePerKw": 45000,
-            "toLocal": 58800001,
-            "toRemote": 241199999
+            "commitTxFeerate": 2500,
+            "toLocal": 300000000,
+            "toRemote": 0
           },
-          "publishableTxs": {
+          "commitTxAndRemoteSig": {
             "commitTx": {
-              "txid": "0a5a81642268b5638bca8c830ab17bf7343950a46393f6b6858a188354652fc6",
-              "tx": "02000000000101d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04a01000000007b71b280026c66000000000000220020fb1e4938481309e95e663e06d1ecec23438976519399e9b574fd98ca3d32721d2fae0300000000001600142aca6f33e9f92e56a9586e696181d30979d15b27040047304402201ddb65ce52c0123d058661ee3aa6532561edb93f946402e2eb2b73fb5b8d637c02201d408be674b0afdf3696babb48caf1a0c1fe8f55c694cbfa9d3176066f94a65d01483045022100a4c180c4a68a11d5c45ae9f0abeabbb2f3573350eed05a23315172e402ccf196022077c8533b36c5b4a2413d4e8d13e1ad9d5658701f1ed2ff78c878e56179d841d801475221021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d21032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b352aee3212f20"
+              "txid": "149b712c7bef33da2798f9f281d4d908efc778231ee67fb3916101c38a76e3af",
+              "tx": "02000000014881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca00000000008cea7880024a0100000000000022002005b67505e57667e240c564934ace60c29afb023850c838734e6ef7855eb2a0b95286040000000000220020587f5a79017b2bde0446d9d808d4c4f4225fb336c4544640be551f67a6e88f597edeed20"
             },
-            "htlcTxsAndSigs": []
-          }
+            "remoteSig": "a49a71225fbee3a919b3fb73906c67d2b64ac9f77eb4a1bf3e9f2b3cfb05a9f1652d17b5c56192f07514af49ea898fe2d0680feedf284317ee591b85b216e927"
+          },
+          "htlcTxsAndRemoteSigs": []
         },
         "remoteCommit": {
-          "index": 6,
+          "index": 0,
           "spec": {
             "htlcs": [],
-            "feeratePerKw": 45000,
-            "toLocal": 241199999,
-            "toRemote": 58800001
+            "commitTxFeerate": 2500,
+            "toLocal": 0,
+            "toRemote": 300000000
           },
-          "txid": "28c188f2e3f6e0ba59a94995af87214d880050974a0b7baac3a6aaacdd7dba6a",
-          "remotePerCommitmentPoint": "02742c1545be4a25b13c916a4622df61deb4efc21d8fa7e7776a487c696f6f1afc"
+          "txid": "5e2526d7b83dfa6cf0878b381148fb1f2dd54cdd880c48f562b2fa4c41b169ba",
+          "remotePerCommitmentPoint": "031dcfb98ab373aee0bb8a45bf57049627afb7a9c3380742bda6b5e0719aef66e9"
         },
         "localChanges": {
           "proposed": [],
@@ -521,49 +553,56 @@ feeratePerKw   | sats
           "acked": [],
           "signed": []
         },
-        "localNextHtlcId": 3,
+        "localNextHtlcId": 0,
         "remoteNextHtlcId": 0,
         "originChannels": {},
-        "remoteNextCommitInfo": "0337ceb9aa292177e416092adadfb1990aa16ae8be5c8108aa6e671384a7cd6b28",
+        "remoteNextCommitInfo": "03c7ac97c8ba8bcd9a2d430a0324a761e06588691e828a12ddfdebfa07ad298d32",
         "commitInput": {
-          "outPoint": "4af05ababd810486f773b71b896a8d3970fc238e7875bb737c870d02ac1febd4:1",
+          "outPoint": "ca0c742db99861acafb149737ab72e431c4c4a9879db71a5820dbd5030ea8148:0",
           "amountSatoshis": 300000
         },
-        "remotePerCommitmentSecrets": null,
-        "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"
+        "remotePerCommitmentSecrets": null
       },
-      "shortChannelId": "538x4x1",
+      "shortChannelId": "11203x1x0",
       "buried": true,
       "channelAnnouncement": {
-        "nodeSignature1": "4088e1b1e0ae77285434603359a797f779d2e12644957a89457bb9ab59899e324ecf4bb06379ad93fa6a3a31dfe050217dc3753fc56ddecbe020e5ca9f506db2",
-        "nodeSignature2": "8fa198fb50fd509e248ba7acd165243aef1ea20834f6857750cd4d919cf777dc3d871f1cbc7e4979aa01d748bd547d85f4d8d6ad23c9383700c0c8a9ca62f5c8",
-        "bitcoinSignature1": "aac6fa5fbdcff62932e1bedff9a3f1d49791707270f63027e0d74f195f9e835f0017a201b049c70ed0240db0e5b9e53e5107143d38fcdacc355383200d47528c",
-        "bitcoinSignature2": "4f368635b689637dba776b570df8306c247666e5cfa444cced0d9a1f50917a367082d57c09ad944acf649be9891c9013eb740a971f398a1528dfe2c66cbf3625",
+        "nodeSignature1": "7a10da73a7f25c613333588fb0c79b18338af8cc6ac1dd7a5e17616b8fc69b0f22db572888c466e06cc2e780fefe9951c0afbe9b05a560d165688e6e10d194a4",
+        "nodeSignature2": "eb9559577317b562adb8ad0ca77d18c73c76cc857f682adfc41c1c456de79daa31e416597847cc5145dee321883b4d207c948bbeffdfd6cf21ac1fd46cda9d6f",
+        "bitcoinSignature1": "ecf6df2e51a4bbb28a80ba61ff9ce045cc6d4a177175f3755072e5aef50e7c8a5b8074049f13f1e98b624419eea88975e92dbe36c7eba215a7d800160ff1f690",
+        "bitcoinSignature2": "36c2dc2f147e667da0c94e4ec48f1cc0b159cf77305eda8932ac547281b4fcab02daa3573242d625788270ae253a5bcfb7ec09eecbcbdd36e111753880a4a500",
         "features": {
           "activated": {},
           "unknown": []
         },
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-        "shortChannelId": "538x4x1",
-        "nodeId1": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
-        "nodeId2": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
-        "bitcoinKey1": "021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d",
-        "bitcoinKey2": "032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b3",
-        "unknownFields": ""
+        "shortChannelId": "11203x1x0",
+        "nodeId1": "024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1",
+        "nodeId2": "02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24",
+        "bitcoinKey1": "035f7babd88d257505ed41d95b5fb8878371aca36e19cfb9603f4c0c890d8f806e",
+        "bitcoinKey2": "03586aa3567bcb1f174d133c5cbe1e965feb8d26acd555f77737e3a5196bb5e242",
+        "tlvStream": {
+          "records": [],
+          "unknown": []
+        }
       },
       "channelUpdate": {
-        "signature": "f331625e39043b243c86cbe53615ba8ed87f85ae088f145c061562bf9961617c4e85b132610a01a55eb0ca84e90fcc8510f9781a5c387f13a1d1569b211b1e73",
+        "signature": "1358ac8f30d2b29ecde575b17ea3b968af10028f1380f0f3b09ab55a983cf0a267eea80fd9e7b7945e7e579736684f68e8a5bb88e075065171030795256edb94",
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-        "shortChannelId": "538x4x1",
-        "timestamp": 1593698172,
-        "messageFlags": 1,
-        "channelFlags": 1,
+        "shortChannelId": "11203x1x0",
+        "timestamp": 1633686766,
+        "channelFlags": {
+          "isEnabled": true,
+          "isNode1": true
+        },
         "cltvExpiryDelta": 144,
         "htlcMinimumMsat": 1,
-        "feeBaseMsat": 1000,
-        "feeProportionalMillionths": 100,
+        "feeBaseMsat": 10,
+        "feeProportionalMillionths": 150,
         "htlcMaximumMsat": 300000000,
-        "unknownFields": ""
+        "tlvStream": {
+          "records": [],
+          "unknown": []
+        }
       }
     }
   }
@@ -593,36 +632,45 @@ eclair-cli channel --channelId=<channel>
 
 The units of returned fields that are not obvious from their names:
 
-field          | unit
----------------|-----
-dustLimit      | sats
-channelReserve | sats
-htlcMinimum    | msats
-toSelfDelay    | blocks
-feeratePerKw   | sats
+field           | unit
+----------------|--------
+dustLimit       | sats
+channelReserve  | sats
+htlcMinimum     | msats
+toSelfDelay     | blocks
+commitTxFeerate | sats/kw
 
 > The above command returns:
 
 ```json
   {
-    "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
-    "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b",
+    "nodeId": "02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24",
+    "channelId": "4881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca",
     "state": "NORMAL",
     "data": {
+      "type": "DATA_NORMAL",
       "commitments": {
-        "channelVersion": "00000000000000000000000000000001",
+        "channelId": "4881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca",
+        "channelConfig": [
+          "funding_pubkey_based_channel_keypath"
+        ],
+        "channelFeatures": [
+          "option_static_remotekey",
+          "option_anchors_zero_fee_htlc_tx",
+          "option_support_large_channel"
+        ],
         "localParams": {
-          "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
+          "nodeId": "024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1",
           "fundingKeyPath": {
             "path": [
-              2285452814,
-              3138980649,
-              3800551753,
-              1747192007,
-              941051304,
-              3416368401,
-              48609846,
-              1910237561,
+              2376346446,
+              2845139278,
+              845530815,
+              116517134,
+              3208648948,
+              1623539631,
+              2381994817,
+              1990484890,
               2147483649
             ]
           },
@@ -633,37 +681,48 @@ feeratePerKw   | sats
           "toSelfDelay": 720,
           "maxAcceptedHtlcs": 30,
           "isFunder": true,
-          "defaultFinalScriptPubKey": "a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087",
-          "features": {
+          "defaultFinalScriptPubKey": "0014b6490f48e48551a84d33fafad1eee38798ef86b0",
+          "initFeatures": {
             "activated": {
-              "initial_routing_sync": "optional",
-              "option_data_loss_protect": "optional",
               "gossip_queries_ex": "optional",
-              "var_onion_optin": "optional",
+              "option_anchor_outputs": "optional",
+              "option_data_loss_protect": "optional",
+              "var_onion_optin": "mandatory",
+              "option_static_remotekey": "optional",
+              "option_support_large_channel": "optional",
+              "option_anchors_zero_fee_htlc_tx": "optional",
+              "payment_secret": "mandatory",
+              "option_shutdown_anysegwit": "optional",
+              "basic_mpp": "optional",
               "gossip_queries": "optional"
             },
             "unknown": []
           }
         },
         "remoteParams": {
-          "nodeId": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
+          "nodeId": "02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24",
           "dustLimit": 546,
           "maxHtlcValueInFlightMsat": 5000000000,
           "channelReserve": 3000,
           "htlcMinimum": 1,
           "toSelfDelay": 720,
           "maxAcceptedHtlcs": 30,
-          "fundingPubKey": "021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d",
-          "revocationBasepoint": "028743ddd812e0e8d09a1a097df5a203e30ab355e430cf8e167216a65376aea793",
-          "paymentBasepoint": "02ebc5bd154facc6ce58e77f649a05faa7b33e45d08defbd3fc3eb07aa7e20835c",
-          "delayedPaymentBasepoint": "026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5",
-          "htlcBasepoint": "037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf",
-          "features": {
+          "fundingPubKey": "03586aa3567bcb1f174d133c5cbe1e965feb8d26acd555f77737e3a5196bb5e242",
+          "revocationBasepoint": "03c96420f568447d7497a5cf69da0708b2ab9dfcded395d3628901c9460fc48f57",
+          "paymentBasepoint": "035f27cc965ad7f18087325bc6c48d64181a07ccadf818cd056ea09e300e3f1fbe",
+          "delayedPaymentBasepoint": "033e835b582c476a0d8c4dddd446485ce7ee1b60854c6b2fa263bc955160b61a10",
+          "htlcBasepoint": "0363ee0e9873e19a2457f1fe2c79e464e5a40976ebbe724b29f805383fa65b9c3e",
+          "initFeatures": {
             "activated": {
-              "initial_routing_sync": "optional",
-              "option_data_loss_protect": "optional",
               "gossip_queries_ex": "optional",
-              "var_onion_optin": "optional",
+              "option_data_loss_protect": "optional",
+              "var_onion_optin": "mandatory",
+              "option_static_remotekey": "optional",
+              "option_support_large_channel": "optional",
+              "option_anchors_zero_fee_htlc_tx": "optional",
+              "payment_secret": "mandatory",
+              "option_shutdown_anysegwit": "optional",
+              "basic_mpp": "optional",
               "gossip_queries": "optional"
             },
             "unknown": []
@@ -671,31 +730,32 @@ feeratePerKw   | sats
         },
         "channelFlags": 1,
         "localCommit": {
-          "index": 6,
+          "index": 0,
           "spec": {
             "htlcs": [],
-            "feeratePerKw": 45000,
-            "toLocal": 58800001,
-            "toRemote": 241199999
+            "commitTxFeerate": 2500,
+            "toLocal": 300000000,
+            "toRemote": 0
           },
-          "publishableTxs": {
+          "commitTxAndRemoteSig": {
             "commitTx": {
-              "txid": "0a5a81642268b5638bca8c830ab17bf7343950a46393f6b6858a188354652fc6",
-              "tx": "02000000000101d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04a01000000007b71b280026c66000000000000220020fb1e4938481309e95e663e06d1ecec23438976519399e9b574fd98ca3d32721d2fae0300000000001600142aca6f33e9f92e56a9586e696181d30979d15b27040047304402201ddb65ce52c0123d058661ee3aa6532561edb93f946402e2eb2b73fb5b8d637c02201d408be674b0afdf3696babb48caf1a0c1fe8f55c694cbfa9d3176066f94a65d01483045022100a4c180c4a68a11d5c45ae9f0abeabbb2f3573350eed05a23315172e402ccf196022077c8533b36c5b4a2413d4e8d13e1ad9d5658701f1ed2ff78c878e56179d841d801475221021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d21032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b352aee3212f20"
+              "txid": "149b712c7bef33da2798f9f281d4d908efc778231ee67fb3916101c38a76e3af",
+              "tx": "02000000014881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca00000000008cea7880024a0100000000000022002005b67505e57667e240c564934ace60c29afb023850c838734e6ef7855eb2a0b95286040000000000220020587f5a79017b2bde0446d9d808d4c4f4225fb336c4544640be551f67a6e88f597edeed20"
             },
-            "htlcTxsAndSigs": []
-          }
+            "remoteSig": "a49a71225fbee3a919b3fb73906c67d2b64ac9f77eb4a1bf3e9f2b3cfb05a9f1652d17b5c56192f07514af49ea898fe2d0680feedf284317ee591b85b216e927"
+          },
+          "htlcTxsAndRemoteSigs": []
         },
         "remoteCommit": {
-          "index": 6,
+          "index": 0,
           "spec": {
             "htlcs": [],
-            "feeratePerKw": 45000,
-            "toLocal": 241199999,
-            "toRemote": 58800001
+            "commitTxFeerate": 2500,
+            "toLocal": 0,
+            "toRemote": 300000000
           },
-          "txid": "28c188f2e3f6e0ba59a94995af87214d880050974a0b7baac3a6aaacdd7dba6a",
-          "remotePerCommitmentPoint": "02742c1545be4a25b13c916a4622df61deb4efc21d8fa7e7776a487c696f6f1afc"
+          "txid": "5e2526d7b83dfa6cf0878b381148fb1f2dd54cdd880c48f562b2fa4c41b169ba",
+          "remotePerCommitmentPoint": "031dcfb98ab373aee0bb8a45bf57049627afb7a9c3380742bda6b5e0719aef66e9"
         },
         "localChanges": {
           "proposed": [],
@@ -707,49 +767,56 @@ feeratePerKw   | sats
           "acked": [],
           "signed": []
         },
-        "localNextHtlcId": 3,
+        "localNextHtlcId": 0,
         "remoteNextHtlcId": 0,
         "originChannels": {},
-        "remoteNextCommitInfo": "0337ceb9aa292177e416092adadfb1990aa16ae8be5c8108aa6e671384a7cd6b28",
+        "remoteNextCommitInfo": "03c7ac97c8ba8bcd9a2d430a0324a761e06588691e828a12ddfdebfa07ad298d32",
         "commitInput": {
-          "outPoint": "4af05ababd810486f773b71b896a8d3970fc238e7875bb737c870d02ac1febd4:1",
+          "outPoint": "ca0c742db99861acafb149737ab72e431c4c4a9879db71a5820dbd5030ea8148:0",
           "amountSatoshis": 300000
         },
-        "remotePerCommitmentSecrets": null,
-        "channelId": "d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"
+        "remotePerCommitmentSecrets": null
       },
-      "shortChannelId": "538x4x1",
+      "shortChannelId": "11203x1x0",
       "buried": true,
       "channelAnnouncement": {
-        "nodeSignature1": "4088e1b1e0ae77285434603359a797f779d2e12644957a89457bb9ab59899e324ecf4bb06379ad93fa6a3a31dfe050217dc3753fc56ddecbe020e5ca9f506db2",
-        "nodeSignature2": "8fa198fb50fd509e248ba7acd165243aef1ea20834f6857750cd4d919cf777dc3d871f1cbc7e4979aa01d748bd547d85f4d8d6ad23c9383700c0c8a9ca62f5c8",
-        "bitcoinSignature1": "aac6fa5fbdcff62932e1bedff9a3f1d49791707270f63027e0d74f195f9e835f0017a201b049c70ed0240db0e5b9e53e5107143d38fcdacc355383200d47528c",
-        "bitcoinSignature2": "4f368635b689637dba776b570df8306c247666e5cfa444cced0d9a1f50917a367082d57c09ad944acf649be9891c9013eb740a971f398a1528dfe2c66cbf3625",
+        "nodeSignature1": "7a10da73a7f25c613333588fb0c79b18338af8cc6ac1dd7a5e17616b8fc69b0f22db572888c466e06cc2e780fefe9951c0afbe9b05a560d165688e6e10d194a4",
+        "nodeSignature2": "eb9559577317b562adb8ad0ca77d18c73c76cc857f682adfc41c1c456de79daa31e416597847cc5145dee321883b4d207c948bbeffdfd6cf21ac1fd46cda9d6f",
+        "bitcoinSignature1": "ecf6df2e51a4bbb28a80ba61ff9ce045cc6d4a177175f3755072e5aef50e7c8a5b8074049f13f1e98b624419eea88975e92dbe36c7eba215a7d800160ff1f690",
+        "bitcoinSignature2": "36c2dc2f147e667da0c94e4ec48f1cc0b159cf77305eda8932ac547281b4fcab02daa3573242d625788270ae253a5bcfb7ec09eecbcbdd36e111753880a4a500",
         "features": {
-          "activated": [],
+          "activated": {},
           "unknown": []
         },
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-        "shortChannelId": "538x4x1",
-        "nodeId1": "02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02",
-        "nodeId2": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
-        "bitcoinKey1": "021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d",
-        "bitcoinKey2": "032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b3",
-        "unknownFields": ""
+        "shortChannelId": "11203x1x0",
+        "nodeId1": "024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1",
+        "nodeId2": "02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24",
+        "bitcoinKey1": "035f7babd88d257505ed41d95b5fb8878371aca36e19cfb9603f4c0c890d8f806e",
+        "bitcoinKey2": "03586aa3567bcb1f174d133c5cbe1e965feb8d26acd555f77737e3a5196bb5e242",
+        "tlvStream": {
+          "records": [],
+          "unknown": []
+        }
       },
       "channelUpdate": {
-        "signature": "f331625e39043b243c86cbe53615ba8ed87f85ae088f145c061562bf9961617c4e85b132610a01a55eb0ca84e90fcc8510f9781a5c387f13a1d1569b211b1e73",
+        "signature": "1358ac8f30d2b29ecde575b17ea3b968af10028f1380f0f3b09ab55a983cf0a267eea80fd9e7b7945e7e579736684f68e8a5bb88e075065171030795256edb94",
         "chainHash": "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f",
-        "shortChannelId": "538x4x1",
-        "timestamp": 1593698172,
-        "messageFlags": 1,
-        "channelFlags": 1,
+        "shortChannelId": "11203x1x0",
+        "timestamp": 1633686766,
+        "channelFlags": {
+          "isEnabled": true,
+          "isNode1": true
+        },
         "cltvExpiryDelta": 144,
         "htlcMinimumMsat": 1,
-        "feeBaseMsat": 1000,
-        "feeProportionalMillionths": 100,
+        "feeBaseMsat": 10,
+        "feeProportionalMillionths": 150,
         "htlcMaximumMsat": 300000000,
-        "unknownFields": ""
+        "tlvStream": {
+          "records": [],
+          "unknown": []
+        }
       }
     }
   }
@@ -805,7 +872,10 @@ eclair-cli nodes
     "addresses": [
       "138.229.205.237:9735"
     ],
-    "unknownFields": ""
+    "tlvStream": {
+      "records": [],
+      "unknown": []
+    }
   },
   {
     "signature": "3074823d709a7bf0d22abca9d5b260be49adc5ceacf1dcc67410c5c88d0e03373b8b7c000d23f1ec7abf84ab0ecb57e1026d10c5b0c39bfe6d3bcca98fec36cd",
@@ -826,7 +896,10 @@ eclair-cli nodes
       "95.216.16.21:9735",
       "[2a01:4f9:2a:106a:0:0:0:2]:9736"
     ],
-    "unknownFields": ""
+    "tlvStream": {
+      "records": [],
+      "unknown": []
+    }
   }
 ]
 ```
@@ -889,28 +962,38 @@ eclair-cli allupdates
     "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
     "shortChannelId": "566780x1734x0",
     "timestamp": 1552908891,
-    "messageFlags": 1,
-    "channelFlags": 1,
+    "channelFlags": {
+      "isEnabled": true,
+      "isNode1": true
+    },
     "cltvExpiryDelta": 144,
     "htlcMinimumMsat": 1000,
     "feeBaseMsat": 1000,
     "feeProportionalMillionths": 1,
     "htlcMaximumMsat": 2970000000,
-    "unknownFields": ""
+    "tlvStream": {
+      "records": [],
+      "unknown": []
+    }
   },
   {
     "signature": "304402201848be0aff000ec279e2d043d1bde8b2c76a9277dab72b9d1523468961c5d78e0220541e233977f2288684dab6ec168e43dc3459d093e901dd6f2b5238c2b888845a01",
     "chainHash": "6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000",
     "shortChannelId": "562890x809x0",
     "timestamp": 1552993875,
-    "messageFlags": 1,
-    "channelFlags": 1,
+    "channelFlags": {
+      "isEnabled": true,
+      "isNode1": false
+    },
     "cltvExpiryDelta": 144,
     "htlcMinimumMsat": 1000,
     "feeBaseMsat": 1000,
     "feeProportionalMillionths": 2500,
     "htlcMaximumMsat": 3960000000,
-    "unknownFields": ""
+    "tlvStream": {
+      "records": [],
+      "unknown": []
+    }
   }
 ]
 ```
@@ -1010,7 +1093,7 @@ eclair-cli createinvoice --description=<some_description> --amountMsat=<some_amo
 The units of returned fields that are not obvious from their names:
 
 field          | unit
----------------|-----
+---------------|--------
 expiry         | seconds
 amount         | msats
 
@@ -1019,21 +1102,23 @@ amount         | msats
 ```json
 {
   "prefix": "lnbcrt",
-  "timestamp": 1593699654,
-  "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
-  "serialized": "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+  "timestamp": 1633688171,
+  "nodeId": "024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1",
+  "serialized": "lnbcrt500n1pskqxntpp5mcwhqp37al2jxmtyzkydtprctcewsc6anfz4038v3u4nnu4h5wtsdq0ydex2cmtd3jhxucsp5vu0z6tty8gmlytm82u2p4t66lav86c9seq66kxygp4k4kaa8sj8sxqrrsscqp79qtzqqqqqqysgq6k3g0r44gaz2lugjm932q3vzne3uwp9xgx309968w2v5qrfcdrk9gn9l2agl38zxkdm8wduqshsu98w5g7lg8z6mlghd9rccnprcd0gp83ug5u",
   "description": "#reckless",
-  "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+  "paymentHash": "de1d70063eefd5236d641588d584785e32e8635d9a4557c4ec8f2b39f2b7a397",
   "expiry": 3600,
+  "minFinalCltvExpiry": 30,
   "amount": 50000,
   "features": {
     "activated": {
-      "basic_mpp": "optional",
-      "var_onion_optin": "optional",
-      "payment_secret": "optional"
+      "var_onion_optin": "mandatory",
+      "payment_secret": "mandatory",
+      "basic_mpp": "optional"
     },
     "unknown": []
-  }
+  },
+  "routingInfo": []
 }
 ```
 
@@ -1047,11 +1132,14 @@ Create a **BOLT11** payment invoice.
 
 Parameter       | Description                                                | Optional | Type
 --------------- | ---------------------------------------------------------- | -------- | ---------------------------
-description     | A description for the invoice                              | No       | String
+description     | A description for the invoice                              | Yes (*)  | String
+descriptionHash | Hash of the description for the invoice                    | Yes (*)  | 32-bytes-HexString (String)
 amountMsat      | Amount in millisatoshi for this invoice                    | Yes      | Millisatoshi (Integer)
 expireIn        | Number of seconds that the invoice will be valid           | Yes      | Seconds (Integer)
 fallbackAddress | An on-chain fallback address to receive the payment        | Yes      | Bitcoin address (String)
 paymentPreimage | A user defined input for the generation of the paymentHash | Yes      | 32-bytes-HexString (String)
+
+(*): you must specify either description or descriptionHash, but not both.
 
 ## ParseInvoice
 
@@ -1065,7 +1153,7 @@ eclair-cli parseinvoice --invoice=<some_bolt11invoice>
 The units of returned fields that are not obvious from their names:
 
 field          | unit
----------------|-----
+---------------|--------
 expiry         | seconds
 amount         | msats
 
@@ -1074,21 +1162,23 @@ amount         | msats
 ```json
 {
   "prefix": "lnbcrt",
-  "timestamp": 1593699654,
-  "nodeId": "03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf",
-  "serialized": "lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq",
+  "timestamp": 1633688171,
+  "nodeId": "024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1",
+  "serialized": "lnbcrt500n1pskqxntpp5mcwhqp37al2jxmtyzkydtprctcewsc6anfz4038v3u4nnu4h5wtsdq0ydex2cmtd3jhxucsp5vu0z6tty8gmlytm82u2p4t66lav86c9seq66kxygp4k4kaa8sj8sxqrrsscqp79qtzqqqqqqysgq6k3g0r44gaz2lugjm932q3vzne3uwp9xgx309968w2v5qrfcdrk9gn9l2agl38zxkdm8wduqshsu98w5g7lg8z6mlghd9rccnprcd0gp83ug5u",
   "description": "#reckless",
-  "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
+  "paymentHash": "de1d70063eefd5236d641588d584785e32e8635d9a4557c4ec8f2b39f2b7a397",
   "expiry": 3600,
+  "minFinalCltvExpiry": 30,
   "amount": 50000,
   "features": {
     "activated": {
-      "basic_mpp": "optional",
-      "var_onion_optin": "optional",
-      "payment_secret": "optional"
+      "var_onion_optin": "mandatory",
+      "payment_secret": "mandatory",
+      "basic_mpp": "optional"
     },
     "unknown": []
-  }
+  },
+  "routingInfo": []
 }
 ```
 
@@ -1120,9 +1210,9 @@ eclair-cli payinvoice --invoice=<some_invoice>
 ```
 
 Pays a **BOLT11** invoice. In case of failure, the payment will be retried up to `maxAttempts` times.
-Default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller. It's possible to add an
-extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
+The default number of attempts is read from the configuration.
+The API works in a fire-and-forget fashion where the unique identifier for this payment attempt is immediately returned to the caller.
+It's possible to add an extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
 
 When `--blocking=true` is provided, the API will instead block until the payment completes.
 It will return either the payment preimage (if the payment succeeded) or failure details.
@@ -1133,15 +1223,16 @@ It will return either the payment preimage (if the payment succeeded) or failure
 
 ### Parameters
 
-Parameter       | Description                                                                                    | Optional | Type
---------------- | ---------------------------------------------------------------------------------------------- | -------- | ----------------------
-invoice         | The invoice you want to pay                                                                    | No       | String
-amountMsat      | Amount to pay if the invoice does not have one                                                 | Yes      | Millisatoshi (Integer)
-maxAttempts     | Max number of retries                                                                          | Yes      | Integer
-feeThresholdSat | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
-maxFeePct       | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`) | Yes      | Double
-externalId      | Extra payment identifier specified by the caller                                               | Yes      | String
-blocking        | Block until the payment completes                                                              | Yes      | Boolean
+Parameter                 | Description                                                                                    | Optional | Type
+------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ----------------------
+invoice                   | The invoice you want to pay                                                                    | No       | String
+amountMsat                | Amount to pay if the invoice does not have one                                                 | Yes      | Millisatoshi (Integer)
+maxAttempts               | Max number of retries                                                                          | Yes      | Integer
+feeThresholdSat           | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
+maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`) | Yes      | Integer (between 0 and 100)
+externalId                | Extra payment identifier specified by the caller                                               | Yes      | String
+pathFindingExperimentName | Name of the path-finding configuration that should be used                                     | Yes      | String
+blocking                  | Block until the payment completes                                                              | Yes      | Boolean
 
 ## SendToNode
 
@@ -1159,10 +1250,14 @@ eclair-cli sendtonode --nodeId=<some_node> --amountMsat=<amount> --paymentHash=<
 "e4227601-38b3-404e-9aa0-75a829e9bec0"
 ```
 
-Sends money to a node. In case of failure, the payment will be retried up to `maxAttempts` times.
-Default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller. It's possible to add an
-extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
+Sends money to a node using `keysend` (spontaneous payment without a Bolt11 invoice).
+In case of failure, the payment will be retried up to `maxAttempts` times.
+The default number of attempts is read from the configuration.
+The API works in a fire-and-forget fashion where the unique identifier for this payment attempt is immediately returned to the caller.
+It's possible to add an extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
+
+Note that this feature isn't specified in the BOLTs, so it may be removed or updated in the future.
+If the recipient has given you an invoice, you should instead of the `payinvoice` API.
 
 ### HTTP Request
 
@@ -1170,15 +1265,15 @@ extra `externalId` and this will be returned as part of the [payment data](#gets
 
 ### Parameters
 
-Parameter       | Description                                                                                    | Optional | Type
---------------- | ---------------------------------------------------------------------------------------------- | -------- | ---------------------------
-nodeId          | The recipient of this payment                                                                  | No       | 33-bytes-HexString (String)
-amountMsat      | Amount to pay                                                                                  | No       | Millisatoshi (Integer)
-paymentHash     | The payment hash for this payment                                                              | No       | 32-bytes-HexString (String)
-maxAttempts     | Max number of retries                                                                          | Yes      | Integer
-feeThresholdSat | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
-maxFeePct       | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`) | Yes      | Double
-externalId      | Extra payment identifier specified by the caller                                               | Yes      | String
+Parameter                 | Description                                                                                    | Optional | Type
+------------------------- | ---------------------------------------------------------------------------------------------- | -------- | ---------------------------
+nodeId                    | The recipient of this payment                                                                  | No       | 33-bytes-HexString (String)
+amountMsat                | Amount to pay                                                                                  | No       | Millisatoshi (Integer)
+maxAttempts               | Max number of retries                                                                          | Yes      | Integer
+feeThresholdSat           | Fee threshold to be paid along the payment route                                               | Yes      | Satoshi (Integer)
+maxFeePct                 | Max percentage to be paid in fees along the payment route (ignored if below `feeThresholdSat`) | Yes      | Integer (between 0 and 100)
+externalId                | Extra payment identifier specified by the caller                                               | Yes      | String
+pathFindingExperimentName | Name of the path-finding configuration that should be used                                     | Yes      | String
 
 ## SendToRoute
 
@@ -1211,11 +1306,10 @@ eclair-cli sendtoroute --shortChannelIds=42x1x0,56x7x3 --amountMsat=<amount> --p
 }
 ```
 
-Sends money to a node forcing the payment to go through the given route. The API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller. The route parameter can either be
-a list of **nodeIds** that the payment will traverse or a list of shortChannelIds. If **nodeIds** are specified, a suitable channel
-will be automatically selected for each hop (note that in that case, the specified nodes need to have public channels between
-them).
+Sends money to a node forcing the payment to go through the given route.
+The API works in a fire-and-forget fashion where the unique identifier for this payment attempt is immediately returned to the caller.
+The route parameter can either be a list of **nodeIds** that the payment will traverse or a list of shortChannelIds.
+If **nodeIds** are specified, a suitable channel will be automatically selected for each hop (note that in that case, the specified nodes need to have public channels between them).
 
 This route can either be a json-encoded array (same as [findroute](#findroute) output) or a comma-separated list.
 It's possible to add an extra `externalId` and this will be returned as part of the [payment data](#getsentinfo).
@@ -1255,12 +1349,13 @@ eclair-cli getsentinfo --paymentHash=<some_hash>
 The units of returned fields that are not obvious from their names:
 
 field           | unit
-----------------|-----
+----------------|------
 recipientAmount | msats
 amount          | msats
 feesPaid        | msats
 
 Possible returned `status.type` values:
+
 - pending
 - failed
 - sent
@@ -1286,12 +1381,13 @@ Possible returned `status.type` values:
       "description": "prepare MPP",
       "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
       "expiry": 3600,
+      "minFinalCltvExpiry": 30,
       "amount": 90000000,
       "features": {
         "activated": {
-          "basic_mpp": "optional",
           "var_onion_optin": "optional",
-          "payment_secret": "optional"
+          "payment_secret": "optional",
+          "basic_mpp": "optional"
         },
         "unknown": []
       }
@@ -1332,12 +1428,13 @@ Possible returned `status.type` values:
       "description": "prepare MPP",
       "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
       "expiry": 3600,
+      "minFinalCltvExpiry": 30,
       "amount": 90000000,
       "features": {
         "activated": {
-          "basic_mpp": "optional",
           "var_onion_optin": "optional",
-          "payment_secret": "optional"
+          "payment_secret": "optional",
+          "basic_mpp": "optional"
         },
         "unknown": []
       }
@@ -1364,8 +1461,9 @@ Possible returned `status.type` values:
 ]
 ```
 
-Returns a list of attempts to send an outgoing payment, the status field contains detailed information about the payment
-attempt. If the attempt was unsuccessful the `status` field contains a non empty array of detailed failures descriptions.
+Returns a list of attempts to send an outgoing payment.
+The status field contains detailed information about the payment attempt.
+If the attempt was unsuccessful the `status` field contains a non empty array of detailed failures descriptions.
 The API can be queried by `paymentHash` OR by `uuid`.
 
 Note that when you provide the `id` instead of the `payment_hash`, eclair will only return results for this particular attempt.
@@ -1394,11 +1492,12 @@ eclair-cli getreceivedinfo --paymentHash=<some_hash>
 The units of returned fields that are not obvious from their names:
 
 field    | unit
----------|-----
+---------|--------
 expiry   | seconds
 amount   | msats
 
 Possible returned `status.type` values:
+
 - pending
 - expired
 - received
@@ -1415,12 +1514,13 @@ Possible returned `status.type` values:
     "description": "prepare MPP",
     "paymentHash": "931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc",
     "expiry": 3600,
+    "minFinalCltvExpiry": 30,
     "amount": 90000000,
     "features": {
       "activated": {
-        "basic_mpp": "optional",
         "var_onion_optin": "optional",
-        "payment_secret": "optional"
+        "payment_secret": "optional",
+        "basic_mpp": "optional"
       },
       "unknown": []
     }
@@ -1436,8 +1536,8 @@ Possible returned `status.type` values:
 }
 ```
 
-Checks whether a payment corresponding to the given `paymentHash` has been received. It is possible to use a **BOLT11** invoice
-as parameter instead of the `paymentHash` but at least one of the two must be specified.
+Checks whether a payment corresponding to the given `paymentHash` has been received.
+It is possible to use a **BOLT11** invoice as parameter instead of the `paymentHash` but at least one of the two must be specified.
 
 ### HTTP Request
 
@@ -1447,8 +1547,10 @@ as parameter instead of the `paymentHash` but at least one of the two must be sp
 
 Parameter   | Description                             | Optional | Type
 ----------- | --------------------------------------- | -------- | ---------------------------
-paymentHash | The payment hash you want to check      | No       | 32-bytes-HexString (String)
-invoice     | The invoice containing the payment hash | Yes      | String
+paymentHash | The payment hash you want to check      | Yes (*)  | 32-bytes-HexString (String)
+invoice     | The invoice containing the payment hash | Yes (*)  | String
+
+(*): you must specify either paymentHash or invoice.
 
 ## GetInvoice
 
@@ -1462,7 +1564,7 @@ eclair-cli getinvoice --paymentHash=<some_hash>
 The units of returned fields that are not obvious from their names:
 
 field    | unit
----------|-----
+---------|--------
 expiry   | seconds
 amount   | msats
 
@@ -1477,12 +1579,13 @@ amount   | msats
   "description": "#reckless",
   "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
   "expiry": 3600,
+  "minFinalCltvExpiry": 30,
   "amount": 50000,
   "features": {
     "activated": {
-      "basic_mpp": "optional",
       "var_onion_optin": "optional",
-      "payment_secret": "optional"
+      "payment_secret": "optional",
+      "basic_mpp": "optional"
     },
     "unknown": []
   }
@@ -1529,12 +1632,13 @@ amount   | msats
     "description": "#reckless",
     "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
     "expiry": 3600,
+    "minFinalCltvExpiry": 30,
     "amount": 50000,
     "features": {
       "activated": {
-        "basic_mpp": "optional",
         "var_onion_optin": "optional",
-        "payment_secret": "optional"
+        "payment_secret": "optional",
+        "basic_mpp": "optional"
       },
       "unknown": []
     }
@@ -1547,6 +1651,7 @@ amount   | msats
     "description": "#reckless",
     "paymentHash": "b123bc58de65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
     "expiry": 3600,
+    "minFinalCltvExpiry": 30,
     "amount": 25000,
     "features": {
       "activated": {
@@ -1583,7 +1688,7 @@ eclair-cli listpendinginvoices
 The units of returned fields that are not obvious from their names:
 
 field    | unit
----------|-----
+---------|--------
 expiry   | seconds
 amount   | msats
 
@@ -1599,12 +1704,13 @@ amount   | msats
     "description": "#reckless",
     "paymentHash": "a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
     "expiry": 3600,
+    "minFinalCltvExpiry": 30,
     "amount": 50000,
     "features": {
       "activated": {
-        "basic_mpp": "optional",
         "var_onion_optin": "optional",
-        "payment_secret": "optional"
+        "payment_secret": "optional",
+        "basic_mpp": "optional"
       },
       "unknown": []
     }
@@ -1617,6 +1723,7 @@ amount   | msats
     "description": "#reckless",
     "paymentHash": "b123bc58de65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c",
     "expiry": 3600,
+    "minFinalCltvExpiry": 30,
     "amount": 25000,
     "features": {
       "activated": {
@@ -1628,8 +1735,8 @@ amount   | msats
 ]
 ```
 
-Returns all non-paid, non-expired **BOLT11** invoices stored. The invoices can be filtered by date and are outputted in descending
-order.
+Returns all non-paid, non-expired **BOLT11** invoices stored.
+The invoices can be filtered by date and are outputted in descending order.
 
 ### HTTP Request
 
@@ -1663,8 +1770,21 @@ eclair-cli findroute --invoice=<some_bolt11invoice>
 ]
 ```
 
-Finds a route to the node specified by the invoice. If the invoice does not specify an amount,
-you must do so via the `amountMsat` parameter.
+Finds a route to the node specified by the invoice.
+If the invoice does not specify an amount, you must do so via the `amountMsat` parameter.
+
+You can specify various formats for the route returned with the `format` parameter.
+When using `format=shortChannelId`, the above command would return:
+
+```json
+[
+  "11203x1x0",
+  "11203x7x5",
+  "11205x3x3"
+]
+```
+
+The formats currently supported are `nodeId` and `shortChannelId`.
 
 ### HTTP Request
 
@@ -1672,10 +1792,13 @@ you must do so via the `amountMsat` parameter.
 
 ### Parameters
 
-Parameter  | Description                                 | Optional | Type
----------- | ------------------------------------------- | -------- | ----------------------
-invoice    | The invoice containing the destination      | No       | String
-amountMsat | The amount that should go through the route | Yes      | Millisatoshi (Integer)
+Parameter                 | Description                                                | Optional | Type
+------------------------- | ---------------------------------------------------------- | -------- | ----------------------
+invoice                   | The invoice containing the destination                     | No       | String
+amountMsat                | The amount that should go through the route                | Yes      | Millisatoshi (Integer)
+format                    | Format that will be used for the resulting route           | Yes      | String
+includeLocalChannelCost   | If true, the relay fees of local channels will be counted  | Yes      | Boolean
+pathFindingExperimentName | Name of the path-finding configuration that should be used | Yes      | String
 
 ## FindRouteToNode
 
@@ -1697,7 +1820,7 @@ eclair-cli --nodeId=<some_node> --amountMsat=<some_amount>
 ]
 ```
 
-Finds a route to the node.
+Finds a route to the given node.
 
 ### HTTP Request
 
@@ -1705,10 +1828,13 @@ Finds a route to the node.
 
 ### Parameters
 
-Parameter  | Description                                 | Optional | Type
----------- | ------------------------------------------- | -------- | ---------------------------
-nodeId     | The destination of the route                | No       | 33-bytes-HexString (String)
-amountMsat | The amount that should go through the route | No       | Millisatoshi (Integer)
+Parameter                 | Description                                                | Optional | Type
+------------------------- | ---------------------------------------------------------- | -------- | ---------------------------
+nodeId                    | The destination of the route                               | No       | 33-bytes-HexString (String)
+amountMsat                | The amount that should go through the route                | No       | Millisatoshi (Integer)
+format                    | Format that will be used for the resulting route           | Yes      | String
+includeLocalChannelCost   | If true, the relay fees of local channels will be counted  | Yes      | Boolean
+pathFindingExperimentName | Name of the path-finding configuration that should be used | Yes      | String
 
 ## FindRouteBetweenNodes
 
@@ -1738,11 +1864,14 @@ Finds a route between two nodes.
 
 ### Parameters
 
-Parameter    | Description                                 | Optional | Type
------------- | ------------------------------------------- | -------- | ---------------------------
-sourceNodeId | The start of the route                      | No       | 33-bytes-HexString (String)
-targetNodeId | The destination of the route                | No       | 33-bytes-HexString (String)
-amountMsat   | The amount that should go through the route | No       | Millisatoshi (Integer)
+Parameter                 | Description                                                | Optional | Type
+------------------------- | ---------------------------------------------------------- | -------- | ---------------------------
+sourceNodeId              | The start of the route                                     | No       | 33-bytes-HexString (String)
+targetNodeId              | The destination of the route                               | No       | 33-bytes-HexString (String)
+amountMsat                | The amount that should go through the route                | No       | Millisatoshi (Integer)
+format                    | Format that will be used for the resulting route           | Yes      | String
+includeLocalChannelCost   | If true, the relay fees of local channels will be counted  | Yes      | Boolean
+pathFindingExperimentName | Name of the path-finding configuration that should be used | Yes      | String
 
 # On-Chain
 
@@ -2079,7 +2208,7 @@ eclair-cli networkfees
 ]
 ```
 
-Retrieves information about on-chain fees paid during channel operations (currency values are in Satoshis).
+Retrieves information about on-chain fees paid during channel operations (currency values are in satoshis).
 
 ### HTTP Request
 
