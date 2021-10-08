@@ -26,7 +26,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
-import fr.acinq.eclair.blockchain.{OnChainWallet, DummyOnChainWallet}
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
@@ -76,6 +76,10 @@ object ChannelStateTestsTags {
   val AliceLowMaxHtlcValueInFlight = "alice_low_max_htlc_value_in_flight"
   /** If set, channels will use option_upfront_shutdown_script. */
   val OptionUpfrontShutdownScript = "option_upfront_shutdown_script"
+  /** If set, Alice will have a much higher dust limit than Bob. */
+  val HighDustLimitDifferenceAliceBob = "high_dust_limit_difference_alice_bob"
+  /** If set, Bob will have a much higher dust limit than Alice. */
+  val HighDustLimitDifferenceBobAlice = "high_dust_limit_difference_bob_alice"
 }
 
 trait ChannelStateTestsHelperMethods extends TestKitBase {
@@ -96,7 +100,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     def currentBlockHeight: Long = alice.underlyingActor.nodeParams.currentBlockHeight
   }
 
-  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: OnChainWallet = new DummyOnChainWallet()): SetupFixture = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: OnChainWallet = new DummyOnChainWallet(), tags: Set[String] = Set.empty): SetupFixture = {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alicePeer = TestProbe()
@@ -111,8 +115,18 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
-    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
-    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
+    val finalNodeParamsA = nodeParamsA
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
+      .modify(_.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
+      .modify(_.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+    val finalNodeParamsB = nodeParamsB
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
+      .modify(_.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
+      .modify(_.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
+    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
     SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
@@ -142,10 +156,14 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.AliceLowMaxHtlcValueInFlight))(UInt64(150000000))
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(5000 sat)
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(1000 sat)
     val bobParams = Bob.channelParams
       .modify(_.initFeatures).setTo(bobInitFeatures)
       .modify(_.walletStaticPaymentBasepoint).setToIf(channelType.paysDirectlyToWallet)(Some(Helpers.getWalletPaymentBasepoint(wallet)))
       .modify(_.maxHtlcValueInFlightMsat).setToIf(tags.contains(ChannelStateTestsTags.NoMaxHtlcValueInFlight))(UInt64.MaxValue)
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(1000 sat)
+      .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
 
     (aliceParams, bobParams, channelType)
   }

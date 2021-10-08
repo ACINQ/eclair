@@ -117,7 +117,7 @@ object TestConstants {
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
-        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw),
+        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw, DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)),
         perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64(500000000),
@@ -171,7 +171,7 @@ object TestConstants {
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingExperimentConf = PathFindingExperimentConf(Map(("alice-test-experiment" -> PathFindingConf(
+        pathFindingExperimentConf = PathFindingExperimentConf(Map("alice-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
             maxFeeFlat = (21 sat).toMilliSatoshi,
@@ -190,7 +190,7 @@ object TestConstants {
             maxParts = 10,
           ),
           experimentName = "alice-test-experiment",
-          experimentPercentage = 100))))
+          experimentPercentage = 100)))
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -243,7 +243,7 @@ object TestConstants {
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
-        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw),
+        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw, DustTolerance(30_000 sat, closeOnUpdateFeeOverflow = true)),
         perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
@@ -297,7 +297,7 @@ object TestConstants {
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingExperimentConf = PathFindingExperimentConf(Map(("bob-test-experiment" -> PathFindingConf(
+        pathFindingExperimentConf = PathFindingExperimentConf(Map("bob-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
             maxFeeFlat = (21 sat).toMilliSatoshi,
@@ -316,7 +316,7 @@ object TestConstants {
             maxParts = 10,
           ),
           experimentName = "bob-test-experiment",
-          experimentPercentage = 100))))
+          experimentPercentage = 100)))
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,

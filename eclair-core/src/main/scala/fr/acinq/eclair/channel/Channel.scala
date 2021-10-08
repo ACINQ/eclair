@@ -30,6 +30,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.channel.Commitments.PostRevocationAction
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding, getRelayFees}
 import fr.acinq.eclair.channel.Monitoring.Metrics.ProcessMessage
 import fr.acinq.eclair.channel.Monitoring.{Metrics, Tags}
@@ -41,6 +42,7 @@ import fr.acinq.eclair.db.DbEventHandler.ChannelEvent.EventType
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentSettlingOnChain
+import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.{ClosingTx, TxOwner}
 import fr.acinq.eclair.transactions._
@@ -769,7 +771,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       }
 
     case Event(c: CMD_UPDATE_FEE, d: DATA_NORMAL) =>
-      Commitments.sendFee(d.commitments, c) match {
+      Commitments.sendFee(d.commitments, c, nodeParams.onChainFeeConf) match {
         case Right((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN()
           context.system.eventStream.publish(AvailableBalanceChanged(self, d.channelId, d.shortChannelId, commitments1))
@@ -839,15 +841,19 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     case Event(revocation: RevokeAndAck, d: DATA_NORMAL) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked
-      Commitments.receiveRevocation(d.commitments, revocation) match {
-        case Right((commitments1, forwards)) =>
+      Commitments.receiveRevocation(d.commitments, revocation, nodeParams.onChainFeeConf.feerateToleranceFor(remoteNodeId).dustTolerance.maxExposure) match {
+        case Right((commitments1, actions)) =>
           cancelTimer(RevocationTimeout.toString)
           log.debug("received a new rev, spec:\n{}", Commitments.specs2String(commitments1))
-          forwards.foreach {
-            case Right(forwardAdd) =>
-              log.debug("forwarding {} to relayer", forwardAdd)
-              relayer ! forwardAdd
-            case Left(result) =>
+          actions.foreach {
+            case PostRevocationAction.RelayHtlc(add) =>
+              log.debug("forwarding incoming htlc {} to relayer", add)
+              relayer ! Relayer.RelayForward(add)
+            case PostRevocationAction.RejectHtlc(add) =>
+              log.debug("rejecting incoming htlc {}", add)
+              // NB: we don't set commit = true, we will sign all updates at once afterwards.
+              self ! CMD_FAIL_HTLC(add.id, Right(TemporaryChannelFailure(d.channelUpdate)), commit = true)
+            case PostRevocationAction.RelayFailure(result) =>
               log.debug("forwarding {} to relayer", result)
               relayer ! result
           }
@@ -1127,7 +1133,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       }
 
     case Event(c: CMD_UPDATE_FEE, d: DATA_SHUTDOWN) =>
-      Commitments.sendFee(d.commitments, c) match {
+      Commitments.sendFee(d.commitments, c, nodeParams.onChainFeeConf) match {
         case Right((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN()
           handleCommandSuccess(c, d.copy(commitments = commitments1)) sending fee
@@ -1199,18 +1205,22 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
     case Event(revocation: RevokeAndAck, d@DATA_SHUTDOWN(commitments, localShutdown, remoteShutdown, closingFeerates)) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked including the shutdown message
-      Commitments.receiveRevocation(commitments, revocation) match {
-        case Right((commitments1, forwards)) =>
+      Commitments.receiveRevocation(commitments, revocation, nodeParams.onChainFeeConf.feerateToleranceFor(remoteNodeId).dustTolerance.maxExposure) match {
+        case Right((commitments1, actions)) =>
           cancelTimer(RevocationTimeout.toString)
           log.debug("received a new rev, spec:\n{}", Commitments.specs2String(commitments1))
-          forwards.foreach {
-            case Right(forwardAdd) =>
+          actions.foreach {
+            case PostRevocationAction.RelayHtlc(add) =>
               // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
-              log.debug("closing in progress: failing {}", forwardAdd.add)
-              self ! CMD_FAIL_HTLC(forwardAdd.add.id, Right(PermanentChannelFailure), commit = true)
-            case Left(forward) =>
-              log.debug("forwarding {} to relayer", forward)
-              relayer ! forward
+              log.debug("closing in progress: failing {}", add)
+              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure), commit = true)
+            case PostRevocationAction.RejectHtlc(add) =>
+              // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
+              log.debug("closing in progress: rejecting {}", add)
+              self ! CMD_FAIL_HTLC(add.id, Right(PermanentChannelFailure), commit = true)
+            case PostRevocationAction.RelayFailure(result) =>
+              log.debug("forwarding {} to relayer", result)
+              relayer ! result
           }
           if (commitments1.hasNoPendingHtlcsOrFeeUpdate) {
             log.debug("switching to NEGOTIATING spec:\n{}", Commitments.specs2String(commitments1))
