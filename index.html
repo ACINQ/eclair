@@ -449,18 +449,22 @@ eclair-cli getinfo
 <p>The above command returns JSON structured like this:</p>
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
-  </span><span class="s2">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0.4.1-SNAPSHOT-adf4da6"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"version"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0.6.2-6817d6f"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"alias"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ACINQ"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"color"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#000102"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
     </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"option_anchor_outputs"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"option_static_remotekey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"option_support_large_channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"option_anchors_zero_fee_htlc_tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"option_shutdown_anysegwit"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
@@ -472,7 +476,7 @@ eclair-cli getinfo
     </span><span class="s2">"34.239.230.56:9735"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"of7husrflx7sforh3fw6yqlpwstee3wg5imvvmkp4bz6rbjxtg5nljad.onion:9735"</span><span class="w">
   </span><span class="p">],</span><span class="w">
-  </span><span class="s2">"instanceId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"53e081ac-989b-4c35-ab0c-07f86457156d"</span><span class="w">
+  </span><span class="s2">"instanceId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3d084f1c-6835-496b-949f-9db1ae4a610d"</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Returns information about this instance such as version, features, <strong>nodeId</strong> and current block height as seen by eclair.</p>
@@ -609,13 +613,10 @@ eclair-cli disconnect --nodeId<span class="o">=</span>&lt;nodeId&gt;
 <td>33-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
-<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">fundingSatoshis</span><span class="o">=</span>&lt;funding_satoshis&gt; <span class="se">\</span>
-  -F <span class="nv">feeBaseMsat</span><span class="o">=</span>&lt;feebase&gt; <span class="se">\</span>
-  -F <span class="nv">feeProportionalMillionths</span><span class="o">=</span>&lt;feeproportional&gt; <span class="se">\</span>
-  <span class="s2">"http://localhost:8080/open"</span> -u :&lt;eclair_api_password&gt;
+<h1 id='open'>Open</h1><h2 id='open-2'>Open</h2><pre class="highlight shell tab-shell"><code>curl -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; -F <span class="nv">fundingSatoshis</span><span class="o">=</span>&lt;funding_satoshis&gt; <span class="s2">"http://localhost:8080/open"</span> -u :&lt;eclair_api_password&gt;
 
 <span class="c"># with eclair-cli</span>
-eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshis<span class="o">=</span>&lt;funding_satoshis&gt; --feeBaseMsat<span class="o">=</span>&lt;feebase&gt; --feeProportionalMillionths<span class="o">=</span>&lt;feeproportional&gt;
+eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshis<span class="o">=</span>&lt;funding_satoshis&gt;
 </code></pre>
 <blockquote>
 <p>The above command returns the channelId of the newly created channel:</p>
@@ -625,7 +626,10 @@ eclair-cli open --nodeId<span class="o">=</span>&lt;node_id&gt; --fundingSatoshi
 <p>Open a channel to another lightning node. You must specify the target <strong>nodeId</strong> and the funding satoshis for the new channel. Optionally
 you can send to the remote a <em>pushMsat</em> value and you can specify whether this should be a public or private channel (default is set in the config).</p>
 
-<p>You can optionally set the initial routing fees that this channel will use (<em>feeBaseMsat</em> and <em>feeProportionalMillionths</em>).</p>
+<p>If you already have another channel to the same node, the routing fees that will be used for this new channel will be the same as your existing channel.
+Otherwise the values from <code>eclair.conf</code> will be used (see <code>eclair.relay.fees</code> in your <code>eclair.conf</code>).</p>
+
+<p>If you want to override the routing fees that will be used, you must use the <code>updaterelayfee</code> API before opening the channel.</p>
 <h3 id='http-request-6'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/open</code></p>
 <h3 id='parameters-5'>Parameters</h3>
@@ -650,22 +654,16 @@ you can send to the remote a <em>pushMsat</em> value and you can specify whether
 <td>Satoshis (Integer)</td>
 </tr>
 <tr>
+<td>channelType</td>
+<td>Channel type (standard, static_remotekey, anchor_outputs_zero_fee_htlc_tx)</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
+<tr>
 <td>pushMsat</td>
 <td>Amount of millisatoshi to unilaterally push to the counterparty</td>
 <td>Yes</td>
 <td>Millisatoshis (Integer)</td>
-</tr>
-<tr>
-<td>feeBaseMsat</td>
-<td>The base fee to use when relaying payments</td>
-<td>Yes</td>
-<td>Millisatoshi (Integer)</td>
-</tr>
-<tr>
-<td>feeProportionalMillionths</td>
-<td>The proportional fee to use when relaying payments</td>
-<td>Yes</td>
-<td>Integer</td>
 </tr>
 <tr>
 <td>fundingFeerateSatByte</td>
@@ -698,9 +696,13 @@ eclair-cli close --channelId<span class="o">=</span>&lt;channel&gt;
   <span class="s2">"&lt;channel&gt;"</span>: <span class="s2">"ok"</span>
 <span class="o">}</span>
 </code></pre>
-<p>Initiates a cooperative close for given channels that belong to this eclair node. The API returns once the <em>funding_signed</em> message has been negotiated.
-If you specified a scriptPubKey then the closing transaction will spend to that address.
+<p>Initiates a cooperative close for given channels that belong to this eclair node.
+The API returns once the <em>closing_signed</em> message has been negotiated.
 The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channels, you can use the parameters <code>channelIds</code> or <code>shortChannelIds</code> below.</p>
+
+<p>If you specified a <code>scriptPubKey</code> then the closing transaction will spend to that address.</p>
+
+<p>You can specify a fee range for the closing transaction with the <code>preferredFeerateSatByte</code>, <code>minFeerateSatByte</code> and <code>maxFeerateSatByte</code>.</p>
 <h3 id='http-request-7'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/close</code></p>
 <h3 id='parameters-6'>Parameters</h3>
@@ -742,6 +744,24 @@ The endpoint supports receiving multiple channel id(s) or short channel id(s); t
 <td>Yes</td>
 <td>HexString (String)</td>
 </tr>
+<tr>
+<td>preferredFeerateSatByte</td>
+<td>Preferred feerate (sat/byte) for the closing transaction</td>
+<td>Yes</td>
+<td>Satoshis (Integer)</td>
+</tr>
+<tr>
+<td>minFeerateSatByte</td>
+<td>Minimum feerate (sat/byte) for the closing transaction</td>
+<td>Yes</td>
+<td>Satoshis (Integer)</td>
+</tr>
+<tr>
+<td>maxFeerateSatByte</td>
+<td>Maximum feerate (sat/byte) for the closing transaction</td>
+<td>Yes</td>
+<td>Satoshis (Integer)</td>
+</tr>
 </tbody></table>
 <h2 id='forceclose'>ForceClose</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="s2">"http://localhost:8080/forceclose"</span>
 
@@ -755,8 +775,8 @@ eclair-cli forceclose --channelId<span class="o">=</span>&lt;channel&gt;
   <span class="s2">"&lt;channel&gt;"</span>: <span class="s2">"ok"</span>
 <span class="o">}</span>
 </code></pre>
-<p>Initiates a unilateral close for given channels that belong to this eclair node. Once the commitment has been broadcast, the API returns its
-transaction id.
+<p>Initiates a unilateral close for given channels that belong to this eclair node.
+Once the commitment has been broadcast, the API returns its transaction id.
 The endpoint supports receiving multiple channel id(s) or short channel id(s); to close multiple channels, you can use the parameters <code>channelIds</code> or <code>shortChannelIds</code> below.</p>
 <h3 id='http-request-8'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/forceclose</code></p>
@@ -794,13 +814,13 @@ The endpoint supports receiving multiple channel id(s) or short channel id(s); t
 <td>CSV or JSON list of shortChannelId</td>
 </tr>
 </tbody></table>
-<h1 id='updaterelayfee'>UpdateRelayFee</h1><h2 id='updaterelayfee-2'>UpdateRelayFee</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">channelId</span><span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
+<h1 id='updaterelayfee'>UpdateRelayFee</h1><h2 id='updaterelayfee-2'>UpdateRelayFee</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;node_id&gt; <span class="se">\</span>
      -F <span class="nv">feeBaseMsat</span><span class="o">=</span>&lt;feebase&gt; -F <span class="nv">feeProportionalMillionths</span><span class="o">=</span>&lt;feeproportional&gt; <span class="se">\</span>
      <span class="s2">"http://localhost:8080/updaterelayfee"</span>
 
 <span class="c">#eclair-cli</span>
 eclair-cli updaterelayfee <span class="se">\</span>
-  --channelId<span class="o">=</span>&lt;channel&gt; <span class="se">\</span>
+  --nodeId<span class="o">=</span>&lt;node_id&gt; <span class="se">\</span>
   --feeBaseMsat<span class="o">=</span>&lt;feebase&gt; <span class="se">\</span>
   --feeProportionalMillionths<span class="o">=</span>&lt;feeproportional&gt;
 </code></pre>
@@ -808,19 +828,20 @@ eclair-cli updaterelayfee <span class="se">\</span>
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight shell tab-shell"><code><span class="o">{</span>
-  <span class="s2">"&lt;channel&gt;"</span>: <span class="o">{</span>
-    <span class="s2">"cmd"</span>: <span class="o">{</span>
-      <span class="s2">"feeBase"</span>: &lt;feebase&gt;,
-      <span class="s2">"feeProportionalMillionths"</span>: &lt;feeProportionalMillionths&gt;
-    <span class="o">}</span>,
-    <span class="s2">"channelId"</span>:<span class="s2">"&lt;channel&gt;"</span>
+  <span class="s2">"&lt;channelId&gt;"</span>: <span class="o">{</span>
+    <span class="s2">"feeBase"</span>: &lt;feebase&gt;,
+    <span class="s2">"feeProportionalMillionths"</span>: &lt;feeProportionalMillionths&gt;
   <span class="o">}</span>
 <span class="o">}</span>
 </code></pre>
 <p>Returned <code>feeBase</code> is in msat.</p>
 
-<p>Updates the fee policy for the specified <em>channelId</em>. A new update for this channel will be broadcast to the network.
-The endpoint supports receiving multiple channel id(s) or short channel id(s); to update multiple channels, you can use the parameters <code>channelIds</code> or <code>shortChannelIds</code> below.</p>
+<p>Updates the fee policy for the specified <em>nodeId</em>.
+The endpoint supports receiving multiple node id(s); to update multiple nodes, you can use the <code>nodeIds</code> parameter instead of <code>nodeId</code>.</p>
+
+<p>New updates for every channel you have with the selected node(s) will be broadcast to the network.
+Note that you can call this API even without having any channel with the selected node(s).
+That will ensure that when you open channels to the selected node(s), the fees you have configured will be automatically applied (instead of the default fees from your <code>eclair.conf</code>).</p>
 <h3 id='http-request-9'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/updaterelayfee</code></p>
 <h3 id='parameters-8'>Parameters</h3>
@@ -833,28 +854,16 @@ The endpoint supports receiving multiple channel id(s) or short channel id(s); t
 </tr>
 </thead><tbody>
 <tr>
-<td>channelId</td>
-<td>The channelId of the channel you want to update</td>
-<td>No</td>
+<td>nodeId</td>
+<td>The <strong>nodeId</strong> of the peer you want to update</td>
+<td>Yes (*)</td>
 <td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
-<td>shortChannelId</td>
-<td>The shortChannelId of the channel you want to update</td>
-<td>Yes</td>
-<td>ShortChannelId (String)</td>
-</tr>
-<tr>
-<td>channelIds</td>
-<td>List of channelIds to update</td>
-<td>Yes</td>
-<td>CSV or JSON list of channelId</td>
-</tr>
-<tr>
-<td>shortChannelIds</td>
-<td>List of shortChannelIds to update</td>
-<td>Yes</td>
-<td>CSV or JSON list of shortChannelId</td>
+<td>nodeIds</td>
+<td>The <strong>nodeIds</strong> of the peers you want to update</td>
+<td>Yes (*)</td>
+<td>CSV or JSON list of 33-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>feeBaseMsat</td>
@@ -869,6 +878,8 @@ The endpoint supports receiving multiple channel id(s) or short channel id(s); t
 <td>Integer</td>
 </tr>
 </tbody></table>
+
+<p>(*): you must specify either nodeId or nodeIds, but not both.</p>
 <h1 id='peers'>Peers</h1><h2 id='peers-2'>Peers</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/peers"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -924,8 +935,8 @@ eclair-cli channels
 <td>blocks</td>
 </tr>
 <tr>
-<td>feeratePerKw</td>
-<td>sats</td>
+<td>commitTxFeerate</td>
+<td>sats/kw</td>
 </tr>
 </tbody></table>
 
@@ -934,24 +945,33 @@ eclair-cli channels
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
   </span><span class="p">{</span><span class="w">
-    </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02"</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"NORMAL"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DATA_NORMAL"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"commitments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"channelVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"00000000000000000000000000000001"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"channelConfig"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+          </span><span class="s2">"funding_pubkey_based_channel_keypath"</span><span class="w">
+        </span><span class="p">],</span><span class="w">
+        </span><span class="s2">"channelFeatures"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+          </span><span class="s2">"option_static_remotekey"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"option_anchors_zero_fee_htlc_tx"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"option_support_large_channel"</span><span class="w">
+        </span><span class="p">],</span><span class="w">
         </span><span class="s2">"localParams"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"fundingKeyPath"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"path"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-              </span><span class="mi">2285452814</span><span class="p">,</span><span class="w">
-              </span><span class="mi">3138980649</span><span class="p">,</span><span class="w">
-              </span><span class="mi">3800551753</span><span class="p">,</span><span class="w">
-              </span><span class="mi">1747192007</span><span class="p">,</span><span class="w">
-              </span><span class="mi">941051304</span><span class="p">,</span><span class="w">
-              </span><span class="mi">3416368401</span><span class="p">,</span><span class="w">
-              </span><span class="mi">48609846</span><span class="p">,</span><span class="w">
-              </span><span class="mi">1910237561</span><span class="p">,</span><span class="w">
+              </span><span class="mi">2376346446</span><span class="p">,</span><span class="w">
+              </span><span class="mi">2845139278</span><span class="p">,</span><span class="w">
+              </span><span class="mi">845530815</span><span class="p">,</span><span class="w">
+              </span><span class="mi">116517134</span><span class="p">,</span><span class="w">
+              </span><span class="mi">3208648948</span><span class="p">,</span><span class="w">
+              </span><span class="mi">1623539631</span><span class="p">,</span><span class="w">
+              </span><span class="mi">2381994817</span><span class="p">,</span><span class="w">
+              </span><span class="mi">1990484890</span><span class="p">,</span><span class="w">
               </span><span class="mi">2147483649</span><span class="w">
             </span><span class="p">]</span><span class="w">
           </span><span class="p">},</span><span class="w">
@@ -962,37 +982,48 @@ eclair-cli channels
           </span><span class="s2">"toSelfDelay"</span><span class="p">:</span><span class="w"> </span><span class="mi">720</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxAcceptedHtlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
           </span><span class="s2">"isFunder"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"defaultFinalScriptPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"defaultFinalScriptPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0014b6490f48e48551a84d33fafad1eee38798ef86b0"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"initFeatures"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-              </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_anchor_outputs"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_static_remotekey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_support_large_channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_anchors_zero_fee_htlc_tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_shutdown_anysegwit"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
             </span><span class="p">},</span><span class="w">
             </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
           </span><span class="p">}</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"remoteParams"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"dustLimit"</span><span class="p">:</span><span class="w"> </span><span class="mi">546</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxHtlcValueInFlightMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">5000000000</span><span class="p">,</span><span class="w">
           </span><span class="s2">"channelReserve"</span><span class="p">:</span><span class="w"> </span><span class="mi">3000</span><span class="p">,</span><span class="w">
           </span><span class="s2">"htlcMinimum"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
           </span><span class="s2">"toSelfDelay"</span><span class="p">:</span><span class="w"> </span><span class="mi">720</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxAcceptedHtlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"fundingPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"revocationBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"028743ddd812e0e8d09a1a097df5a203e30ab355e430cf8e167216a65376aea793"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"paymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02ebc5bd154facc6ce58e77f649a05faa7b33e45d08defbd3fc3eb07aa7e20835c"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"delayedPaymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"htlcBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"fundingPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03586aa3567bcb1f174d133c5cbe1e965feb8d26acd555f77737e3a5196bb5e242"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"revocationBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03c96420f568447d7497a5cf69da0708b2ab9dfcded395d3628901c9460fc48f57"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"paymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"035f27cc965ad7f18087325bc6c48d64181a07ccadf818cd056ea09e300e3f1fbe"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"delayedPaymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"033e835b582c476a0d8c4dddd446485ce7ee1b60854c6b2fa263bc955160b61a10"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"htlcBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0363ee0e9873e19a2457f1fe2c79e464e5a40976ebbe724b29f805383fa65b9c3e"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"initFeatures"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-              </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_static_remotekey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_support_large_channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_anchors_zero_fee_htlc_tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_shutdown_anysegwit"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
             </span><span class="p">},</span><span class="w">
             </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
@@ -1000,31 +1031,32 @@ eclair-cli channels
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
         </span><span class="s2">"localCommit"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
           </span><span class="s2">"spec"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"htlcs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
-            </span><span class="s2">"feeratePerKw"</span><span class="p">:</span><span class="w"> </span><span class="mi">45000</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mi">58800001</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"toRemote"</span><span class="p">:</span><span class="w"> </span><span class="mi">241199999</span><span class="w">
+            </span><span class="s2">"commitTxFeerate"</span><span class="p">:</span><span class="w"> </span><span class="mi">2500</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mi">300000000</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toRemote"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w">
           </span><span class="p">},</span><span class="w">
-          </span><span class="s2">"publishableTxs"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"commitTxAndRemoteSig"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"commitTx"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-              </span><span class="s2">"txid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0a5a81642268b5638bca8c830ab17bf7343950a46393f6b6858a188354652fc6"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02000000000101d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04a01000000007b71b280026c66000000000000220020fb1e4938481309e95e663e06d1ecec23438976519399e9b574fd98ca3d32721d2fae0300000000001600142aca6f33e9f92e56a9586e696181d30979d15b27040047304402201ddb65ce52c0123d058661ee3aa6532561edb93f946402e2eb2b73fb5b8d637c02201d408be674b0afdf3696babb48caf1a0c1fe8f55c694cbfa9d3176066f94a65d01483045022100a4c180c4a68a11d5c45ae9f0abeabbb2f3573350eed05a23315172e402ccf196022077c8533b36c5b4a2413d4e8d13e1ad9d5658701f1ed2ff78c878e56179d841d801475221021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d21032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b352aee3212f20"</span><span class="w">
+              </span><span class="s2">"txid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"149b712c7bef33da2798f9f281d4d908efc778231ee67fb3916101c38a76e3af"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02000000014881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca00000000008cea7880024a0100000000000022002005b67505e57667e240c564934ace60c29afb023850c838734e6ef7855eb2a0b95286040000000000220020587f5a79017b2bde0446d9d808d4c4f4225fb336c4544640be551f67a6e88f597edeed20"</span><span class="w">
             </span><span class="p">},</span><span class="w">
-            </span><span class="s2">"htlcTxsAndSigs"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
-          </span><span class="p">}</span><span class="w">
+            </span><span class="s2">"remoteSig"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a49a71225fbee3a919b3fb73906c67d2b64ac9f77eb4a1bf3e9f2b3cfb05a9f1652d17b5c56192f07514af49ea898fe2d0680feedf284317ee591b85b216e927"</span><span class="w">
+          </span><span class="p">},</span><span class="w">
+          </span><span class="s2">"htlcTxsAndRemoteSigs"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"remoteCommit"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
           </span><span class="s2">"spec"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"htlcs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
-            </span><span class="s2">"feeratePerKw"</span><span class="p">:</span><span class="w"> </span><span class="mi">45000</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mi">241199999</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"toRemote"</span><span class="p">:</span><span class="w"> </span><span class="mi">58800001</span><span class="w">
+            </span><span class="s2">"commitTxFeerate"</span><span class="p">:</span><span class="w"> </span><span class="mi">2500</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toRemote"</span><span class="p">:</span><span class="w"> </span><span class="mi">300000000</span><span class="w">
           </span><span class="p">},</span><span class="w">
-          </span><span class="s2">"txid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"28c188f2e3f6e0ba59a94995af87214d880050974a0b7baac3a6aaacdd7dba6a"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"remotePerCommitmentPoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02742c1545be4a25b13c916a4622df61deb4efc21d8fa7e7776a487c696f6f1afc"</span><span class="w">
+          </span><span class="s2">"txid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"5e2526d7b83dfa6cf0878b381148fb1f2dd54cdd880c48f562b2fa4c41b169ba"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"remotePerCommitmentPoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"031dcfb98ab373aee0bb8a45bf57049627afb7a9c3380742bda6b5e0719aef66e9"</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"localChanges"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
           </span><span class="s2">"proposed"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
@@ -1036,49 +1068,56 @@ eclair-cli channels
           </span><span class="s2">"acked"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
           </span><span class="s2">"signed"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
         </span><span class="p">},</span><span class="w">
-        </span><span class="s2">"localNextHtlcId"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"localNextHtlcId"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
         </span><span class="s2">"remoteNextHtlcId"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
         </span><span class="s2">"originChannels"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span><span class="w">
-        </span><span class="s2">"remoteNextCommitInfo"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0337ceb9aa292177e416092adadfb1990aa16ae8be5c8108aa6e671384a7cd6b28"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"remoteNextCommitInfo"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03c7ac97c8ba8bcd9a2d430a0324a761e06588691e828a12ddfdebfa07ad298d32"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"commitInput"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"outPoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4af05ababd810486f773b71b896a8d3970fc238e7875bb737c870d02ac1febd4:1"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"outPoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ca0c742db99861acafb149737ab72e431c4c4a9879db71a5820dbd5030ea8148:0"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"amountSatoshis"</span><span class="p">:</span><span class="w"> </span><span class="mi">300000</span><span class="w">
         </span><span class="p">},</span><span class="w">
-        </span><span class="s2">"remotePerCommitmentSecrets"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"</span><span class="w">
+        </span><span class="s2">"remotePerCommitmentSecrets"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w">
       </span><span class="p">},</span><span class="w">
-      </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"538x4x1"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"11203x1x0"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"buried"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
       </span><span class="s2">"channelAnnouncement"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"nodeSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4088e1b1e0ae77285434603359a797f779d2e12644957a89457bb9ab59899e324ecf4bb06379ad93fa6a3a31dfe050217dc3753fc56ddecbe020e5ca9f506db2"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"nodeSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"8fa198fb50fd509e248ba7acd165243aef1ea20834f6857750cd4d919cf777dc3d871f1cbc7e4979aa01d748bd547d85f4d8d6ad23c9383700c0c8a9ca62f5c8"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"bitcoinSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"aac6fa5fbdcff62932e1bedff9a3f1d49791707270f63027e0d74f195f9e835f0017a201b049c70ed0240db0e5b9e53e5107143d38fcdacc355383200d47528c"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"bitcoinSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4f368635b689637dba776b570df8306c247666e5cfa444cced0d9a1f50917a367082d57c09ad944acf649be9891c9013eb740a971f398a1528dfe2c66cbf3625"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"nodeSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"7a10da73a7f25c613333588fb0c79b18338af8cc6ac1dd7a5e17616b8fc69b0f22db572888c466e06cc2e780fefe9951c0afbe9b05a560d165688e6e10d194a4"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"nodeSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eb9559577317b562adb8ad0ca77d18c73c76cc857f682adfc41c1c456de79daa31e416597847cc5145dee321883b4d207c948bbeffdfd6cf21ac1fd46cda9d6f"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"bitcoinSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ecf6df2e51a4bbb28a80ba61ff9ce045cc6d4a177175f3755072e5aef50e7c8a5b8074049f13f1e98b624419eea88975e92dbe36c7eba215a7d800160ff1f690"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"bitcoinSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"36c2dc2f147e667da0c94e4ec48f1cc0b159cf77305eda8932ac547281b4fcab02daa3573242d625788270ae253a5bcfb7ec09eecbcbdd36e111753880a4a500"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
           </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span><span class="w">
           </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"538x4x1"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"nodeId1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"nodeId2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"bitcoinKey1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"bitcoinKey2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b3"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"unknownFields"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w">
+        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"11203x1x0"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"nodeId1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"nodeId2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"bitcoinKey1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"035f7babd88d257505ed41d95b5fb8878371aca36e19cfb9603f4c0c890d8f806e"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"bitcoinKey2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03586aa3567bcb1f174d133c5cbe1e965feb8d26acd555f77737e3a5196bb5e242"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"tlvStream"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+          </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
+        </span><span class="p">}</span><span class="w">
       </span><span class="p">},</span><span class="w">
       </span><span class="s2">"channelUpdate"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"f331625e39043b243c86cbe53615ba8ed87f85ae088f145c061562bf9961617c4e85b132610a01a55eb0ca84e90fcc8510f9781a5c387f13a1d1569b211b1e73"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1358ac8f30d2b29ecde575b17ea3b968af10028f1380f0f3b09ab55a983cf0a267eea80fd9e7b7945e7e579736684f68e8a5bb88e075065171030795256edb94"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"538x4x1"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1593698172</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"11203x1x0"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1633686766</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"isNode1"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+        </span><span class="p">},</span><span class="w">
         </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:</span><span class="w"> </span><span class="mi">144</span><span class="p">,</span><span class="w">
         </span><span class="s2">"htlcMinimumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">150</span><span class="p">,</span><span class="w">
         </span><span class="s2">"htlcMaximumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">300000000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"unknownFields"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w">
+        </span><span class="s2">"tlvStream"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+          </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
+        </span><span class="p">}</span><span class="w">
       </span><span class="p">}</span><span class="w">
     </span><span class="p">}</span><span class="w">
   </span><span class="p">}</span><span class="w">
@@ -1133,8 +1172,8 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
 <td>blocks</td>
 </tr>
 <tr>
-<td>feeratePerKw</td>
-<td>sats</td>
+<td>commitTxFeerate</td>
+<td>sats/kw</td>
 </tr>
 </tbody></table>
 
@@ -1142,24 +1181,33 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
 <p>The above command returns:</p>
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="w">  </span><span class="p">{</span><span class="w">
-    </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02"</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24"</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"state"</span><span class="p">:</span><span class="w"> </span><span class="s2">"NORMAL"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"data"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"type"</span><span class="p">:</span><span class="w"> </span><span class="s2">"DATA_NORMAL"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"commitments"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"channelVersion"</span><span class="p">:</span><span class="w"> </span><span class="s2">"00000000000000000000000000000001"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"channelConfig"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+          </span><span class="s2">"funding_pubkey_based_channel_keypath"</span><span class="w">
+        </span><span class="p">],</span><span class="w">
+        </span><span class="s2">"channelFeatures"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
+          </span><span class="s2">"option_static_remotekey"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"option_anchors_zero_fee_htlc_tx"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"option_support_large_channel"</span><span class="w">
+        </span><span class="p">],</span><span class="w">
         </span><span class="s2">"localParams"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"fundingKeyPath"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"path"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
-              </span><span class="mi">2285452814</span><span class="p">,</span><span class="w">
-              </span><span class="mi">3138980649</span><span class="p">,</span><span class="w">
-              </span><span class="mi">3800551753</span><span class="p">,</span><span class="w">
-              </span><span class="mi">1747192007</span><span class="p">,</span><span class="w">
-              </span><span class="mi">941051304</span><span class="p">,</span><span class="w">
-              </span><span class="mi">3416368401</span><span class="p">,</span><span class="w">
-              </span><span class="mi">48609846</span><span class="p">,</span><span class="w">
-              </span><span class="mi">1910237561</span><span class="p">,</span><span class="w">
+              </span><span class="mi">2376346446</span><span class="p">,</span><span class="w">
+              </span><span class="mi">2845139278</span><span class="p">,</span><span class="w">
+              </span><span class="mi">845530815</span><span class="p">,</span><span class="w">
+              </span><span class="mi">116517134</span><span class="p">,</span><span class="w">
+              </span><span class="mi">3208648948</span><span class="p">,</span><span class="w">
+              </span><span class="mi">1623539631</span><span class="p">,</span><span class="w">
+              </span><span class="mi">2381994817</span><span class="p">,</span><span class="w">
+              </span><span class="mi">1990484890</span><span class="p">,</span><span class="w">
               </span><span class="mi">2147483649</span><span class="w">
             </span><span class="p">]</span><span class="w">
           </span><span class="p">},</span><span class="w">
@@ -1170,37 +1218,48 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
           </span><span class="s2">"toSelfDelay"</span><span class="p">:</span><span class="w"> </span><span class="mi">720</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxAcceptedHtlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
           </span><span class="s2">"isFunder"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"defaultFinalScriptPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a91431d3cc73d06539974aa941e8cf6b8c88cf7be14087"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"defaultFinalScriptPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0014b6490f48e48551a84d33fafad1eee38798ef86b0"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"initFeatures"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-              </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_anchor_outputs"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_static_remotekey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_support_large_channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_anchors_zero_fee_htlc_tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_shutdown_anysegwit"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
             </span><span class="p">},</span><span class="w">
             </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
           </span><span class="p">}</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"remoteParams"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"dustLimit"</span><span class="p">:</span><span class="w"> </span><span class="mi">546</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxHtlcValueInFlightMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">5000000000</span><span class="p">,</span><span class="w">
           </span><span class="s2">"channelReserve"</span><span class="p">:</span><span class="w"> </span><span class="mi">3000</span><span class="p">,</span><span class="w">
           </span><span class="s2">"htlcMinimum"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
           </span><span class="s2">"toSelfDelay"</span><span class="p">:</span><span class="w"> </span><span class="mi">720</span><span class="p">,</span><span class="w">
           </span><span class="s2">"maxAcceptedHtlcs"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"fundingPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"revocationBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"028743ddd812e0e8d09a1a097df5a203e30ab355e430cf8e167216a65376aea793"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"paymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02ebc5bd154facc6ce58e77f649a05faa7b33e45d08defbd3fc3eb07aa7e20835c"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"delayedPaymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"026d604b045c244a38e34e4adb9255cbb677d4475206c834e7a21e656af8399dd5"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"htlcBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"037a76beae4718374523676ec9d1890f0e02f399c14bdbc4a30728e15c35cef9bf"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"fundingPubKey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03586aa3567bcb1f174d133c5cbe1e965feb8d26acd555f77737e3a5196bb5e242"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"revocationBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03c96420f568447d7497a5cf69da0708b2ab9dfcded395d3628901c9460fc48f57"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"paymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"035f27cc965ad7f18087325bc6c48d64181a07ccadf818cd056ea09e300e3f1fbe"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"delayedPaymentBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"033e835b582c476a0d8c4dddd446485ce7ee1b60854c6b2fa263bc955160b61a10"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"htlcBasepoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0363ee0e9873e19a2457f1fe2c79e464e5a40976ebbe724b29f805383fa65b9c3e"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"initFeatures"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-              </span><span class="s2">"initial_routing_sync"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"gossip_queries_ex"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_data_loss_protect"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_static_remotekey"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_support_large_channel"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_anchors_zero_fee_htlc_tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"option_shutdown_anysegwit"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
               </span><span class="s2">"gossip_queries"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
             </span><span class="p">},</span><span class="w">
             </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
@@ -1208,31 +1267,32 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
         </span><span class="s2">"localCommit"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
           </span><span class="s2">"spec"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"htlcs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
-            </span><span class="s2">"feeratePerKw"</span><span class="p">:</span><span class="w"> </span><span class="mi">45000</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mi">58800001</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"toRemote"</span><span class="p">:</span><span class="w"> </span><span class="mi">241199999</span><span class="w">
+            </span><span class="s2">"commitTxFeerate"</span><span class="p">:</span><span class="w"> </span><span class="mi">2500</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mi">300000000</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toRemote"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="w">
           </span><span class="p">},</span><span class="w">
-          </span><span class="s2">"publishableTxs"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"commitTxAndRemoteSig"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"commitTx"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-              </span><span class="s2">"txid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0a5a81642268b5638bca8c830ab17bf7343950a46393f6b6858a188354652fc6"</span><span class="p">,</span><span class="w">
-              </span><span class="s2">"tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02000000000101d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04a01000000007b71b280026c66000000000000220020fb1e4938481309e95e663e06d1ecec23438976519399e9b574fd98ca3d32721d2fae0300000000001600142aca6f33e9f92e56a9586e696181d30979d15b27040047304402201ddb65ce52c0123d058661ee3aa6532561edb93f946402e2eb2b73fb5b8d637c02201d408be674b0afdf3696babb48caf1a0c1fe8f55c694cbfa9d3176066f94a65d01483045022100a4c180c4a68a11d5c45ae9f0abeabbb2f3573350eed05a23315172e402ccf196022077c8533b36c5b4a2413d4e8d13e1ad9d5658701f1ed2ff78c878e56179d841d801475221021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d21032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b352aee3212f20"</span><span class="w">
+              </span><span class="s2">"txid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"149b712c7bef33da2798f9f281d4d908efc778231ee67fb3916101c38a76e3af"</span><span class="p">,</span><span class="w">
+              </span><span class="s2">"tx"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02000000014881ea3050bd0d82a571db79984a4c1c432eb77a7349b1afac6198b92d740cca00000000008cea7880024a0100000000000022002005b67505e57667e240c564934ace60c29afb023850c838734e6ef7855eb2a0b95286040000000000220020587f5a79017b2bde0446d9d808d4c4f4225fb336c4544640be551f67a6e88f597edeed20"</span><span class="w">
             </span><span class="p">},</span><span class="w">
-            </span><span class="s2">"htlcTxsAndSigs"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
-          </span><span class="p">}</span><span class="w">
+            </span><span class="s2">"remoteSig"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a49a71225fbee3a919b3fb73906c67d2b64ac9f77eb4a1bf3e9f2b3cfb05a9f1652d17b5c56192f07514af49ea898fe2d0680feedf284317ee591b85b216e927"</span><span class="w">
+          </span><span class="p">},</span><span class="w">
+          </span><span class="s2">"htlcTxsAndRemoteSigs"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"remoteCommit"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"index"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
           </span><span class="s2">"spec"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
             </span><span class="s2">"htlcs"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
-            </span><span class="s2">"feeratePerKw"</span><span class="p">:</span><span class="w"> </span><span class="mi">45000</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mi">241199999</span><span class="p">,</span><span class="w">
-            </span><span class="s2">"toRemote"</span><span class="p">:</span><span class="w"> </span><span class="mi">58800001</span><span class="w">
+            </span><span class="s2">"commitTxFeerate"</span><span class="p">:</span><span class="w"> </span><span class="mi">2500</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toLocal"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
+            </span><span class="s2">"toRemote"</span><span class="p">:</span><span class="w"> </span><span class="mi">300000000</span><span class="w">
           </span><span class="p">},</span><span class="w">
-          </span><span class="s2">"txid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"28c188f2e3f6e0ba59a94995af87214d880050974a0b7baac3a6aaacdd7dba6a"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"remotePerCommitmentPoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02742c1545be4a25b13c916a4622df61deb4efc21d8fa7e7776a487c696f6f1afc"</span><span class="w">
+          </span><span class="s2">"txid"</span><span class="p">:</span><span class="w"> </span><span class="s2">"5e2526d7b83dfa6cf0878b381148fb1f2dd54cdd880c48f562b2fa4c41b169ba"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"remotePerCommitmentPoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"031dcfb98ab373aee0bb8a45bf57049627afb7a9c3380742bda6b5e0719aef66e9"</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"localChanges"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
           </span><span class="s2">"proposed"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
@@ -1244,49 +1304,56 @@ eclair-cli channel --channelId<span class="o">=</span>&lt;channel&gt;
           </span><span class="s2">"acked"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
           </span><span class="s2">"signed"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
         </span><span class="p">},</span><span class="w">
-        </span><span class="s2">"localNextHtlcId"</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"localNextHtlcId"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
         </span><span class="s2">"remoteNextHtlcId"</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w">
         </span><span class="s2">"originChannels"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span><span class="w">
-        </span><span class="s2">"remoteNextCommitInfo"</span><span class="p">:</span><span class="w"> </span><span class="s2">"0337ceb9aa292177e416092adadfb1990aa16ae8be5c8108aa6e671384a7cd6b28"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"remoteNextCommitInfo"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03c7ac97c8ba8bcd9a2d430a0324a761e06588691e828a12ddfdebfa07ad298d32"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"commitInput"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"outPoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4af05ababd810486f773b71b896a8d3970fc238e7875bb737c870d02ac1febd4:1"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"outPoint"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ca0c742db99861acafb149737ab72e431c4c4a9879db71a5820dbd5030ea8148:0"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"amountSatoshis"</span><span class="p">:</span><span class="w"> </span><span class="mi">300000</span><span class="w">
         </span><span class="p">},</span><span class="w">
-        </span><span class="s2">"remotePerCommitmentSecrets"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"d4eb1fac020d877c73bb75788e23fc70398d6a891bb773f7860481bdba5af04b"</span><span class="w">
+        </span><span class="s2">"remotePerCommitmentSecrets"</span><span class="p">:</span><span class="w"> </span><span class="kc">null</span><span class="w">
       </span><span class="p">},</span><span class="w">
-      </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"538x4x1"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"11203x1x0"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"buried"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
       </span><span class="s2">"channelAnnouncement"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"nodeSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4088e1b1e0ae77285434603359a797f779d2e12644957a89457bb9ab59899e324ecf4bb06379ad93fa6a3a31dfe050217dc3753fc56ddecbe020e5ca9f506db2"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"nodeSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"8fa198fb50fd509e248ba7acd165243aef1ea20834f6857750cd4d919cf777dc3d871f1cbc7e4979aa01d748bd547d85f4d8d6ad23c9383700c0c8a9ca62f5c8"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"bitcoinSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"aac6fa5fbdcff62932e1bedff9a3f1d49791707270f63027e0d74f195f9e835f0017a201b049c70ed0240db0e5b9e53e5107143d38fcdacc355383200d47528c"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"bitcoinSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"4f368635b689637dba776b570df8306c247666e5cfa444cced0d9a1f50917a367082d57c09ad944acf649be9891c9013eb740a971f398a1528dfe2c66cbf3625"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"nodeSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"7a10da73a7f25c613333588fb0c79b18338af8cc6ac1dd7a5e17616b8fc69b0f22db572888c466e06cc2e780fefe9951c0afbe9b05a560d165688e6e10d194a4"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"nodeSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"eb9559577317b562adb8ad0ca77d18c73c76cc857f682adfc41c1c456de79daa31e416597847cc5145dee321883b4d207c948bbeffdfd6cf21ac1fd46cda9d6f"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"bitcoinSignature1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"ecf6df2e51a4bbb28a80ba61ff9ce045cc6d4a177175f3755072e5aef50e7c8a5b8074049f13f1e98b624419eea88975e92dbe36c7eba215a7d800160ff1f690"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"bitcoinSignature2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"36c2dc2f147e667da0c94e4ec48f1cc0b159cf77305eda8932ac547281b4fcab02daa3573242d625788270ae253a5bcfb7ec09eecbcbdd36e111753880a4a500"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+          </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{},</span><span class="w">
           </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"538x4x1"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"nodeId1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02f5ce007d2d9ef8a72a03b8e33f63fe9384cea4e71c1de468737611ce3e68ac02"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"nodeId2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"bitcoinKey1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"021006e1ed21c589a070c6a91ed55e6bbcc852fd42784a5d91cf7f10d0e658976d"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"bitcoinKey2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"032afc11d4372a3429411968b0cb23a599ec8bd92bda19280a5352ad1ea46bd4b3"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"unknownFields"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w">
+        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"11203x1x0"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"nodeId1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"nodeId2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"02d5aba2f18d31d72e79f99eb49261c2e39cc35b2809f6589e942dcf0922934f24"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"bitcoinKey1"</span><span class="p">:</span><span class="w"> </span><span class="s2">"035f7babd88d257505ed41d95b5fb8878371aca36e19cfb9603f4c0c890d8f806e"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"bitcoinKey2"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03586aa3567bcb1f174d133c5cbe1e965feb8d26acd555f77737e3a5196bb5e242"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"tlvStream"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+          </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
+        </span><span class="p">}</span><span class="w">
       </span><span class="p">},</span><span class="w">
       </span><span class="s2">"channelUpdate"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"f331625e39043b243c86cbe53615ba8ed87f85ae088f145c061562bf9961617c4e85b132610a01a55eb0ca84e90fcc8510f9781a5c387f13a1d1569b211b1e73"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"1358ac8f30d2b29ecde575b17ea3b968af10028f1380f0f3b09ab55a983cf0a267eea80fd9e7b7945e7e579736684f68e8a5bb88e075065171030795256edb94"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"538x4x1"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1593698172</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"11203x1x0"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1633686766</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"isNode1"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+        </span><span class="p">},</span><span class="w">
         </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:</span><span class="w"> </span><span class="mi">144</span><span class="p">,</span><span class="w">
         </span><span class="s2">"htlcMinimumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">100</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">150</span><span class="p">,</span><span class="w">
         </span><span class="s2">"htlcMaximumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">300000000</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"unknownFields"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w">
+        </span><span class="s2">"tlvStream"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+          </span><span class="s2">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+          </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
+        </span><span class="p">}</span><span class="w">
       </span><span class="p">}</span><span class="w">
     </span><span class="p">}</span><span class="w">
   </span><span class="p">}</span><span class="w">
@@ -1342,7 +1409,10 @@ eclair-cli nodes
     </span><span class="s2">"addresses"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span><span class="w">
       </span><span class="s2">"138.229.205.237:9735"</span><span class="w">
     </span><span class="p">],</span><span class="w">
-    </span><span class="s2">"unknownFields"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w">
+    </span><span class="s2">"tlvStream"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+      </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
+    </span><span class="p">}</span><span class="w">
   </span><span class="p">},</span><span class="w">
   </span><span class="p">{</span><span class="w">
     </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"3074823d709a7bf0d22abca9d5b260be49adc5ceacf1dcc67410c5c88d0e03373b8b7c000d23f1ec7abf84ab0ecb57e1026d10c5b0c39bfe6d3bcca98fec36cd"</span><span class="p">,</span><span class="w">
@@ -1363,7 +1433,10 @@ eclair-cli nodes
       </span><span class="s2">"95.216.16.21:9735"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"[2a01:4f9:2a:106a:0:0:0:2]:9736"</span><span class="w">
     </span><span class="p">],</span><span class="w">
-    </span><span class="s2">"unknownFields"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w">
+    </span><span class="s2">"tlvStream"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+      </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
+    </span><span class="p">}</span><span class="w">
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
@@ -1422,28 +1495,38 @@ eclair-cli allupdates
     </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"566780x1734x0"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1552908891</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"isNode1"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:</span><span class="w"> </span><span class="mi">144</span><span class="p">,</span><span class="w">
     </span><span class="s2">"htlcMinimumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
     </span><span class="s2">"htlcMaximumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">2970000000</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"unknownFields"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w">
+    </span><span class="s2">"tlvStream"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+      </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
+    </span><span class="p">}</span><span class="w">
   </span><span class="p">},</span><span class="w">
   </span><span class="p">{</span><span class="w">
     </span><span class="s2">"signature"</span><span class="p">:</span><span class="w"> </span><span class="s2">"304402201848be0aff000ec279e2d043d1bde8b2c76a9277dab72b9d1523468961c5d78e0220541e233977f2288684dab6ec168e43dc3459d093e901dd6f2b5238c2b888845a01"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"chainHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"6fe28c0ab6f1b372c1a6a246ae63f74f931e8365e15a089c68d6190000000000"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"shortChannelId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"562890x809x0"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1552993875</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"messageFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"channelFlags"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"isEnabled"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"isNode1"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="w">
+    </span><span class="p">},</span><span class="w">
     </span><span class="s2">"cltvExpiryDelta"</span><span class="p">:</span><span class="w"> </span><span class="mi">144</span><span class="p">,</span><span class="w">
     </span><span class="s2">"htlcMinimumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"feeBaseMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">1000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"feeProportionalMillionths"</span><span class="p">:</span><span class="w"> </span><span class="mi">2500</span><span class="p">,</span><span class="w">
     </span><span class="s2">"htlcMaximumMsat"</span><span class="p">:</span><span class="w"> </span><span class="mi">3960000000</span><span class="p">,</span><span class="w">
-    </span><span class="s2">"unknownFields"</span><span class="p">:</span><span class="w"> </span><span class="s2">""</span><span class="w">
+    </span><span class="s2">"tlvStream"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="s2">"records"</span><span class="p">:</span><span class="w"> </span><span class="p">[],</span><span class="w">
+      </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
+    </span><span class="p">}</span><span class="w">
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
@@ -1555,21 +1638,23 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
   </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbcrt"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1593699654</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1633688171</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbcrt500n1pskqxntpp5mcwhqp37al2jxmtyzkydtprctcewsc6anfz4038v3u4nnu4h5wtsdq0ydex2cmtd3jhxucsp5vu0z6tty8gmlytm82u2p4t66lav86c9seq66kxygp4k4kaa8sj8sxqrrsscqp79qtzqqqqqqysgq6k3g0r44gaz2lugjm932q3vzne3uwp9xgx309968w2v5qrfcdrk9gn9l2agl38zxkdm8wduqshsu98w5g7lg8z6mlghd9rccnprcd0gp83ug5u"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#reckless"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"de1d70063eefd5236d641588d584785e32e8635d9a4557c4ec8f2b39f2b7a397"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
   </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
   </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
     </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
-  </span><span class="p">}</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="s2">"routingInfo"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Create a <strong>BOLT11</strong> payment invoice.</p>
@@ -1587,8 +1672,14 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 <tr>
 <td>description</td>
 <td>A description for the invoice</td>
-<td>No</td>
+<td>Yes (*)</td>
 <td>String</td>
+</tr>
+<tr>
+<td>descriptionHash</td>
+<td>Hash of the description for the invoice</td>
+<td>Yes (*)</td>
+<td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>amountMsat</td>
@@ -1615,6 +1706,8 @@ eclair-cli createinvoice --description<span class="o">=</span>&lt;some_descripti
 <td>32-bytes-HexString (String)</td>
 </tr>
 </tbody></table>
+
+<p>(*): you must specify either description or descriptionHash, but not both.</p>
 <h2 id='parseinvoice'>ParseInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">invoice</span><span class="o">=</span>&lt;some_bolt11invoice&gt; <span class="s2">"http://localhost:8080/parseinvoice"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -1643,21 +1736,23 @@ eclair-cli parseinvoice --invoice<span class="o">=</span>&lt;some_bolt11invoice&
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="p">{</span><span class="w">
   </span><span class="s2">"prefix"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbcrt"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1593699654</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"03dfefbc942ac877655af00c4a6e9314626438e4aaba141412d825d5f2304bf0bf"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbcrt500n1p00mm2xpp55satck8wvh0fgfpcaf2fq5c3y7hkznr2acz7mjua5kprn7mg6g7qdq809hkcmcxqrrss9qtzqqqqqq9qsqsp5uzkn3kn99ujlevns05ltc93u6qt000f7q6prd58e373fye0errrqqvz9m0ey2afk7g5y5pa3cy79de0fc4xq4akd57ugrfhn58sa897965vy6ajfsdz9mqwnxr9z6ddwfth0p379fcclm9j4y850whggxcgp2muvjq"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"timestamp"</span><span class="p">:</span><span class="w"> </span><span class="mi">1633688171</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"nodeId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"024b722d985a1919e08786116d4797e8765f989acedaae1146943b114c0166aeb1"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"serialized"</span><span class="p">:</span><span class="w"> </span><span class="s2">"lnbcrt500n1pskqxntpp5mcwhqp37al2jxmtyzkydtprctcewsc6anfz4038v3u4nnu4h5wtsdq0ydex2cmtd3jhxucsp5vu0z6tty8gmlytm82u2p4t66lav86c9seq66kxygp4k4kaa8sj8sxqrrsscqp79qtzqqqqqqysgq6k3g0r44gaz2lugjm932q3vzne3uwp9xgx309968w2v5qrfcdrk9gn9l2agl38zxkdm8wduqshsu98w5g7lg8z6mlghd9rccnprcd0gp83ug5u"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#reckless"</span><span class="p">,</span><span class="w">
-  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"de1d70063eefd5236d641588d584785e32e8635d9a4557c4ec8f2b39f2b7a397"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
   </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
   </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
     </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"mandatory"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
-  </span><span class="p">}</span><span class="w">
+  </span><span class="p">},</span><span class="w">
+  </span><span class="s2">"routingInfo"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
 <p>Returns detailed information about the given invoice.</p>
@@ -1690,9 +1785,9 @@ eclair-cli payinvoice --invoice<span class="o">=</span>&lt;some_invoice&gt;
 <pre class="highlight json tab-json"><code><span class="s2">"e4227601-38b3-404e-9aa0-75a829e9bec0"</span><span class="w">
 </span></code></pre>
 <p>Pays a <strong>BOLT11</strong> invoice. In case of failure, the payment will be retried up to <code>maxAttempts</code> times.
-Default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller. It&#39;s possible to add an
-extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
+The default number of attempts is read from the configuration.
+The API works in a fire-and-forget fashion where the unique identifier for this payment attempt is immediately returned to the caller.
+It&#39;s possible to add an extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
 
 <p>When <code>--blocking=true</code> is provided, the API will instead block until the payment completes.
 It will return either the payment preimage (if the payment succeeded) or failure details.</p>
@@ -1735,11 +1830,17 @@ It will return either the payment preimage (if the payment succeeded) or failure
 <td>maxFeePct</td>
 <td>Max percentage to be paid in fees along the payment route (ignored if below <code>feeThresholdSat</code>)</td>
 <td>Yes</td>
-<td>Double</td>
+<td>Integer (between 0 and 100)</td>
 </tr>
 <tr>
 <td>externalId</td>
 <td>Extra payment identifier specified by the caller</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
+<tr>
+<td>pathFindingExperimentName</td>
+<td>Name of the path-finding configuration that should be used</td>
 <td>Yes</td>
 <td>String</td>
 </tr>
@@ -1761,10 +1862,14 @@ eclair-cli sendtonode --nodeId<span class="o">=</span>&lt;some_node&gt; --amount
 </blockquote>
 <pre class="highlight json tab-json"><code><span class="s2">"e4227601-38b3-404e-9aa0-75a829e9bec0"</span><span class="w">
 </span></code></pre>
-<p>Sends money to a node. In case of failure, the payment will be retried up to <code>maxAttempts</code> times.
-Default number of attempts is read from the configuration. The API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller. It&#39;s possible to add an
-extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
+<p>Sends money to a node using <code>keysend</code> (spontaneous payment without a Bolt11 invoice).
+In case of failure, the payment will be retried up to <code>maxAttempts</code> times.
+The default number of attempts is read from the configuration.
+The API works in a fire-and-forget fashion where the unique identifier for this payment attempt is immediately returned to the caller.
+It&#39;s possible to add an extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
+
+<p>Note that this feature isn&#39;t specified in the BOLTs, so it may be removed or updated in the future.
+If the recipient has given you an invoice, you should instead of the <code>payinvoice</code> API.</p>
 <h3 id='http-request-19'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/sendtonode</code></p>
 <h3 id='parameters-16'>Parameters</h3>
@@ -1789,12 +1894,6 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 <td>Millisatoshi (Integer)</td>
 </tr>
 <tr>
-<td>paymentHash</td>
-<td>The payment hash for this payment</td>
-<td>No</td>
-<td>32-bytes-HexString (String)</td>
-</tr>
-<tr>
 <td>maxAttempts</td>
 <td>Max number of retries</td>
 <td>Yes</td>
@@ -1810,11 +1909,17 @@ extra <code>externalId</code> and this will be returned as part of the <a href="
 <td>maxFeePct</td>
 <td>Max percentage to be paid in fees along the payment route (ignored if below <code>feeThresholdSat</code>)</td>
 <td>Yes</td>
-<td>Double</td>
+<td>Integer (between 0 and 100)</td>
 </tr>
 <tr>
 <td>externalId</td>
 <td>Extra payment identifier specified by the caller</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
+<tr>
+<td>pathFindingExperimentName</td>
+<td>Name of the path-finding configuration that should be used</td>
 <td>Yes</td>
 <td>String</td>
 </tr>
@@ -1845,11 +1950,10 @@ eclair-cli sendtoroute --shortChannelIds<span class="o">=</span>42x1x0,56x7x3 --
   </span><span class="s2">"parentId"</span><span class="p">:</span><span class="w"> </span><span class="s2">"20b2a854-261a-4e9f-a4ca-59b381aee4bc"</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Sends money to a node forcing the payment to go through the given route. The API works in a fire-and-forget fashion where
-the unique identifier for this payment attempt is immediately returned to the caller. The route parameter can either be
-a list of <strong>nodeIds</strong> that the payment will traverse or a list of shortChannelIds. If <strong>nodeIds</strong> are specified, a suitable channel
-will be automatically selected for each hop (note that in that case, the specified nodes need to have public channels between
-them).</p>
+<p>Sends money to a node forcing the payment to go through the given route.
+The API works in a fire-and-forget fashion where the unique identifier for this payment attempt is immediately returned to the caller.
+The route parameter can either be a list of <strong>nodeIds</strong> that the payment will traverse or a list of shortChannelIds.
+If <strong>nodeIds</strong> are specified, a suitable channel will be automatically selected for each hop (note that in that case, the specified nodes need to have public channels between them).</p>
 
 <p>This route can either be a json-encoded array (same as <a href="#findroute">findroute</a> output) or a comma-separated list.
 It&#39;s possible to add an extra <code>externalId</code> and this will be returned as part of the <a href="#getsentinfo">payment data</a>.</p>
@@ -1951,6 +2055,14 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
 </tr>
 </tbody></table>
 
+<p>Possible returned <code>status.type</code> values:</p>
+
+<ul>
+<li>pending</li>
+<li>failed</li>
+<li>sent</li>
+</ul>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -1972,12 +2084,13 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
       </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"prepare MPP"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
       </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">90000000</span><span class="p">,</span><span class="w">
       </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
         </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+          </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
       </span><span class="p">}</span><span class="w">
@@ -2018,12 +2131,13 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
       </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"prepare MPP"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
       </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">90000000</span><span class="p">,</span><span class="w">
       </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
         </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-          </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
           </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-          </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+          </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+          </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
         </span><span class="p">},</span><span class="w">
         </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
       </span><span class="p">}</span><span class="w">
@@ -2049,9 +2163,13 @@ eclair-cli getsentinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt;
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Returns a list of attempts to send an outgoing payment, the status field contains detailed information about the payment
-attempt. If the attempt was unsuccessful the <code>status</code> field contains a non empty array of detailed failures descriptions.
+<p>Returns a list of attempts to send an outgoing payment.
+The status field contains detailed information about the payment attempt.
+If the attempt was unsuccessful the <code>status</code> field contains a non empty array of detailed failures descriptions.
 The API can be queried by <code>paymentHash</code> OR by <code>uuid</code>.</p>
+
+<p>Note that when you provide the <code>id</code> instead of the <code>payment_hash</code>, eclair will only return results for this particular attempt.
+For multi-part payments, the <code>id</code> provided must be the <code>parentId</code>, not the <code>paymentId</code> of a partial payment.</p>
 <h3 id='http-request-21'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getsentinfo</code></p>
 <h3 id='parameters-18'>Parameters</h3>
@@ -2099,6 +2217,14 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
 </tr>
 </tbody></table>
 
+<p>Possible returned <code>status.type</code> values:</p>
+
+<ul>
+<li>pending</li>
+<li>expired</li>
+<li>received</li>
+</ul>
+
 <blockquote>
 <p>The above command returns:</p>
 </blockquote>
@@ -2111,12 +2237,13 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
     </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"prepare MPP"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"931ee191eb98176b401222a17dc9269181714a6a940d057cc0b54fed101fc3cc"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">90000000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
       </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">}</span><span class="w">
@@ -2131,8 +2258,8 @@ eclair-cli getreceivedinfo --paymentHash<span class="o">=</span>&lt;some_hash&gt
   </span><span class="p">}</span><span class="w">
 </span><span class="p">}</span><span class="w">
 </span></code></pre>
-<p>Checks whether a payment corresponding to the given <code>paymentHash</code> has been received. It is possible to use a <strong>BOLT11</strong> invoice
-as parameter instead of the <code>paymentHash</code> but at least one of the two must be specified.</p>
+<p>Checks whether a payment corresponding to the given <code>paymentHash</code> has been received.
+It is possible to use a <strong>BOLT11</strong> invoice as parameter instead of the <code>paymentHash</code> but at least one of the two must be specified.</p>
 <h3 id='http-request-22'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/getreceivedinfo</code></p>
 <h3 id='parameters-19'>Parameters</h3>
@@ -2147,16 +2274,18 @@ as parameter instead of the <code>paymentHash</code> but at least one of the two
 <tr>
 <td>paymentHash</td>
 <td>The payment hash you want to check</td>
-<td>No</td>
+<td>Yes (*)</td>
 <td>32-bytes-HexString (String)</td>
 </tr>
 <tr>
 <td>invoice</td>
 <td>The invoice containing the payment hash</td>
-<td>Yes</td>
+<td>Yes (*)</td>
 <td>String</td>
 </tr>
 </tbody></table>
+
+<p>(*): you must specify either paymentHash or invoice.</p>
 <h2 id='getinvoice'>GetInvoice</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">paymentHash</span><span class="o">=</span>&lt;some_hash&gt; <span class="s2">"http://localhost:8080/getinvoice"</span>
 
 <span class="c"># with eclair-cli</span>
@@ -2191,12 +2320,13 @@ eclair-cli getinvoice --paymentHash<span class="o">=</span>&lt;some_hash&gt;
   </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#reckless"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c"</span><span class="p">,</span><span class="w">
   </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
   </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
   </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
     </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
       </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+      </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+      </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
     </span><span class="p">},</span><span class="w">
     </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
   </span><span class="p">}</span><span class="w">
@@ -2256,12 +2386,13 @@ eclair-cli listinvoices
     </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#reckless"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
       </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">}</span><span class="w">
@@ -2274,6 +2405,7 @@ eclair-cli listinvoices
     </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#reckless"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"b123bc58de65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">25000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
@@ -2344,12 +2476,13 @@ eclair-cli listpendinginvoices
     </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#reckless"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a43abc58ee65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">50000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
-        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
         </span><span class="s2">"var_onion_optin"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
-        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
+        </span><span class="s2">"payment_secret"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="p">,</span><span class="w">
+        </span><span class="s2">"basic_mpp"</span><span class="p">:</span><span class="w"> </span><span class="s2">"optional"</span><span class="w">
       </span><span class="p">},</span><span class="w">
       </span><span class="s2">"unknown"</span><span class="p">:</span><span class="w"> </span><span class="p">[]</span><span class="w">
     </span><span class="p">}</span><span class="w">
@@ -2362,6 +2495,7 @@ eclair-cli listpendinginvoices
     </span><span class="s2">"description"</span><span class="p">:</span><span class="w"> </span><span class="s2">"#reckless"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"paymentHash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"b123bc58de65de942438ea5490531127af614c6aee05edcb9da58239fb68d23c"</span><span class="p">,</span><span class="w">
     </span><span class="s2">"expiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">3600</span><span class="p">,</span><span class="w">
+    </span><span class="s2">"minFinalCltvExpiry"</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span><span class="w">
     </span><span class="s2">"amount"</span><span class="p">:</span><span class="w"> </span><span class="mi">25000</span><span class="p">,</span><span class="w">
     </span><span class="s2">"features"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
       </span><span class="s2">"activated"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
@@ -2372,8 +2506,8 @@ eclair-cli listpendinginvoices
   </span><span class="p">},</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Returns all non-paid, non-expired <strong>BOLT11</strong> invoices stored. The invoices can be filtered by date and are outputted in descending
-order.</p>
+<p>Returns all non-paid, non-expired <strong>BOLT11</strong> invoices stored.
+The invoices can be filtered by date and are outputted in descending order.</p>
 <h3 id='http-request-25'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/listpendinginvoices</code></p>
 <h3 id='parameters-22'>Parameters</h3>
@@ -2412,8 +2546,18 @@ eclair-cli findroute --invoice<span class="o">=</span>&lt;some_bolt11invoice&gt;
   </span><span class="s2">"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Finds a route to the node specified by the invoice. If the invoice does not specify an amount,
-you must do so via the <code>amountMsat</code> parameter.</p>
+<p>Finds a route to the node specified by the invoice.
+If the invoice does not specify an amount, you must do so via the <code>amountMsat</code> parameter.</p>
+
+<p>You can specify various formats for the route returned with the <code>format</code> parameter.
+When using <code>format=shortChannelId</code>, the above command would return:</p>
+<pre class="highlight json tab-json"><code><span class="p">[</span><span class="w">
+  </span><span class="s2">"11203x1x0"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"11203x7x5"</span><span class="p">,</span><span class="w">
+  </span><span class="s2">"11205x3x3"</span><span class="w">
+</span><span class="p">]</span><span class="w">
+</span></code></pre>
+<p>The formats currently supported are <code>nodeId</code> and <code>shortChannelId</code>.</p>
 <h3 id='http-request-26'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroute</code></p>
 <h3 id='parameters-23'>Parameters</h3>
@@ -2437,6 +2581,24 @@ you must do so via the <code>amountMsat</code> parameter.</p>
 <td>Yes</td>
 <td>Millisatoshi (Integer)</td>
 </tr>
+<tr>
+<td>format</td>
+<td>Format that will be used for the resulting route</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
+<tr>
+<td>includeLocalChannelCost</td>
+<td>If true, the relay fees of local channels will be counted</td>
+<td>Yes</td>
+<td>Boolean</td>
+</tr>
+<tr>
+<td>pathFindingExperimentName</td>
+<td>Name of the path-finding configuration that should be used</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
 </tbody></table>
 <h2 id='findroutetonode'>FindRouteToNode</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">nodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
      -F <span class="nv">amountMsat</span><span class="o">=</span>&lt;some_amount&gt; <span class="s2">"http://localhost:8080/findroutetonode"</span>
@@ -2453,7 +2615,7 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
   </span><span class="s2">"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Finds a route to the node.</p>
+<p>Finds a route to the given node.</p>
 <h3 id='http-request-27'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/findroutetonode</code></p>
 <h3 id='parameters-24'>Parameters</h3>
@@ -2476,6 +2638,24 @@ eclair-cli --nodeId<span class="o">=</span>&lt;some_node&gt; --amountMsat<span c
 <td>The amount that should go through the route</td>
 <td>No</td>
 <td>Millisatoshi (Integer)</td>
+</tr>
+<tr>
+<td>format</td>
+<td>Format that will be used for the resulting route</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
+<tr>
+<td>includeLocalChannelCost</td>
+<td>If true, the relay fees of local channels will be counted</td>
+<td>Yes</td>
+<td>Boolean</td>
+</tr>
+<tr>
+<td>pathFindingExperimentName</td>
+<td>Name of the path-finding configuration that should be used</td>
+<td>Yes</td>
+<td>String</td>
 </tr>
 </tbody></table>
 <h2 id='findroutebetweennodes'>FindRouteBetweenNodes</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST -F <span class="nv">sourceNodeId</span><span class="o">=</span>&lt;some_node&gt; -F <span class="nv">targetNodeId</span><span class="o">=</span>&lt;some_node&gt; <span class="se">\</span>
@@ -2522,6 +2702,24 @@ eclair-cli --sourceNodeId<span class="o">=</span>&lt;some_node&gt; --targetNodeI
 <td>The amount that should go through the route</td>
 <td>No</td>
 <td>Millisatoshi (Integer)</td>
+</tr>
+<tr>
+<td>format</td>
+<td>Format that will be used for the resulting route</td>
+<td>Yes</td>
+<td>String</td>
+</tr>
+<tr>
+<td>includeLocalChannelCost</td>
+<td>If true, the relay fees of local channels will be counted</td>
+<td>Yes</td>
+<td>Boolean</td>
+</tr>
+<tr>
+<td>pathFindingExperimentName</td>
+<td>Name of the path-finding configuration that should be used</td>
+<td>Yes</td>
+<td>String</td>
 </tr>
 </tbody></table>
 <h1 id='on-chain'>On-Chain</h1><h2 id='getnewaddress'>GetNewAddress</h2><pre class="highlight shell tab-shell"><code>curl -u :&lt;eclair_api_password&gt; -X POST <span class="s2">"http://localhost:8080/getnewaddress"</span>
@@ -2880,7 +3078,7 @@ eclair-cli networkfees
   </span><span class="p">}</span><span class="w">
 </span><span class="p">]</span><span class="w">
 </span></code></pre>
-<p>Retrieves information about on-chain fees paid during channel operations (currency values are in Satoshis).</p>
+<p>Retrieves information about on-chain fees paid during channel operations (currency values are in satoshis).</p>
 <h3 id='http-request-35'>HTTP Request</h3>
 <p><code>POST http://localhost:8080/networkfees</code></p>
 <h3 id='parameters-31'>Parameters</h3>
