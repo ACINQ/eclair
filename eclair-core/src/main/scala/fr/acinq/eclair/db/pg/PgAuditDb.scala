@@ -28,7 +28,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
 import grizzled.slf4j.Logging
-import org.postgresql.util.PGInterval
 
 import java.sql.{Statement, Timestamp}
 import java.time.Instant
@@ -37,7 +36,7 @@ import javax.sql.DataSource
 
 object PgAuditDb {
   val DB_NAME = "audit"
-  val CURRENT_VERSION = 9
+  val CURRENT_VERSION = 10
 }
 
 class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
@@ -92,6 +91,17 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
       }
 
+      def migration910(statement: Statement): Unit = {
+        statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+        statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
+        statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
+        // Migrate data from the network_fees table (which only stored data about confirmed transactions).
+        statement.executeUpdate("INSERT INTO audit.transactions_published (tx_id, channel_id, node_id, mining_fee_sat, tx_type, timestamp) SELECT tx_id, channel_id, node_id, fee_sat, tx_type, timestamp FROM audit.network_fees ON CONFLICT DO NOTHING")
+        statement.executeUpdate("INSERT INTO audit.transactions_confirmed (tx_id, channel_id, node_id, timestamp) SELECT tx_id, channel_id, node_id, timestamp FROM audit.network_fees ON CONFLICT DO NOTHING")
+        statement.executeUpdate("DROP TABLE audit.network_fees")
+      }
+
       getVersion(statement, DB_NAME) match {
         case None =>
           statement.executeUpdate("CREATE SCHEMA audit")
@@ -100,10 +110,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE TABLE audit.received (amount_msat BIGINT NOT NULL, payment_hash TEXT NOT NULL, from_channel_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.relayed (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, channel_id TEXT NOT NULL, direction TEXT NOT NULL, relay_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.relayed_trampoline (payment_hash TEXT NOT NULL, amount_msat BIGINT NOT NULL, next_node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
-          statement.executeUpdate("CREATE TABLE audit.network_fees (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, tx_id TEXT NOT NULL, fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_events (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, capacity_sat BIGINT NOT NULL, is_funder BOOLEAN NOT NULL, is_private BOOLEAN NOT NULL, event TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.channel_updates (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, fee_base_msat BIGINT NOT NULL, fee_proportional_millionths BIGINT NOT NULL, cltv_expiry_delta BIGINT NOT NULL, htlc_minimum_msat BIGINT NOT NULL, htlc_maximum_msat BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE TABLE audit.path_finding_metrics (amount_msat BIGINT NOT NULL, fees_msat BIGINT NOT NULL, status TEXT NOT NULL, duration_ms BIGINT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL, is_mpp BOOLEAN NOT NULL, experiment_name TEXT NOT NULL, recipient_node_id TEXT NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.transactions_published (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, mining_fee_sat BIGINT NOT NULL, tx_type TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
+          statement.executeUpdate("CREATE TABLE audit.transactions_confirmed (tx_id TEXT NOT NULL PRIMARY KEY, channel_id TEXT NOT NULL, node_id TEXT NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
 
           statement.executeUpdate("CREATE TABLE audit.channel_errors (channel_id TEXT NOT NULL, node_id TEXT NOT NULL, error_name TEXT NOT NULL, error_message TEXT NOT NULL, is_fatal BOOLEAN NOT NULL, timestamp TIMESTAMP WITH TIME ZONE NOT NULL)")
           statement.executeUpdate("CREATE INDEX sent_timestamp_idx ON audit.sent(timestamp)")
@@ -112,7 +123,6 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX relayed_payment_hash_idx ON audit.relayed(payment_hash)")
           statement.executeUpdate("CREATE INDEX relayed_trampoline_timestamp_idx ON audit.relayed_trampoline(timestamp)")
           statement.executeUpdate("CREATE INDEX relayed_trampoline_payment_hash_idx ON audit.relayed_trampoline(payment_hash)")
-          statement.executeUpdate("CREATE INDEX network_fees_timestamp_idx ON audit.network_fees(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_events_timestamp_idx ON audit.channel_events(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_errors_timestamp_idx ON audit.channel_errors(timestamp)")
           statement.executeUpdate("CREATE INDEX channel_updates_cid_idx ON audit.channel_updates(channel_id)")
@@ -122,7 +132,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.executeUpdate("CREATE INDEX metrics_timestamp_idx ON audit.path_finding_metrics(timestamp)")
           statement.executeUpdate("CREATE INDEX metrics_mpp_idx ON audit.path_finding_metrics(is_mpp)")
           statement.executeUpdate("CREATE INDEX metrics_name_idx ON audit.path_finding_metrics(experiment_name)")
-        case Some(v@(4 | 5 | 6 | 7 | 8)) =>
+          statement.executeUpdate("CREATE INDEX transactions_published_timestamp_idx ON audit.transactions_published(timestamp)")
+          statement.executeUpdate("CREATE INDEX transactions_confirmed_timestamp_idx ON audit.transactions_confirmed(timestamp)")
+        case Some(v@(4 | 5 | 6 | 7 | 8 | 9)) =>
           logger.warn(s"migrating db $DB_NAME, found version=$v current=$CURRENT_VERSION")
           if (v < 5) {
             migration45(statement)
@@ -138,6 +150,9 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           }
           if (v < 9) {
             migration89(statement)
+          }
+          if (v < 10) {
+            migration910(statement)
           }
         case Some(CURRENT_VERSION) => () // table is up-to-date, nothing to do
         case Some(unknownVersion) => throw new RuntimeException(s"Unknown version of DB $DB_NAME found, version=$unknownVersion")
@@ -228,15 +243,27 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
   }
 
-  override def add(e: NetworkFeePaid): Unit = withMetrics("audit/add-network-fee", DbBackends.Postgres) {
+  override def add(e: TransactionPublished): Unit = withMetrics("audit/add-transaction-published", DbBackends.Postgres) {
     inTransaction { pg =>
-      using(pg.prepareStatement("INSERT INTO audit.network_fees VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-        statement.setString(1, e.channelId.toHex)
-        statement.setString(2, e.remoteNodeId.value.toHex)
-        statement.setString(3, e.tx.txid.toHex)
-        statement.setLong(4, e.fee.toLong)
-        statement.setString(5, e.txType)
+      using(pg.prepareStatement("INSERT INTO audit.transactions_published VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+        statement.setString(1, e.tx.txid.toHex)
+        statement.setString(2, e.channelId.toHex)
+        statement.setString(3, e.remoteNodeId.value.toHex)
+        statement.setLong(4, e.miningFee.toLong)
+        statement.setString(5, e.desc)
         statement.setTimestamp(6, Timestamp.from(Instant.now()))
+        statement.executeUpdate()
+      }
+    }
+  }
+
+  override def add(e: TransactionConfirmed): Unit = withMetrics("audit/add-transaction-confirmed", DbBackends.Postgres) {
+    inTransaction { pg =>
+      using(pg.prepareStatement("INSERT INTO audit.transactions_confirmed VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")) { statement =>
+        statement.setString(1, e.tx.txid.toHex)
+        statement.setString(2, e.channelId.toHex)
+        statement.setString(3, e.remoteNodeId.value.toHex)
+        statement.setTimestamp(4, Timestamp.from(Instant.now()))
         statement.executeUpdate()
       }
     }
@@ -391,7 +418,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
     inTransaction { pg =>
-      using(pg.prepareStatement("SELECT * FROM audit.network_fees WHERE timestamp BETWEEN ? and ? ORDER BY timestamp")) { statement =>
+      using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id  WHERE audit.transactions_confirmed.timestamp BETWEEN ? and ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
         statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
         statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
         statement.executeQuery().map { rs =>
@@ -399,7 +426,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
             channelId = rs.getByteVector32FromHex("channel_id"),
             txId = rs.getByteVector32FromHex("tx_id"),
-            fee = Satoshi(rs.getLong("fee_sat")),
+            fee = Satoshi(rs.getLong("mining_fee_sat")),
             txType = rs.getString("tx_type"),
             timestamp = rs.getTimestamp("timestamp").getTime)
         }.toSeq
@@ -430,7 +457,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
       previous ++ current
     }
-    // Channels opened by our peers won't have any entry in the network_fees table, but we still want to compute stats for them.
+    // Channels opened by our peers won't have any network fees paid by us, but we still want to compute stats for them.
     val allChannels = networkFees.keySet ++ relayed.keySet
     allChannels.toSeq.flatMap(channelId => {
       val networkFee = networkFees.getOrElse(channelId, 0 sat)
