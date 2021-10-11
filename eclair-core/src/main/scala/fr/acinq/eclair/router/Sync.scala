@@ -24,14 +24,13 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{ShortChannelId, TimestampSecond, serializationResult}
+import fr.acinq.eclair.{ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
 import scodec.bits.ByteVector
 import shapeless.HNil
 
 import scala.annotation.tailrec
 import scala.collection.SortedSet
 import scala.collection.immutable.SortedMap
-import scala.concurrent.duration._
 import scala.util.Random
 
 object Sync {
@@ -372,8 +371,8 @@ object Sync {
 
   def getChannelDigestInfo(channels: SortedMap[ShortChannelId, PublicChannel])(shortChannelId: ShortChannelId): (ReplyChannelRangeTlv.Timestamps, ReplyChannelRangeTlv.Checksums) = {
     val c = channels(shortChannelId)
-    val timestamp1 = c.update_1_opt.map(_.timestamp).getOrElse(TimestampSecond(0L))
-    val timestamp2 = c.update_2_opt.map(_.timestamp).getOrElse(TimestampSecond(0L))
+    val timestamp1 = c.update_1_opt.map(_.timestamp).getOrElse(0L unix)
+    val timestamp2 = c.update_2_opt.map(_.timestamp).getOrElse(0L unix)
     val checksum1 = c.update_1_opt.map(getChecksum).getOrElse(0L)
     val checksum2 = c.update_2_opt.map(getChecksum).getOrElse(0L)
     (ReplyChannelRangeTlv.Timestamps(timestamp1 = timestamp1, timestamp2 = timestamp2), ReplyChannelRangeTlv.Checksums(checksum1 = checksum1, checksum2 = checksum2))
