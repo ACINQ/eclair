@@ -179,8 +179,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeeratePerByte_opt: Option[FeeratePerByte], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse] = {
-    // we want the open timeout to expire *before* the default ask timeout, otherwise user won't get a generic response
-    val openTimeout = openTimeout_opt.getOrElse(Timeout(10 seconds))
+    // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
+    val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
     (appKit.switchboard ? Peer.OpenChannel(
       remoteNodeId = nodeId,
       fundingSatoshis = fundingAmount,
