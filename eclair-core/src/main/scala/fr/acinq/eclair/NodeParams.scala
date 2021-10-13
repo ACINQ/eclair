@@ -202,6 +202,8 @@ object NodeParams extends Logging {
       "enable-db-backup" -> "file-backup.enabled",
       "backup-notify-script" -> "file-backup.notify-script",
       // v0.6.2
+      "fee-base-msat" -> "relay.fees.public-channels.fee-base-msat",
+      "fee-proportional-millionths" -> "relay.fees.public-channels.fee-proportional-millionths",
       "router.randomize-route-selection" -> "router.path-finding.default.randomize-route-selection",
       "router.path-finding.max-route-length" -> "router.path-finding.default.boundaries.max-route-length",
       "router.path-finding.max-cltv" -> "router.path-finding.default.boundaries.max-cltv",
