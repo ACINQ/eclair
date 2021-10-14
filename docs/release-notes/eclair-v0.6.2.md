@@ -36,6 +36,8 @@ Relay fees are now set per node instead of per channel:
 
 Note that you can use the `updaterelayfee` API *before* opening a channel to ensure that the channel doesn't use the default relay fees from `eclair.conf`.
 
+The config for default fees has also be changed to allow different default fees for announced/unannounced channels: `fee-base-msat`/`fee-proportional-millionths` are now nested inside `relay.fees.public-channels`/`relay.fees.private-channels`.
+
 :warning: When updating eclair, the relay fees for your existing channels will be reset to the value from your `eclair.conf`. You should use the `updaterelayfee` API to reconfigure relay fees if you don't want to use the default fees for every node you're connected to.
 
 ### Beta support for anchor outputs
