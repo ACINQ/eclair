@@ -322,10 +322,10 @@ object Helpers {
    */
   def checkLocalCommit(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
     if (d.commitments.localCommit.index == nextRemoteRevocationNumber) {
-      // they just sent a new commit_sig, we have received it but they didn't receive our revocation
+      // we are in sync
       true
     } else if (d.commitments.localCommit.index == nextRemoteRevocationNumber + 1) {
-      // we are in sync
+      // they just sent a new commit_sig, we have received it but they didn't receive our revocation
       true
     } else if (d.commitments.localCommit.index > nextRemoteRevocationNumber + 1) {
       // remote is behind: we return true because things are fine on our side
