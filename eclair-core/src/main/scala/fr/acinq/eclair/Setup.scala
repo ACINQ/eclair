@@ -152,7 +152,7 @@ class Setup(val datadir: File,
       case "password" => RPCPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      rpcAuthMethod,
+      rpcAuthMethod = rpcAuthMethod,
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"),
       wallet = wallet)

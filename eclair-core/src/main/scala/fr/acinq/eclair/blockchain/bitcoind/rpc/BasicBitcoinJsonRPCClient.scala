@@ -68,19 +68,17 @@ class BasicBitcoinJsonRPCClient(rpcAuthMethod: RPCAuthMethod, host: String = "12
     }
     KamonExt.timeFuture(Metrics.RpcBasicInvokeDuration.withoutTags()) {
       for {
-        res <- sttp
+        response <- sttp
           .post(serviceUri)
           .body(requests)
           .auth.basic(user, password)
           .response(asJson[Seq[JsonRPCResponse]])
           .send()
-      } yield res.unsafeBody
+      } yield response
     }.transform {
-      case Success(value) => Success(value)
-      case Failure(exception) => exception match {
-        case e: NoSuchElementException if e.getMessage.contains("Status code 401") => Failure(RPCAuthenticationException(e))
-        case e => Failure(e)
-      }
+      case Success(response) if response.code == 401 => Failure(RPCAuthenticationException())
+      case Success(response) => Success(response.unsafeBody)
+      case Failure(e) => Failure(e)
     }.recoverWith {
       case e: RPCAuthenticationException => rpcAuthMethod match {
         case RPCSafeCookie(path) =>
@@ -98,14 +96,16 @@ class BasicBitcoinJsonRPCClient(rpcAuthMethod: RPCAuthMethod, host: String = "12
   }
 
   private def readCookie(path: Path): (String, String) = {
-    logger.info("reading values from bitcoind RPC cookie")
+    logger.info("reading authentication values from bitcoind RPC cookie")
     val cookieStrings = Files.readString(path, StandardCharsets.UTF_8).split(":")
     (cookieStrings(0), cookieStrings(1))
   }
 }
 
+// @formatter:off
 sealed abstract class RPCAuthMethod
 case class RPCSafeCookie(path: Path) extends RPCAuthMethod
 case class RPCPassword(user: String, password: String) extends RPCAuthMethod
+// @formatter:on
 
-case class RPCAuthenticationException(e: Throwable) extends RuntimeException("could not authenticate to bitcoind RPC server", e)
+case class RPCAuthenticationException() extends RuntimeException("could not authenticate to bitcoind RPC server")
