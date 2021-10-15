@@ -26,12 +26,9 @@ import org.json4s.JsonAST.{JString, JValue}
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomSerializer, DefaultFormats}
 
-import java.net.ConnectException
 import java.nio.charset.StandardCharsets
 import java.nio.file.{Files, Path}
-import java.util.NoSuchElementException
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
 
 class BasicBitcoinJsonRPCClient(rpcAuthMethod: RPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient with Logging {
 
@@ -75,15 +72,17 @@ class BasicBitcoinJsonRPCClient(rpcAuthMethod: RPCAuthMethod, host: String = "12
           .response(asJson[Seq[JsonRPCResponse]])
           .send()
       } yield response
-    }.transform {
-      case Success(response) if response.code == 401 => Failure(RPCAuthenticationException())
-      case Success(response) => Success(response.unsafeBody)
-      case Failure(e) => Failure(e)
-    }.recoverWith {
+    } map {
+      response =>
+        response.code match {
+          case 401 => throw RPCAuthenticationException()
+          case _ => response.unsafeBody
+        }
+    } recoverWith {
       case e: RPCAuthenticationException => rpcAuthMethod match {
         case RPCSafeCookie(path) =>
           val (newUser, newPassword) = readCookie(path)
-          if (!(newUser.equals(user) && newPassword.equals(password))) {
+          if (newUser != user || newPassword != password) {
             user = newUser
             password = newPassword
             invoke(requests)

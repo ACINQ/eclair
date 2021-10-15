@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
+import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
 import fr.acinq.eclair.integration.IntegrationSpec
 import org.scalatest.concurrent.PatienceConfiguration.Timeout
 import org.scalatest.concurrent.ScalaFutures.whenReady
@@ -47,11 +48,11 @@ class BitcoindCookieAuthSpec extends IntegrationSpec {
     ).withFallback(commonConfig))
 
     // test getting on chain balance.
-    whenReady(nodes("cookie_test").wallet.onChainBalance(), Timeout(1 second)) { _ => assert(true) }
+    whenReady(nodes("cookie_test").wallet.onChainBalance(), Timeout(1 second)) { r => assert(r.isInstanceOf[OnChainBalance]) }
 
     restartBitcoind(useCookie = true)
 
     // test getting on chain balance again after restarting bitcoin.
-    whenReady(nodes("cookie_test").wallet.onChainBalance(), Timeout(1 second)) { _ => assert(true) }
+    whenReady(nodes("cookie_test").wallet.onChainBalance(), Timeout(1 second)) { r => assert(r.isInstanceOf[OnChainBalance]) }
   }
 }
