@@ -24,8 +24,8 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf
 import fr.acinq.eclair.io.{ClientSpawner, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
-import fr.acinq.eclair.router.Graph.WeightRatios
-import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PathFindingConf, RouteParams, RouterConf, SearchBoundaries, SendChannelQuery}
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
+import fr.acinq.eclair.router.Router.{GossipDecision, MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries, SendChannelQuery}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
@@ -50,9 +50,9 @@ object EclairInternalsSerializer {
 
   val searchBoundariesCodec: Codec[SearchBoundaries] = (
     ("maxFee" | millisatoshi) ::
-    ("maxFeeProportional" | double) ::
-    ("maxRouteLength" | int32) ::
-    ("maxCltv" | int32.as[CltvExpiryDelta])).as[SearchBoundaries]
+      ("maxFeeProportional" | double) ::
+      ("maxRouteLength" | int32) ::
+      ("maxCltv" | int32.as[CltvExpiryDelta])).as[SearchBoundaries]
 
   val relayFeesCodec: Codec[RelayFees] = (
     ("feeBase" | millisatoshi) ::
@@ -65,6 +65,11 @@ object EclairInternalsSerializer {
       ("capacityFactor" | double) ::
       ("hopCost" | relayFeesCodec)).as[WeightRatios]
 
+  val heuristicsConstantsCodec: Codec[HeuristicsConstants] = (
+    ("lockedFundsRisk" | double) ::
+      ("failureCost" | relayFeesCodec) ::
+      ("hopCost" | relayFeesCodec)).as[HeuristicsConstants]
+
   val multiPartParamsCodec: Codec[MultiPartParams] = (
     ("minPartAmount" | millisatoshi) ::
       ("maxParts" | int32)).as[MultiPartParams]
@@ -72,7 +77,7 @@ object EclairInternalsSerializer {
   val pathFindingConfCodec: Codec[PathFindingConf] = (
     ("randomize" | bool(8)) ::
       ("boundaries" | searchBoundariesCodec) ::
-      ("ratios" | weightRatiosCodec) ::
+      ("heuristicsParams" | either(bool(8), weightRatiosCodec, heuristicsConstantsCodec)) ::
       ("mpp" | multiPartParamsCodec) ::
       ("experimentName" | utf8_32) ::
       ("experimentPercentage" | int32)).as[PathFindingConf]

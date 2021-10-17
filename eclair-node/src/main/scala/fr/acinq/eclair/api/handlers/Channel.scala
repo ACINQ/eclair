@@ -18,7 +18,7 @@ package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import akka.util.Timeout
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.{Satoshi, Script}
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
@@ -63,7 +63,11 @@ trait Channel {
             val maxFeerate = maxFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate * 2)
             ClosingFeerates(preferredFeerate, minFeerate, maxFeerate)
           })
-          complete(eclairApi.close(channels, scriptPubKey_opt, closingFeerates))
+          if (scriptPubKey_opt.forall(Script.isNativeWitnessScript)) {
+            complete(eclairApi.close(channels, scriptPubKey_opt, closingFeerates))
+          } else {
+            reject(MalformedFormFieldRejection("scriptPubKey", "Non-segwit scripts are not allowed"))
+          }
       }
     }
   }

@@ -21,6 +21,7 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.adapter.{TypedActorContextOps, TypedActorRefOps}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingCommandsDb
@@ -35,7 +36,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.payment.send.{MultiPartPaymentLifecycle, PaymentInitiator, PaymentLifecycle}
 import fr.acinq.eclair.router.Router.RouteParams
-import fr.acinq.eclair.router.{BalanceTooLow, RouteCalculation, RouteNotFound}
+import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, Features, Logs, MilliSatoshi, NodeParams, UInt64, nodeFee, randomBytes32}
 
@@ -120,13 +121,11 @@ object NodeRelay {
 
   /** Compute route params that honor our fee and cltv requirements. */
   def computeRouteParams(nodeParams: NodeParams, amountIn: MilliSatoshi, expiryIn: CltvExpiry, amountOut: MilliSatoshi, expiryOut: CltvExpiry): RouteParams = {
-    val routeMaxCltv = expiryIn - expiryOut
-    val routeMaxFee = amountIn - amountOut
-    nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams.copy(
-      maxFeeFlat = routeMaxFee,
-      maxCltv = routeMaxCltv,
-      maxFeeProportional = 0, // we disable percent-based max fee calculation, we're only interested in collecting our node fee
-      includeLocalChannelCost = true)
+    nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
+      .modify(_.boundaries.maxFeeProportional).setTo(0) // we disable percent-based max fee calculation, we're only interested in collecting our node fee
+      .modify(_.boundaries.maxCltv).setTo(expiryIn - expiryOut)
+      .modify(_.boundaries.maxFeeFlat).setTo(amountIn - amountOut)
+      .modify(_.includeLocalChannelCost).setTo(true)
   }
 
   /**
@@ -134,21 +133,21 @@ object NodeRelay {
    * should return upstream.
    */
   def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload): Option[FailureMessage] = {
-    val routeNotFound = failures.collectFirst { case f@LocalFailure(_, RouteNotFound) => f }.nonEmpty
+    val routeNotFound = failures.collectFirst { case f@LocalFailure(_, _, RouteNotFound) => f }.nonEmpty
     val routingFeeHigh = upstream.amountIn - nextPayload.amountToForward >= nodeFee(nodeParams.relayParams.minTrampolineFees.feeBase, nodeParams.relayParams.minTrampolineFees.feeProportionalMillionths, nextPayload.amountToForward) * 5
     failures match {
       case Nil => None
-      case LocalFailure(_, BalanceTooLow) :: Nil if routingFeeHigh =>
+      case LocalFailure(_, _, BalanceTooLow) :: Nil if routingFeeHigh =>
         // We have direct channels to the target node, but not enough outgoing liquidity to use those channels.
         // The routing fee proposed by the sender was high enough to find alternative, indirect routes, but didn't yield
         // any result so we tell them that we don't have enough outgoing liquidity at the moment.
         Some(TemporaryNodeFailure)
-      case LocalFailure(_, BalanceTooLow) :: Nil => Some(TrampolineFeeInsufficient) // a higher fee/cltv may find alternative, indirect routes
+      case LocalFailure(_, _, BalanceTooLow) :: Nil => Some(TrampolineFeeInsufficient) // a higher fee/cltv may find alternative, indirect routes
       case _ if routeNotFound => Some(TrampolineFeeInsufficient) // if we couldn't find routes, it's likely that the fee/cltv was insufficient
       case _ =>
         // Otherwise, we try to find a downstream error that we could decrypt.
-        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
-        val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, e) => e.failureMessage }
+        val outgoingNodeFailure = failures.collectFirst { case RemoteFailure(_, _, e) if e.originNode == nextPayload.outgoingNodeId => e.failureMessage }
+        val otherNodeFailure = failures.collectFirst { case RemoteFailure(_, _, e) => e.failureMessage }
         val failure = outgoingNodeFailure.getOrElse(otherNodeFailure.getOrElse(TemporaryNodeFailure))
         Some(failure)
     }
@@ -263,7 +262,7 @@ class NodeRelay private(nodeParams: NodeParams,
   }.toClassic
 
   private def relay(upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): ActorRef = {
-    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, recordMetrics = true, Nil)
+    val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
     val payFSM = payloadOut.invoiceFeatures match {

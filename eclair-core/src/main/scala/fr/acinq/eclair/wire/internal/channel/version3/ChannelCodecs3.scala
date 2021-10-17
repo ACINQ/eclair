@@ -63,7 +63,7 @@ private[channel] object ChannelCodecs3 {
     /** We use the same encoding as init features, even if we don't need the distinction between mandatory and optional */
     val channelFeaturesCodec: Codec[ChannelFeatures] = lengthDelimited(bytes).xmap(
       (b: ByteVector) => ChannelFeatures(Features(b).activated.keySet), // we make no difference between mandatory/optional, both are considered activated
-      (cf: ChannelFeatures) => Features(cf.activated.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector // we encode features as mandatory, by convention
+      (cf: ChannelFeatures) => Features(cf.features.map(f => f -> FeatureSupport.Mandatory).toMap).toByteVector // we encode features as mandatory, by convention
     )
 
     def localParamsCodec(channelFeatures: ChannelFeatures): Codec[LocalParams] = (
@@ -94,7 +94,7 @@ private[channel] object ChannelCodecs3 {
         ("delayedPaymentBasepoint" | publicKey) ::
         ("htlcBasepoint" | publicKey) ::
         ("features" | combinedFeaturesCodec) ::
-        ("shutdownScript" | optional(bool8, bytes))).as[RemoteParams]
+        ("shutdownScript" | optional(bool8, lengthDelimited(bytes)))).as[RemoteParams]
 
     def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)
 

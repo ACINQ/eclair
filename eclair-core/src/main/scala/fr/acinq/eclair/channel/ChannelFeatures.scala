@@ -28,7 +28,7 @@ import fr.acinq.eclair.{Feature, FeatureSupport, Features}
  * Even if one of these features is later disabled at the connection level, it will still apply to the channel until the
  * channel is upgraded or closed.
  */
-case class ChannelFeatures(activated: Set[Feature]) {
+case class ChannelFeatures(features: Set[Feature]) {
 
   val channelType: SupportedChannelType = {
     if (hasFeature(Features.AnchorOutputsZeroFeeHtlcTx)) {
@@ -45,9 +45,9 @@ case class ChannelFeatures(activated: Set[Feature]) {
   val paysDirectlyToWallet: Boolean = channelType.paysDirectlyToWallet
   val commitmentFormat: CommitmentFormat = channelType.commitmentFormat
 
-  def hasFeature(feature: Feature): Boolean = activated.contains(feature)
+  def hasFeature(feature: Feature): Boolean = features.contains(feature)
 
-  override def toString: String = activated.mkString(",")
+  override def toString: String = features.mkString(",")
 
 }
 
@@ -122,8 +122,8 @@ object ChannelTypes {
     case _ => UnsupportedChannelType(features)
   }
 
-  /** Pick the channel type based on local and remote feature bits. */
-  def pickChannelType(localFeatures: Features, remoteFeatures: Features): SupportedChannelType = {
+  /** Pick the channel type based on local and remote feature bits, as defined by the spec. */
+  def defaultFromFeatures(localFeatures: Features, remoteFeatures: Features): SupportedChannelType = {
     if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputsZeroFeeHtlcTx)) {
       AnchorOutputsZeroFeeHtlcTx
     } else if (Features.canUseFeature(localFeatures, remoteFeatures, Features.AnchorOutputs)) {
@@ -133,6 +133,18 @@ object ChannelTypes {
     } else {
       Standard
     }
+  }
+
+  /** Check if a given channel type is compatible with our features. */
+  def areCompatible(localFeatures: Features, remoteChannelType: ChannelType): Option[SupportedChannelType] = remoteChannelType match {
+    case _: UnsupportedChannelType => None
+    // We ensure that we support the features necessary for this channel type.
+    case proposedChannelType: SupportedChannelType =>
+      if (proposedChannelType.features.forall(f => localFeatures.hasFeature(f))) {
+        Some(proposedChannelType)
+      } else {
+        None
+      }
   }
 
 }

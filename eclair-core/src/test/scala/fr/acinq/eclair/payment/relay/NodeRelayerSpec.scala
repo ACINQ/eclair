@@ -37,7 +37,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToNode
 import fr.acinq.eclair.router.Router.RouteRequest
 import fr.acinq.eclair.router.{BalanceTooLow, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, UInt64, nodeFee, randomBytes, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, UInt64, randomBytes, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -398,7 +398,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val nodeRelayerAdapters = mockPayFSM.expectMessageType[SendMultiPartPayment].replyTo
 
     // The proposed fees are low, so we ask the sender to raise them.
-    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(Nil, BalanceTooLow) :: Nil)
+    nodeRelayerAdapters ! PaymentFailed(relayId, paymentHash, LocalFailure(outgoingAmount, Nil, BalanceTooLow) :: Nil)
     incomingMultiPart.foreach { p =>
       val fwd = register.expectMessageType[Register.Forward[CMD_FAIL_HTLC]]
       assert(fwd.channelId === p.add.channelId)
@@ -444,7 +444,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     router.expectMessageType[RouteRequest]
 
     // If we're having a hard time finding routes, raising the fee/cltv will likely help.
-    val failures = LocalFailure(Nil, RouteNotFound) :: RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(Nil, RouteNotFound) :: Nil
+    val failures = LocalFailure(outgoingAmount, Nil, RouteNotFound) :: RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, PermanentNodeFailure)) :: LocalFailure(outgoingAmount, Nil, RouteNotFound) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
@@ -466,7 +466,7 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
     val payFSM = mockPayFSM.expectMessageType[akka.actor.ActorRef]
     router.expectMessageType[RouteRequest]
 
-    val failures = RemoteFailure(Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(Nil) :: Nil
+    val failures = RemoteFailure(outgoingAmount, Nil, Sphinx.DecryptedFailurePacket(outgoingNodeId, FinalIncorrectHtlcAmount(42 msat))) :: UnreadableRemoteFailure(outgoingAmount, Nil) :: Nil
     payFSM ! PaymentFailed(relayId, incomingMultiPart.head.add.paymentHash, failures)
 
     incomingMultiPart.foreach { p =>
@@ -487,9 +487,9 @@ class NodeRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("appl
 
     val routeRequest = router.expectMessageType[RouteRequest]
     val routeParams = routeRequest.routeParams
-    assert(routeParams.maxFeeProportional === 0) // should be disabled
-    assert(routeParams.maxFeeFlat === incomingAmount - outgoingAmount)
-    assert(routeParams.maxCltv === incomingSinglePart.add.cltvExpiry - outgoingExpiry)
+    assert(routeParams.boundaries.maxFeeProportional === 0) // should be disabled
+    assert(routeParams.boundaries.maxFeeFlat === incomingAmount - outgoingAmount)
+    assert(routeParams.boundaries.maxCltv === incomingSinglePart.add.cltvExpiry - outgoingExpiry)
     assert(routeParams.includeLocalChannelCost)
   }
 

@@ -25,7 +25,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Channel.{BroadcastChannelUpdate, PeriodicRefresh}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
@@ -65,7 +65,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.expiry-delta-blocks" -> 133, "eclair.server.port" -> 29733, "eclair.api.port" -> 28083, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonFeatures).withFallback(commonConfig))
     instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.expiry-delta-blocks" -> 134, "eclair.server.port" -> 29734, "eclair.api.port" -> 28084).asJava).withFallback(withAnchorOutputsZeroFeeHtlcTxs).withFallback(commonConfig))
     instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.expiry-delta-blocks" -> 135, "eclair.server.port" -> 29735, "eclair.api.port" -> 28085, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(withWumbo).withFallback(commonConfig))
-    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.fee-base-msat" -> 1010, "eclair.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
+    instantiateEclairNode("G", ConfigFactory.parseMap(Map("eclair.node-alias" -> "G", "eclair.expiry-delta-blocks" -> 136, "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.relay.fees.public-channels.fee-base-msat" -> 1010, "eclair.relay.fees.public-channels.fee-proportional-millionths" -> 102, "eclair.trampoline-payments-enable" -> true).asJava).withFallback(commonConfig))
   }
 
   test("connect nodes") {
@@ -329,7 +329,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
 
     // the payment is requesting to use a capacity-optimized route which will select node G even though it's a bit more expensive
-    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams.copy(ratios = WeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0)))))
+    sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams.copy(heuristics = Left(WeightRatios(0, 0, 0, 1, RelayFees(0 msat, 0))))))
     sender.expectMsgType[UUID]
     sender.expectMsgType[PreimageReceived]
     val ps = sender.expectMsgType[PaymentSent]
@@ -641,7 +641,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("generate and validate lots of channels") {
-    implicit val bitcoinClient: ExtendedBitcoinClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     // we simulate fake channels by publishing a funding tx and sending announcement messages to a node at random
     logger.info(s"generating fake channels")
     val sender = TestProbe()
@@ -652,7 +652,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
       if (i % 10 == 0) {
         generateBlocks(1, Some(address))
       }
-      AnnouncementsBatchValidationSpec.simulateChannel()
+      AnnouncementsBatchValidationSpec.simulateChannel(bitcoinClient)
     }
     generateBlocks(1, Some(address))
     logger.info(s"simulated ${channels.size} channels")
@@ -660,7 +660,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
 
     // then we make the announcements
-    val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
+    val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c, bitcoinClient))
     announcements.foreach { ann =>
       nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann)
       sender.expectMsg(TransportHandler.ReadAck(ann))

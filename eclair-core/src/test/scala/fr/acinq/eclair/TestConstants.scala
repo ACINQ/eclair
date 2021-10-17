@@ -50,9 +50,11 @@ object TestConstants {
   class TestFeeEstimator extends FeeEstimator {
     private var currentFeerates = FeeratesPerKw.single(feeratePerKw)
 
+    // @formatter:off
     override def getFeeratePerKb(target: Int): FeeratePerKB = FeeratePerKB(currentFeerates.feePerBlock(target))
-
     override def getFeeratePerKw(target: Int): FeeratePerKw = currentFeerates.feePerBlock(target)
+    override def getMempoolMinFeeratePerKw(): FeeratePerKw = currentFeerates.mempoolMinFee
+    // @formatter:on
 
     def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
       currentFeerates = feeratesPerKw
@@ -115,7 +117,7 @@ object TestConstants {
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
-        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw),
+        defaultFeerateTolerance = FeerateTolerance(0.5, 8.0, anchorOutputsFeeratePerKw, DustTolerance(25_000 sat, closeOnUpdateFeeOverflow = true)),
         perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64(500000000),
@@ -169,26 +171,26 @@ object TestConstants {
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingExperimentConf = PathFindingExperimentConf(Map(("alice-test-experiment" -> PathFindingConf(
+        pathFindingExperimentConf = PathFindingExperimentConf(Map("alice-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
             maxFeeFlat = (21 sat).toMilliSatoshi,
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          ratios = WeightRatios(
+          heuristics = Left(WeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
             hopCost = RelayFees(0 msat, 0),
-          ),
+          )),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
           experimentName = "alice-test-experiment",
-          experimentPercentage = 100))))
+          experimentPercentage = 100)))
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,
@@ -241,7 +243,7 @@ object TestConstants {
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
-        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw),
+        defaultFeerateTolerance = FeerateTolerance(0.75, 1.5, anchorOutputsFeeratePerKw, DustTolerance(30_000 sat, closeOnUpdateFeeOverflow = true)),
         perNodeFeerateTolerance = Map.empty
       ),
       maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
@@ -295,26 +297,26 @@ object TestConstants {
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
-        pathFindingExperimentConf = PathFindingExperimentConf(Map(("bob-test-experiment" -> PathFindingConf(
+        pathFindingExperimentConf = PathFindingExperimentConf(Map("bob-test-experiment" -> PathFindingConf(
           randomize = false,
           boundaries = SearchBoundaries(
             maxFeeFlat = (21 sat).toMilliSatoshi,
             maxFeeProportional = 0.03,
             maxCltv = CltvExpiryDelta(2016),
             maxRouteLength = 20),
-          ratios = WeightRatios(
+          heuristics = Left(WeightRatios(
             baseFactor = 1.0,
             cltvDeltaFactor = 0.0,
             ageFactor = 0.0,
             capacityFactor = 0.0,
             hopCost = RelayFees(0 msat, 0),
-          ),
+          )),
           mpp = MultiPartParams(
             minPartAmount = 15000000 msat,
             maxParts = 10,
           ),
           experimentName = "bob-test-experiment",
-          experimentPercentage = 100))))
+          experimentPercentage = 100)))
       ),
       socksProxy_opt = None,
       maxPaymentAttempts = 5,

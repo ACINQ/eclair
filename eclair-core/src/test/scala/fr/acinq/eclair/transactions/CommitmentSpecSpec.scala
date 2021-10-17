@@ -19,7 +19,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshiLong, TestConstants, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, TestConstants, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 
 class CommitmentSpecSpec extends AnyFunSuite {
@@ -73,6 +73,10 @@ class CommitmentSpecSpec extends AnyFunSuite {
     assert(spec.htlcTxFeerate(Transactions.DefaultCommitmentFormat) === FeeratePerKw(2500 sat))
     assert(spec.htlcTxFeerate(Transactions.UnsafeLegacyAnchorOutputsCommitmentFormat) === FeeratePerKw(2500 sat))
     assert(spec.htlcTxFeerate(Transactions.ZeroFeeHtlcTxAnchorOutputsCommitmentFormat) === FeeratePerKw(0 sat))
+  }
+
+  def createHtlc(amount: MilliSatoshi): UpdateAddHtlc = {
+    UpdateAddHtlc(ByteVector32.Zeroes, 0, amount, randomBytes32(), CltvExpiry(500), TestConstants.emptyOnionPacket)
   }
 
 }

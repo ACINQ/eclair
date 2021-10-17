@@ -20,7 +20,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
 
@@ -50,7 +50,7 @@ object RawTxPublisher {
   case object Stop extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
@@ -63,7 +63,7 @@ object RawTxPublisher {
 }
 
 private class RawTxPublisher(nodeParams: NodeParams,
-                             bitcoinClient: ExtendedBitcoinClient,
+                             bitcoinClient: BitcoinCoreClient,
                              watcher: ActorRef[ZmqWatcher.Command],
                              context: ActorContext[RawTxPublisher.Command],
                              timers: TimerScheduler[RawTxPublisher.Command],
@@ -119,7 +119,7 @@ private class RawTxPublisher(nodeParams: NodeParams,
 
   def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishRawTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input)
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, cmd.desc, cmd.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, cmd.tx))
       case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) => sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, reason))

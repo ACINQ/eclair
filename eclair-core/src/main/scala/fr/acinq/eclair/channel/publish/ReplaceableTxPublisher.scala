@@ -21,8 +21,8 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient.FundTransactionOptions
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.FundTransactionOptions
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
@@ -53,7 +53,7 @@ object ReplaceableTxPublisher {
   private case object RemoteCommitTxPublished extends RuntimeException with Command
   private case object PreconditionsOk extends Command
   private case class FundingFailed(reason: Throwable) extends Command
-  private case class SignFundedTx(tx: ReplaceableTransactionWithInputInfo) extends Command
+  private case class SignFundedTx(tx: ReplaceableTransactionWithInputInfo, fee: Satoshi) extends Command
   private case class PublishSignedTx(tx: Transaction) extends Command
   private case class WrappedTxResult(result: MempoolTxMonitor.TxResult) extends Command
   private case class UnknownFailure(reason: Throwable) extends Command
@@ -61,7 +61,7 @@ object ReplaceableTxPublisher {
   case object Stop extends Command
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: ExtendedBitcoinClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
@@ -76,7 +76,7 @@ object ReplaceableTxPublisher {
    * We need this because fundrawtransaction doesn't allow us to leave non-wallet inputs, so we have to add them
    * afterwards which may bring the resulting feerate below our target.
    */
-  def adjustAnchorOutputChange(unsignedTx: ClaimLocalAnchorOutputTx, commitTx: Transaction, amountIn: Satoshi, currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi): ClaimLocalAnchorOutputTx = {
+  def adjustAnchorOutputChange(unsignedTx: ClaimLocalAnchorOutputTx, commitTx: Transaction, amountIn: Satoshi, currentFeerate: FeeratePerKw, targetFeerate: FeeratePerKw, dustLimit: Satoshi): (ClaimLocalAnchorOutputTx, Satoshi) = {
     require(unsignedTx.tx.txOut.size == 1, "funded transaction should have a single change output")
     // We take into account witness weight and adjust the fee to match our desired feerate.
     val dummySignedClaimAnchorTx = addSigs(unsignedTx, PlaceHolderSig)
@@ -84,7 +84,9 @@ object ReplaceableTxPublisher {
     val estimatedWeight = commitTx.weight() + dummySignedClaimAnchorTx.tx.weight() + claimP2WPKHOutputWitnessWeight * (dummySignedClaimAnchorTx.tx.txIn.size - 1)
     val targetFee = weight2fee(targetFeerate, estimatedWeight) - weight2fee(currentFeerate, commitTx.weight())
     val amountOut = dustLimit.max(amountIn - targetFee)
-    unsignedTx.copy(tx = unsignedTx.tx.copy(txOut = unsignedTx.tx.txOut.head.copy(amount = amountOut) :: Nil))
+    val updatedAnchorTx = unsignedTx.copy(tx = unsignedTx.tx.copy(txOut = unsignedTx.tx.txOut.head.copy(amount = amountOut) :: Nil))
+    val fee = amountIn - updatedAnchorTx.tx.txOut.map(_.amount).sum
+    (updatedAnchorTx, fee)
   }
 
   /**
@@ -92,7 +94,7 @@ object ReplaceableTxPublisher {
    * We need this because fundrawtransaction doesn't allow us to leave non-wallet inputs, so we have to add them
    * afterwards which may bring the resulting feerate below our target.
    */
-  def adjustHtlcTxChange(unsignedTx: HtlcTx, amountIn: Satoshi, targetFeerate: FeeratePerKw, commitments: Commitments): HtlcTx = {
+  def adjustHtlcTxChange(unsignedTx: HtlcTx, amountIn: Satoshi, targetFeerate: FeeratePerKw, commitments: Commitments): (HtlcTx, Satoshi) = {
     require(unsignedTx.tx.txOut.size <= 2, "funded transaction should have at most one change output")
     val dummySignedTx = unsignedTx match {
       case tx: HtlcSuccessTx => addSigs(tx, PlaceHolderSig, PlaceHolderSig, ByteVector32.Zeroes, commitments.commitmentFormat)
@@ -102,7 +104,7 @@ object ReplaceableTxPublisher {
     val estimatedWeight = dummySignedTx.tx.weight() + claimP2WPKHOutputWitnessWeight * (dummySignedTx.tx.txIn.size - 1)
     val targetFee = weight2fee(targetFeerate, estimatedWeight)
     val changeAmount = amountIn - dummySignedTx.tx.txOut.head.amount - targetFee
-    if (dummySignedTx.tx.txOut.length == 2 && changeAmount >= commitments.localParams.dustLimit) {
+    val updatedHtlcTx = if (dummySignedTx.tx.txOut.length == 2 && changeAmount >= commitments.localParams.dustLimit) {
       unsignedTx match {
         case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = htlcSuccess.tx.copy(txOut = Seq(htlcSuccess.tx.txOut.head, htlcSuccess.tx.txOut(1).copy(amount = changeAmount))))
         case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = htlcTimeout.tx.copy(txOut = Seq(htlcTimeout.tx.txOut.head, htlcTimeout.tx.txOut(1).copy(amount = changeAmount))))
@@ -113,6 +115,8 @@ object ReplaceableTxPublisher {
         case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = htlcTimeout.tx.copy(txOut = Seq(htlcTimeout.tx.txOut.head)))
       }
     }
+    val fee = amountIn - updatedHtlcTx.tx.txOut.map(_.amount).sum
+    (updatedHtlcTx, fee)
   }
 
   sealed trait HtlcTxAndWitnessData {
@@ -161,7 +165,7 @@ object ReplaceableTxPublisher {
 }
 
 private class ReplaceableTxPublisher(nodeParams: NodeParams,
-                                     bitcoinClient: ExtendedBitcoinClient,
+                                     bitcoinClient: BitcoinCoreClient,
                                      watcher: ActorRef[ZmqWatcher.Command],
                                      context: ActorContext[ReplaceableTxPublisher.Command],
                                      timers: TimerScheduler[ReplaceableTxPublisher.Command],
@@ -250,7 +254,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
         val signedHtlcTx = txWithWitnessData.addSigs(localSig, cmd.commitments.commitmentFormat)
         log.info("publishing {} without adding inputs: txid={}", htlcTx.desc, signedHtlcTx.tx.txid)
-        publish(replyTo, cmd, signedHtlcTx.tx)
+        publish(replyTo, cmd, signedHtlcTx.tx, htlcTx.fee)
       case Some(_) =>
         fund(replyTo, cmd, targetFeerate)
       case None =>
@@ -261,13 +265,13 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   def fund(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
     context.pipeToSelf(addInputs(cmd.txInfo, targetFeerate, cmd.commitments)) {
-      case Success(fundedTx) => SignFundedTx(fundedTx)
+      case Success((fundedTx, fee)) => SignFundedTx(fundedTx, fee)
       case Failure(reason) => FundingFailed(reason)
     }
     Behaviors.receiveMessagePartial {
-      case SignFundedTx(fundedTx) =>
+      case SignFundedTx(fundedTx, fee) =>
         log.info("added {} wallet input(s) and {} wallet output(s) to {}", fundedTx.tx.txIn.length - 1, fundedTx.tx.txOut.length - 1, cmd.desc)
-        sign(replyTo, cmd, fundedTx)
+        sign(replyTo, cmd, fundedTx, fee)
       case FundingFailed(reason) =>
         if (reason.getMessage.contains("Insufficient funds")) {
           log.warn("cannot add inputs to {}: {}", cmd.desc, reason.getMessage)
@@ -283,12 +287,12 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def sign(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, fundedTx: ReplaceableTransactionWithInputInfo): Behavior[Command] = {
+  def sign(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, fundedTx: ReplaceableTransactionWithInputInfo, fee: Satoshi): Behavior[Command] = {
     fundedTx match {
       case claimAnchorTx: ClaimLocalAnchorOutputTx =>
         val claimAnchorSig = keyManager.sign(claimAnchorTx, keyManager.fundingPublicKey(cmd.commitments.localParams.fundingKeyPath), TxOwner.Local, cmd.commitments.commitmentFormat)
         val signedClaimAnchorTx = addSigs(claimAnchorTx, claimAnchorSig)
-        val commitInfo = ExtendedBitcoinClient.PreviousTx(signedClaimAnchorTx.input, signedClaimAnchorTx.tx.txIn.head.witness)
+        val commitInfo = BitcoinCoreClient.PreviousTx(signedClaimAnchorTx.input, signedClaimAnchorTx.tx.txIn.head.witness)
         context.pipeToSelf(bitcoinClient.signTransaction(signedClaimAnchorTx.tx, Seq(commitInfo))) {
           case Success(signedTx) => PublishSignedTx(signedTx.tx)
           case Failure(reason) => UnknownFailure(reason)
@@ -302,7 +306,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
         val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
         val signedHtlcTx = txWithWitnessData.addSigs(localSig, cmd.commitments.commitmentFormat)
-        val inputInfo = ExtendedBitcoinClient.PreviousTx(signedHtlcTx.input, signedHtlcTx.tx.txIn.head.witness)
+        val inputInfo = BitcoinCoreClient.PreviousTx(signedHtlcTx.input, signedHtlcTx.tx.txIn.head.witness)
         context.pipeToSelf(bitcoinClient.signTransaction(signedHtlcTx.tx, Seq(inputInfo), allowIncomplete = true).map(signTxResponse => {
           // NB: bitcoind versions older than 0.21.1 messes up the witness stack for our htlc input, so we need to restore it.
           // See https://github.com/bitcoin/bitcoin/issues/21151
@@ -313,7 +317,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         }
     }
     Behaviors.receiveMessagePartial {
-      case PublishSignedTx(signedTx) => publish(replyTo, cmd, signedTx)
+      case PublishSignedTx(signedTx) => publish(replyTo, cmd, signedTx, fee)
       case UnknownFailure(reason) =>
         log.error("cannot sign {}: {}", cmd.desc, reason)
         replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.UnknownTxFailure)
@@ -323,9 +327,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, tx: Transaction): Behavior[Command] = {
+  def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, tx: Transaction, fee: Satoshi): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx, cmd.input)
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx, cmd.input, cmd.desc, fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, tx))
       case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) =>
@@ -367,14 +371,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  private def addInputs(txInfo: ReplaceableTransactionWithInputInfo, targetFeerate: FeeratePerKw, commitments: Commitments): Future[ReplaceableTransactionWithInputInfo] = {
+  private def addInputs(txInfo: ReplaceableTransactionWithInputInfo, targetFeerate: FeeratePerKw, commitments: Commitments): Future[(ReplaceableTransactionWithInputInfo, Satoshi)] = {
     txInfo match {
       case anchorTx: ClaimLocalAnchorOutputTx => addInputs(anchorTx, targetFeerate, commitments)
       case htlcTx: HtlcTx => addInputs(htlcTx, targetFeerate, commitments)
     }
   }
 
-  private def addInputs(txInfo: ClaimLocalAnchorOutputTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[ClaimLocalAnchorOutputTx] = {
+  private def addInputs(txInfo: ClaimLocalAnchorOutputTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[(ClaimLocalAnchorOutputTx, Satoshi)] = {
     val dustLimit = commitments.localParams.dustLimit
     val commitFeerate = commitments.localCommit.spec.commitTxFeerate
     val commitTx = commitments.fullySignedLocalCommitTx(nodeParams.channelKeyManager).tx
@@ -415,7 +419,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     })
   }
 
-  private def addInputs(txInfo: HtlcTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[HtlcTx] = {
+  private def addInputs(txInfo: HtlcTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[(HtlcTx, Satoshi)] = {
     // NB: fundrawtransaction doesn't support non-wallet inputs, so we clear the input and re-add it later.
     val txNotFunded = txInfo.tx.copy(txIn = Nil, txOut = txInfo.tx.txOut.head.copy(amount = commitments.localParams.dustLimit) :: Nil)
     val htlcTxWeight = txInfo match {

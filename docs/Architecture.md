@@ -19,12 +19,11 @@ Some actors are long-lived (e.g. lightning channels) while others are very short
 
 ## Top-level projects
 
-Eclair is split into four top-level projects:
+Eclair is split into three top-level projects:
 
 - `eclair-core`: core library implementing lightning
 - `eclair-node`: server daemon built upon `eclair-core` (exposes a Json RPC and WebSocket endpoint)
 - `eclair-front`: when using cluster mode, front-end server daemons handling peer connections
-- `eclair-node-gui` (deprecated): sample JavaFX user interface to demo eclair (should not be used in production)
 
 The entry point for `eclair-core` is in `Setup.scala`, where we start the actor system, connect to `bitcoind` and create top-level actors.
 

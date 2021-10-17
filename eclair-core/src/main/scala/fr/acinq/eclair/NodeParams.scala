@@ -27,7 +27,7 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
@@ -202,6 +202,8 @@ object NodeParams extends Logging {
       "enable-db-backup" -> "file-backup.enabled",
       "backup-notify-script" -> "file-backup.notify-script",
       // v0.6.2
+      "fee-base-msat" -> "relay.fees.public-channels.fee-base-msat",
+      "fee-proportional-millionths" -> "relay.fees.public-channels.fee-proportional-millionths",
       "router.randomize-route-selection" -> "router.path-finding.default.randomize-route-selection",
       "router.path-finding.max-route-length" -> "router.path-finding.default.boundaries.max-route-length",
       "router.path-finding.max-cltv" -> "router.path-finding.default.boundaries.max-cltv",
@@ -233,7 +235,7 @@ object NodeParams extends Logging {
 
     val dustLimitSatoshis = Satoshi(config.getLong("dust-limit-satoshis"))
     if (chainHash == Block.LivenetGenesisBlock.hash) {
-      require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
+      require(dustLimitSatoshis >= Channel.MIN_DUST_LIMIT, s"dust limit must be greater than ${Channel.MIN_DUST_LIMIT}")
     }
 
     val htlcMinimum = MilliSatoshi(config.getInt("htlc-minimum-msat"))
@@ -292,7 +294,8 @@ object NodeParams extends Logging {
         randomizeCredentials = config.getBoolean("socks5.randomize-credentials"),
         useForIPv4 = config.getBoolean("socks5.use-for-ipv4"),
         useForIPv6 = config.getBoolean("socks5.use-for-ipv6"),
-        useForTor = config.getBoolean("socks5.use-for-tor")
+        useForTor = config.getBoolean("socks5.use-for-tor"),
+        useForWatchdogs = config.getBoolean("socks5.use-for-watchdogs"),
       ))
     } else {
       None
@@ -327,13 +330,21 @@ object NodeParams extends Logging {
         maxCltv = CltvExpiryDelta(config.getInt("boundaries.max-cltv")),
         maxFeeFlat = Satoshi(config.getLong("boundaries.max-fee-flat-sat")).toMilliSatoshi,
         maxFeeProportional = config.getDouble("boundaries.max-fee-proportional-percent") / 100.0),
-      ratios = WeightRatios(
-        baseFactor = config.getDouble("ratios.base"),
-        cltvDeltaFactor = config.getDouble("ratios.cltv"),
-        ageFactor = config.getDouble("ratios.channel-age"),
-        capacityFactor = config.getDouble("ratios.channel-capacity"),
-        hopCost = getRelayFees(config.getConfig("hop-cost")),
-      ),
+      heuristics = if (config.getBoolean("use-ratios")) {
+        Left(WeightRatios(
+          baseFactor = config.getDouble("ratios.base"),
+          cltvDeltaFactor = config.getDouble("ratios.cltv"),
+          ageFactor = config.getDouble("ratios.channel-age"),
+          capacityFactor = config.getDouble("ratios.channel-capacity"),
+          hopCost = getRelayFees(config.getConfig("hop-cost")),
+        ))
+      } else {
+        Right(HeuristicsConstants(
+          lockedFundsRisk = config.getDouble("locked-funds-risk"),
+          failureCost = getRelayFees(config.getConfig("failure-cost")),
+          hopCost = getRelayFees(config.getConfig("hop-cost")),
+        ))
+      },
       mpp = MultiPartParams(
         Satoshi(config.getLong("mpp.min-amount-satoshis")).toMilliSatoshi,
         config.getInt("mpp.max-parts")),
@@ -374,14 +385,22 @@ object NodeParams extends Logging {
         defaultFeerateTolerance = FeerateTolerance(
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-low"),
           config.getDouble("on-chain-fees.feerate-tolerance.ratio-high"),
-          FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate"))))
+          FeeratePerKw(FeeratePerByte(Satoshi(config.getLong("on-chain-fees.feerate-tolerance.anchor-output-max-commit-feerate")))),
+          DustTolerance(
+            Satoshi(config.getLong("on-chain-fees.feerate-tolerance.dust-tolerance.max-exposure-satoshis")),
+            config.getBoolean("on-chain-fees.feerate-tolerance.dust-tolerance.close-on-update-fee-overflow")
+          )
         ),
         perNodeFeerateTolerance = config.getConfigList("on-chain-fees.override-feerate-tolerance").asScala.map { e =>
           val nodeId = PublicKey(ByteVector.fromValidHex(e.getString("nodeid")))
           val tolerance = FeerateTolerance(
             e.getDouble("feerate-tolerance.ratio-low"),
             e.getDouble("feerate-tolerance.ratio-high"),
-            FeeratePerKw(FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate"))))
+            FeeratePerKw(FeeratePerByte(Satoshi(e.getLong("feerate-tolerance.anchor-output-max-commit-feerate")))),
+            DustTolerance(
+              Satoshi(e.getLong("feerate-tolerance.dust-tolerance.max-exposure-satoshis")),
+              e.getBoolean("feerate-tolerance.dust-tolerance.close-on-update-fee-overflow")
+            )
           )
           nodeId -> tolerance
         }.toMap

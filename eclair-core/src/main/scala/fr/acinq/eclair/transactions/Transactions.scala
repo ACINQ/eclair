@@ -206,6 +206,13 @@ object Transactions {
   def offeredHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =
     dustLimit + weight2fee(spec.htlcTxFeerate(commitmentFormat), commitmentFormat.htlcTimeoutWeight)
 
+  def offeredHtlcTrimThreshold(dustLimit: Satoshi, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Satoshi = {
+    commitmentFormat match {
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat => dustLimit
+      case _ => dustLimit + weight2fee(feerate, commitmentFormat.htlcTimeoutWeight)
+    }
+  }
+
   def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Seq[OutgoingHtlc] = {
     val threshold = offeredHtlcTrimThreshold(dustLimit, spec, commitmentFormat)
     spec.htlcs
@@ -216,6 +223,13 @@ object Transactions {
   /** Received HTLCs below this amount will be trimmed. */
   def receivedHtlcTrimThreshold(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Satoshi =
     dustLimit + weight2fee(spec.htlcTxFeerate(commitmentFormat), commitmentFormat.htlcSuccessWeight)
+
+  def receivedHtlcTrimThreshold(dustLimit: Satoshi, feerate: FeeratePerKw, commitmentFormat: CommitmentFormat): Satoshi = {
+    commitmentFormat match {
+      case ZeroFeeHtlcTxAnchorOutputsCommitmentFormat => dustLimit
+      case _ => dustLimit + weight2fee(feerate, commitmentFormat.htlcSuccessWeight)
+    }
+  }
 
   def trimReceivedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec, commitmentFormat: CommitmentFormat): Seq[IncomingHtlc] = {
     val threshold = receivedHtlcTrimThreshold(dustLimit, spec, commitmentFormat)

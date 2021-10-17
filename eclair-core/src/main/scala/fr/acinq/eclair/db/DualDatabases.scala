@@ -151,9 +151,14 @@ case class DualAuditDb(sqlite: SqliteAuditDb, postgres: PgAuditDb) extends Audit
     sqlite.add(paymentRelayed)
   }
 
-  override def add(networkFeePaid: NetworkFeePaid): Unit = {
-    runAsync(postgres.add(networkFeePaid))
-    sqlite.add(networkFeePaid)
+  override def add(txPublished: TransactionPublished): Unit = {
+    runAsync(postgres.add(txPublished))
+    sqlite.add(txPublished)
+  }
+
+  override def add(txConfirmed: TransactionConfirmed): Unit = {
+    runAsync(postgres.add(txConfirmed))
+    sqlite.add(txConfirmed)
   }
 
   override def add(channelErrorOccurred: ChannelErrorOccurred): Unit = {

@@ -34,7 +34,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
-import fr.acinq.eclair.router.Graph.WeightRatios
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol._
 import kamon.context.Context
@@ -304,20 +304,17 @@ object Router {
 
   case class PathFindingConf(randomize: Boolean,
                              boundaries: SearchBoundaries,
-                             ratios: WeightRatios,
+                             heuristics: Either[WeightRatios, HeuristicsConstants],
                              mpp: MultiPartParams,
                              experimentName: String,
                              experimentPercentage: Int) {
     def getDefaultRouteParams: RouteParams = RouteParams(
       randomize = randomize,
-      maxFeeFlat = boundaries.maxFeeFlat,
-      maxFeeProportional = boundaries.maxFeeProportional,
-      maxRouteLength = boundaries.maxRouteLength,
-      maxCltv = boundaries.maxCltv,
-      includeLocalChannelCost = false,
-      ratios = ratios,
+      boundaries = boundaries,
+      heuristics = heuristics,
       mpp = mpp,
       experimentName = experimentName,
+      includeLocalChannelCost = false
     )
   }
 
@@ -447,17 +444,14 @@ object Router {
   case class MultiPartParams(minPartAmount: MilliSatoshi, maxParts: Int)
 
   case class RouteParams(randomize: Boolean,
-                         maxFeeFlat: MilliSatoshi,
-                         maxFeeProportional: Double,
-                         maxRouteLength: Int,
-                         maxCltv: CltvExpiryDelta,
-                         includeLocalChannelCost: Boolean,
-                         ratios: WeightRatios,
+                         boundaries: SearchBoundaries,
+                         heuristics: Either[WeightRatios, HeuristicsConstants],
                          mpp: MultiPartParams,
-                         experimentName: String) {
+                         experimentName: String,
+                         includeLocalChannelCost: Boolean) {
     def getMaxFee(amount: MilliSatoshi): MilliSatoshi = {
       // The payment fee must satisfy either the flat fee or the proportional fee, not necessarily both.
-      maxFeeFlat.max(amount * maxFeeProportional)
+      boundaries.maxFeeFlat.max(amount * boundaries.maxFeeProportional)
     }
   }
 

@@ -3,7 +3,6 @@
 [![Build Status](https://github.com/ACINQ/eclair/workflows/Build%20&%20Test/badge.svg)](https://github.com/ACINQ/eclair/actions?query=workflow%3A%22Build+%26+Test%22)
 [![codecov](https://codecov.io/gh/acinq/eclair/branch/master/graph/badge.svg)](https://codecov.io/gh/acinq/eclair)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
-[![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-red.svg)](https://gitter.im/ACINQ/eclair)
 
 **Eclair** (French for Lightning) is a Scala implementation of the Lightning Network.
 
@@ -53,7 +52,7 @@ You will find detailed guides and frequently asked questions there.
 
 ### Prerequisite: Bitcoin Core
 
-:warning: Eclair requires Bitcoin Core 0.20.1 or 0.21.1. If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
+:warning: Eclair requires Bitcoin Core 0.20.1 or 0.21.1. (other versions of Bitcoin Core are *not* actively tested - use at your own risk).  If you are upgrading an existing wallet, you may need to create a new address and send all your funds to that address.
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node.
 
@@ -97,10 +96,6 @@ eclair-node-<version>-<commit_id>/bin/eclair-node.sh
 ```
 
 You can then control your node via the [eclair-cli](https://github.com/ACINQ/eclair/wiki/Usage) or the [API](https://github.com/ACINQ/eclair/wiki/API).
-
-This repository also contains a sample GUI ([eclair-node-gui](https://github.com/ACINQ/eclair/tree/master/eclair-node-gui)).
-
-:rotating_light: The sample GUI should only be used for prototyping and demo purposes: using it on mainnet is unsafe.
 
 :warning: Be careful when following tutorials/guides that may be outdated or incomplete. You must thoroughly read the official eclair documentation before running your own node.
 

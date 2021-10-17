@@ -19,8 +19,9 @@ package fr.acinq.eclair.channel.states.a
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Block, Btc, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.blockchain.OnChainWallet.MakeFundingTxResponse
+import fr.acinq.eclair.blockchain.{DummyOnChainWallet, NoOpOnChainWallet}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.blockchain.{MakeFundingTxResponse, TestWallet}
 import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
@@ -42,10 +43,6 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val noopWallet = new TestWallet {
-      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse]().future // will never be completed
-    }
-
     import com.softwaremill.quicklens._
     val aliceNodeParams = Alice.nodeParams
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
@@ -56,7 +53,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
       .modify(_.chainHash).setToIf(test.tags.contains("mainnet"))(Block.LivenetGenesisBlock.hash)
       .modify(_.maxFundingSatoshis).setToIf(test.tags.contains("high-max-funding-size"))(Btc(100))
 
-    val setup = init(aliceNodeParams, bobNodeParams, wallet = noopWallet)
+    val setup = init(aliceNodeParams, bobNodeParams, wallet = new NoOpOnChainWallet())
 
     import setup._
     val channelConfig = ChannelConfig.standard
@@ -137,11 +134,7 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   }
 
   test("recv AcceptChannel (anchor outputs channel type without enabling the feature)") { _ =>
-    val noopWallet = new TestWallet {
-      override def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, feeRatePerKw: FeeratePerKw): Future[MakeFundingTxResponse] = Promise[MakeFundingTxResponse]().future // will never be completed
-    }
-
-    val setup = init(Alice.nodeParams, Bob.nodeParams, wallet = noopWallet)
+    val setup = init(Alice.nodeParams, Bob.nodeParams, wallet = new NoOpOnChainWallet())
     import setup._
 
     val channelConfig = ChannelConfig.standard
@@ -184,11 +177,11 @@ class WaitForAcceptChannelStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv AcceptChannel (dust limit too low)", Tag("mainnet")) { f =>
     import f._
     val accept = bob2alice.expectMsgType[AcceptChannel]
-    // we don't want their dust limit to be below 546
-    val lowDustLimitSatoshis = 545.sat
+    // we don't want their dust limit to be below 354
+    val lowDustLimitSatoshis = 353.sat
     alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
     val error = alice2bob.expectMsgType[Error]
-    assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage))
+    assert(error === Error(accept.temporaryChannelId, DustLimitTooSmall(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUST_LIMIT).getMessage))
     awaitCond(alice.stateName == CLOSED)
   }
 

@@ -16,7 +16,7 @@ This will help you understand the different parts of the codebase and how they w
 
 ## Communicating
 
-We recommend using our Gitter [developers channel](https://gitter.im/ACINQ/developers).
+We recommend using the [developers channel](https://github.com/ACINQ/eclair/discussions/categories/developers).
 Introducing yourself and explaining what you'd like to work on is always a good idea: you will get
 some pointers and feedback from experienced contributors. It will also ensure that you're not
 duplicating work that someone else is doing.
@@ -71,6 +71,11 @@ test correctly failed. You can then fix the bug in additional commits.
 When adding a new feature, thought must be given to the long term technical debt and maintenance
 that feature may require after inclusion. Before proposing a new feature that will require
 maintenance, please consider if you are willing to maintain it (including bug fixing).
+
+We keep release notes directly [inside the repository](./docs/release-notes) and continuously
+update them as new features are added. If your change deserves to be included in the release notes
+(e.g. changes to the API, breaking changes, new feature), your pull request must also update the
+`eclair-vnext` release notes.
 
 When addressing pull request comments, we recommend using [fixup commits](https://robots.thoughtbot.com/autosquashing-git-commits).
 The reason for this is two fold: it makes it easier for the reviewer to see what changes have been

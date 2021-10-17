@@ -23,7 +23,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong}
 import fr.acinq.eclair.TestConstants._
-import fr.acinq.eclair.blockchain.TestWallet
+import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
 import fr.acinq.eclair.db._
@@ -78,7 +78,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
       server.ref,
       channelsListener.ref.toTyped,
       balanceActor.ref.toTyped,
-      new TestWallet()
+      new DummyOnChainWallet()
     )
 
     withFixture(test.toNoArgTest(FixtureParam(register, router, paymentInitiator, switchboard, paymentHandler, kit)))
@@ -149,8 +149,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(send3.recipientNodeId === nodePrivKey.publicKey)
     assert(send3.recipientAmount === 123.msat)
     assert(send3.paymentHash === ByteVector32.Zeroes)
-    assert(send3.routeParams.maxFeeFlat === 123000.msat) // conversion sat -> msat
-    assert(send3.routeParams.maxFeeProportional === 0.042)
+    assert(send3.routeParams.boundaries.maxFeeFlat === 123000.msat) // conversion sat -> msat
+    assert(send3.routeParams.boundaries.maxFeeProportional === 0.042)
 
     val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
     assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), 123 msat, invoice0), 50 millis))

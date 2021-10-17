@@ -524,6 +524,21 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
+  test("'close' rejects non-segwit scripts") {
+    val shortChannelId = "1701x42x3"
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+
+    Post("/close", FormData("shortChannelId" -> shortChannelId, "scriptPubKey" -> "a914748284390f9e263a4b766a75d0633c50426eb87587").toEntity) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      addHeader("Content-Type", "application/json") ~>
+      Route.seal(mockService.close) ~>
+      check {
+        assert(handled)
+        assert(status == BadRequest)
+      }
+  }
+
   test("'connect' method should accept a nodeId") {
     val remoteNodeId = PublicKey(hex"030bb6a5e0c6b203c7e2180fb78c7ba4bdce46126761d8201b91ddac089cdecc87")
 
@@ -559,7 +574,6 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         eclair.connect(Left(remoteUri))(any[Timeout]).wasCalled(once) // must account for the previous, identical, invocation
       }
   }
-
 
   test("'send' method should handle payment failures") {
     val eclair = mock[Eclair]
@@ -982,7 +996,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     eclair.findRoute(any, any, any, any)(any[Timeout]) returns Future.successful(Router.RouteResponse(Seq(Router.Route(456.msat, mockHops))))
 
     // invalid format
-    Post("/findroute", FormData("format"-> "invalid-output-format", "invoice" -> invoice, "amountMsat" -> "456")) ~>
+    Post("/findroute", FormData("format" -> "invalid-output-format", "invoice" -> invoice, "amountMsat" -> "456")) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       addHeader("Content-Type", "application/json") ~>
       Route.seal(mockService.findRoute) ~>

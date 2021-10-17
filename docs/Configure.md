@@ -1,20 +1,48 @@
 # Configuring Eclair
 
-Eclair reads its configuration file, and writes its logs, to `~/.eclair` by default.
-You can change this behavior with the `eclair.datadir` parameter:
+---
 
+* [Configuration file](#configuration-file)
+  * [Changing the data directory](#changing-the-data-directory)
+  * [Splitting the configuration](#splitting-the-configuration)
+* [Options reference](#options-reference)
+* [Customize features](#customize-features)
+* [Customize feerate tolerance](#customize-feerate-tolerance)
+* [Examples](#examples)
+  * [Basic configuration](#basic-configuration)
+  * [Regtest mode](#regtest-mode)
+  * [Public node](#public-node)
+  * [AB-testing for path-finding](#ab-testing-for-path-finding)
+
+---
+
+## Configuration file
+
+The configuration file for eclair is named `eclair.conf`. It is located in the data directory, which is `~/.eclair` by
+default. Note that eclair won't create a configuration file by itself: if you want to change eclair's configuration, you
+need to **actually create the configuration file first**. The encoding must be UTF-8.
+
+```sh
+# this is the default data directory, it will be created at eclair first startup
+mkdir ~/.eclair 
+vi ~/.eclair/eclair.conf
+```
+
+Options are set as key-value pairs and follow the [HOCON syntax](https://github.com/lightbend/config/blob/master/HOCON.md).
+Values do not need to be surrounded by quotes, except if they contain special characters.
+
+### Changing the data directory
+
+You can change the data directory with the `eclair.datadir` parameter:
 ```sh
 eclair-node.sh -Declair.datadir="/path/to/custom/eclair/data/folder"
 ```
 
-## Change your node's configuration
+### Splitting the configuration
 
-The first step is to **actually create the configuration file**.
-Go to `eclair.datadir` and create a file named `eclair.conf`.
-The encoding should be UTF-8.
-
-Options are set as key-value pairs and follow the [HOCON syntax](https://github.com/lightbend/config/blob/master/HOCON.md).
-Values do not need to be surrounded by quotes, except if they contain special characters.
+Note that HOCON allows you to have files include other files. This allows you to split your configuration file into
+several logical files, for easier management. For example, you could define a file `routing.conf` file with parameters
+related to routing configuration, and include it from `eclair.conf`. 
 
 ## Options reference
 
@@ -174,3 +202,103 @@ eclair.server.public-ips=[x.x.x.x]
 ```
 
 You'll also have to make sure the node is accessible from the outside world (port forwarding, firewall,...).
+
+### AB-testing for path-finding
+
+The following configuration enables AB-testing by defining a set of `experiments`, and assigning a percentage of the
+traffic to each experiment. The `control` experiment doesn't override any parameter, it uses the defaults.
+
+Note that the percentages of all experiments sum to 100 %.
+
+```conf
+eclair {
+  router {
+    path-finding {
+      experiments {
+        control = ${eclair.router.path-finding.default} {
+          percentage = 50
+        }
+
+        // alternative routing heuristics (replaces ratios)
+        test-failure-cost = ${eclair.router.path-finding.default} {
+          use-ratios = false
+
+          locked-funds-risk = 1e-8 // msat per msat locked per block. It should be your expected interest rate per block multiplied by the probability that something goes wrong and your funds stay locked.
+          // 1e-8 corresponds to an interest rate of ~5% per year (1e-6 per block) and a probability of 1% that the channel will fail and our funds will be locked.
+
+          // Virtual fee for failed payments
+          // Corresponds to how much you are willing to pay to get one less failed payment attempt
+          failure-cost {
+            fee-base-msat = 2000
+            fee-proportional-millionths = 500
+          }
+          percentage = 10
+        }
+
+        // To optimize for fees only:
+        test-fees-only = ${eclair.router.path-finding.default} {
+          ratios {
+            base = 1
+            cltv = 0
+            channel-age = 0
+            channel-capacity = 0
+          }
+          hop-cost {
+            fee-base-msat = 0
+            fee-proportional-millionths = 0
+          }
+          percentage = 10
+        }
+
+        // To optimize for shorter paths:
+        test-short-paths = ${eclair.router.path-finding.default} {
+          ratios {
+            base = 1
+            cltv = 0
+            channel-age = 0
+            channel-capacity = 0
+          }
+          hop-cost {
+            // High hop cost penalizes strongly longer paths
+            fee-base-msat = 10000
+            fee-proportional-millionths = 10000
+          }
+          percentage = 10
+        }
+
+        // To optimize for successful payments:
+        test-pay-safe = ${eclair.router.path-finding.default} {
+          ratios {
+            base = 0
+            cltv = 0
+            channel-age = 0.5 // Old channels should have less risk of failures
+            channel-capacity = 0.5 // High capacity channels are more likely to have enough liquidity to relay our payment
+          }
+          hop-cost {
+            // Less hops means less chances of failures
+            fee-base-msat = 1000
+            fee-proportional-millionths = 1000
+          }
+          percentage = 10
+        }
+
+        // To optimize for fast payments:
+        test-pay-fast = ${eclair.router.path-finding.default} {
+          ratios {
+            base = 0.2
+            cltv = 0.5 // In case of failure we want our funds back as fast as possible
+            channel-age = 0.3 // Older channels are more likely to run smoothly
+            channel-capacity = 0
+          }
+          hop-cost {
+            // Shorter paths should be faster
+            fee-base-msat = 10000
+            fee-proportional-millionths = 10000
+          }
+          percentage = 10
+        }
+      }
+    }
+  }
+}
+```
