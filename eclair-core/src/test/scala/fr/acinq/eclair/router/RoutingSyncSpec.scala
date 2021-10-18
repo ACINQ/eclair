@@ -340,7 +340,7 @@ object RoutingSyncSpec {
   val unused: PrivateKey = randomKey()
 
   def makeFakeRoutingInfo(pub2priv: mutable.Map[PublicKey, PrivateKey])(shortChannelId: ShortChannelId): (PublicChannel, NodeAnnouncement, NodeAnnouncement) = {
-    val timestamp = TimestampSecond.now
+    val timestamp = TimestampSecond.now()
     val (priv1, priv2) = {
       val (priv_a, priv_b) = (randomKey(), randomKey())
       if (Announcements.isNode1(priv_a.publicKey, priv_b.publicKey)) (priv_a, priv_b) else (priv_b, priv_a)

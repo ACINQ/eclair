@@ -68,13 +68,13 @@ object StaleChannels {
   def isStale(timestamp: TimestampSecond): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThreshold = TimestampSecond.now - 14.days
+    val staleThreshold = TimestampSecond.now() - 14.days
     timestamp < staleThreshold
   }
 
   def isAlmostStale(timestamp: TimestampSecond): Boolean = {
     // we define almost stale as 2 weeks minus 4 days
-    val almostStaleThreshold = TimestampSecond.now - 10.days
+    val almostStaleThreshold = TimestampSecond.now() - 10.days
     timestamp < almostStaleThreshold
   }
 

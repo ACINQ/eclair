@@ -40,7 +40,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
     assert(shouldRequestUpdate(TimestampSecond(Int.MaxValue), 12345, None, None))
 
     // their update is older => don't ask
-    val now = TimestampSecond.now
+    val now = TimestampSecond.now()
     assert(!shouldRequestUpdate(now, 0, Some(now - 1), None))
     assert(!shouldRequestUpdate(now, 0, Some(now - 1), Some(12345)))
     assert(!shouldRequestUpdate(now, 12344, Some(now - 1), None))
@@ -84,7 +84,7 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
   }
 
   test("compute flag tests") {
-    val now = TimestampSecond.now
+    val now = TimestampSecond.now()
 
     val a = randomKey().publicKey
     val b = randomKey().publicKey

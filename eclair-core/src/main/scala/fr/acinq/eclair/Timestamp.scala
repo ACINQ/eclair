@@ -36,7 +36,7 @@ case class TimestampSecond(private val underlying: Long) extends Ordered[Timesta
 }
 
 object TimestampSecond {
-  def now: TimestampSecond = TimestampSecond(System.currentTimeMillis() / 1000)
+  def now(): TimestampSecond = TimestampSecond(System.currentTimeMillis() / 1000)
 }
 
 case class TimestampMilli(private val underlying: Long) extends Ordered[TimestampMilli] {
@@ -53,7 +53,7 @@ case class TimestampMilli(private val underlying: Long) extends Ordered[Timestam
 
 object TimestampMilli {
   // @formatter:off
-  def now: TimestampMilli = TimestampMilli(System.currentTimeMillis())
+  def now(): TimestampMilli = TimestampMilli(System.currentTimeMillis())
   def fromSqlTimestamp(sqlTs: sql.Timestamp): TimestampMilli = TimestampMilli(sqlTs.getTime)
   // @formatter:on
 }

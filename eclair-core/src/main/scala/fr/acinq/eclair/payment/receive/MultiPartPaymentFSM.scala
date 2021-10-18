@@ -41,7 +41,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
 
   import MultiPartPaymentFSM._
 
-  val start = TimestampMilli.now
+  val start = TimestampMilli.now()
 
   startSingleTimer(PaymentTimeout.toString, PaymentTimeout, nodeParams.multiPartPaymentExpiry)
 
@@ -97,7 +97,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
         case PaymentSucceeded(parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
           replyTo ! MultiPartPaymentSucceeded(paymentHash, parts)
-          Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = true).record((TimestampMilli.now - start).toMillis, TimeUnit.MILLISECONDS)
+          Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = true).record((TimestampMilli.now() - start).toMillis, TimeUnit.MILLISECONDS)
         case d =>
           log.error("unexpected payment success data {}", d.getClass.getSimpleName)
       }
@@ -106,7 +106,7 @@ class MultiPartPaymentFSM(nodeParams: NodeParams, paymentHash: ByteVector32, tot
         case PaymentFailed(failure, parts) =>
           // We expect the parent actor to send us a PoisonPill after receiving this message.
           replyTo ! MultiPartPaymentFailed(paymentHash, failure, parts)
-          Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = false).record((TimestampMilli.now - start).toMillis, TimeUnit.MILLISECONDS)
+          Metrics.ReceivedPaymentDuration.withTag(Tags.Success, value = false).record((TimestampMilli.now() - start).toMillis, TimeUnit.MILLISECONDS)
         case d =>
           log.error("unexpected payment failure data {}", d.getClass.getSimpleName)
       }

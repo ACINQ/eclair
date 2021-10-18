@@ -165,7 +165,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("migrate waitingSince to waitingSinceBlocks") { f =>
     import f._
     // Before version 0.5.1, eclair used an absolute timestamp instead of a block height for funding timeouts.
-    val beforeMigration = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].copy(waitingSinceBlock = TimestampSecond.now.toLong)
+    val beforeMigration = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].copy(waitingSinceBlock = TimestampSecond.now().toLong)
     bob.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
     bob ! INPUT_RESTORED(beforeMigration)
     awaitCond(bob.stateName == OFFLINE)

@@ -353,7 +353,7 @@ private[channel] object ChannelCodecs0 {
     val DATA_WAIT_FOR_FUNDING_CONFIRMED_COMPAT_01_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | provide[Option[Transaction]](None)) ::
-        ("waitingSince" | provide(TimestampSecond.now.toLong)) ::
+        ("waitingSince" | provide(TimestampSecond.now().toLong)) ::
         ("deferred" | optional(bool, fundingLockedCodec)) ::
         ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec))).as[DATA_WAIT_FOR_FUNDING_CONFIRMED].decodeOnly
 
@@ -412,7 +412,7 @@ private[channel] object ChannelCodecs0 {
     val DATA_CLOSING_COMPAT_06_Codec: Codec[DATA_CLOSING] = (
       ("commitments" | commitmentsCodec) ::
         ("fundingTx" | provide[Option[Transaction]](None)) ::
-        ("waitingSince" | provide(TimestampSecond.now.toLong)) ::
+        ("waitingSince" | provide(TimestampSecond.now().toLong)) ::
         ("mutualCloseProposed" | listOfN(uint16, closingTxCodec)) ::
         ("mutualClosePublished" | listOfN(uint16, closingTxCodec)) ::
         ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::

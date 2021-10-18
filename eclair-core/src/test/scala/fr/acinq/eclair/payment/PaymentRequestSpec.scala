@@ -355,7 +355,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     val pr = PaymentRequest(
       prefix = "lntb",
       amount = Some(100000 msat),
-      timestamp = TimestampSecond.now,
+      timestamp = TimestampSecond.now(),
       nodeId = nodeId,
       tags = List(
         PaymentHash(ByteVector32(ByteVector.fill(32)(1))),

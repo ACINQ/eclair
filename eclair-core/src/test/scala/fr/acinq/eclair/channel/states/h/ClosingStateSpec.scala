@@ -159,7 +159,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
 
     // test starts here
-    alice ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), TimestampSecond.now)
+    alice ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), TimestampSecond.now())
     alice2bob.expectNoMessage(200 millis)
     alice2blockchain.expectNoMessage(200 millis)
     assert(alice.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
@@ -178,7 +178,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
 
     // test starts here
-    alice ! GetTxWithMetaResponse(fundingTx.txid, None, TimestampSecond.now)
+    alice ! GetTxWithMetaResponse(fundingTx.txid, None, TimestampSecond.now())
     alice2bob.expectNoMessage(200 millis)
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === fundingTx) // we republish the funding tx
     assert(alice.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
@@ -197,7 +197,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
 
     // test starts here
-    bob ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), TimestampSecond.now)
+    bob ! GetTxWithMetaResponse(fundingTx.txid, Some(fundingTx), TimestampSecond.now())
     bob2alice.expectNoMessage(200 millis)
     bob2blockchain.expectNoMessage(200 millis)
     assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
@@ -216,7 +216,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2blockchain.expectMsgType[WatchTxConfirmed] // claim-main-delayed
 
     // test starts here
-    bob ! GetTxWithMetaResponse(fundingTx.txid, None, TimestampSecond.now)
+    bob ! GetTxWithMetaResponse(fundingTx.txid, None, TimestampSecond.now())
     bob2alice.expectNoMessage(200 millis)
     bob2blockchain.expectNoMessage(200 millis)
     assert(bob.stateName == CLOSING) // the above expectNoMsg will make us wait, so this checks that we are still in CLOSING
@@ -236,7 +236,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // test starts here
     bob.setState(stateData = bob.stateData.asInstanceOf[DATA_CLOSING].copy(waitingSinceBlock = bob.underlyingActor.nodeParams.currentBlockHeight - Channel.FUNDING_TIMEOUT_FUNDEE - 1))
-    bob ! GetTxWithMetaResponse(fundingTx.txid, None, TimestampSecond.now)
+    bob ! GetTxWithMetaResponse(fundingTx.txid, None, TimestampSecond.now())
     bob2alice.expectMsgType[Error]
     bob2blockchain.expectNoMessage(200 millis)
     assert(bob.stateName == CLOSED)

@@ -97,12 +97,12 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     val SENDERS_COUNT = 16
     val PAYMENTS_COUNT = 3_000
     val ec = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(SENDERS_COUNT))
-    val start = TimestampMilli.now
+    val start = TimestampMilli.now()
     val futures = (0 until PAYMENTS_COUNT).map(_ => sendPayment()(ec))
     implicit val dummyEc: ExecutionContext = ExecutionContext.Implicits.global
     val f = Future.sequence(futures)
     Await.result(f, 1 hour)
-    val end = TimestampMilli.now
+    val end = TimestampMilli.now()
     val duration = end - start
     println(s"$PAYMENTS_COUNT payments in ${duration.toMillis}ms ${PAYMENTS_COUNT * 1000 / duration.toMillis}htlc/s (senders=$SENDERS_COUNT)")
   }

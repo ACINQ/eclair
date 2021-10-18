@@ -68,7 +68,7 @@ object Announcements {
     )
   }
 
-  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: Features, timestamp: TimestampSecond = TimestampSecond.now): NodeAnnouncement = {
+  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: Color, nodeAddresses: List[NodeAddress], features: Features, timestamp: TimestampSecond = TimestampSecond.now()): NodeAnnouncement = {
     require(alias.length <= 32)
     val sortedAddresses = nodeAddresses.map {
       case address@(_: IPv4) => (1, address)
@@ -114,7 +114,7 @@ object Announcements {
       u1.htlcMinimumMsat == u2.htlcMinimumMsat &&
       u1.htlcMaximumMsat == u2.htlcMaximumMsat
 
-  def makeChannelUpdate(chainHash: ByteVector32, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now): ChannelUpdate = {
+  def makeChannelUpdate(chainHash: ByteVector32, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: CltvExpiryDelta, htlcMinimumMsat: MilliSatoshi, feeBaseMsat: MilliSatoshi, feeProportionalMillionths: Long, htlcMaximumMsat: MilliSatoshi, enable: Boolean = true, timestamp: TimestampSecond = TimestampSecond.now()): ChannelUpdate = {
     val channelFlags = ChannelUpdate.ChannelFlags(isNode1 = isNode1(nodeSecret.publicKey, remoteNodeId), isEnabled = enable)
     val htlcMaximumMsatOpt = Some(htlcMaximumMsat)
 

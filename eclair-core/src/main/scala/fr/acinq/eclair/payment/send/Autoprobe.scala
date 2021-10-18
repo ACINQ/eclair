@@ -56,7 +56,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
           val fakeInvoice = PaymentRequest(
             PaymentRequest.prefixes(nodeParams.chainHash),
             Some(PAYMENT_AMOUNT_MSAT),
-            TimestampSecond.now,
+            TimestampSecond.now(),
             targetNodeId,
             List(
               PaymentRequest.PaymentHash(randomBytes32()), // we don't even know the preimage (this needs to be a secure random!)

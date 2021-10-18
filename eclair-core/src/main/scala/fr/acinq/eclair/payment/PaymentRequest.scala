@@ -87,8 +87,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   lazy val features: PaymentRequestFeatures = tags.collectFirst { case f: PaymentRequestFeatures => f }.getOrElse(PaymentRequestFeatures(BitVector.empty))
 
   def isExpired: Boolean = expiry match {
-    case Some(expiryTime) => timestamp + expiryTime <= TimestampSecond.now
-    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now
+    case Some(expiryTime) => timestamp + expiryTime <= TimestampSecond.now()
+    case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now()
   }
 
   /**
@@ -135,7 +135,7 @@ object PaymentRequest {
             fallbackAddress: Option[String] = None,
             expirySeconds: Option[Long] = None,
             extraHops: List[List[ExtraHop]] = Nil,
-            timestamp: TimestampSecond = TimestampSecond.now,
+            timestamp: TimestampSecond = TimestampSecond.now(),
             paymentSecret: ByteVector32 = randomBytes32(),
             features: PaymentRequestFeatures = PaymentRequestFeatures(Features.VariableLengthOnion.mandatory, Features.PaymentSecret.mandatory)): PaymentRequest = {
     require(features.requirePaymentSecret, "invoices must require a payment secret")
@@ -564,8 +564,8 @@ object PaymentRequest {
     }
     val timestamp = bolt11Data.timestamp
     expiry_opt match {
-      case Some(expiry) => timestamp + expiry.toLong <= TimestampSecond.now
-      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now
+      case Some(expiry) => timestamp + expiry.toLong <= TimestampSecond.now()
+      case None => timestamp + DEFAULT_EXPIRY_SECONDS <= TimestampSecond.now()
     }
   }
 

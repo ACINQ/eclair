@@ -35,7 +35,7 @@ trait IncomingPaymentsDb {
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
    * Note that this function assumes that there is a matching payment request in the DB.
    */
-  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now): Unit
+  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Unit
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]

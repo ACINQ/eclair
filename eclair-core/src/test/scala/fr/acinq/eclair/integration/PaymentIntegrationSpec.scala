@@ -337,7 +337,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send a multi-part payment B->D") {
-    val start = TimestampMilli.now
+    val start = TimestampMilli.now()
     val sender = TestProbe()
     val amount = 1000000000L.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amount), Left("split the restaurant bill")))
@@ -364,8 +364,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
     assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat), paymentParts)
 
-    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now).nonEmpty)
-    val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now)
+    awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
+    val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now())
     assert(sent.length === 1, sent)
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
 
@@ -460,7 +460,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send a trampoline payment B->F1 with retry (via trampoline G)") {
-    val start = TimestampMilli.now
+    val start = TimestampMilli.now()
     val sender = TestProbe()
     val amount = 4000000000L.msat
     sender.send(nodes("F").paymentHandler, ReceivePayment(Some(amount), Left("like trampoline much?")))
@@ -486,10 +486,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("G").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1000000.msat, relayed)
 
@@ -502,7 +502,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send a trampoline payment D->B (via trampoline C)") {
-    val start = TimestampMilli.now
+    val start = TimestampMilli.now()
     val sender = TestProbe()
     val amount = 2500000000L.msat
     sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amount), Left("trampoline-MPP is so #reckless")))
@@ -525,10 +525,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 350000.msat, relayed)
 
@@ -539,15 +539,15 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     }
     assert(outgoingSuccess.map(_.amount).sum === amount + 350000.msat, outgoingSuccess)
 
-    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now).nonEmpty)
-    val sent = nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now)
+    awaitCond(nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
+    val sent = nodes("D").nodeParams.db.audit.listSent(start, TimestampMilli.now())
     assert(sent.length === 1, sent)
     assert(sent.head.copy(parts = sent.head.parts.sortBy(_.timestamp)) === paymentSent.copy(parts = paymentSent.parts.map(_.copy(route = None)).sortBy(_.timestamp)), sent)
   }
 
   test("send a trampoline payment F1->A (via trampoline C, non-trampoline recipient)") {
     // The A -> B channel is not announced.
-    val start = TimestampMilli.now
+    val start = TimestampMilli.now()
     val sender = TestProbe()
     sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
     val channelUpdate_ba = sender.expectMsgType[Relayer.OutgoingChannels].channels.filter(c => c.nextNodeId == nodes("A").nodeParams.nodeId).head.channelUpdate
@@ -573,10 +573,10 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(receivedAmount === amount)
 
     awaitCond({
-      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now).filter(_.paymentHash == pr.paymentHash)
+      val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == pr.paymentHash)
       relayed.nonEmpty && relayed.head.amountOut >= amount
     })
-    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now).filter(_.paymentHash == pr.paymentHash).head
+    val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == pr.paymentHash).head
     assert(relayed.amountIn - relayed.amountOut > 0.msat, relayed)
     assert(relayed.amountIn - relayed.amountOut < 1000000.msat, relayed)
 

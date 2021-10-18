@@ -71,14 +71,14 @@ object PaymentSent {
    * @param route       payment route used.
    * @param timestamp   absolute time in milli-seconds since UNIX epoch when the payment was fulfilled.
    */
-  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], timestamp: TimestampMilli = TimestampMilli.now) {
+  case class PartialPayment(id: UUID, amount: MilliSatoshi, feesPaid: MilliSatoshi, toChannelId: ByteVector32, route: Option[Seq[Hop]], timestamp: TimestampMilli = TimestampMilli.now()) {
     require(route.isEmpty || route.get.nonEmpty, "route must be None or contain at least one hop")
     val amountWithFees: MilliSatoshi = amount + feesPaid
   }
 
 }
 
-case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure], timestamp: TimestampMilli = TimestampMilli.now) extends PaymentEvent
+case class PaymentFailed(id: UUID, paymentHash: ByteVector32, failures: Seq[PaymentFailure], timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
 
 sealed trait PaymentRelayed extends PaymentEvent {
   val amountIn: MilliSatoshi
@@ -86,9 +86,9 @@ sealed trait PaymentRelayed extends PaymentEvent {
   val timestamp: TimestampMilli
 }
 
-case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now) extends PaymentRelayed
+case class ChannelPaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: ByteVector32, fromChannelId: ByteVector32, toChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentRelayed
 
-case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi, timestamp: TimestampMilli = TimestampMilli.now) extends PaymentRelayed {
+case class TrampolinePaymentRelayed(paymentHash: ByteVector32, incoming: PaymentRelayed.Incoming, outgoing: PaymentRelayed.Outgoing, nextTrampolineNodeId: PublicKey, nextTrampolineAmount: MilliSatoshi, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentRelayed {
   override val amountIn: MilliSatoshi = incoming.map(_.amount).sum
   override val amountOut: MilliSatoshi = outgoing.map(_.amount).sum
 }
@@ -110,11 +110,11 @@ case class PaymentReceived(paymentHash: ByteVector32, parts: Seq[PaymentReceived
 
 object PaymentReceived {
 
-  case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now)
+  case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now())
 
 }
 
-case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now) extends PaymentEvent
+case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
 
 sealed trait PaymentFailure {
   // @formatter:off

@@ -120,7 +120,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
    */
   private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
     using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
-      statement.setLong(1, TimestampMilli.now.toLong)
+      statement.setLong(1, TimestampMilli.now().toLong)
       statement.setBytes(2, channelId.toArray)
       statement.executeUpdate()
     }
