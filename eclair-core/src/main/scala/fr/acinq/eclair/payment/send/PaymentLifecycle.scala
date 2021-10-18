@@ -48,7 +48,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   private val id = cfg.id
   private val paymentHash = cfg.paymentHash
   private val paymentsDb = nodeParams.db.payments
-  private val start = System.currentTimeMillis
+  private val start = TimestampMilli.now()
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
@@ -60,7 +60,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         route => self ! RouteResponse(route :: Nil)
       )
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
 
@@ -68,7 +68,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       log.debug("sending {} to {}", c.finalPayload.amount, c.targetNodeId)
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
   }
@@ -302,7 +302,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           "FAILURE"
         }
     }
-    val now = System.currentTimeMillis
+    val now = TimestampMilli.now()
     val duration = now - start
     if (cfg.recordPathFindingMetrics) {
       val fees = result match {
@@ -334,7 +334,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
       .withTag(Tags.Success, value = status == "SUCCESS")
-      .record(duration, TimeUnit.MILLISECONDS)
+      .record(duration.toMillis, TimeUnit.MILLISECONDS)
     stop(FSM.Normal)
   }
 

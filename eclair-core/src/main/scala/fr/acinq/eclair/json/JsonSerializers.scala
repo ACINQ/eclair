@@ -31,7 +31,7 @@ import fr.acinq.eclair.router.Router.RouteResponse
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, UInt64, UnknownFeature}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -39,6 +39,8 @@ import org.json4s.{DefaultFormats, Extraction, Formats, JDecimal, JValue, KeySer
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
@@ -107,6 +109,18 @@ object ByteVector64Serializer extends MinimalSerializer({
 object UInt64Serializer extends MinimalSerializer({
   case x: UInt64 => JInt(x.toBigInt)
 })
+
+// @formatter:off
+private case class TimestampJson(iso: String, unix: Long)
+object TimestampSecondSerializer extends ConvertClassSerializer[TimestampSecond](ts => TimestampJson(
+  iso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochSecond(ts.toLong)),
+  unix = ts.toLong
+))
+object TimestampMilliSerializer extends ConvertClassSerializer[TimestampMilli](ts => TimestampJson(
+  iso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(ts.toLong)),
+  unix = ts.toLong / 1000 // we convert to standard unix timestamp with second precision
+))
+// @formatter:on
 
 object BtcSerializer extends MinimalSerializer({
   case x: Btc => JDecimal(x.toDouble)
@@ -318,7 +332,7 @@ object PaymentRequestSerializer extends MinimalSerializer({
         CltvExpiryDeltaSerializer
     ))
     val fieldList = List(JField("prefix", JString(p.prefix)),
-      JField("timestamp", JLong(p.timestamp)),
+      JField("timestamp", JLong(p.timestamp.toLong)),
       JField("nodeId", JString(p.nodeId.toString())),
       JField("serialized", JString(PaymentRequest.write(p))),
       p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
@@ -445,6 +459,8 @@ object JsonSerializers {
     ByteVector64Serializer +
     ChannelEventSerializer +
     UInt64Serializer +
+    TimestampSecondSerializer +
+    TimestampMilliSerializer +
     BtcSerializer +
     SatoshiSerializer +
     MilliSatoshiSerializer +

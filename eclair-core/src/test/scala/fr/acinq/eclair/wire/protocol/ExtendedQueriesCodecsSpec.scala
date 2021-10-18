@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64}
 import fr.acinq.eclair.router.Sync
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, UInt64}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -118,7 +118,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       1, 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
-      Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1, 1), Timestamps(2, 2), Timestamps(3, 3)))),
+      Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec)))),
       None)
 
     val encoded = replyChannelRangeCodec.encode(replyChannelRange).require
@@ -134,7 +134,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       TlvStream(
         List(
-          EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1, 1), Timestamps(2, 2), Timestamps(3, 3))),
+          EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))),
           EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3)))
         ),
         GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef")) :: Nil
@@ -151,7 +151,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       chainHash = ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       signature = ByteVector64.fromValidHex("76df7e70c63cc2b63ef1c062b99c6d934a80ef2fd4dae9e1d86d277f47674af3255a97fa52ade7f129263f591ed784996eba6383135896cc117a438c80293282"),
       shortChannelId = ShortChannelId("103x1x0"),
-      timestamp = 1565587763L,
+      timestamp = TimestampSecond(1565587763L),
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(144),
       htlcMinimumMsat = 0 msat,
@@ -171,7 +171,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       chainHash = ByteVector32.fromValidHex("06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f"),
       signature = ByteVector64.fromValidHex("06737e9e18d3e4d0ab4066ccaecdcc10e648c5f1c5413f1610747e0d463fa7fa39c1b02ea2fd694275ecfefe4fe9631f24afd182ab75b805e16cd550941f858c"),
       shortChannelId = ShortChannelId("109x1x0"),
-      timestamp = 1565587765L,
+      timestamp = TimestampSecond(1565587765L),
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(48),
       htlcMinimumMsat = 0 msat,

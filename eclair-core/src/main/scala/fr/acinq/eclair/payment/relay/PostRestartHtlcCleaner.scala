@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.Monitoring.Tags
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.wire.protocol.{FailureMessage, TemporaryNodeFailure, UpdateAddHtlc}
-import fr.acinq.eclair.{CustomCommitmentsPlugin, MilliSatoshiLong, NodeParams}
+import fr.acinq.eclair.{CustomCommitmentsPlugin, MilliSatoshiLong, NodeParams, TimestampMilli}
 
 import scala.concurrent.Promise
 import scala.util.Try
@@ -167,7 +167,7 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               // dummy values in the DB (to make sure we store the preimage) but we don't emit an event.
               val dummyFinalAmount = fulfilledHtlc.amountMsat
               val dummyNodeId = nodeParams.nodeId
-              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, System.currentTimeMillis, None, OutgoingPaymentStatus.Pending))
+              nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id, id, None, fulfilledHtlc.paymentHash, PaymentType.Standard, fulfilledHtlc.amountMsat, dummyFinalAmount, dummyNodeId, TimestampMilli.now(), None, OutgoingPaymentStatus.Pending))
               nodeParams.db.payments.updateOutgoingPayment(PaymentSent(id, fulfilledHtlc.paymentHash, paymentPreimage, dummyFinalAmount, dummyNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
           }
           // There can never be more than one pending downstream HTLC for a given local origin (a multi-part payment is

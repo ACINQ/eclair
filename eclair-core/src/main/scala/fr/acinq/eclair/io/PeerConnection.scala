@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, Logs}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -203,7 +203,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         d.expectedPong_opt match {
           case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
             // we use the pong size to correlate between pings and pongs
-            val latency = System.currentTimeMillis - timestamp
+            val latency = TimestampMilli.now() - timestamp
             log.debug(s"received pong with latency=$latency")
             cancelTimer(PingTimeout.toString())
           // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
@@ -496,7 +496,7 @@ object PeerConnection {
   case class InitializingData(chainHash: ByteVector32, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean) extends Data with HasTransport
   case class ConnectedData(chainHash: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
 
-  case class ExpectedPong(ping: Ping, timestamp: Long = System.currentTimeMillis)
+  case class ExpectedPong(ping: Ping, timestamp: TimestampMilli = TimestampMilli.now())
   case class PingTimeout(ping: Ping)
 
   sealed trait State
@@ -563,7 +563,7 @@ object PeerConnection {
     // Otherwise we check if this message has a timestamp that matches the timestamp filter.
     val matchesFilter = (msg, gossipTimestampFilter_opt) match {
       case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
-      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange, _))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
+      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange, _))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= TimestampSecond(firstTimestamp.toLong + timestampRange)
       case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
     isOurGossip || matchesFilter

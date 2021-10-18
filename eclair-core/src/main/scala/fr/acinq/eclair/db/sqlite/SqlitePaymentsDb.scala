@@ -18,13 +18,13 @@ package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.SqliteUtils._
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.protocol.CommonCodecs
+import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.BitVector
@@ -132,7 +132,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setLong(6, sent.amount.toLong)
       statement.setLong(7, sent.recipientAmount.toLong)
       statement.setBytes(8, sent.recipientNodeId.value.toArray)
-      statement.setLong(9, sent.createdAt)
+      statement.setLong(9, sent.createdAt.toLong)
       statement.setString(10, sent.paymentRequest.map(PaymentRequest.write).orNull)
       statement.executeUpdate()
     }
@@ -141,7 +141,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
   override def updateOutgoingPayment(paymentResult: PaymentSent): Unit = withMetrics("payments/update-outgoing-sent", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
       paymentResult.parts.foreach(p => {
-        statement.setLong(1, p.timestamp)
+        statement.setLong(1, p.timestamp.toLong)
         statement.setBytes(2, paymentResult.paymentPreimage.toArray)
         statement.setLong(3, p.feesPaid.toLong)
         statement.setBytes(4, paymentRouteCodec.encode(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList).require.toByteArray)
@@ -154,7 +154,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit = withMetrics("payments/update-outgoing-failed", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, failures) = (?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
-      statement.setLong(1, paymentResult.timestamp)
+      statement.setLong(1, paymentResult.timestamp.toLong)
       statement.setBytes(2, paymentFailuresCodec.encode(paymentResult.failures.map(f => FailureSummary(f)).toList).require.toByteArray)
       statement.setString(3, paymentResult.id.toString)
       if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to mark an outgoing payment as failed but already in final status (id=${paymentResult.id})")
@@ -166,7 +166,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       rs.getByteVector32Nullable("payment_preimage"),
       rs.getMilliSatoshiNullable("fees_msat"),
       rs.getBitVectorOpt("payment_route"),
-      rs.getLongNullable("completed_at"),
+      rs.getLongNullable("completed_at").map(TimestampMilli(_)),
       rs.getBitVectorOpt("failures"))
 
     OutgoingPayment(
@@ -178,13 +178,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       MilliSatoshi(rs.getLong("amount_msat")),
       MilliSatoshi(rs.getLong("recipient_amount_msat")),
       PublicKey(rs.getByteVector("recipient_node_id")),
-      rs.getLong("created_at"),
+      TimestampMilli(rs.getLong("created_at")),
       rs.getStringNullable("payment_request").map(PaymentRequest.read),
       status
     )
   }
 
-  private def buildOutgoingPaymentStatus(preimage_opt: Option[ByteVector32], fees_opt: Option[MilliSatoshi], paymentRoute_opt: Option[BitVector], completedAt_opt: Option[Long], failures: Option[BitVector]): OutgoingPaymentStatus = {
+  private def buildOutgoingPaymentStatus(preimage_opt: Option[ByteVector32], fees_opt: Option[MilliSatoshi], paymentRoute_opt: Option[BitVector], completedAt_opt: Option[TimestampMilli], failures: Option[BitVector]): OutgoingPaymentStatus = {
     preimage_opt match {
       // If we have a pre-image, the payment succeeded.
       case Some(preimage) => OutgoingPaymentStatus.Succeeded(
@@ -192,7 +192,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           case Attempt.Successful(route) => route.value
           case Attempt.Failure(_) => Nil
         }).getOrElse(Nil),
-        completedAt_opt.getOrElse(0)
+        completedAt_opt.getOrElse(0 unixms)
       )
       case None => completedAt_opt match {
         // Otherwise if the payment was marked completed, it's a failure.
@@ -230,10 +230,10 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-timestamp", DbBackends.Sqlite) {
+  override def listOutgoingPayments(from: TimestampMilli, to: TimestampMilli): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-timestamp", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
       statement.executeQuery().map(parseOutgoingPayment).toSeq
     }
   }
@@ -244,16 +244,16 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, paymentType)
       statement.setString(4, PaymentRequest.write(pr))
-      statement.setLong(5, pr.timestamp.seconds.toMillis) // BOLT11 timestamp is in seconds
-      statement.setLong(6, (pr.timestamp + pr.expiry.getOrElse(PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong)).seconds.toMillis)
+      statement.setLong(5, pr.timestamp.toTimestampMilli.toLong) // BOLT11 timestamp is in seconds
+      statement.setLong(6, (pr.timestamp + pr.expiry.getOrElse(PaymentRequest.DEFAULT_EXPIRY_SECONDS)).toLong.seconds.toMillis)
       statement.executeUpdate()
     }
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit = withMetrics("payments/receive-incoming", DbBackends.Sqlite) {
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Unit = withMetrics("payments/receive-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
       update.setLong(1, amount.toLong)
-      update.setLong(2, receivedAt)
+      update.setLong(2, receivedAt.toLong)
       update.setBytes(3, paymentHash.toArray)
       val updated = update.executeUpdate()
       if (updated == 0) {
@@ -268,13 +268,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       PaymentRequest.read(paymentRequest),
       rs.getByteVector32("payment_preimage"),
       rs.getString("payment_type"),
-      rs.getLong("created_at"),
-      buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(paymentRequest), rs.getLongNullable("received_at")))
+      TimestampMilli(rs.getLong("created_at")),
+      buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(paymentRequest), rs.getLongNullable("received_at").map(TimestampMilli(_))))
   }
 
-  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedPaymentRequest_opt: Option[String], receivedAt_opt: Option[Long]): IncomingPaymentStatus = {
+  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedPaymentRequest_opt: Option[String], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
     amount_opt match {
-      case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0))
+      case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0 unixms))
       case None if serializedPaymentRequest_opt.exists(PaymentRequest.fastHasExpired) => IncomingPaymentStatus.Expired
       case None => IncomingPaymentStatus.Pending
     }
@@ -287,36 +287,36 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Sqlite) {
+  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
       statement.executeQuery().map(parseIncomingPayment).toSeq
     }
   }
 
-  override def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-received", DbBackends.Sqlite) {
+  override def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming-received", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
       statement.executeQuery().map(parseIncomingPayment).toSeq
     }
   }
 
-  override def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-pending", DbBackends.Sqlite) {
+  override def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming-pending", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
-      statement.setLong(3, System.currentTimeMillis)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
+      statement.setLong(3, TimestampMilli.now().toLong)
       statement.executeQuery().map(parseIncomingPayment).toSeq
     }
   }
 
-  override def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-expired", DbBackends.Sqlite) {
+  override def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming-expired", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
-      statement.setLong(1, from)
-      statement.setLong(2, to)
-      statement.setLong(3, System.currentTimeMillis)
+      statement.setLong(1, from.toLong)
+      statement.setLong(2, to.toLong)
+      statement.setLong(3, TimestampMilli.now().toLong)
       statement.executeQuery().map(parseIncomingPayment).toSeq
     }
   }
@@ -373,9 +373,9 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           val paymentType = rs.getString("payment_type")
           val paymentRequest_opt = rs.getStringNullable("payment_request")
           val amount_opt = rs.getMilliSatoshiNullable("final_amount")
-          val createdAt = rs.getLong("created_at")
-          val completedAt_opt = rs.getLongNullable("completed_at")
-          val expireAt_opt = rs.getLongNullable("expire_at")
+          val createdAt = TimestampMilli(rs.getLong("created_at"))
+          val completedAt_opt = rs.getLongNullable("completed_at").map(TimestampMilli(_))
+          val expireAt_opt = rs.getLongNullable("expire_at").map(TimestampMilli(_))
 
           if (rs.getString("type") == "received") {
             val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)

@@ -42,14 +42,14 @@ trait Invoice {
   }
 
   val listInvoices: Route = postRequest("listinvoices") { implicit t =>
-    formFields(fromFormParam.?, toFormParam.?) { (from_opt, to_opt) =>
-      complete(eclairApi.allInvoices(from_opt, to_opt))
+    formFields(fromFormParam, toFormParam) { (from, to) =>
+      complete(eclairApi.allInvoices(from, to))
     }
   }
 
   val listPendingInvoices: Route = postRequest("listpendinginvoices") { implicit t =>
-    formFields(fromFormParam.?, toFormParam.?) { (from_opt, to_opt) =>
-      complete(eclairApi.pendingInvoices(from_opt, to_opt))
+    formFields(fromFormParam, toFormParam) { (from, to) =>
+      complete(eclairApi.pendingInvoices(from, to))
     }
   }
 

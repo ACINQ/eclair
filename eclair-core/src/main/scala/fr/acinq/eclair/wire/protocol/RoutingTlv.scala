@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.wire.protocol.CommonCodecs.{varint, varintoverflow}
+import fr.acinq.eclair.wire.protocol.CommonCodecs.{timestampSecond, varint, varintoverflow}
 import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
+import fr.acinq.eclair.{TimestampSecond, UInt64}
 import scodec.Codec
 import scodec.codecs._
 
@@ -97,7 +97,7 @@ object ReplyChannelRangeTlv {
    * @param timestamp1 timestamp for node 1, or 0
    * @param timestamp2 timestamp for node 2, or 0
    */
-  case class Timestamps(timestamp1: Long, timestamp2: Long)
+  case class Timestamps(timestamp1: TimestampSecond, timestamp2: TimestampSecond)
 
   /**
    * Optional timestamps TLV that can be appended to ReplyChannelRange
@@ -124,8 +124,8 @@ object ReplyChannelRangeTlv {
   }
 
   val timestampsCodec: Codec[Timestamps] = (
-    ("timestamp1" | uint32) ::
-      ("timestamp2" | uint32)
+    ("timestamp1" | timestampSecond) ::
+      ("timestamp2" | timestampSecond)
     ).as[Timestamps]
 
   val encodedTimestampsCodec: Codec[EncodedTimestamps] = variableSizeBytesLong(varintoverflow,

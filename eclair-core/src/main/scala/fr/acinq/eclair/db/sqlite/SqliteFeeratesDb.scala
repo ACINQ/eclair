@@ -17,6 +17,7 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKB, FeeratesPerKB}
 import fr.acinq.eclair.db.FeeratesDb
 import grizzled.slf4j.Logging
@@ -74,7 +75,7 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
       update.setLong(6, feeratesPerKB.blocks_72.toLong)
       update.setLong(7, feeratesPerKB.blocks_144.toLong)
       update.setLong(8, feeratesPerKB.blocks_1008.toLong)
-      update.setLong(9, System.currentTimeMillis())
+      update.setLong(9, TimestampMilli.now().toLong)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO feerates_per_kb VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")) { insert =>
           insert.setLong(1, feeratesPerKB.block_1.toLong)
@@ -85,7 +86,7 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
           insert.setLong(6, feeratesPerKB.blocks_72.toLong)
           insert.setLong(7, feeratesPerKB.blocks_144.toLong)
           insert.setLong(8, feeratesPerKB.blocks_1008.toLong)
-          insert.setLong(9, System.currentTimeMillis())
+          insert.setLong(9, TimestampMilli.now().toLong)
           insert.executeUpdate()
         }
       }
