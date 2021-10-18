@@ -86,6 +86,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
 
   case class SetupFixture(alice: TestFSMRef[ChannelState, ChannelData, Channel],
                           bob: TestFSMRef[ChannelState, ChannelData, Channel],
+                          aliceOrigin: TestProbe,
                           alice2bob: TestProbe,
                           bob2alice: TestProbe,
                           alice2blockchain: TestProbe,
@@ -101,6 +102,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
   }
 
   def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams, wallet: OnChainWallet = new DummyOnChainWallet(), tags: Set[String] = Set.empty): SetupFixture = {
+    val aliceOrigin = TestProbe()
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alicePeer = TestProbe()
@@ -125,9 +127,9 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       .modify(_.dustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(5000 sat)
       .modify(_.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceAliceBob))(10000 sat)
       .modify(_.maxRemoteDustLimit).setToIf(tags.contains(ChannelStateTestsTags.HighDustLimitDifferenceBobAlice))(10000 sat)
-    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain)), alicePeer.ref)
+    val alice: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsA, wallet, finalNodeParamsB.nodeId, alice2blockchain.ref, relayerA.ref, FakeTxPublisherFactory(alice2blockchain), origin_opt = Some(aliceOrigin.ref)), alicePeer.ref)
     val bob: TestFSMRef[ChannelState, ChannelData, Channel] = TestFSMRef(new Channel(finalNodeParamsB, wallet, finalNodeParamsA.nodeId, bob2blockchain.ref, relayerB.ref, FakeTxPublisherFactory(bob2blockchain)), bobPeer.ref)
-    SetupFixture(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
+    SetupFixture(alice, bob, aliceOrigin, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayerA, relayerB, channelUpdateListener, wallet, alicePeer, bobPeer)
   }
 
   def computeFeatures(setup: SetupFixture, tags: Set[String]): (LocalParams, LocalParams, SupportedChannelType) = {

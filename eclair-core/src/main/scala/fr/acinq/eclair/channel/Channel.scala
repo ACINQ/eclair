@@ -394,7 +394,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, d@DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, _, remoteInit, _, channelConfig, channelType), open)) =>
       Helpers.validateParamsFunder(nodeParams, channelType, localParams.initFeatures, remoteInit.features, open, accept) match {
-        case Left(t) => handleLocalError(t, d, Some(accept))
+        case Left(t) =>
+          channelOpenReplyToUser(Left(LocalError(t)))
+          handleLocalError(t, d, Some(accept))
         case Right((channelFeatures, remoteShutdownScript)) =>
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
