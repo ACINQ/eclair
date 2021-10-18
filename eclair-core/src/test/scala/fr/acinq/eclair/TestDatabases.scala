@@ -3,7 +3,7 @@ package fr.acinq.eclair
 import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.zaxxer.hikari.HikariConfig
-import fr.acinq.eclair.channel.{Commitments, DATA_CLOSING, DATA_NEGOTIATING, DATA_NORMAL, DATA_SHUTDOWN, DATA_WAIT_FOR_FUNDING_CONFIRMED, DATA_WAIT_FOR_FUNDING_LOCKED, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, HasCommitments, Origin}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils.{PgLock, getVersion, using}
@@ -45,7 +45,17 @@ object TestDatabases {
     dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
   }
 
-  class SqliteChannelsDbWithValidation(inner: SqliteChannelsDb) extends SqliteChannelsDb(inner.sqlite) {
+
+  /**
+   * ChannelsDb instance that wraps around an actual db instance and does additional checks
+   * This can be thought of as fuzzing and fills a gap between codec unit tests and database tests, by checking that channel state can be written and read consistently
+   * i.e that for all channel states that we generate during our tests, read(write(state)) == state
+   *
+   * This will help catch codec errors that would not be caught by unit tests because we don't test much how codecs interact with each other
+   *
+   * @param innerDb actual database instance 
+   */
+  class SqliteChannelsDbWithValidation(innerDb: SqliteChannelsDb) extends SqliteChannelsDb(innerDb.sqlite) {
     override def addOrUpdateChannel(state: HasCommitments): Unit = {
 
       def freeze1(input: Origin): Origin = input match {

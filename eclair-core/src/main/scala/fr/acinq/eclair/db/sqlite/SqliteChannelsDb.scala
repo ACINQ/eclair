@@ -118,7 +118,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
   override def getChannel(channelId: ByteVector32): Option[HasCommitments] = withMetrics("channels/get-channel", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM local_channels WHERE channel_id=? AND is_closed=0")) { statement =>
       statement.setBytes(1, channelId.toArray)
-      statement.executeQuery .mapCodec(stateDataCodec).lastOption
+      statement.executeQuery.mapCodec(stateDataCodec).lastOption
     }
   }
 
