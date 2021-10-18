@@ -57,7 +57,7 @@ object Monitoring {
 
     def channelUpdateRefreshed(update: ChannelUpdate, previous: ChannelUpdate, public: Boolean): Unit = {
       val elapsed = update.timestamp - previous.timestamp
-      ChannelUpdateRefreshRate.withTag(Tags.Announced, public).record(elapsed.toSeconds)
+      ChannelUpdateRefreshRate.withTag(Tags.Announced, public).record(elapsed.toMinutes)
     }
 
     private val GossipResult = Kamon.counter("router.gossip.result")
