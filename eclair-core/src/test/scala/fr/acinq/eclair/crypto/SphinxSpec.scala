@@ -367,8 +367,8 @@ class SphinxSpec extends AnyFunSuite {
   test("create blinded route (reference test vector)") {
     val sessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
-    assert(blindedRoute.introductionNodeId === publicKeys.head)
-    assert(blindedRoute.nodeIds.head === publicKeys.head)
+    assert(blindedRoute.introductionNodeId === publicKeys(0))
+    assert(blindedRoute.nodeIds(0) === publicKeys(0))
     assert(blindedRoute.blindedHops.map(_.blindedPublicKey) === Seq(
       PublicKey(hex"02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"),
       PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
@@ -392,8 +392,8 @@ class SphinxSpec extends AnyFunSuite {
     ))
 
     // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
-    val Success((payload0, ephKey1)) = RouteBlinding.decryptPayload(privKeys.head, blindedRoute.blindedHops.head.blindingEphemeralKey, blindedRoute.blindedHops.head.encryptedPayload)
-    assert(payload0 === routeBlindingPayloads.head)
+    val Success((payload0, ephKey1)) = RouteBlinding.decryptPayload(privKeys(0), blindedRoute.blindedHops(0).blindingEphemeralKey, blindedRoute.blindedHops(0).encryptedPayload)
+    assert(payload0 === routeBlindingPayloads(0))
     assert(ephKey1 === blindedRoute.blindedHops(1).blindingEphemeralKey)
 
     // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
@@ -424,11 +424,11 @@ class SphinxSpec extends AnyFunSuite {
     val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).blindedHops.map(_.encryptedPayload)
     // Invalid node private key:
     val ephKey0 = sessionKey.publicKey
-    assert(RouteBlinding.decryptPayload(privKeys(1), ephKey0, encryptedPayloads.head).isFailure)
+    assert(RouteBlinding.decryptPayload(privKeys(1), ephKey0, encryptedPayloads(0)).isFailure)
     // Invalid unblinding ephemeral key:
-    assert(RouteBlinding.decryptPayload(privKeys.head, randomKey().publicKey, encryptedPayloads.head).isFailure)
+    assert(RouteBlinding.decryptPayload(privKeys(0), randomKey().publicKey, encryptedPayloads(0)).isFailure)
     // Invalid encrypted payload:
-    assert(RouteBlinding.decryptPayload(privKeys.head, ephKey0, encryptedPayloads(1)).isFailure)
+    assert(RouteBlinding.decryptPayload(privKeys(0), ephKey0, encryptedPayloads(1)).isFailure)
   }
 
   test("create packet to blinded route (reference test vector)") {
@@ -451,7 +451,7 @@ class SphinxSpec extends AnyFunSuite {
       TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(500)), OnionTlv.OutgoingCltv(CltvExpiry(1000)), OnionTlv.OutgoingChannelId(ShortChannelId(10))),
       TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(450)), OnionTlv.OutgoingCltv(CltvExpiry(900)), OnionTlv.OutgoingChannelId(ShortChannelId(15))),
       // The sender includes the blinding key and the first encrypted recipient data in the introduction node's payload.
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(400)), OnionTlv.OutgoingCltv(CltvExpiry(860)), OnionTlv.BlindingPoint(blindingEphemeralKey0), OnionTlv.EncryptedRecipientData(encryptedPayloads.head)),
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(400)), OnionTlv.OutgoingCltv(CltvExpiry(860)), OnionTlv.BlindingPoint(blindingEphemeralKey0), OnionTlv.EncryptedRecipientData(encryptedPayloads(0))),
       // The sender includes the correct encrypted recipient data in each blinded node's payload.
       TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(encryptedPayloads(1))),
       TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(encryptedPayloads(2))),

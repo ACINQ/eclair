@@ -389,7 +389,7 @@ object Sphinx extends Logging {
 
     /**
      * @param introductionNodeId the first node should not be blinded, otherwise the sender cannot locate it.
-     * @param blindedHops        blinded hops.
+     * @param blindedHops        blinded hops, including the introduction node.
      */
     case class BlindedRoute(introductionNodeId: PublicKey, blindedHops: Seq[BlindedHop]) {
       val nodeIds: Seq[PublicKey] = introductionNodeId +: blindedHops.tail.map(_.blindedPublicKey)
@@ -401,7 +401,7 @@ object Sphinx extends Logging {
      * @param sessionKey this node's session key.
      * @param publicKeys public keys of each node on the route, starting from the introduction point.
      * @param payloads   payloads that should be encrypted for each node on the route.
-     * @return a tuple (blinded public keys, encrypted payloads)
+     * @return a blinded route.
      */
     def create(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector]): BlindedRoute = {
       require(publicKeys.length == payloads.length, "a payload must be provided for each node in the blinded path")
