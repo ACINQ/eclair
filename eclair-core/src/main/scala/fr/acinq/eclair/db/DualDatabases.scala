@@ -216,6 +216,11 @@ case class DualChannelsDb(sqlite: SqliteChannelsDb, postgres: PgChannelsDb) exte
     sqlite.addOrUpdateChannel(state)
   }
 
+  override def getChannel(channelId: ByteVector32): Option[HasCommitments] = {
+    runAsync(postgres.getChannel(channelId))
+    sqlite.getChannel(channelId)
+  }
+
   override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
     runAsync(postgres.updateChannelMeta(channelId, event))
     sqlite.updateChannelMeta(channelId, event)

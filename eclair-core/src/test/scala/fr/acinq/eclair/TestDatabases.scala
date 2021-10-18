@@ -3,11 +3,12 @@ package fr.acinq.eclair
 import akka.actor.ActorSystem
 import com.opentable.db.postgres.embedded.EmbeddedPostgres
 import com.zaxxer.hikari.HikariConfig
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils.{PgLock, getVersion, using}
+import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
 import org.postgresql.jdbc.PgConnection
-import org.scalatest.Assertions.convertToEqualizer
 import org.sqlite.SQLiteConnection
 
 import java.io.File
@@ -40,13 +41,57 @@ object TestDatabases {
 
   def inMemoryDb(): Databases = {
     val connection = sqliteInMemory()
-    Databases.SqliteDatabases(connection, connection, connection)
+    val dbs = Databases.SqliteDatabases(connection, connection, connection)
+    dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
+  }
+
+
+  /**
+   * ChannelsDb instance that wraps around an actual db instance and does additional checks
+   * This can be thought of as fuzzing and fills a gap between codec unit tests and database tests, by checking that channel state can be written and read consistently
+   * i.e that for all channel states that we generate during our tests, read(write(state)) == state
+   *
+   * This will help catch codec errors that would not be caught by unit tests because we don't test much how codecs interact with each other
+   *
+   * @param innerDb actual database instance 
+   */
+  class SqliteChannelsDbWithValidation(innerDb: SqliteChannelsDb) extends SqliteChannelsDb(innerDb.sqlite) {
+    override def addOrUpdateChannel(state: HasCommitments): Unit = {
+
+      def freeze1(input: Origin): Origin = input match {
+        case h: Origin.LocalHot => Origin.LocalCold(h.id)
+        case h: Origin.TrampolineRelayedHot => Origin.TrampolineRelayedCold(h.htlcs)
+        case _ => input
+      }
+
+      def freeze2(input: Commitments): Commitments = input.copy(originChannels = input.originChannels.view.mapValues(o => freeze1(o)).toMap)
+
+      // payment origins are always "cold" when deserialized, so to compare a "live" channel state against a state that has been
+      // serialized and deserialized we need to turn "hot" payments into cold ones
+      def freeze3(input: HasCommitments): HasCommitments = input match {
+        case d: DATA_WAIT_FOR_FUNDING_CONFIRMED => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_FUNDING_LOCKED => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_NORMAL => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_CLOSING => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_NEGOTIATING => d.copy(commitments = freeze2(d.commitments))
+        case d: DATA_SHUTDOWN => d.copy(commitments = freeze2(d.commitments))
+      }
+
+      super.addOrUpdateChannel(state)
+      val check = super.getChannel(state.channelId)
+      val frozen = freeze3(state)
+      require(check.contains(frozen), s"serialization/deserialization check failed, $check != $frozen")
+    }
   }
 
   case class TestSqliteDatabases() extends TestDatabases {
     // @formatter:off
     override val connection: SQLiteConnection = sqliteInMemory()
-    override lazy val db: Databases = Databases.SqliteDatabases(connection, connection, connection)
+    override lazy val db: Databases = {
+      val dbs = Databases.SqliteDatabases(connection, connection, connection)
+      dbs.copy(channels = new SqliteChannelsDbWithValidation(dbs.channels))
+    }
     override def close(): Unit = ()
     // @formatter:on
   }
