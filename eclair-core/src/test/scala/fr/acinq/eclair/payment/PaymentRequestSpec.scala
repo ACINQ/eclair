@@ -344,7 +344,7 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(field1 == field)
 
     // Now with a payment request
-    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = Left("Some invoice"), minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345 unix)
+    val pr = PaymentRequest(chainHash = Block.LivenetGenesisBlock.hash, amount = Some(123 msat), paymentHash = ByteVector32(ByteVector.fill(32)(1)), privateKey = priv, description = Left("Some invoice"), minFinalCltvExpiryDelta = CltvExpiryDelta(18), expirySeconds = Some(123456), timestamp = 12345 unixsec)
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(18)))
     val serialized = PaymentRequest.write(pr)
     val pr1 = PaymentRequest.read(serialized)

@@ -105,7 +105,7 @@ object Announcements {
    * @return true if channel updates are "equal"
    */
   def areSame(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
-    u1.copy(signature = ByteVector64.Zeroes, timestamp = 0 unix) == u2.copy(signature = ByteVector64.Zeroes, timestamp = 0 unix)
+    u1.copy(signature = ByteVector64.Zeroes, timestamp = 0 unixsec) == u2.copy(signature = ByteVector64.Zeroes, timestamp = 0 unixsec)
 
   def areSameIgnoreFlags(u1: ChannelUpdate, u2: ChannelUpdate): Boolean =
     u1.feeBaseMsat == u2.feeBaseMsat &&

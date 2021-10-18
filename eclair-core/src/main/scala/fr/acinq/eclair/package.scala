@@ -100,7 +100,7 @@ package object eclair {
   }
 
   implicit class TimestampSecondLong(private val n: Long) extends AnyVal {
-    def unix = TimestampSecond(n)
+    def unixsec = TimestampSecond(n)
   }
 
   implicit class TimestampMilliLong(private val n: Long) extends AnyVal {

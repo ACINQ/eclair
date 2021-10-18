@@ -87,11 +87,11 @@ object NetworkStatsSpec {
   }
 
   def fakeChannelUpdate1(cltv: CltvExpiryDelta, feeBase: MilliSatoshi, feeProportional: Long): ChannelUpdate = {
-    ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 0 unix, ChannelUpdate.ChannelFlags.DUMMY, cltv, 1 msat, feeBase, feeProportional, None)
+    ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, cltv, 1 msat, feeBase, feeProportional, None)
   }
 
   def fakeChannelUpdate2(cltv: CltvExpiryDelta, feeBase: MilliSatoshi, feeProportional: Long): ChannelUpdate = {
-    ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 0 unix, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), cltv, 1 msat, feeBase, feeProportional, None)
+    ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 0 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), cltv, 1 msat, feeBase, feeProportional, None)
   }
 
 }

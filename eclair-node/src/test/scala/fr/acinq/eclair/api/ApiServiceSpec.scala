@@ -974,7 +974,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       signature = randomBytes64(),
       chainHash = randomBytes32(),
       shortChannelId = ShortChannelId(1, 2, 3),
-      timestamp = 0 unix,
+      timestamp = 0 unixsec,
       channelFlags = ChannelUpdate.ChannelFlags.DUMMY,
       cltvExpiryDelta = CltvExpiryDelta(0),
       htlcMinimumMsat = MilliSatoshi(1),

@@ -56,7 +56,7 @@ class AnnouncementsSpec extends AnyFunSuite {
     val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, Alice.nodeParams.features)
     assert(ann.features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)))
     assert(checkSig(ann))
-    assert(checkSig(ann.copy(timestamp = 153 unix)) === false)
+    assert(checkSig(ann.copy(timestamp = 153 unixsec)) === false)
   }
 
   test("sort node announcement addresses") {

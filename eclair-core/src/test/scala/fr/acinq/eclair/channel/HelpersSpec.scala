@@ -50,7 +50,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
   test("compute refresh delay") {
     import org.scalatest.matchers.should.Matchers._
     implicit val log: akka.event.DiagnosticLoggingAdapter = NoLoggingDiagnostics
-    Helpers.nextChannelUpdateRefresh(1544400000 unix).toSeconds should equal(0)
+    Helpers.nextChannelUpdateRefresh(1544400000 unixsec).toSeconds should equal(0)
     Helpers.nextChannelUpdateRefresh(TimestampSecond.now() - 9.days).toSeconds should equal(24 * 3600L +- 100)
     Helpers.nextChannelUpdateRefresh(TimestampSecond.now() - 3.days).toSeconds should equal(7 * 24 * 3600L +- 100)
     Helpers.nextChannelUpdateRefresh(TimestampSecond.now()).toSeconds should equal(10 * 24 * 3600L +- 100)

@@ -42,8 +42,8 @@ trait ExtraDirectives extends Directives {
   val nodeIdFormParam: NameReceptacle[PublicKey] = "nodeId".as[PublicKey]
   val nodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "nodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val paymentHashFormParam: NameUnmarshallerReceptacle[ByteVector32] = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
-  val fromFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "from".as[TimestampSecond](timestampSecondUnmarshaller).?(0 unix)
-  val toFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "to".as[TimestampSecond](timestampSecondUnmarshaller).?(Long.MaxValue unix)
+  val fromFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "from".as[TimestampSecond](timestampSecondUnmarshaller).?(0 unixsec)
+  val toFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "to".as[TimestampSecond](timestampSecondUnmarshaller).?(Long.MaxValue unixsec)
   val amountMsatFormParam: NameReceptacle[MilliSatoshi] = "amountMsat".as[MilliSatoshi]
   val invoiceFormParam: NameReceptacle[PaymentRequest] = "invoice".as[PaymentRequest]
   val routeFormat: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)

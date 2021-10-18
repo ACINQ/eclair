@@ -118,7 +118,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       1, 100,
       1.toByte,
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
-      Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unix, 1 unix), Timestamps(2 unix, 2 unix), Timestamps(3 unix, 3 unix)))),
+      Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec)))),
       None)
 
     val encoded = replyChannelRangeCodec.encode(replyChannelRange).require
@@ -134,7 +134,7 @@ class ExtendedQueriesCodecsSpec extends AnyFunSuite {
       EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       TlvStream(
         List(
-          EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unix, 1 unix), Timestamps(2 unix, 2 unix), Timestamps(3 unix, 3 unix))),
+          EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))),
           EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3)))
         ),
         GenericTlv(UInt64(7), ByteVector.fromValidHex("deadbeef")) :: Nil
