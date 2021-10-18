@@ -122,15 +122,6 @@ object Channel {
   // we will receive this message when we waited too long for a revocation for that commit number (NB: we explicitly specify the peer to allow for testing)
   case class RevocationTimeout(remoteCommitNumber: Long, peer: ActorRef)
 
-  /**
-   * Outgoing messages go through the [[Peer]] for logging purposes.
-   *
-   * [[Channel]] is notified asynchronously of disconnections and reconnections. To preserve sequentiality of messages,
-   * we need to also provide the connection that the message is valid for. If the actual connection was reset in the
-   * meantime, the [[Peer]] will simply drop the message.
-   */
-  case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
-
   /** We don't immediately process [[CurrentBlockCount]] to avoid herd effects */
   case class ProcessCurrentBlockCount(c: CurrentBlockCount)
 
@@ -241,7 +232,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
 
     case Event(INPUT_RESTORED(data), _) =>
-      log.info("restoring channel")
+      log.debug("restoring channel")
       context.system.eventStream.publish(ChannelRestored(self, data.channelId, peer, remoteNodeId, data))
       txPublisher ! SetChannelId(remoteNodeId, data.channelId)
       data match {
@@ -1508,8 +1499,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       }
       // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
       val timedOutHtlcs = Closing.isClosingTypeAlreadyKnown(d1) match {
-        case Some(c: Closing.LocalClose) => Closing.timedOutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
-        case Some(c: Closing.RemoteClose) => Closing.timedOutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
+        case Some(c: Closing.LocalClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx)
+        case Some(c: Closing.RemoteClose) => Closing.trimmedOrTimedOutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx)
         case _ => Set.empty[UpdateAddHtlc] // we lose htlc outputs in dataloss protection scenarios (future remote commit)
       }
       timedOutHtlcs.foreach { add =>
@@ -2688,7 +2679,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
   }
 
   private def send(msg: LightningMessage): Unit = {
-    peer ! OutgoingMessage(msg, activeConnection)
+    peer ! Peer.OutgoingMessage(msg, activeConnection)
   }
 
   override def mdc(currentMessage: Any): MDC = {

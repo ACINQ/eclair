@@ -104,16 +104,20 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
             // this htlc is cross signed in the current commitment, we can settle it
             preimage_opt match {
               case Some(preimage) =>
-                log.info(s"fulfilling broken htlc=$htlc")
                 Metrics.Resolved.withTag(Tags.Success, value = true).withTag(Metrics.Relayed, value = false).increment()
                 if (e.currentState != CLOSED) {
+                  log.info(s"fulfilling broken htlc=$htlc")
                   channel ! CMD_FULFILL_HTLC(htlc.id, preimage, commit = true)
+                } else {
+                  log.info(s"got preimage but upstream channel is closed for htlc=$htlc")
                 }
               case None =>
-                log.info(s"failing not relayed htlc=$htlc")
                 Metrics.Resolved.withTag(Tags.Success, value = false).withTag(Metrics.Relayed, value = false).increment()
                 if (e.currentState != CLOSING && e.currentState != CLOSED) {
+                  log.info(s"failing not relayed htlc=$htlc")
                   channel ! CMD_FAIL_HTLC(htlc.id, Right(TemporaryNodeFailure), commit = true)
+                } else {
+                  log.info(s"would fail but upstream channel is closed for htlc=$htlc")
                 }
             }
             false // the channel may very well be disconnected before we sign (=ack) the fail/fulfill, so we keep it for now
@@ -372,10 +376,10 @@ object PostRestartHtlcCleaner {
             val timedOutHtlcs: Set[Long] = (closingType_opt match {
               case Some(c: Closing.LocalClose) =>
                 val confirmedTxs = c.localCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isHtlcTimeout(tx, c.localCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.timedOutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
+                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.commitmentFormat, c.localCommit, c.localCommitPublished, d.commitments.localParams.dustLimit, tx))
               case Some(c: Closing.RemoteClose) =>
                 val confirmedTxs = c.remoteCommitPublished.commitTx +: irrevocablySpent.filter(tx => Closing.isClaimHtlcTimeout(tx, c.remoteCommitPublished))
-                confirmedTxs.flatMap(tx => Closing.timedOutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
+                confirmedTxs.flatMap(tx => Closing.trimmedOrTimedOutHtlcs(d.commitments.commitmentFormat, c.remoteCommit, c.remoteCommitPublished, d.commitments.remoteParams.dustLimit, tx))
               case _ => Seq.empty[UpdateAddHtlc]
             }).map(_.id).toSet
             overriddenHtlcs ++ timedOutHtlcs
