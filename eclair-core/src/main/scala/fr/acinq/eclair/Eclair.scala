@@ -373,7 +373,6 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]] = {
-    //val filter = TimestampQueryFilters(from, to)
     Future(appKit.nodeParams.db.audit.listNetworkFees(from.toTimestampMilli, to.toTimestampMilli))
   }
 
