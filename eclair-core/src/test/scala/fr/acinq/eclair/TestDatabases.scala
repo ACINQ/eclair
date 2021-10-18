@@ -8,7 +8,6 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils.{PgLock, getVersion, using}
 import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
-import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import org.postgresql.jdbc.PgConnection
 import org.sqlite.SQLiteConnection
 
@@ -69,10 +68,10 @@ object TestDatabases {
         case d: DATA_SHUTDOWN => d.copy(commitments = freeze2(d.commitments))
       }
 
-      val check = stateDataCodec.decode(stateDataCodec.encode(state).require).require.value
-      val frozen = freeze3(state)
-      require(check == frozen, s"serialization/deserialization check failed, $check != $frozen")
       super.addOrUpdateChannel(state)
+      val check = super.getChannel(state.channelId)
+      val frozen = freeze3(state)
+      require(check.contains(frozen), s"serialization/deserialization check failed, $check != $frozen")
     }
   }
 

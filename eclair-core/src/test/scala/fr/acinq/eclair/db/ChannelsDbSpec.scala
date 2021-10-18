@@ -76,8 +76,11 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listLocalChannels() === List(channel1))
       db.addOrUpdateChannel(channel2a)
       assert(db.listLocalChannels() === List(channel1, channel2a))
+      assert(db.getChannel(channel1.channelId).contains(channel1))
+      assert(db.getChannel(channel2a.channelId).contains(channel2a))
       db.addOrUpdateChannel(channel2b)
       assert(db.listLocalChannels() === List(channel1, channel2b))
+      assert(db.getChannel(channel2b.channelId).contains(channel2b))
 
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
       db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)
@@ -86,9 +89,11 @@ class ChannelsDbSpec extends AnyFunSuite {
       assert(db.listHtlcInfos(channel1.channelId, 43).toList == Nil)
 
       db.removeChannel(channel1.channelId)
+      assert(db.getChannel(channel1.channelId).isEmpty)
       assert(db.listLocalChannels() === List(channel2b))
       assert(db.listHtlcInfos(channel1.channelId, commitNumber).toList == Nil)
       db.removeChannel(channel2b.channelId)
+      assert(db.getChannel(channel2b.channelId).isEmpty)
       assert(db.listLocalChannels() === Nil)
     }
   }
