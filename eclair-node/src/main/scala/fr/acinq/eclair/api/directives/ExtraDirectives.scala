@@ -48,7 +48,7 @@ trait ExtraDirectives extends Directives {
   val invoiceFormParam: NameReceptacle[PaymentRequest] = "invoice".as[PaymentRequest]
   val routeFormatFormParam: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
-  val ignoreChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
+  val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found

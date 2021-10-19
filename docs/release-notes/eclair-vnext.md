@@ -11,9 +11,8 @@
 This release contains many API updates:
 
 - `findroute`, `findroutetonode` and `findroutebetweennodes` supports new output format `full` (#1969)
-- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--includeLocalChannelCost` to specify if you want to count the fees from your node like trampoline payments do (#1942) 
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--ignoreNodeIds` to specify nodes you want to be ignored in path-finding (#1969)
-- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--ignoreChannelIds` to specify channels you want to be ignored in path-finding (#1969)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--ignoreShortChannelIds` to specify channels you want to be ignored in path-finding (#1969)
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--maxFeeMsat` to specify an upper bound of fees (#1969)
 
 Have a look at our [API documentation](https://acinq.github.io/eclair) for more details.
