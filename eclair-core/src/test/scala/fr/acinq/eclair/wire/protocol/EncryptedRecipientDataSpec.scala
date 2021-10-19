@@ -22,12 +22,11 @@ class EncryptedRecipientDataSpec extends AnyFunSuiteLike {
     )
 
     val blindedRoute = RouteBlinding.create(sessionKey, nodePrivKeys.map(_.publicKey), payloads.map(_._2))
-    val encryptedPayloads = blindedRoute.blindedHops.map(_.encryptedPayload)
     val blinding0 = sessionKey.publicKey
-    val Success((decryptedPayload0, blinding1)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys.head, blinding0, encryptedPayloads.head)
-    val Success((decryptedPayload1, blinding2)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(1), blinding1, encryptedPayloads(1))
-    val Success((decryptedPayload2, blinding3)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(2), blinding2, encryptedPayloads(2))
-    val Success((decryptedPayload3, _)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(3), blinding3, encryptedPayloads(3))
+    val Success((decryptedPayload0, blinding1)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys.head, blinding0, blindedRoute.encryptedPayloads(0))
+    val Success((decryptedPayload1, blinding2)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(1), blinding1, blindedRoute.encryptedPayloads(1))
+    val Success((decryptedPayload2, blinding3)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(2), blinding2, blindedRoute.encryptedPayloads(2))
+    val Success((decryptedPayload3, _)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(3), blinding3, blindedRoute.encryptedPayloads(3))
     assert(Seq(decryptedPayload0, decryptedPayload1, decryptedPayload2, decryptedPayload3) === payloads.map(_._1))
   }
 
@@ -46,16 +45,15 @@ class EncryptedRecipientDataSpec extends AnyFunSuiteLike {
       val payloads = Seq(hex"0a 02080000000000000231", testCase)
       val blindingPrivKey = randomKey()
       val blindedRoute = RouteBlinding.create(blindingPrivKey, nodePrivKeys.map(_.publicKey), payloads)
-      val encryptedPayloads = blindedRoute.blindedHops.map(_.encryptedPayload)
       // The payload for the first node is valid.
       val blinding0 = blindingPrivKey.publicKey
-      val Success((_, blinding1)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys.head, blinding0, encryptedPayloads.head)
+      val Success((_, blinding1)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys.head, blinding0, blindedRoute.encryptedPayloads.head)
       // If the first node is given invalid decryption material, it cannot decrypt recipient data.
-      assert(EncryptedRecipientDataCodecs.decode(nodePrivKeys.last, blinding0, encryptedPayloads.head).isFailure)
-      assert(EncryptedRecipientDataCodecs.decode(nodePrivKeys.head, blinding1, encryptedPayloads.head).isFailure)
-      assert(EncryptedRecipientDataCodecs.decode(nodePrivKeys.head, blinding0, encryptedPayloads.last).isFailure)
+      assert(EncryptedRecipientDataCodecs.decode(nodePrivKeys.last, blinding0, blindedRoute.encryptedPayloads.head).isFailure)
+      assert(EncryptedRecipientDataCodecs.decode(nodePrivKeys.head, blinding1, blindedRoute.encryptedPayloads.head).isFailure)
+      assert(EncryptedRecipientDataCodecs.decode(nodePrivKeys.head, blinding0, blindedRoute.encryptedPayloads.last).isFailure)
       // The payload for the last node is invalid, even with valid decryption material.
-      assert(EncryptedRecipientDataCodecs.decode(nodePrivKeys.last, blinding1, encryptedPayloads.last).isFailure)
+      assert(EncryptedRecipientDataCodecs.decode(nodePrivKeys.last, blinding1, blindedRoute.encryptedPayloads.last).isFailure)
     }
   }
 
