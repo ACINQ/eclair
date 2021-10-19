@@ -18,9 +18,9 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -363,6 +363,157 @@ class SphinxSpec extends AnyFunSuite {
       assert(failure === InvalidRealm)
     }
   }
+
+  test("create blinded route (reference test vector)") {
+    val sessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
+    val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
+    assert(blindedRoute.introductionNode.publicKey === publicKeys(0))
+    assert(blindedRoute.introductionNode.blindingEphemeralKey === PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
+    assert(blindedRoute.introductionNode.encryptedPayload === hex"a245b767bd52520bdf8179b2dc681d1a36c2ededaf59429dfc4bea342fa460c9")
+    assert(blindedRoute.nodeIds === Seq(
+      publicKeys(0),
+      PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
+      PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
+      PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
+      PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
+    ))
+    assert(blindedRoute.blindedNodes.map(_.blindedPublicKey) === Seq(
+      PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
+      PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
+      PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
+      PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
+    ))
+    assert(blindedRoute.blindingEphemeralKeys === blindedRoute.introductionNode.blindingEphemeralKey +: blindedRoute.blindedNodes.map(_.blindingEphemeralKey))
+    assert(blindedRoute.blindedNodes.map(_.blindingEphemeralKey) === Seq(
+      PublicKey(hex"035cb4c003d58e16cc9207270b3596c2be3309eca64c36b208c946bbb599bfcad0"),
+      PublicKey(hex"02e105bc01a7af07074a1b0b1d9a112a1d89c6cd87cc4e2b6ba3a824731d9508bd"),
+      PublicKey(hex"0349164db5398925ef234002e62d2834da115b8eafc73436fab98ed12266e797cc"),
+      PublicKey(hex"020a6d1951916adcac22125063f62c35b3686f36e5db2f77073f3d35b19c7a118a"),
+    ))
+    assert(blindedRoute.encryptedPayloads === blindedRoute.introductionNode.encryptedPayload +: blindedRoute.blindedNodes.map(_.encryptedPayload))
+    assert(blindedRoute.blindedNodes.map(_.encryptedPayload) === Seq(
+      hex"38748f94ead7de2a54fc43e8bb927bfc377dda7ed5a2e36b327b739c3c82a602e43e07e378f17cd46ee32d987eb8b6d03b3403acb095bd2868f640b92ea1",
+      hex"a5ddddd448f15208452f4d65da0d53679e9652c8f9c9882d795388a492b4060afb5f2f556e36aed51d089f60f7c94f714b34cb30f1dac0c17f3855a827cb",
+      hex"7ead52884542d180e76fec6ae2d137b6b4c771dc0d41390e992839dea0f4fcefb4a31589125e2ba535d0dc3bf1bc94e6c9039323579547921686d3b54c22",
+      hex"4642ce64cbf146ffd73299501d65c56052af4acd681d9d0882728c6f399ace90392b694d5e347612dc1417f1b31e5f5dfdfb4ca5e8a24a681898ec5784f7",
+    ))
+
+    // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
+    val Success((payload0, ephKey1)) = RouteBlinding.decryptPayload(privKeys(0), blindedRoute.blindingEphemeralKeys(0), blindedRoute.encryptedPayloads(0))
+    assert(payload0 === routeBlindingPayloads(0))
+    assert(ephKey1 === blindedRoute.blindingEphemeralKeys(1))
+
+    // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
+    assert(RouteBlinding.derivePrivateKey(privKeys(1), ephKey1).publicKey === blindedRoute.nodeIds(1))
+    val Success((payload1, ephKey2)) = RouteBlinding.decryptPayload(privKeys(1), ephKey1, blindedRoute.encryptedPayloads(1))
+    assert(payload1 === routeBlindingPayloads(1))
+    assert(ephKey2 === blindedRoute.blindingEphemeralKeys(2))
+
+    // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
+    assert(RouteBlinding.derivePrivateKey(privKeys(2), ephKey2).publicKey === blindedRoute.nodeIds(2))
+    val Success((payload2, ephKey3)) = RouteBlinding.decryptPayload(privKeys(2), ephKey2, blindedRoute.encryptedPayloads(2))
+    assert(payload2 === routeBlindingPayloads(2))
+    assert(ephKey3 === blindedRoute.blindingEphemeralKeys(3))
+
+    // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
+    assert(RouteBlinding.derivePrivateKey(privKeys(3), ephKey3).publicKey === blindedRoute.nodeIds(3))
+    val Success((payload3, ephKey4)) = RouteBlinding.decryptPayload(privKeys(3), ephKey3, blindedRoute.encryptedPayloads(3))
+    assert(payload3 === routeBlindingPayloads(3))
+    assert(ephKey4 === blindedRoute.blindingEphemeralKeys(4))
+
+    // The last node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
+    assert(RouteBlinding.derivePrivateKey(privKeys(4), ephKey4).publicKey === blindedRoute.nodeIds(4))
+    val Success((payload4, _)) = RouteBlinding.decryptPayload(privKeys(4), ephKey4, blindedRoute.encryptedPayloads(4))
+    assert(payload4 === routeBlindingPayloads(4))
+  }
+
+  test("invalid blinded route") {
+    val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).encryptedPayloads
+    // Invalid node private key:
+    val ephKey0 = sessionKey.publicKey
+    assert(RouteBlinding.decryptPayload(privKeys(1), ephKey0, encryptedPayloads(0)).isFailure)
+    // Invalid unblinding ephemeral key:
+    assert(RouteBlinding.decryptPayload(privKeys(0), randomKey().publicKey, encryptedPayloads(0)).isFailure)
+    // Invalid encrypted payload:
+    assert(RouteBlinding.decryptPayload(privKeys(0), ephKey0, encryptedPayloads(1)).isFailure)
+  }
+
+  test("create packet to blinded route (reference test vector)") {
+    // The recipient creates a blinded route containing 3 hops.
+    val (blindedRoute, blindingEphemeralKey0) = {
+      val recipientSessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
+      (RouteBlinding.create(recipientSessionKey, publicKeys.drop(2), routeBlindingPayloads.drop(2)), recipientSessionKey.publicKey)
+    }
+
+    // The sender obtains this information (e.g. from a Bolt11 invoice) and prepends two normal hops to reach the introduction node.
+    val nodeIds = publicKeys.take(2) ++ blindedRoute.nodeIds
+    assert(blindedRoute.encryptedPayloads === Seq(
+      hex"192256e1c0b289eee9a509bf94455c111838cab3f47010aeedc1367aa77cf44743c6cf49726ddb96b426cdbf6767e462f940638879805b04dd97d3bb823f",
+      hex"38c490e3f4f29cc7af8620002fb497591e043377d19fdf4c9cc913600a4d7ae2842e538181790fe7309c85c845b360eab73c8eaa1068866d1a42fb3afb54",
+      hex"d2706bb65ac8e1c2a319ba53a371d97dc237132b22ce4f7439983545e37164d792dc6925a3c7cde855ac824871c2417052efa103e5b53ec49a2bb4ab7cfc",
+    ))
+    val payloads = Seq(
+      // The sender sends normal onion payloads to the first two hops.
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(500)), OnionTlv.OutgoingCltv(CltvExpiry(1000)), OnionTlv.OutgoingChannelId(ShortChannelId(10))),
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(450)), OnionTlv.OutgoingCltv(CltvExpiry(900)), OnionTlv.OutgoingChannelId(ShortChannelId(15))),
+      // The sender includes the blinding key and the first encrypted recipient data in the introduction node's payload.
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(400)), OnionTlv.OutgoingCltv(CltvExpiry(860)), OnionTlv.BlindingPoint(blindingEphemeralKey0), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(0))),
+      // The sender includes the correct encrypted recipient data in each blinded node's payload.
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
+    ).map(tlvs => OnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes)
+
+    val senderSessionKey = PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")
+    val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(senderSessionKey, nodeIds, payloads, associatedData)
+    assert(serializePaymentOnion(onion) == hex"00024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d07666a78b866fda75eb6a991f9815c47624f46324be8a0d8cbbebf25889553edd83cbc0381ce1a5250b59f956b78e1f28ba64f1e8a77aa103ebb2a5f054f3d9271e7bf2f0cbe7c4dbd538fe2977817cb18a3dc52a3e8651a39e38167df0261b67f1d371cb24b39aa2bd3a99be0f16ac186e5d5cf2790d4f60f2e505c64ffa041f74d08b25b7b97e08daeb35df7fd9caa432b0187d3c2dd7f13de35401f79c480404da7e54739f8905fb30b0811c6579e1064182af0ca67e9eb0144796bf347135e90f17126982bc10b91c04e57e736d3accfc7e0afd5945cf8c491c1fa2faa5c3eec70568b6c2514d203ad277f5070d83f30474769d82d26bad5fab11fec659774e30fd9dea7d51f58845510b6765ad8276556ea7f8e8ba10c93991ca404b84b6e30c46cdbd4d5879fe6d6f2df60b96ef4640458be40171b76f33468b0b122b17d0dc165cb60feb41bebf98bcbefe963278c29c7f5885f3d47051888f9ca81ce486b7102572d79109d861f1da8d5a2e810f31b8373ccfc5370169a72c2fb9a10a14be97e2ac55cf27623779e27d48aae14f564b899b260ce69bcd06db4e04044eb400d894d6e6f381abb48c350588a069a72a20a9b686db068fbe58b02909de83d08a8f325a2138cca22649a9944e745f1bf146401493e53e1bf4c5a979922e2a1990f9897376c3597e81c71420f8dcccd54adb11d3483a7cd8a9ae59f3b7f97aabe16805f721403ae88562064e29a7d8c6f39658e15771ca6905aaf31d8b17271fe046033024716c1c12df9a042ab56aa3147005e0f6c5430a7b15bf3db69f705e47735bd4c6815c080b822e70a9177043e4ccb1b972b645777f614f7ebd49f18b354c06cfab44fa67e487d536a77555ba1953b89e53499203d268aefb712520b8f1a5b734ce16ece6fe3250c44e571e86a8f5877a6297aa0b36a84d7a1df571878224a2d77af58652e2e83211a2ce09845181f43ff8b9edf58ee3df045bf91afed92d927b3e4cfc3887255d14c21282ef58f5d68b6d9a872125485be0345cfd22973d75717c2c07f11962971c2b28c0f3dab672d59d5c8ec0f0746718f2966ee1444c53537ae9280dce2cf945d7ce59e2000d6fb8f985fb107591492eaa9e0b24583c445a6c959fe309c4d814ec31f5ab10bae2cf12c3fceb34e724a17c34ed2f04f133d604b564db0f56a463b7a9f453d8ea30ad2c11237d47c8161f8e532e245f4d129ed96afa78c7f9c18ee624e9a593639d911b00ea24923455022ef852e07d0068e27c93b9fa5c65facd2a298b79118405a037ddcc97c8f9281088eddfcaa3a10b810c92d961e3eff6eaf45a81da8593a2252bff0bd41253fe4f35b233553329be00babbf1c93b2a716f4ae6f52cc99018b2d45bc8a0d6e9679b16295a8a43e4d38ebfc31a8464115c31af4588579f6fcf065e6a6362f9237681333fa72a3e881ee5b65abeac5b00555813bb6de0e2b37978e902642cce7e062fa70d042ea668480edddf1a31c91faa67187425a025b938112be61d36c637d8e75e740d2ad542507df80bc2dcb48d5125571f360ee142e300833bd9100e564e84b1d9ef8be88dbac834991d2ae5e5fc217cbbe341a4a58b5e61e0a5a2ea6144607b162fb593c8d73f2d8baf7314f966b06dd2723a43d83645769f45645777ac259911115c29d5459e9001b9622486c533a99c0cc8ef566a96457643d0d3a5ba1ec45037a4dc78906ae3def722eb1b21dc9b0a912b372ed28570ca044f4c73fe7c40799b8ad6afc2d3ab2eee14a5ca0855cf452c12bf5ed4b46f1294406876eec5c48aec2713b5e6f24a44472c5ea6f1b83337e960e4a811a4547484e9f42e3c8507c1070821900b313f2b6a45632db9647cdaf595165afc5ca")
+
+    // The first two hops can decrypt the onion as usual.
+    val Right(DecryptedPacket(payload0, nextPacket0, sharedSecret0)) = PaymentPacket.peel(privKeys(0), associatedData, onion)
+    val Right(DecryptedPacket(payload1, nextPacket1, sharedSecret1)) = PaymentPacket.peel(privKeys(1), associatedData, nextPacket0)
+
+    // The third hop is the introduction node.
+    // It can decrypt the onion as usual, but the payload doesn't contain a shortChannelId or a nodeId to forward to.
+    // However it contains a blinding point and encrypted data, which it can decrypt to discover the next node.
+    val Right(DecryptedPacket(payload2, nextPacket2, sharedSecret2)) = PaymentPacket.peel(privKeys(2), associatedData, nextPacket1)
+    val tlvs2 = OnionCodecs.tlvPerHopPayloadCodec.decode(payload2.bits).require.value
+    assert(tlvs2.get[OnionTlv.BlindingPoint].map(_.publicKey) === Some(blindingEphemeralKey0))
+    assert(tlvs2.get[OnionTlv.EncryptedRecipientData].nonEmpty)
+    val Success((recipientTlvs2, blindingEphemeralKey1)) = EncryptedRecipientDataCodecs.decode(privKeys(2), blindingEphemeralKey0, tlvs2.get[OnionTlv.EncryptedRecipientData].get.data)
+    assert(recipientTlvs2.get[EncryptedRecipientDataTlv.OutgoingChannelId].map(_.shortChannelId) === Some(ShortChannelId(1105)))
+    assert(recipientTlvs2.get[EncryptedRecipientDataTlv.OutgoingNodeId].map(_.nodeId) === Some(publicKeys(3)))
+
+    // The fourth hop is a blinded hop.
+    // It receives the blinding key from the previous node (e.g. in a tlv field in update_add_htlc) which it can use to
+    // derive the private key corresponding to its blinded node ID and decrypt the onion.
+    // The payload doesn't contain a shortChannelId or a nodeId to forward to, but the encrypted data does.
+    val blindedPrivKey3 = RouteBlinding.derivePrivateKey(privKeys(3), blindingEphemeralKey1)
+    val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = PaymentPacket.peel(blindedPrivKey3, associatedData, nextPacket2)
+    val tlvs3 = OnionCodecs.tlvPerHopPayloadCodec.decode(payload3.bits).require.value
+    assert(tlvs3.get[OnionTlv.EncryptedRecipientData].nonEmpty)
+    val Success((recipientTlvs3, blindingEphemeralKey2)) = EncryptedRecipientDataCodecs.decode(privKeys(3), blindingEphemeralKey1, tlvs3.get[OnionTlv.EncryptedRecipientData].get.data)
+    assert(recipientTlvs3.get[EncryptedRecipientDataTlv.OutgoingNodeId].map(_.nodeId) === Some(publicKeys(4)))
+
+    // The fifth hop is the blinded recipient.
+    // It receives the blinding key from the previous node (e.g. in a tlv field in update_add_htlc) which it can use to
+    // derive the private key corresponding to its blinded node ID and decrypt the onion.
+    val blindedPrivKey4 = RouteBlinding.derivePrivateKey(privKeys(4), blindingEphemeralKey2)
+    val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = PaymentPacket.peel(blindedPrivKey4, associatedData, nextPacket3)
+    val tlvs4 = OnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
+    assert(tlvs4.get[OnionTlv.EncryptedRecipientData].nonEmpty)
+    val Success((recipientTlvs4, _)) = EncryptedRecipientDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionTlv.EncryptedRecipientData].get.data)
+    assert(recipientTlvs4.get[EncryptedRecipientDataTlv.RecipientSecret].map(_.data) === Some(associatedData.bytes))
+
+    assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
+    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
+
+    val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
+    assert(packets(0).hmac == ByteVector32(hex"9890f3263d32bccb63a0e1dd1b0db6bf63fe418a0f572ed299d98d343619f098"))
+    assert(packets(1).hmac == ByteVector32(hex"aee30ae716b93ab6782b907b4cc996cfa3e2219d0a32a677fdeff41071fc86f3"))
+    assert(packets(2).hmac == ByteVector32(hex"9835e7410219117010779ec0852af38449bfa6a1a610c306cdc7eed8717ecdc9"))
+    assert(packets(3).hmac == ByteVector32(hex"c02a8c2e221e03f2e2d15266d5838c7f2fedfc1c4467a49d362896dcead60750"))
+    assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
+  }
+
 }
 
 object SphinxSpec {
@@ -434,6 +585,15 @@ object SphinxSpec {
     hex"23 f8 21 032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
     hex"00 0303030303030303 0000000000000003 00000003 000000000000000000000000",
     hex"23 f8 21 02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"
+  )
+
+  // This test vector uses route blinding payloads (encrypted_recipient_data).
+  val routeBlindingPayloads = Seq(
+    hex"0f 0208000000000000002a 3903123456",
+    hex"2d 011900000000000000000000000000000000000000000000000000 02080000000000000231 fdffff0206c1 3b00",
+    hex"2d 02080000000000000451 0421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",
+    hex"2d 01080000000000000000 042102edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145",
+    hex"2d 0109000000000000000000 06204242424242424242424242424242424242424242424242424242424242424242",
   )
 
   val associatedData = ByteVector32(hex"4242424242424242424242424242424242424242424242424242424242424242")

@@ -96,8 +96,8 @@ TRAMPOLINE PAYMENT TO LEGACY RECIPIENT (the last trampoline node converts to a s
          |     (encrypted)       |     | trampoline_onion:         |     | trampoline_onion:               |  |     |     (encrypted)       |     +-------------------------+    of 2500 msat split between multiple trampoline routes (omitted if
          +-----------------------+     | +-----------------------+ |     | +-----------------------------+ |  |     +-----------------------+     |           EOF           |    MPP not supported by invoice).
                                        | | amount_fwd: 1600 msat | |     | | amount_fwd: 1500 msat       | |  |                                   +-------------------------+    The remaining 1000 msat needed to reach the total 2500 msat have
-                                       | | expiry: 600042        | |     | | expiry: 600000              | |--+                                                                  been sent by a via a completely separate trampoline route (not
-                                       | | node_id: t2           | |     | | total_amount: 2500 msat     | |  |     +-----------------------+     +-------------------------+    included in this diagram).
+                                       | | expiry: 600042        | |     | | expiry: 600000              | |--+                                                                  been sent via a completely separate trampoline route (not included
+                                       | | node_id: t2           | |     | | total_amount: 2500 msat     | |  |     +-----------------------+     +-------------------------+    in this diagram).
                                        | +-----------------------+ |     | | secret: xyz                 | |  |     | amount_fwd: 500 msat  |     | amount_fwd: 500 msat    |
                                        | |      (encrypted)      | |     | | node_id: f                  | |  |     | expiry: 600000        |     | expiry: 600000          |
                                        | +-----------------------+ |     | | invoice_features: 0x0a      | |  +---->| channel_id: 43        |---->| secret: xyz             |
@@ -143,6 +143,16 @@ object OnionTlv {
    * @param totalAmount total amount in multi-part payments. When missing, assumed to be equal to AmountToForward.
    */
   case class PaymentData(secret: ByteVector32, totalAmount: MilliSatoshi) extends OnionTlv
+
+  /**
+   * Route blinding lets the recipient provide some encrypted data for each intermediate node in the blinded part of the
+   * route. This data cannot be decrypted or modified by the sender and usually contains information to locate the next
+   * node without revealing it to the sender.
+   */
+  case class EncryptedRecipientData(data: ByteVector) extends OnionTlv
+
+  /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
+  case class BlindingPoint(publicKey: PublicKey) extends OnionTlv
 
   /** Id of the next node. */
   case class OutgoingNodeId(nodeId: PublicKey) extends OnionTlv
@@ -327,6 +337,10 @@ object OnionCodecs {
 
   private val paymentData: Codec[PaymentData] = variableSizeBytesLong(varintoverflow, ("payment_secret" | bytes32) :: ("total_msat" | tmillisatoshi)).as[PaymentData]
 
+  private val encryptedRecipientData: Codec[EncryptedRecipientData] = variableSizeBytesLong(varintoverflow, "encrypted_data" | bytes).as[EncryptedRecipientData]
+
+  private val blindingPoint: Codec[BlindingPoint] = variableSizeBytesLong(varintoverflow, "blinding_key" | publicKey).as[BlindingPoint]
+
   private val outgoingNodeId: Codec[OutgoingNodeId] = variableSizeBytesLong(varintoverflow, "node_id" | publicKey).as[OutgoingNodeId]
 
   private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
@@ -342,6 +356,8 @@ object OnionCodecs {
     .typecase(UInt64(4), outgoingCltv)
     .typecase(UInt64(6), outgoingChannelId)
     .typecase(UInt64(8), paymentData)
+    .typecase(UInt64(10), encryptedRecipientData)
+    .typecase(UInt64(12), blindingPoint)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
     .typecase(UInt64(66097), invoiceFeatures)
     .typecase(UInt64(66098), outgoingNodeId)
