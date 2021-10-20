@@ -321,6 +321,11 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     sqlite.getIncomingPayment(paymentHash)
   }
 
+  override def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit] = {
+    runAsync(postgres.removeIncomingPayment(paymentHash))
+    sqlite.removeIncomingPayment(paymentHash)
+  }
+
   override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
     runAsync(postgres.listIncomingPayments(from, to))
     sqlite.listIncomingPayments(from, to)
@@ -374,11 +379,6 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
   override def listOutgoingPayments(from: TimestampMilli, to: TimestampMilli): Seq[OutgoingPayment] = {
     runAsync(postgres.listOutgoingPayments(from, to))
     sqlite.listOutgoingPayments(from, to)
-  }
-
-  override def removeIncomingPayment(paymentHash: ByteVector32): Try[Boolean] = {
-    runAsync(postgres.removeIncomingPayment(paymentHash))
-    sqlite.removeIncomingPayment(paymentHash)
   }
 
 }

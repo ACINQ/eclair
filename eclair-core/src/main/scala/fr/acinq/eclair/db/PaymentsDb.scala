@@ -29,6 +29,7 @@ import scala.util.Try
 trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
 trait IncomingPaymentsDb {
+
   /** Add a new expected incoming payment (not yet received). */
   def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
@@ -40,6 +41,12 @@ trait IncomingPaymentsDb {
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
+
+  /**
+   * Remove an unpaid incoming payment from the DB.
+   * Returns a failure if the payment has already been paid.
+   */
+  def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit]
 
   /** List all incoming payments (pending, expired and succeeded) in the given time range (milli-seconds). */
   def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
@@ -53,12 +60,6 @@ trait IncomingPaymentsDb {
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
   def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
 
-  /** Remove the incoming payment if it's not paid yet
-   *  Returns true  - if the payment was removed,
-   *          false - if the payment was not found
-   *  Throws [[IllegalArgumentException]] if the payment is paid
-   */
-  def removeIncomingPayment(paymentHash: ByteVector32): Try[Boolean]
 }
 
 trait OutgoingPaymentsDb {

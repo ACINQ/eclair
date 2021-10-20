@@ -32,7 +32,6 @@ import org.scalatest.funsuite.AnyFunSuite
 import java.time.Instant
 import java.util.UUID
 import scala.concurrent.duration._
-import scala.util.Success
 
 class PaymentsDbSpec extends AnyFunSuite {
 
@@ -400,7 +399,9 @@ class PaymentsDbSpec extends AnyFunSuite {
       val db = dbs.payments
 
       // can't receive a payment without an invoice associated with it
-      assertThrows[IllegalArgumentException](db.receiveIncomingPayment(randomBytes32(), 12345678 msat))
+      val unknownPaymentHash = randomBytes32()
+      assert(!db.receiveIncomingPayment(unknownPaymentHash, 12345678 msat))
+      assert(db.getIncomingPayment(unknownPaymentHash).isEmpty)
 
       val expiredInvoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(561 msat), randomBytes32(), alicePriv, Left("invoice #1"), CltvExpiryDelta(18), timestamp = 1 unixsec)
       val expiredInvoice2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(1105 msat), randomBytes32(), bobPriv, Left("invoice #2"), CltvExpiryDelta(18), timestamp = 2 unixsec, expirySeconds = Some(30))
@@ -447,14 +448,12 @@ class PaymentsDbSpec extends AnyFunSuite {
       assert(db.listPendingIncomingPayments(0 unixms, now) === Seq(pendingPayment1, pendingPayment2))
       assert(db.listReceivedIncomingPayments(0 unixms, now) === Seq(payment1, payment2))
 
-      // cannot remove a paid invoice
-      assertThrows[IllegalArgumentException](db.removeIncomingPayment(paidInvoice1.paymentHash).get)
-      assert(db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash) == Success(true))
-      // trying to remove a removed payment
-      assert(db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash) == Success(false))
-      assert(db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash) == Success(true))
-      // trying to remove a removed payment
-      assert(db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash) == Success(false))
+      assert(db.removeIncomingPayment(paidInvoice1.paymentHash).isFailure)
+      db.removeIncomingPayment(paidInvoice1.paymentHash).failed.foreach(e => assert(e.getMessage === "Cannot remove a received incoming payment"))
+      assert(db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash).isSuccess)
+      assert(db.removeIncomingPayment(pendingPayment1.paymentRequest.paymentHash).isSuccess) // idempotent
+      assert(db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash).isSuccess)
+      assert(db.removeIncomingPayment(expiredPayment1.paymentRequest.paymentHash).isSuccess) // idempotent
     }
   }
 

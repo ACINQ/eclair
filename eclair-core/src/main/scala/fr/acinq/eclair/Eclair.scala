@@ -127,7 +127,7 @@ trait Eclair {
 
   def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
 
-  def deleteInvoice(paymentHash: ByteVector32): Future[Boolean]
+  def deleteInvoice(paymentHash: ByteVector32): Future[String]
 
   def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]]
 
@@ -396,8 +396,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     appKit.nodeParams.db.payments.getIncomingPayment(paymentHash).map(_.paymentRequest)
   }
 
-  override def deleteInvoice(paymentHash: ByteVector32): Future[Boolean] = Future {
-    appKit.nodeParams.db.payments.removeIncomingPayment(paymentHash).get
+  override def deleteInvoice(paymentHash: ByteVector32): Future[String] = {
+    Future.fromTry(appKit.nodeParams.db.payments.removeIncomingPayment(paymentHash).map(_ => s"deleted invoice $paymentHash"))
   }
 
   /**
