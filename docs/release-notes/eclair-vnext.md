@@ -48,7 +48,11 @@ Examples:
   }
   ```
 
-<insert changes>
+This release contains many other API updates:
+
+- `deleteinvoice` allows you to remove unpaid invoices (#1984)
+
+Have a look at our [API documentation](https://acinq.github.io/eclair) for more details.
 
 ### Miscellaneous improvements and bug fixes
 

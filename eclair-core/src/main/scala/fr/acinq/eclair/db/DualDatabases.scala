@@ -311,7 +311,7 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     sqlite.addIncomingPayment(pr, preimage, paymentType)
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Unit = {
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = {
     runAsync(postgres.receiveIncomingPayment(paymentHash, amount, receivedAt))
     sqlite.receiveIncomingPayment(paymentHash, amount, receivedAt)
   }
@@ -319,6 +319,11 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = {
     runAsync(postgres.getIncomingPayment(paymentHash))
     sqlite.getIncomingPayment(paymentHash)
+  }
+
+  override def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit] = {
+    runAsync(postgres.removeIncomingPayment(paymentHash))
+    sqlite.removeIncomingPayment(paymentHash)
   }
 
   override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
@@ -375,6 +380,7 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     runAsync(postgres.listOutgoingPayments(from, to))
     sqlite.listOutgoingPayments(from, to)
   }
+
 }
 
 case class DualPendingCommandsDb(sqlite: SqlitePendingCommandsDb, postgres: PgPendingCommandsDb) extends PendingCommandsDb {

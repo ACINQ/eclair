@@ -30,11 +30,12 @@ import scodec.Attempt
 import scodec.bits.BitVector
 import scodec.codecs._
 
-import java.sql.{ResultSet, Statement, Timestamp}
+import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
 import scala.concurrent.duration.DurationLong
+import scala.util.{Failure, Success, Try}
 
 object PgPaymentsDb {
   val DB_NAME = "payments"
@@ -248,16 +249,14 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Unit = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.received SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
         update.setLong(1, amount.toLong)
         update.setTimestamp(2, receivedAt.toSqlTimestamp)
         update.setString(3, paymentHash.toHex)
         val updated = update.executeUpdate()
-        if (updated == 0) {
-          throw new IllegalArgumentException("Inserted a received payment without having an invoice")
-        }
+        updated > 0
       }
     }
   }
@@ -280,11 +279,33 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
+  private def getIncomingPaymentInternal(pg: Connection, paymentHash: ByteVector32): Option[IncomingPayment] = {
+    using(pg.prepareStatement("SELECT * FROM payments.received WHERE payment_hash = ?")) { statement =>
+      statement.setString(1, paymentHash.toHex)
+      statement.executeQuery().map(parseIncomingPayment).headOption
+    }
+  }
+
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = withMetrics("payments/get-incoming", DbBackends.Postgres) {
     withLock { pg =>
-      using(pg.prepareStatement("SELECT * FROM payments.received WHERE payment_hash = ?")) { statement =>
-        statement.setString(1, paymentHash.toHex)
-        statement.executeQuery().map(parseIncomingPayment).headOption
+      getIncomingPaymentInternal(pg, paymentHash)
+    }
+  }
+
+  override def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit] = withMetrics("payments/remove-incoming", DbBackends.Postgres) {
+    withLock { pg =>
+      getIncomingPaymentInternal(pg, paymentHash) match {
+        case Some(incomingPayment) =>
+          incomingPayment.status match {
+            case _: IncomingPaymentStatus.Received => Failure(new IllegalArgumentException("Cannot remove a received incoming payment"))
+            case _: IncomingPaymentStatus =>
+              using(pg.prepareStatement("DELETE FROM payments.received WHERE payment_hash = ?")) { delete =>
+                delete.setString(1, paymentHash.toHex)
+                delete.executeUpdate()
+                Success(())
+              }
+          }
+        case None => Success(())
       }
     }
   }
@@ -403,4 +424,5 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   }
 
   override def close(): Unit = ()
+
 }
