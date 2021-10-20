@@ -121,8 +121,10 @@ object BlockchainWatchdog {
             if (missingBlocks >= 6) {
               context.log.warn("{}: we are {} blocks late: we may be eclipsed from the bitcoin network", source, missingBlocks)
               context.system.eventStream ! EventStream.Publish(DangerousBlocksSkew(headers))
-            } else {
+            } else if (missingBlocks > 0) {
               context.log.info("{}: we are {} blocks late", source, missingBlocks)
+            } else {
+              context.log.debug("{}: we are {} blocks late", source, missingBlocks)
             }
             Metrics.BitcoinBlocksSkew.withTag(Tags.Source, source).update(missingBlocks.toDouble)
             Behaviors.same

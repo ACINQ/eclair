@@ -113,14 +113,13 @@ object ChannelTypes {
   }
   // @formatter:on
 
+  private val features2ChannelType: Map[Features, SupportedChannelType] = Set(Standard, StaticRemoteKey, AnchorOutputs, AnchorOutputsZeroFeeHtlcTx)
+    .map(channelType => Features(channelType.features.map(_ -> FeatureSupport.Mandatory).toMap) -> channelType)
+    .toMap
+
   // NB: Bolt 2: features must exactly match in order to identify a channel type.
-  def fromFeatures(features: Features): ChannelType = features match {
-    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputsZeroFeeHtlcTx -> FeatureSupport.Mandatory) => AnchorOutputsZeroFeeHtlcTx
-    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory, Features.AnchorOutputs -> FeatureSupport.Mandatory) => AnchorOutputs
-    case f if f == Features(Features.StaticRemoteKey -> FeatureSupport.Mandatory) => StaticRemoteKey
-    case f if f == Features.empty => Standard
-    case _ => UnsupportedChannelType(features)
-  }
+  def fromFeatures(features: Features): ChannelType = features2ChannelType.getOrElse(features, UnsupportedChannelType(features))
+
 
   /** Pick the channel type based on local and remote feature bits, as defined by the spec. */
   def defaultFromFeatures(localFeatures: Features, remoteFeatures: Features): SupportedChannelType = {

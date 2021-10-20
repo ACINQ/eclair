@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.Mac32
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
 import org.apache.commons.codec.binary.Base32
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -68,6 +68,8 @@ object CommonCodecs {
   // this is needed because some millisatoshi values are encoded on 32 bits in the BOLTs
   // this codec will fail if the amount does not fit on 32 bits
   val millisatoshi32: Codec[MilliSatoshi] = uint32.xmapc(l => MilliSatoshi(l))(_.toLong)
+
+  val timestampSecond: Codec[TimestampSecond] = uint32.xmapc(TimestampSecond(_))(_.toLong)
 
   /**
    * We impose a minimal encoding on some values (such as varint and truncated int) to ensure that signed hashes can be

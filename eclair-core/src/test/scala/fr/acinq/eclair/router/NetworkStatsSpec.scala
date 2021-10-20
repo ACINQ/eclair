@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
-import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, randomBytes32, randomBytes64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.util.Random
@@ -87,11 +87,11 @@ object NetworkStatsSpec {
   }
 
   def fakeChannelUpdate1(cltv: CltvExpiryDelta, feeBase: MilliSatoshi, feeProportional: Long): ChannelUpdate = {
-    ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 0, ChannelUpdate.ChannelFlags.DUMMY, cltv, 1 msat, feeBase, feeProportional, None)
+    ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 0 unixsec, ChannelUpdate.ChannelFlags.DUMMY, cltv, 1 msat, feeBase, feeProportional, None)
   }
 
   def fakeChannelUpdate2(cltv: CltvExpiryDelta, feeBase: MilliSatoshi, feeProportional: Long): ChannelUpdate = {
-    ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 0, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), cltv, 1 msat, feeBase, feeProportional, None)
+    ChannelUpdate(randomBytes64(), randomBytes32(), ShortChannelId(42), 0 unixsec, ChannelUpdate.ChannelFlags(isNode1 = false, isEnabled = false), cltv, 1 msat, feeBase, feeProportional, None)
   }
 
 }

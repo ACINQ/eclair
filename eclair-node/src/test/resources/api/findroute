@@ -9,7 +9,10 @@
       },
       "chainHash" : "024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2",
       "shortChannelId" : "1x2x3",
-      "timestamp" : 0,
+      "timestamp" : {
+        "iso" : "1970-01-01T00:00:00Z",
+        "unix" : 0
+      },
       "channelFlags" : {
         "isEnabled" : true,
         "isNode1" : true
@@ -32,7 +35,10 @@
       },
       "chainHash" : "024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2",
       "shortChannelId" : "1x2x4",
-      "timestamp" : 0,
+      "timestamp" : {
+        "iso" : "1970-01-01T00:00:00Z",
+        "unix" : 0
+      },
       "channelFlags" : {
         "isEnabled" : true,
         "isNode1" : true
@@ -55,7 +61,10 @@
       },
       "chainHash" : "024b7b3626554c44dcc2454ee3812458bfa68d9fced466edfab470844cb7ffe2",
       "shortChannelId" : "1x2x5",
-      "timestamp" : 0,
+      "timestamp" : {
+        "iso" : "1970-01-01T00:00:00Z",
+        "unix" : 0
+      },
       "channelFlags" : {
         "isEnabled" : true,
         "isNode1" : true

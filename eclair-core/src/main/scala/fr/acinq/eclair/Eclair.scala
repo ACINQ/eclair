@@ -24,7 +24,6 @@ import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
-import fr.acinq.eclair.TimestampQueryFilters._
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
@@ -58,24 +57,9 @@ case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, co
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
-case class TimestampQueryFilters(from: Long, to: Long)
-
 case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector)
 
 case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
-
-object TimestampQueryFilters {
-  /** We use this in the context of timestamp filtering, when we don't need an upper bound. */
-  val MaxEpochMilliseconds: Long = Duration.fromNanos(Long.MaxValue).toMillis
-
-  def getDefaultTimestampFilters(from_opt: Option[Long], to_opt: Option[Long]): TimestampQueryFilters = {
-    // NB: we expect callers to use seconds, but internally we use milli-seconds everywhere.
-    val from = from_opt.getOrElse(0L).seconds.toMillis
-    val to = to_opt.map(_.seconds.toMillis).getOrElse(MaxEpochMilliseconds)
-
-    TimestampQueryFilters(from, to)
-  }
-}
 
 object SignedMessage {
   def signedBytes(message: ByteVector): ByteVector32 =
@@ -130,19 +114,19 @@ trait Eclair {
 
   def sendToRoute(amount: MilliSatoshi, recipientAmount_opt: Option[MilliSatoshi], externalId_opt: Option[String], parentId_opt: Option[UUID], invoice: PaymentRequest, finalCltvExpiryDelta: CltvExpiryDelta, route: PredefinedRoute, trampolineSecret_opt: Option[ByteVector32] = None, trampolineFees_opt: Option[MilliSatoshi] = None, trampolineExpiryDelta_opt: Option[CltvExpiryDelta] = None, trampolineNodes_opt: Seq[PublicKey] = Nil)(implicit timeout: Timeout): Future[SendPaymentToRouteResponse]
 
-  def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse]
+  def audit(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[AuditResponse]
 
-  def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]]
+  def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]]
 
-  def channelStats(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[Stats]]
+  def channelStats(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Stats]]
 
   def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]]
 
   def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]]
 
-  def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
+  def pendingInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
 
-  def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
+  def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[PaymentRequest]]
 
   def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]]
 
@@ -180,8 +164,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def open(nodeId: PublicKey, fundingAmount: Satoshi, pushAmount_opt: Option[MilliSatoshi], channelType_opt: Option[SupportedChannelType], fundingFeeratePerByte_opt: Option[FeeratePerByte], flags_opt: Option[Int], openTimeout_opt: Option[Timeout])(implicit timeout: Timeout): Future[ChannelOpenResponse] = {
-    // we want the open timeout to expire *before* the default ask timeout, otherwise user won't get a generic response
-    val openTimeout = openTimeout_opt.getOrElse(Timeout(10 seconds))
+    // we want the open timeout to expire *before* the default ask timeout, otherwise user will get a generic response
+    val openTimeout = openTimeout_opt.getOrElse(Timeout(20 seconds))
     (appKit.switchboard ? Peer.OpenChannel(
       remoteNodeId = nodeId,
       fundingSatoshis = fundingAmount,
@@ -385,35 +369,30 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     appKit.nodeParams.db.payments.getIncomingPayment(paymentHash)
   }
 
-  override def audit(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[AuditResponse] = {
-    val filter = getDefaultTimestampFilters(from_opt, to_opt)
+  override def audit(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[AuditResponse] = {
     Future(AuditResponse(
-      sent = appKit.nodeParams.db.audit.listSent(filter.from, filter.to),
-      received = appKit.nodeParams.db.audit.listReceived(filter.from, filter.to),
-      relayed = appKit.nodeParams.db.audit.listRelayed(filter.from, filter.to)
+      sent = appKit.nodeParams.db.audit.listSent(from.toTimestampMilli, to.toTimestampMilli),
+      received = appKit.nodeParams.db.audit.listReceived(from.toTimestampMilli, to.toTimestampMilli),
+      relayed = appKit.nodeParams.db.audit.listRelayed(from.toTimestampMilli, to.toTimestampMilli)
     ))
   }
 
-  override def networkFees(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[NetworkFee]] = {
-    val filter = getDefaultTimestampFilters(from_opt, to_opt)
-    Future(appKit.nodeParams.db.audit.listNetworkFees(filter.from, filter.to))
+  override def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]] = {
+    Future(appKit.nodeParams.db.audit.listNetworkFees(from.toTimestampMilli, to.toTimestampMilli))
   }
 
-  override def channelStats(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[Stats]] = {
-    val filter = getDefaultTimestampFilters(from_opt, to_opt)
-    Future(appKit.nodeParams.db.audit.stats(filter.from, filter.to))
+  override def channelStats(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Stats]] = {
+    Future(appKit.nodeParams.db.audit.stats(from.toTimestampMilli, to.toTimestampMilli))
   }
 
   override def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]] = (appKit.router ? GetNetworkStats).mapTo[GetNetworkStatsResponse].map(_.stats)
 
-  override def allInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
-    val filter = getDefaultTimestampFilters(from_opt, to_opt)
-    appKit.nodeParams.db.payments.listIncomingPayments(filter.from, filter.to).map(_.paymentRequest)
+  override def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
+    appKit.nodeParams.db.payments.listIncomingPayments(from.toTimestampMilli, to.toTimestampMilli).map(_.paymentRequest)
   }
 
-  override def pendingInvoices(from_opt: Option[Long], to_opt: Option[Long])(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
-    val filter = getDefaultTimestampFilters(from_opt, to_opt)
-    appKit.nodeParams.db.payments.listPendingIncomingPayments(filter.from, filter.to).map(_.paymentRequest)
+  override def pendingInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
+    appKit.nodeParams.db.payments.listPendingIncomingPayments(from.toTimestampMilli, to.toTimestampMilli).map(_.paymentRequest)
   }
 
   override def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]] = Future {

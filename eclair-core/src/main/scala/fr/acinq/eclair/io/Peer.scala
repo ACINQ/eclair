@@ -101,7 +101,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         sender() ! PeerConnection.ConnectionResult.AlreadyConnected
         stay()
 
-      case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
+      case Event(Peer.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
         logMessage(msg, "OUT")
         d.peerConnection forward msg
         stay()
@@ -173,7 +173,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
                 stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
               case Left(ex) =>
                 log.warning(s"ignoring open_channel: ${ex.getMessage}")
-                d.peerConnection ! Error(msg.temporaryChannelId, ex.getMessage)
+                val err = Error(msg.temporaryChannelId, ex.getMessage)
+                self ! Peer.OutgoingMessage(err, d.peerConnection)
                 stay()
             }
           case Some(_) =>
@@ -262,7 +263,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       }, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
       stay()
 
-    case Event(_: Channel.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
+    case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
   }
 
   private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
@@ -337,8 +338,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
     val msg = Warning(unknownChannelId, "unknown channel")
-    logMessage(msg, "OUT")
-    peerConnection ! msg
+    self ! Peer.OutgoingMessage(msg, peerConnection)
   }
 
   def stopPeer(): State = {
@@ -436,6 +436,15 @@ object Peer {
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes
+
+  /**
+   * Dedicated command for outgoing messages for logging purposes.
+   *
+   * To preserve sequentiality of messages in the event of disconnections and reconnections, we provide a reference to
+   * the connection that the message is valid for. If the actual connection was reset in the meantime, the [[Peer]]
+   * will simply drop the message.
+   */
+  case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 
   case class Transition(previousData: Peer.Data, nextData: Peer.Data)
 

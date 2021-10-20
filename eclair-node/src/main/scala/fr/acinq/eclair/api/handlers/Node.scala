@@ -57,8 +57,8 @@ trait Node {
   }
 
   val audit: Route = postRequest("audit") { implicit t =>
-    formFields(fromFormParam.?, toFormParam.?) { (from_opt, to_opt) =>
-      complete(eclairApi.audit(from_opt, to_opt))
+    formFields(fromFormParam, toFormParam) { (from, to) =>
+      complete(eclairApi.audit(from, to))
     }
   }
 

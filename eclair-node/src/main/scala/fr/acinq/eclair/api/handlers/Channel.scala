@@ -101,8 +101,8 @@ trait Channel {
   }
 
   val channelStats: Route = postRequest("channelstats") { implicit t =>
-    formFields(fromFormParam.?, toFormParam.?) { (from_opt, to_opt) =>
-      complete(eclairApi.channelStats(from_opt, to_opt))
+    formFields(fromFormParam, toFormParam) { (from, to) =>
+      complete(eclairApi.channelStats(from, to))
     }
   }
 

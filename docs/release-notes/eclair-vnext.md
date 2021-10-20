@@ -8,6 +8,46 @@
 
 ### API changes
 
+#### Timestamps
+
+All timestamps are now returned as an object with two attributes:
+- `iso`: ISO-8601 format with GMT time zone. Precision may be second or millisecond depending on the timestamp.
+- `unix`: seconds since epoch formats (seconds since epoch). Precision is always second.
+
+Examples:
+- second-precision timestamp:
+  - before:
+  ```json
+  {
+    "timestamp": 1633357961
+  }
+  ```
+  - after
+  ```json
+  {
+    "timestamp": {
+      "iso": "2021-10-04T14:32:41Z",
+      "unix": 1633357961
+    }
+  }
+  ```
+- milli-second precision timestamp:
+  - before:
+  ```json
+  {
+    "timestamp": 1633357961456
+  }
+  ```
+  - after (note how the unix format is in second precision):
+  ```json
+  {
+    "timestamp": {
+      "iso": "2021-10-04T14:32:41.456Z",
+      "unix": 1633357961
+    }
+  }
+  ```
+
 This release contains many API updates:
 
 - `findroute`, `findroutetonode` and `findroutebetweennodes` supports new output format `full` (#1969)
