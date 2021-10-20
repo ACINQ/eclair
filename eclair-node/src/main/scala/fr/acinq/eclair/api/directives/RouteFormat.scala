@@ -19,7 +19,9 @@ package fr.acinq.eclair.api.directives
 import akka.http.scaladsl.model.StatusCodes.OK
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import fr.acinq.eclair.api.serde.JsonSupport._
+import fr.acinq.eclair.json.{JsonSerializers, RouteFullSerializer, RouteNodeIdsSerializer, RouteShortChannelIdsSerializer}
 import fr.acinq.eclair.router.Router.RouteResponse
+import org.json4s.Formats
 
 // @formatter:off
 sealed trait RouteFormat
@@ -43,20 +45,13 @@ object RouteFormat {
 
   def format(route: RouteResponse, format_opt: Option[RouteFormat]): HttpResponse = format(route, format_opt.getOrElse(NodeIdRouteFormat))
 
-  def format(route: RouteResponse, format: RouteFormat): HttpResponse =
-    HttpResponse(OK).withEntity(ContentTypes.`application/json`,
-      format match {
-        case NodeIdRouteFormat =>
-          val nodeIds = route.routes.head.hops match {
-            case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
-            case Nil => Nil
-          }
-          serialization.write(nodeIds.toList.map(_.toString))
-        case ShortChannelIdRouteFormat =>
-          val shortChannelIds = route.routes.head.hops.map(_.lastUpdate.shortChannelId)
-          serialization.write(shortChannelIds.toList.map(_.toString))
-        case FullRouteFormat =>
-          serialization.writePretty(route.routes)
-      })
+  def format(route: RouteResponse, format: RouteFormat): HttpResponse = {
+    val serializationFormats: Formats = format match {
+      case NodeIdRouteFormat => JsonSerializers.formats + RouteNodeIdsSerializer
+      case ShortChannelIdRouteFormat => JsonSerializers.formats + RouteShortChannelIdsSerializer
+      case FullRouteFormat => JsonSerializers.formats + RouteFullSerializer
+    }
+    HttpResponse(OK).withEntity(ContentTypes.`application/json`, serialization.write(route)(serializationFormats))
+  }
 }
 
