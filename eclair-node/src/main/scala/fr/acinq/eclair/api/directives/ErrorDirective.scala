@@ -32,10 +32,10 @@ trait ErrorDirective {
 
   private val apiExceptionHandler = ExceptionHandler {
     case t: IllegalArgumentException =>
-      logger.error(s"API call failed with cause=${t.getMessage}", t)
+      logger.error(s"API call failed with cause=${t.getMessage}")
       complete(StatusCodes.BadRequest, ErrorResponse(t.getMessage))
     case t: Throwable =>
-      logger.error(s"API call failed with cause=${t.getMessage}", t)
+      logger.error(s"API call failed with cause=${t.getMessage}")
       complete(StatusCodes.InternalServerError, ErrorResponse(t.getMessage))
   }
 

@@ -17,7 +17,6 @@
 package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
-
 import akka.actor.{ActorRef, Props}
 import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
@@ -28,7 +27,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.db.{NetworkDb, PeersDb}
 import fr.acinq.eclair.io.Monitoring.Metrics
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams, TimestampMilli, TimestampSecond}
 
 import scala.concurrent.duration.{FiniteDuration, _}
 import scala.util.Random
@@ -97,7 +96,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
             val firstNextReconnectionDelay = nodeParams.maxReconnectInterval.minus(Random.nextInt(nodeParams.maxReconnectInterval.toSeconds.toInt / 2).seconds)
             log.debug("first connection attempt in {}", initialDelay)
             (initialDelay, firstNextReconnectionDelay)
-          case (_, cd: ConnectingData) if System.currentTimeMillis.milliseconds - d.since < 30.seconds =>
+          case (_, cd: ConnectingData) if TimestampMilli.now() - d.since < 30.seconds =>
             // If our latest successful connection attempt was less than 30 seconds ago, we pick up the exponential
             // back-off retry delay where we left it. The goal is to address cases where the reconnection is successful,
             // but we are disconnected right away.
@@ -185,7 +184,7 @@ object ReconnectionTask {
   // @formatter:off
   sealed trait Data
   case object Nothing extends Data
-  case class IdleData(previousData: Data, since: FiniteDuration = System.currentTimeMillis.milliseconds) extends Data
+  case class IdleData(previousData: Data, since: TimestampMilli = TimestampMilli.now()) extends Data
   case class ConnectingData(to: InetSocketAddress, nextReconnectionDelay: FiniteDuration) extends Data
   case class WaitingData(nextReconnectionDelay: FiniteDuration) extends Data
   // @formatter:on

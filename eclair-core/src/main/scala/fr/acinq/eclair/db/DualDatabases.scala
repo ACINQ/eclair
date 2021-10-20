@@ -12,7 +12,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.io.File
@@ -176,27 +176,27 @@ case class DualAuditDb(sqlite: SqliteAuditDb, postgres: PgAuditDb) extends Audit
     sqlite.addPathFindingExperimentMetrics(metrics)
   }
 
-  override def listSent(from: Long, to: Long): Seq[PaymentSent] = {
+  override def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent] = {
     runAsync(postgres.listSent(from, to))
     sqlite.listSent(from, to)
   }
 
-  override def listReceived(from: Long, to: Long): Seq[PaymentReceived] = {
+  override def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived] = {
     runAsync(postgres.listReceived(from, to))
     sqlite.listReceived(from, to)
   }
 
-  override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] = {
+  override def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed] = {
     runAsync(postgres.listRelayed(from, to))
     sqlite.listRelayed(from, to)
   }
 
-  override def listNetworkFees(from: Long, to: Long): Seq[AuditDb.NetworkFee] = {
+  override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[AuditDb.NetworkFee] = {
     runAsync(postgres.listNetworkFees(from, to))
     sqlite.listNetworkFees(from, to)
   }
 
-  override def stats(from: Long, to: Long): Seq[AuditDb.Stats] = {
+  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[AuditDb.Stats] = {
     runAsync(postgres.stats(from, to))
     sqlite.stats(from, to)
   }
@@ -214,6 +214,11 @@ case class DualChannelsDb(sqlite: SqliteChannelsDb, postgres: PgChannelsDb) exte
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
     runAsync(postgres.addOrUpdateChannel(state))
     sqlite.addOrUpdateChannel(state)
+  }
+
+  override def getChannel(channelId: ByteVector32): Option[HasCommitments] = {
+    runAsync(postgres.getChannel(channelId))
+    sqlite.getChannel(channelId)
   }
 
   override def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit = {
@@ -306,7 +311,7 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     sqlite.addIncomingPayment(pr, preimage, paymentType)
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Boolean = {
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = {
     runAsync(postgres.receiveIncomingPayment(paymentHash, amount, receivedAt))
     sqlite.receiveIncomingPayment(paymentHash, amount, receivedAt)
   }
@@ -316,22 +321,22 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     sqlite.getIncomingPayment(paymentHash)
   }
 
-  override def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = {
+  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
     runAsync(postgres.listIncomingPayments(from, to))
     sqlite.listIncomingPayments(from, to)
   }
 
-  override def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = {
+  override def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
     runAsync(postgres.listPendingIncomingPayments(from, to))
     sqlite.listPendingIncomingPayments(from, to)
   }
 
-  override def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = {
+  override def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
     runAsync(postgres.listExpiredIncomingPayments(from, to))
     sqlite.listExpiredIncomingPayments(from, to)
   }
 
-  override def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = {
+  override def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = {
     runAsync(postgres.listReceivedIncomingPayments(from, to))
     sqlite.listReceivedIncomingPayments(from, to)
   }
@@ -366,7 +371,7 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     sqlite.listOutgoingPayments(paymentHash)
   }
 
-  override def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment] = {
+  override def listOutgoingPayments(from: TimestampMilli, to: TimestampMilli): Seq[OutgoingPayment] = {
     runAsync(postgres.listOutgoingPayments(from, to))
     sqlite.listOutgoingPayments(from, to)
   }

@@ -26,7 +26,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
-import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TimestampMilli}
 import grizzled.slf4j.Logging
 
 import java.sql.{Statement, Timestamp}
@@ -45,7 +45,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
   import ExtendedResultSet._
   import PgAuditDb._
 
-  case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: Long)
+  case class RelayedPart(channelId: ByteVector32, amount: MilliSatoshi, direction: String, relayType: String, timestamp: TimestampMilli)
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
@@ -189,7 +189,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.setString(7, e.paymentPreimage.toHex)
           statement.setString(8, e.recipientNodeId.value.toHex)
           statement.setString(9, p.toChannelId.toHex)
-          statement.setTimestamp(10, Timestamp.from(Instant.ofEpochMilli(p.timestamp)))
+          statement.setTimestamp(10, p.timestamp.toSqlTimestamp)
           statement.addBatch()
         })
         statement.executeBatch()
@@ -204,7 +204,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.setLong(1, p.amount.toLong)
           statement.setString(2, e.paymentHash.toHex)
           statement.setString(3, p.fromChannelId.toHex)
-          statement.setTimestamp(4, Timestamp.from(Instant.ofEpochMilli(p.timestamp)))
+          statement.setTimestamp(4, p.timestamp.toSqlTimestamp)
           statement.addBatch()
         })
         statement.executeBatch()
@@ -223,7 +223,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             statement.setString(1, e.paymentHash.toHex)
             statement.setLong(2, nextTrampolineAmount.toLong)
             statement.setString(3, nextTrampolineNodeId.value.toHex)
-            statement.setTimestamp(4, Timestamp.from(Instant.ofEpochMilli(e.timestamp)))
+            statement.setTimestamp(4, e.timestamp.toSqlTimestamp)
             statement.executeUpdate()
           }
           // trampoline relayed payments do MPP aggregation and may have M inputs and N outputs
@@ -236,7 +236,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           statement.setString(3, p.channelId.toHex)
           statement.setString(4, p.direction)
           statement.setString(5, p.relayType)
-          statement.setTimestamp(6, Timestamp.from(Instant.ofEpochMilli(e.timestamp)))
+          statement.setTimestamp(6, e.timestamp.toSqlTimestamp)
           statement.executeUpdate()
         }
       }
@@ -309,8 +309,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setLong(1, m.amount.toLong)
         statement.setLong(2, m.fees.toLong)
         statement.setString(3, m.status)
-        statement.setLong(4, m.duration)
-        statement.setTimestamp(5, new Timestamp(m.timestamp))
+        statement.setLong(4, m.duration.toMillis)
+        statement.setTimestamp(5, m.timestamp.toSqlTimestamp)
         statement.setBoolean(6, m.isMultiPart)
         statement.setString(7, m.experimentName)
         statement.setString(8, m.recipientNodeId.value.toHex)
@@ -319,11 +319,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
     }
   }
 
-  override def listSent(from: Long, to: Long): Seq[PaymentSent] =
+  override def listSent(from: TimestampMilli, to: TimestampMilli): Seq[PaymentSent] =
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT * FROM audit.sent WHERE timestamp BETWEEN ? AND ?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery()
           .foldLeft(Map.empty[UUID, PaymentSent]) { (sentByParentId, rs) =>
             val parentId = UUID.fromString(rs.getString("parent_payment_id"))
@@ -333,7 +333,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
               MilliSatoshi(rs.getLong("fees_msat")),
               rs.getByteVector32FromHex("to_channel_id"),
               None, // we don't store the route in the audit DB
-              rs.getTimestamp("timestamp").getTime)
+              TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
             val sent = sentByParentId.get(parentId) match {
               case Some(s) => s.copy(parts = s.parts :+ part)
               case None => PaymentSent(
@@ -349,18 +349,18 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def listReceived(from: Long, to: Long): Seq[PaymentReceived] =
+  override def listReceived(from: TimestampMilli, to: TimestampMilli): Seq[PaymentReceived] =
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT * FROM audit.received WHERE timestamp BETWEEN ? AND ?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery()
           .foldLeft(Map.empty[ByteVector32, PaymentReceived]) { (receivedByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
             val part = PaymentReceived.PartialPayment(
               MilliSatoshi(rs.getLong("amount_msat")),
               rs.getByteVector32FromHex("from_channel_id"),
-              rs.getTimestamp("timestamp").getTime)
+              TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
             val received = receivedByHash.get(paymentHash) match {
               case Some(r) => r.copy(parts = r.parts :+ part)
               case None => PaymentReceived(paymentHash, Seq(part))
@@ -370,11 +370,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }
     }
 
-  override def listRelayed(from: Long, to: Long): Seq[PaymentRelayed] =
+  override def listRelayed(from: TimestampMilli, to: TimestampMilli): Seq[PaymentRelayed] =
     inTransaction { pg =>
       val trampolineByHash = using(pg.prepareStatement("SELECT * FROM audit.relayed_trampoline WHERE timestamp BETWEEN ? and ?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery()
           .foldLeft(Map.empty[ByteVector32, (MilliSatoshi, PublicKey)]) { (trampolineByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
@@ -384,8 +384,8 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           }
       }
       val relayedByHash = using(pg.prepareStatement("SELECT * FROM audit.relayed WHERE timestamp BETWEEN ? and ?")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery()
           .foldLeft(Map.empty[ByteVector32, Seq[RelayedPart]]) { (relayedByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
@@ -394,7 +394,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
               MilliSatoshi(rs.getLong("amount_msat")),
               rs.getString("direction"),
               rs.getString("relay_type"),
-              rs.getTimestamp("timestamp").getTime)
+              TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
             relayedByHash + (paymentHash -> (relayedByHash.getOrElse(paymentHash, Nil) :+ part))
           }
       }
@@ -416,11 +416,11 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
       }.toSeq.sortBy(_.timestamp)
     }
 
-  override def listNetworkFees(from: Long, to: Long): Seq[NetworkFee] =
+  override def listNetworkFees(from: TimestampMilli, to: TimestampMilli): Seq[NetworkFee] =
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT * FROM audit.transactions_confirmed INNER JOIN audit.transactions_published ON audit.transactions_published.tx_id = audit.transactions_confirmed.tx_id  WHERE audit.transactions_confirmed.timestamp BETWEEN ? and ? ORDER BY audit.transactions_confirmed.timestamp")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery().map { rs =>
           NetworkFee(
             remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
@@ -428,12 +428,12 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
             txId = rs.getByteVector32FromHex("tx_id"),
             fee = Satoshi(rs.getLong("mining_fee_sat")),
             txType = rs.getString("tx_type"),
-            timestamp = rs.getTimestamp("timestamp").getTime)
+            timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
         }.toSeq
       }
     }
 
-  override def stats(from: Long, to: Long): Seq[Stats] = {
+  override def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats] = {
     val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
       feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
     }

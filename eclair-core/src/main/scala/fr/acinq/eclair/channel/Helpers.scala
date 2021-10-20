@@ -204,8 +204,8 @@ object Helpers {
    *
    * @return the delay until the next update
    */
-  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: DiagnosticLoggingAdapter): FiniteDuration = {
-    val age = System.currentTimeMillis.milliseconds - currentUpdateTimestamp.seconds
+  def nextChannelUpdateRefresh(currentUpdateTimestamp: TimestampSecond)(implicit log: DiagnosticLoggingAdapter): FiniteDuration = {
+    val age = TimestampSecond.now() - currentUpdateTimestamp
     val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
     Logs.withMdc(log)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
       log.debug("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
@@ -322,10 +322,10 @@ object Helpers {
    */
   def checkLocalCommit(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
     if (d.commitments.localCommit.index == nextRemoteRevocationNumber) {
-      // they just sent a new commit_sig, we have received it but they didn't receive our revocation
+      // we are in sync
       true
     } else if (d.commitments.localCommit.index == nextRemoteRevocationNumber + 1) {
-      // we are in sync
+      // they just sent a new commit_sig, we have received it but they didn't receive our revocation
       true
     } else if (d.commitments.localCommit.index > nextRemoteRevocationNumber + 1) {
       // remote is behind: we return true because things are fine on our side
@@ -1027,12 +1027,13 @@ object Helpers {
 
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
-     * more htlcs have timed out and need to be failed in an upstream channel.
+     * more htlcs have timed out and need to be failed in an upstream channel. Trimmed htlcs can be failed as soon as
+     * the commitment tx has been confirmed.
      *
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def timedOutHtlcs(commitmentFormat: CommitmentFormat, localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def trimmedOrTimedOutHtlcs(commitmentFormat: CommitmentFormat, localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec, commitmentFormat).map(_.add)
       if (tx.txid == localCommit.commitTxAndRemoteSig.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
@@ -1068,12 +1069,13 @@ object Helpers {
 
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
-     * more htlcs have timed out and need to be failed in an upstream channel.
+     * more htlcs have timed out and need to be failed in an upstream channel. Trimmed htlcs can be failed as soon as
+     * the commitment tx has been confirmed.
      *
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def timedOutHtlcs(commitmentFormat: CommitmentFormat, remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def trimmedOrTimedOutHtlcs(commitmentFormat: CommitmentFormat, remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec, commitmentFormat).map(_.add)
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)

@@ -20,7 +20,7 @@ import akka.actor.ActorRef
 import akka.event.DiagnosticLoggingAdapter
 import akka.testkit
 import akka.testkit.{TestActor, TestProbe}
-import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.LightningMessage
 
 import java.io.File
@@ -67,15 +67,15 @@ object TestUtils {
 
 
   /**
-   * [[Channel]] encapsulates outgoing messages in [[Channel.OutgoingMessage]] due to how connection management works.
+   * [[Channel]] encapsulates outgoing messages in [[Peer.OutgoingMessage]] due to how connection management works.
    *
-   * This strips the [[Channel.OutgoingMessage]] outer shell and only forwards the inner [[LightningMessage]] making testing
+   * This strips the [[Peer.OutgoingMessage]] outer shell and only forwards the inner [[LightningMessage]] making testing
    * easier. You can now pass a [[TestProbe]] as a connection and only deal with incoming/outgoing [[LightningMessage]].
    */
   def forwardOutgoingToPipe(peer: TestProbe, pipe: ActorRef): Unit = {
     peer.setAutoPilot(new testkit.TestActor.AutoPilot {
       override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Channel.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
+        case Peer.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
           pipe.tell(msg, sender)
           TestActor.KeepRunning
         case _ => TestActor.KeepRunning

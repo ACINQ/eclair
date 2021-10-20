@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.CltvExpiry
+import fr.acinq.eclair.{CltvExpiry, TimestampMilli}
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -34,7 +34,7 @@ object SqliteChannelsDb {
   val CURRENT_VERSION = 4
 }
 
-class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
+class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   import SqliteChannelsDb._
   import SqliteUtils.ExtendedResultSet._
@@ -115,12 +115,19 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb with Logging {
     }
   }
 
+  override def getChannel(channelId: ByteVector32): Option[HasCommitments] = withMetrics("channels/get-channel", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("SELECT data FROM local_channels WHERE channel_id=? AND is_closed=0")) { statement =>
+      statement.setBytes(1, channelId.toArray)
+      statement.executeQuery.mapCodec(stateDataCodec).lastOption
+    }
+  }
+
   /**
    * Helper method to factor updating timestamp columns
    */
   private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
     using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
-      statement.setLong(1, System.currentTimeMillis)
+      statement.setLong(1, TimestampMilli.now().toLong)
       statement.setBytes(2, channelId.toArray)
       statement.executeUpdate()
     }

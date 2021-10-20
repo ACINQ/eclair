@@ -27,6 +27,8 @@ trait ChannelsDb extends Closeable {
 
   def addOrUpdateChannel(state: HasCommitments): Unit
 
+  def getChannel(channelId: ByteVector32): Option[HasCommitments]
+
   def updateChannelMeta(channelId: ByteVector32, event: ChannelEvent.EventType): Unit
 
   def removeChannel(channelId: ByteVector32): Unit
@@ -36,5 +38,4 @@ trait ChannelsDb extends Closeable {
   def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit
 
   def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)]
-
 }

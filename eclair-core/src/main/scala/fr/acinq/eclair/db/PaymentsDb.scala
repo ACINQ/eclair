@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
 
 import java.io.Closeable
 import java.util.UUID
@@ -36,22 +36,22 @@ trait IncomingPaymentsDb {
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
    * If there was no matching payment request in the DB, this will return false.
    */
-  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = System.currentTimeMillis): Boolean
+  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
 
   /** List all incoming payments (pending, expired and succeeded) in the given time range (milli-seconds). */
-  def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+  def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
 
   /** List all pending (not paid, not expired) incoming payments in the given time range (milli-seconds). */
-  def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+  def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
 
   /** List all expired (not paid) incoming payments in the given time range (milli-seconds). */
-  def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+  def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
 
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
-  def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+  def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
 
   /** Remove the incoming payment if it's not paid yet
    *  Returns true  - if the payment was removed,
@@ -82,7 +82,7 @@ trait OutgoingPaymentsDb {
   def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
 
   /** List all the outgoing payment attempts in the given time range (milli-seconds). */
-  def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment]
+  def listOutgoingPayments(from: TimestampMilli, to: TimestampMilli): Seq[OutgoingPayment]
 
 }
 
@@ -107,7 +107,7 @@ case object PaymentType {
 case class IncomingPayment(paymentRequest: PaymentRequest,
                            paymentPreimage: ByteVector32,
                            paymentType: String,
-                           createdAt: Long,
+                           createdAt: TimestampMilli,
                            status: IncomingPaymentStatus)
 
 sealed trait IncomingPaymentStatus
@@ -126,7 +126,7 @@ object IncomingPaymentStatus {
    * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
    * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
    */
-  case class Received(amount: MilliSatoshi, receivedAt: Long) extends IncomingPaymentStatus
+  case class Received(amount: MilliSatoshi, receivedAt: TimestampMilli) extends IncomingPaymentStatus
 
 }
 
@@ -154,7 +154,7 @@ case class OutgoingPayment(id: UUID,
                            amount: MilliSatoshi,
                            recipientAmount: MilliSatoshi,
                            recipientNodeId: PublicKey,
-                           createdAt: Long,
+                           createdAt: TimestampMilli,
                            paymentRequest: Option[PaymentRequest],
                            status: OutgoingPaymentStatus)
 
@@ -175,7 +175,7 @@ object OutgoingPaymentStatus {
    * @param route           payment route used.
    * @param completedAt     absolute time in milli-seconds since UNIX epoch when the payment was completed.
    */
-  case class Succeeded(paymentPreimage: ByteVector32, feesPaid: MilliSatoshi, route: Seq[HopSummary], completedAt: Long) extends OutgoingPaymentStatus
+  case class Succeeded(paymentPreimage: ByteVector32, feesPaid: MilliSatoshi, route: Seq[HopSummary], completedAt: TimestampMilli) extends OutgoingPaymentStatus
 
   /**
    * Payment has failed and may be retried.
@@ -183,7 +183,7 @@ object OutgoingPaymentStatus {
    * @param failures    failed payment attempts.
    * @param completedAt absolute time in milli-seconds since UNIX epoch when the payment was completed.
    */
-  case class Failed(failures: Seq[FailureSummary], completedAt: Long) extends OutgoingPaymentStatus
+  case class Failed(failures: Seq[FailureSummary], completedAt: TimestampMilli) extends OutgoingPaymentStatus
 
 }
 
@@ -240,8 +240,8 @@ sealed trait PlainPayment {
   val paymentType: String
   val paymentRequest: Option[String]
   val finalAmount: Option[MilliSatoshi]
-  val createdAt: Long
-  val completedAt: Option[Long]
+  val createdAt: TimestampMilli
+  val completedAt: Option[TimestampMilli]
 }
 
 case class PlainIncomingPayment(paymentHash: ByteVector32,
@@ -249,9 +249,9 @@ case class PlainIncomingPayment(paymentHash: ByteVector32,
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: IncomingPaymentStatus,
-                                createdAt: Long,
-                                completedAt: Option[Long],
-                                expireAt: Option[Long]) extends PlainPayment
+                                createdAt: TimestampMilli,
+                                completedAt: Option[TimestampMilli],
+                                expireAt: Option[TimestampMilli]) extends PlainPayment
 
 case class PlainOutgoingPayment(parentId: Option[UUID],
                                 externalId: Option[String],
@@ -260,5 +260,5 @@ case class PlainOutgoingPayment(parentId: Option[UUID],
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: OutgoingPaymentStatus,
-                                createdAt: Long,
-                                completedAt: Option[Long]) extends PlainPayment
+                                createdAt: TimestampMilli,
+                                completedAt: Option[TimestampMilli]) extends PlainPayment

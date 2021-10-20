@@ -16,9 +16,11 @@
 
 package fr.acinq.eclair.channel.states.b
 
+import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.blockchain.NoOpOnChainWallet
+import fr.acinq.eclair.channel.Channel.TickChannelOpenTimeout
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.wire.protocol._
@@ -32,9 +34,9 @@ import scala.concurrent.duration._
  * Created by PM on 05/07/2016.
  */
 
-class WaitForFundingCreatedInternalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
+class WaitForFundingInternalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init(wallet = new NoOpOnChainWallet())
@@ -51,14 +53,22 @@ class WaitForFundingCreatedInternalStateSpec extends TestKitBaseClass with Fixtu
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
-      withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, aliceOrigin, alice2bob, bob2alice, alice2blockchain)))
     }
+  }
+
+  test("recv Status.Failure (wallet error)") { f =>
+    import f._
+    alice ! Status.Failure(new RuntimeException("insufficient funds"))
+    awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[Status.Failure]
   }
 
   test("recv Error") { f =>
     import f._
     alice ! Error(ByteVector32.Zeroes, "oops")
     awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[Status.Failure]
   }
 
   test("recv CMD_CLOSE") { f =>
@@ -68,6 +78,21 @@ class WaitForFundingCreatedInternalStateSpec extends TestKitBaseClass with Fixtu
     alice ! c
     sender.expectMsg(RES_SUCCESS(c, ByteVector32.Zeroes))
     awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelClosed]
+  }
+
+  test("recv INPUT_DISCONNECTED") { f =>
+    import f._
+    alice ! INPUT_DISCONNECTED
+    awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[Status.Failure]
+  }
+
+  test("recv TickChannelOpenTimeout") { f =>
+    import f._
+    alice ! TickChannelOpenTimeout
+    awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[Status.Failure]
   }
 
 }

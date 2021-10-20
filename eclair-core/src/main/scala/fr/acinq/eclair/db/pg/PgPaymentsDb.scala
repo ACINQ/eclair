@@ -18,13 +18,13 @@ package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
 import fr.acinq.eclair.wire.protocol.CommonCodecs
+import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.BitVector
@@ -34,6 +34,7 @@ import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
 import java.util.UUID
 import javax.sql.DataSource
+import scala.concurrent.duration.DurationLong
 import scala.util.Try
 
 object PgPaymentsDb {
@@ -113,7 +114,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setLong(6, sent.amount.toLong)
         statement.setLong(7, sent.recipientAmount.toLong)
         statement.setString(8, sent.recipientNodeId.value.toHex)
-        statement.setTimestamp(9, Timestamp.from(Instant.ofEpochMilli(sent.createdAt)))
+        statement.setTimestamp(9, sent.createdAt.toSqlTimestamp)
         statement.setString(10, sent.paymentRequest.map(PaymentRequest.write).orNull)
         statement.executeUpdate()
       }
@@ -124,7 +125,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.sent SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         paymentResult.parts.foreach(p => {
-          statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(p.timestamp)))
+          statement.setTimestamp(1, p.timestamp.toSqlTimestamp)
           statement.setString(2, paymentResult.paymentPreimage.toHex)
           statement.setLong(3, p.feesPaid.toLong)
           statement.setBytes(4, paymentRouteCodec.encode(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList).require.toByteArray)
@@ -139,7 +140,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   override def updateOutgoingPayment(paymentResult: PaymentFailed): Unit = withMetrics("payments/update-outgoing-failed", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.sent SET (completed_at, failures) = (?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(paymentResult.timestamp)))
+        statement.setTimestamp(1, paymentResult.timestamp.toSqlTimestamp)
         statement.setBytes(2, paymentFailuresCodec.encode(paymentResult.failures.map(f => FailureSummary(f)).toList).require.toByteArray)
         statement.setString(3, paymentResult.id.toString)
         if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to mark an outgoing payment as failed but already in final status (id=${paymentResult.id})")
@@ -152,7 +153,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       rs.getByteVector32FromHexNullable("payment_preimage"),
       rs.getMilliSatoshiNullable("fees_msat"),
       rs.getBitVectorOpt("payment_route"),
-      rs.getTimestampNullable("completed_at").map(_.getTime),
+      rs.getTimestampNullable("completed_at").map(TimestampMilli.fromSqlTimestamp),
       rs.getBitVectorOpt("failures"))
 
     OutgoingPayment(
@@ -164,13 +165,13 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       MilliSatoshi(rs.getLong("amount_msat")),
       MilliSatoshi(rs.getLong("recipient_amount_msat")),
       PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
-      rs.getTimestamp("created_at").getTime,
+      TimestampMilli(rs.getTimestamp("created_at").getTime),
       rs.getStringNullable("payment_request").map(PaymentRequest.read),
       status
     )
   }
 
-  private def buildOutgoingPaymentStatus(preimage_opt: Option[ByteVector32], fees_opt: Option[MilliSatoshi], paymentRoute_opt: Option[BitVector], completedAt_opt: Option[Long], failures: Option[BitVector]): OutgoingPaymentStatus = {
+  private def buildOutgoingPaymentStatus(preimage_opt: Option[ByteVector32], fees_opt: Option[MilliSatoshi], paymentRoute_opt: Option[BitVector], completedAt_opt: Option[TimestampMilli], failures: Option[BitVector]): OutgoingPaymentStatus = {
     preimage_opt match {
       // If we have a pre-image, the payment succeeded.
       case Some(preimage) => OutgoingPaymentStatus.Succeeded(
@@ -178,7 +179,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
           case Attempt.Successful(route) => route.value
           case Attempt.Failure(_) => Nil
         }).getOrElse(Nil),
-        completedAt_opt.getOrElse(0)
+        completedAt_opt.getOrElse(0 unixms)
       )
       case None => completedAt_opt match {
         // Otherwise if the payment was marked completed, it's a failure.
@@ -222,11 +223,11 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-timestamp", DbBackends.Postgres) {
+  override def listOutgoingPayments(from: TimestampMilli, to: TimestampMilli): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-timestamp", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM payments.sent WHERE created_at >= ? AND created_at < ? ORDER BY created_at")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery().map { rs =>
           parseOutgoingPayment(rs)
         }.toSeq
@@ -241,18 +242,18 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
         statement.setString(2, preimage.toHex)
         statement.setString(3, paymentType)
         statement.setString(4, PaymentRequest.write(pr))
-        statement.setTimestamp(5, Timestamp.from(Instant.ofEpochSecond(pr.timestamp))) // BOLT11 timestamp is in seconds
-        statement.setTimestamp(6, Timestamp.from(Instant.ofEpochSecond(pr.timestamp + pr.expiry.getOrElse(PaymentRequest.DEFAULT_EXPIRY_SECONDS.toLong))))
+        statement.setTimestamp(5, pr.timestamp.toSqlTimestamp)
+        statement.setTimestamp(6, (pr.timestamp + pr.expiry.getOrElse(PaymentRequest.DEFAULT_EXPIRY_SECONDS).seconds).toSqlTimestamp)
         statement.executeUpdate()
       }
     }
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Boolean = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.received SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
         update.setLong(1, amount.toLong)
-        update.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(receivedAt)))
+        update.setTimestamp(2, receivedAt.toSqlTimestamp)
         update.setString(3, paymentHash.toHex)
         val updated = update.executeUpdate()
         updated > 0
@@ -266,13 +267,13 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
       PaymentRequest.read(paymentRequest),
       rs.getByteVector32FromHex("payment_preimage"),
       rs.getString("payment_type"),
-      rs.getTimestamp("created_at").getTime,
-      buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(paymentRequest), rs.getTimestampNullable("received_at").map(_.getTime)))
+      TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),
+      buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(paymentRequest), rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp)))
   }
 
-  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedPaymentRequest_opt: Option[String], receivedAt_opt: Option[Long]): IncomingPaymentStatus = {
+  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedPaymentRequest_opt: Option[String], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
     amount_opt match {
-      case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0))
+      case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0 unixms))
       case None if serializedPaymentRequest_opt.exists(PaymentRequest.fastHasExpired) => IncomingPaymentStatus.Expired
       case None => IncomingPaymentStatus.Pending
     }
@@ -284,42 +285,42 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Postgres) {
+  override def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM payments.received WHERE created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery().map(parseIncomingPayment).toSeq
       }
     }
   }
 
-  override def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-received", DbBackends.Postgres) {
+  override def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming-received", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM payments.received WHERE received_msat > 0 AND created_at > ? AND created_at < ? ORDER BY created_at")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery().map(parseIncomingPayment).toSeq
       }
     }
   }
 
-  override def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-pending", DbBackends.Postgres) {
+  override def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming-pending", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM payments.received WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at > ? ORDER BY created_at")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.setTimestamp(3, Timestamp.from(Instant.now()))
         statement.executeQuery().map(parseIncomingPayment).toSeq
       }
     }
   }
 
-  override def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment] = withMetrics("payments/list-incoming-expired", DbBackends.Postgres) {
+  override def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment] = withMetrics("payments/list-incoming-expired", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("SELECT * FROM payments.received WHERE received_msat IS NULL AND created_at > ? AND created_at < ? AND expire_at < ? ORDER BY created_at")) { statement =>
-        statement.setTimestamp(1, Timestamp.from(Instant.ofEpochMilli(from)))
-        statement.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(to)))
+        statement.setTimestamp(1, from.toSqlTimestamp)
+        statement.setTimestamp(2, to.toSqlTimestamp)
         statement.setTimestamp(3, Timestamp.from(Instant.now()))
         statement.executeQuery().map(parseIncomingPayment).toSeq
       }
@@ -379,9 +380,9 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
             val paymentType = rs.getString("payment_type")
             val paymentRequest_opt = rs.getStringNullable("payment_request")
             val amount_opt = rs.getMilliSatoshiNullable("final_amount")
-            val createdAt = rs.getTimestamp("created_at").getTime
-            val completedAt_opt = rs.getTimestampNullable("completed_at").map(_.getTime)
-            val expireAt_opt = rs.getTimestampNullable("expire_at").map(_.getTime)
+            val createdAt = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at"))
+            val completedAt_opt = rs.getTimestampNullable("completed_at").map(TimestampMilli.fromSqlTimestamp)
+            val expireAt_opt = rs.getTimestampNullable("expire_at").map(TimestampMilli.fromSqlTimestamp)
 
             if (rs.getString("type") == "received") {
               val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, paymentRequest_opt, completedAt_opt)
