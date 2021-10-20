@@ -248,16 +248,14 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Boolean = withMetrics("payments/receive-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.received SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
         update.setLong(1, amount.toLong)
         update.setTimestamp(2, Timestamp.from(Instant.ofEpochMilli(receivedAt)))
         update.setString(3, paymentHash.toHex)
         val updated = update.executeUpdate()
-        if (updated == 0) {
-          throw new IllegalArgumentException("Inserted a received payment without having an invoice")
-        }
+        updated > 0
       }
     }
   }

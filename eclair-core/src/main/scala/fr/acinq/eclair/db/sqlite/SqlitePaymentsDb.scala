@@ -251,15 +251,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Unit = withMetrics("payments/receive-incoming", DbBackends.Sqlite) {
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long): Boolean = withMetrics("payments/receive-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
       update.setLong(1, amount.toLong)
       update.setLong(2, receivedAt)
       update.setBytes(3, paymentHash.toArray)
       val updated = update.executeUpdate()
-      if (updated == 0) {
-        throw new IllegalArgumentException("Inserted a received payment without having an invoice")
-      }
+      updated > 0
     }
   }
 

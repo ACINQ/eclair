@@ -34,9 +34,9 @@ trait IncomingPaymentsDb {
 
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
-   * Note that this function assumes that there is a matching payment request in the DB.
+   * If there was no matching payment request in the DB, this will return false.
    */
-  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = System.currentTimeMillis): Unit
+  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = System.currentTimeMillis): Boolean
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
@@ -53,6 +53,11 @@ trait IncomingPaymentsDb {
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
   def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
 
+  /** Remove the incoming payment if it's not paid yet
+   *  Returns true  - if the payment was removed,
+   *          false - if the payment was not found
+   *  Throws [[IllegalArgumentException]] if the payment is paid
+   */
   def removeIncomingPayment(paymentHash: ByteVector32): Try[Boolean]
 }
 
