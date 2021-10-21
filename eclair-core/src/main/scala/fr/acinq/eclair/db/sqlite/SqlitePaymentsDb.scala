@@ -33,6 +33,7 @@ import scodec.codecs._
 import java.sql.{Connection, ResultSet, Statement}
 import java.util.UUID
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
@@ -250,15 +251,13 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Unit = withMetrics("payments/receive-incoming", DbBackends.Sqlite) {
+  override def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli): Boolean = withMetrics("payments/receive-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
       update.setLong(1, amount.toLong)
       update.setLong(2, receivedAt.toLong)
       update.setBytes(3, paymentHash.toArray)
       val updated = update.executeUpdate()
-      if (updated == 0) {
-        throw new IllegalArgumentException("Inserted a received payment without having an invoice")
-      }
+      updated > 0
     }
   }
 
@@ -284,6 +283,22 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash.toArray)
       statement.executeQuery().map(parseIncomingPayment).headOption
+    }
+  }
+
+  override def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit] = withMetrics("payments/remove-incoming", DbBackends.Sqlite) {
+    getIncomingPayment(paymentHash) match {
+      case Some(incomingPayment) =>
+        incomingPayment.status match {
+          case _: IncomingPaymentStatus.Received => Failure(new IllegalArgumentException("Cannot remove a received incoming payment"))
+          case _: IncomingPaymentStatus =>
+            using(sqlite.prepareStatement("DELETE FROM received_payments WHERE payment_hash = ?")) { delete =>
+              delete.setBytes(1, paymentHash.toArray)
+              delete.executeUpdate()
+              Success(())
+            }
+        }
+      case None => Success(())
     }
   }
 
