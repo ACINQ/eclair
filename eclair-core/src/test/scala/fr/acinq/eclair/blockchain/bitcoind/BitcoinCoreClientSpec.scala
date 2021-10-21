@@ -67,7 +67,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val error = sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error
     assert(error.message.contains("Please enter the wallet passphrase with walletpassphrase first"))
 
-    sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 10))
+    sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 3600)) // wallet stay unlocked for 3600s
     sender.expectMsgType[JValue]
   }
 
