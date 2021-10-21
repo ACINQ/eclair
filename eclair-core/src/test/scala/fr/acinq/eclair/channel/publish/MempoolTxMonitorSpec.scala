@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, SatoshiLong, Transaction, TxIn}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
@@ -33,7 +33,7 @@ import fr.acinq.eclair.channel.{TransactionConfirmed, TransactionPublished}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
-
+import fr.acinq.eclair.KotlinUtils._
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.DurationInt
@@ -141,7 +141,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     import f._
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
-    val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomBytes32(), 13), Nil, 0)))
+    val txUnknownInput = tx.updateInputs(tx.txIn ++ Seq(new TxIn(new OutPoint(randomBytes32(), 13), Nil, 0)))
     monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(WalletInputGone))
   }
@@ -154,7 +154,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     generateBlocks(1)
 
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 5_000 sat, 0, 0)
-    val txUnknownInput = tx.copy(txIn = tx.txIn ++ Seq(TxIn(OutPoint(randomBytes32(), 13), Nil, 0)))
+    val txUnknownInput = tx.updateInputs(tx.txIn ++ Seq(new TxIn(new OutPoint(randomBytes32(), 13), Nil, 0)))
     monitor ! Publish(probe.ref, txUnknownInput, txUnknownInput.txIn.head.outPoint, "test-tx", 10 sat)
     probe.expectMsg(TxRejected(WalletInputGone))
   }

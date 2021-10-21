@@ -17,10 +17,11 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
@@ -57,16 +58,16 @@ class SphinxSpec extends AnyFunSuite {
   */
   test("generate ephemeral keys and secrets (reference test vector)") {
     val (ephkeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    assert(ephkeys(0) == PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
-    assert(sharedsecrets(0) == ByteVector32(hex"53eb63ea8a3fec3b3cd433b85cd62a4b145e1dda09391b348c4e1cd36a03ea66"))
-    assert(ephkeys(1) == PublicKey(hex"028f9438bfbf7feac2e108d677e3a82da596be706cc1cf342b75c7b7e22bf4e6e2"))
-    assert(sharedsecrets(1) == ByteVector32(hex"a6519e98832a0b179f62123b3567c106db99ee37bef036e783263602f3488fae"))
-    assert(ephkeys(2) == PublicKey(hex"03bfd8225241ea71cd0843db7709f4c222f62ff2d4516fd38b39914ab6b83e0da0"))
-    assert(sharedsecrets(2) == ByteVector32(hex"3a6b412548762f0dbccce5c7ae7bb8147d1caf9b5471c34120b30bc9c04891cc"))
-    assert(ephkeys(3) == PublicKey(hex"031dde6926381289671300239ea8e57ffaf9bebd05b9a5b95beaf07af05cd43595"))
-    assert(sharedsecrets(3) == ByteVector32(hex"21e13c2d7cfe7e18836df50872466117a295783ab8aab0e7ecc8c725503ad02d"))
-    assert(ephkeys(4) == PublicKey(hex"03a214ebd875aab6ddfd77f22c5e7311d7f77f17a169e599f157bbcdae8bf071f4"))
-    assert(sharedsecrets(4) == ByteVector32(hex"b5756b9b542727dbafc6765a49488b023a725d631af688fc031217e90770c328"))
+    assert(ephkeys(0) == PublicKey.fromHex("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"))
+    assert(sharedsecrets(0) == new ByteVector32("53eb63ea8a3fec3b3cd433b85cd62a4b145e1dda09391b348c4e1cd36a03ea66"))
+    assert(ephkeys(1) == PublicKey.fromHex("028f9438bfbf7feac2e108d677e3a82da596be706cc1cf342b75c7b7e22bf4e6e2"))
+    assert(sharedsecrets(1) == new ByteVector32("a6519e98832a0b179f62123b3567c106db99ee37bef036e783263602f3488fae"))
+    assert(ephkeys(2) == PublicKey.fromHex("03bfd8225241ea71cd0843db7709f4c222f62ff2d4516fd38b39914ab6b83e0da0"))
+    assert(sharedsecrets(2) == new ByteVector32("3a6b412548762f0dbccce5c7ae7bb8147d1caf9b5471c34120b30bc9c04891cc"))
+    assert(ephkeys(3) == PublicKey.fromHex("031dde6926381289671300239ea8e57ffaf9bebd05b9a5b95beaf07af05cd43595"))
+    assert(sharedsecrets(3) == new ByteVector32("21e13c2d7cfe7e18836df50872466117a295783ab8aab0e7ecc8c725503ad02d"))
+    assert(ephkeys(4) == PublicKey.fromHex("03a214ebd875aab6ddfd77f22c5e7311d7f77f17a169e599f157bbcdae8bf071f4"))
+    assert(sharedsecrets(4) == new ByteVector32("b5756b9b542727dbafc6765a49488b023a725d631af688fc031217e90770c328"))
   }
 
   test("generate filler with fixed-size payloads (reference test vector)") {
@@ -117,13 +118,13 @@ class SphinxSpec extends AnyFunSuite {
     val badOnions = Seq[protocol.OnionRoutingPacket](
       protocol.OnionRoutingPacket(1, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
       protocol.OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(65)(1), ByteVector32.Zeroes),
-      protocol.OnionRoutingPacket(0, publicKeys.head.value, ByteVector.fill(42)(1), ByteVector32(hex"2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"))
+      protocol.OnionRoutingPacket(0, publicKeys.head.value, ByteVector.fill(42)(1), new ByteVector32("2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a"))
     )
 
     val expected = Seq[BadOnion](
-      InvalidOnionVersion(ByteVector32(hex"2f89b15c6cb0bb256d7a71b66de0d50cd3dd806f77d1cc1a3b0d86a0becd28ce")),
-      InvalidOnionKey(ByteVector32(hex"d2602c65fc331d6ae728331ae50e602f35929312ca7a951dc5ce250031b6b999")),
-      InvalidOnionHmac(ByteVector32(hex"3c01a86e6bc51b44a2718745fbbbc71a5c5dde5f46a489da17046c9d097bb303"))
+      InvalidOnionVersion(new ByteVector32("2f89b15c6cb0bb256d7a71b66de0d50cd3dd806f77d1cc1a3b0d86a0becd28ce")),
+      InvalidOnionKey(new ByteVector32("d2602c65fc331d6ae728331ae50e602f35929312ca7a951dc5ce250031b6b999")),
+      InvalidOnionHmac(new ByteVector32("3c01a86e6bc51b44a2718745fbbbc71a5c5dde5f46a489da17046c9d097bb303"))
     )
 
     for ((packet, expected) <- badOnions zip expected) {
@@ -145,12 +146,12 @@ class SphinxSpec extends AnyFunSuite {
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
-    assert(packets(0).hmac == ByteVector32(hex"a93aa4f40241cef3e764e24b28570a0db39af82ab5102c3a04e51bec8cca9394"))
-    assert(packets(1).hmac == ByteVector32(hex"5d1b11f1efeaa9be32eb1c74b113c0b46f056bb49e2a35a51ceaece6bd31332c"))
-    assert(packets(2).hmac == ByteVector32(hex"19ca6357b5552b28e50ae226854eec874bbbf7025cf290a34c06b4eff5d2bac0"))
-    assert(packets(3).hmac == ByteVector32(hex"16d4553c6084b369073d259381bb5b02c16bb2c590bbd9e69346cf7ebd563229"))
+    assert(packets(0).hmac == new ByteVector32("a93aa4f40241cef3e764e24b28570a0db39af82ab5102c3a04e51bec8cca9394"))
+    assert(packets(1).hmac == new ByteVector32("5d1b11f1efeaa9be32eb1c74b113c0b46f056bb49e2a35a51ceaece6bd31332c"))
+    assert(packets(2).hmac == new ByteVector32("19ca6357b5552b28e50ae226854eec874bbbf7025cf290a34c06b4eff5d2bac0"))
+    assert(packets(3).hmac == new ByteVector32("16d4553c6084b369073d259381bb5b02c16bb2c590bbd9e69346cf7ebd563229"))
     // this means that node #4 is the last node
-    assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
+    assert(packets(4).hmac == new ByteVector32("0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
   test("create packet with variable-size payloads (reference test vector)") {
@@ -166,11 +167,11 @@ class SphinxSpec extends AnyFunSuite {
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
-    assert(packets(0).hmac == ByteVector32(hex"4ecb91c341543953a34d424b64c36a9cd8b4b04285b0c8de0acab0b6218697fc"))
-    assert(packets(1).hmac == ByteVector32(hex"3d8e429a1e8d7bdb2813cd491f17771aa75670d88b299db1954aa015d035408f"))
-    assert(packets(2).hmac == ByteVector32(hex"30ad58843d142609ed7ae2b960c8ce0e331f7d45c7d705f67fd3f3978cd7b8f8"))
-    assert(packets(3).hmac == ByteVector32(hex"4ee0600ee609f1f3356b85b0af8ead34c2db4ae93e3978d15f983040e8b01acd"))
-    assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
+    assert(packets(0).hmac == new ByteVector32("4ecb91c341543953a34d424b64c36a9cd8b4b04285b0c8de0acab0b6218697fc"))
+    assert(packets(1).hmac == new ByteVector32("3d8e429a1e8d7bdb2813cd491f17771aa75670d88b299db1954aa015d035408f"))
+    assert(packets(2).hmac == new ByteVector32("30ad58843d142609ed7ae2b960c8ce0e331f7d45c7d705f67fd3f3978cd7b8f8"))
+    assert(packets(3).hmac == new ByteVector32("4ee0600ee609f1f3356b85b0af8ead34c2db4ae93e3978d15f983040e8b01acd"))
+    assert(packets(4).hmac == new ByteVector32("0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
   test("create packet with variable-size payloads filling the onion") {
@@ -186,11 +187,11 @@ class SphinxSpec extends AnyFunSuite {
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
-    assert(packets(0).hmac == ByteVector32(hex"859cd694cf604442547246f4fae144f255e71e30cb366b9775f488cac713f0db"))
-    assert(packets(1).hmac == ByteVector32(hex"259982a8af80bd3b8018443997fa5f74c48b488fff62e531be54b887d53fe0ac"))
-    assert(packets(2).hmac == ByteVector32(hex"58110c95368305b73ae15d22b884fda0482c60993d3ba4e506e37ff5021efb13"))
-    assert(packets(3).hmac == ByteVector32(hex"f45e7099e32b8973f54cbfd1f6c48e7e0b90718ad7b00a88e1e98cebeb6d3916"))
-    assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
+    assert(packets(0).hmac == new ByteVector32("859cd694cf604442547246f4fae144f255e71e30cb366b9775f488cac713f0db"))
+    assert(packets(1).hmac == new ByteVector32("259982a8af80bd3b8018443997fa5f74c48b488fff62e531be54b887d53fe0ac"))
+    assert(packets(2).hmac == new ByteVector32("58110c95368305b73ae15d22b884fda0482c60993d3ba4e506e37ff5021efb13"))
+    assert(packets(3).hmac == new ByteVector32("f45e7099e32b8973f54cbfd1f6c48e7e0b90718ad7b00a88e1e98cebeb6d3916"))
+    assert(packets(4).hmac == new ByteVector32("0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
   test("create packet with single variable-size payload filling the onion") {
@@ -199,7 +200,7 @@ class SphinxSpec extends AnyFunSuite {
 
     val Right(DecryptedPacket(payload, nextPacket, _)) = PaymentPacket.peel(privKeys(0), associatedData, onion)
     assert(payload == variableSizeOneHopPayload.head)
-    assert(nextPacket.hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
+    assert(nextPacket.hmac == new ByteVector32("0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
   test("create trampoline packet") {
@@ -228,10 +229,10 @@ class SphinxSpec extends AnyFunSuite {
 
   test("decrypt failure message") {
     val sharedSecrets = Seq(
-      hex"0101010101010101010101010101010101010101010101010101010101010101",
-      hex"0202020202020202020202020202020202020202020202020202020202020202",
-      hex"0303030303030303030303030303030303030303030303030303030303030303"
-    ).map(ByteVector32(_))
+      "0101010101010101010101010101010101010101010101010101010101010101",
+      "0202020202020202020202020202020202020202020202020202020202020202",
+      "0303030303030303030303030303030303030303030303030303030303030303"
+    ).map(new ByteVector32(_))
 
     val expected = DecryptedFailurePacket(publicKeys.head, InvalidOnionKey(ByteVector32.One))
 
@@ -256,10 +257,10 @@ class SphinxSpec extends AnyFunSuite {
 
   test("decrypt invalid failure message") {
     val sharedSecrets = Seq(
-      hex"0101010101010101010101010101010101010101010101010101010101010101",
-      hex"0202020202020202020202020202020202020202020202020202020202020202",
-      hex"0303030303030303030303030303030303030303030303030303030303030303"
-    ).map(ByteVector32(_))
+      "0101010101010101010101010101010101010101010101010101010101010101",
+      "0202020202020202020202020202020202020202020202020202020202020202",
+      "0303030303030303030303030303030303030303030303030303030303030303"
+    ).map(new ByteVector32(_))
 
     val packet = FailurePacket.wrap(
       FailurePacket.wrap(
@@ -319,7 +320,7 @@ class SphinxSpec extends AnyFunSuite {
 
   test("intermediate node replies with an invalid onion payload length") {
     // The error will not be recoverable by the sender, but we must still forward it.
-    val sharedSecret = ByteVector32(hex"4242424242424242424242424242424242424242424242424242424242424242")
+    val sharedSecret = new ByteVector32("4242424242424242424242424242424242424242424242424242424242424242")
     val errors = Seq(
       ByteVector.fill(FailurePacket.PacketLength - MacLength)(13),
       ByteVector.fill(FailurePacket.PacketLength + MacLength)(13)
@@ -365,30 +366,30 @@ class SphinxSpec extends AnyFunSuite {
   }
 
   test("create blinded route (reference test vector)") {
-    val sessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
+    val sessionKey = new PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
     assert(blindedRoute.introductionNode.publicKey === publicKeys(0))
-    assert(blindedRoute.introductionNode.blindingEphemeralKey === PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
+    assert(blindedRoute.introductionNode.blindingEphemeralKey === new PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
     assert(blindedRoute.introductionNode.encryptedPayload === hex"a245b767bd52520bdf8179b2dc681d1a36c2ededaf59429dfc4bea342fa460c9")
     assert(blindedRoute.nodeIds === Seq(
       publicKeys(0),
-      PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
-      PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
-      PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
-      PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
+      new PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
+      new PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
+      new PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
+      new PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
     ))
     assert(blindedRoute.blindedNodes.map(_.blindedPublicKey) === Seq(
-      PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
-      PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
-      PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
-      PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
+      new PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
+      new PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
+      new PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
+      new PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
     ))
     assert(blindedRoute.blindingEphemeralKeys === blindedRoute.introductionNode.blindingEphemeralKey +: blindedRoute.blindedNodes.map(_.blindingEphemeralKey))
     assert(blindedRoute.blindedNodes.map(_.blindingEphemeralKey) === Seq(
-      PublicKey(hex"035cb4c003d58e16cc9207270b3596c2be3309eca64c36b208c946bbb599bfcad0"),
-      PublicKey(hex"02e105bc01a7af07074a1b0b1d9a112a1d89c6cd87cc4e2b6ba3a824731d9508bd"),
-      PublicKey(hex"0349164db5398925ef234002e62d2834da115b8eafc73436fab98ed12266e797cc"),
-      PublicKey(hex"020a6d1951916adcac22125063f62c35b3686f36e5db2f77073f3d35b19c7a118a"),
+      new PublicKey(hex"035cb4c003d58e16cc9207270b3596c2be3309eca64c36b208c946bbb599bfcad0"),
+      new PublicKey(hex"02e105bc01a7af07074a1b0b1d9a112a1d89c6cd87cc4e2b6ba3a824731d9508bd"),
+      new PublicKey(hex"0349164db5398925ef234002e62d2834da115b8eafc73436fab98ed12266e797cc"),
+      new PublicKey(hex"020a6d1951916adcac22125063f62c35b3686f36e5db2f77073f3d35b19c7a118a"),
     ))
     assert(blindedRoute.encryptedPayloads === blindedRoute.introductionNode.encryptedPayload +: blindedRoute.blindedNodes.map(_.encryptedPayload))
     assert(blindedRoute.blindedNodes.map(_.encryptedPayload) === Seq(
@@ -441,7 +442,7 @@ class SphinxSpec extends AnyFunSuite {
   test("create packet to blinded route (reference test vector)") {
     // The recipient creates a blinded route containing 3 hops.
     val (blindedRoute, blindingEphemeralKey0) = {
-      val recipientSessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
+      val recipientSessionKey = new PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
       (RouteBlinding.create(recipientSessionKey, publicKeys.drop(2), routeBlindingPayloads.drop(2)), recipientSessionKey.publicKey)
     }
 
@@ -463,7 +464,7 @@ class SphinxSpec extends AnyFunSuite {
       TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
     ).map(tlvs => OnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes)
 
-    val senderSessionKey = PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")
+    val senderSessionKey = new PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(senderSessionKey, nodeIds, payloads, associatedData)
     assert(serializePaymentOnion(onion) == hex"00024d4b6cd1361032ca9bd2aeb9d900aa4d45d9ead80ac9423374c451a7254d07666a78b866fda75eb6a991f9815c47624f46324be8a0d8cbbebf25889553edd83cbc0381ce1a5250b59f956b78e1f28ba64f1e8a77aa103ebb2a5f054f3d9271e7bf2f0cbe7c4dbd538fe2977817cb18a3dc52a3e8651a39e38167df0261b67f1d371cb24b39aa2bd3a99be0f16ac186e5d5cf2790d4f60f2e505c64ffa041f74d08b25b7b97e08daeb35df7fd9caa432b0187d3c2dd7f13de35401f79c480404da7e54739f8905fb30b0811c6579e1064182af0ca67e9eb0144796bf347135e90f17126982bc10b91c04e57e736d3accfc7e0afd5945cf8c491c1fa2faa5c3eec70568b6c2514d203ad277f5070d83f30474769d82d26bad5fab11fec659774e30fd9dea7d51f58845510b6765ad8276556ea7f8e8ba10c93991ca404b84b6e30c46cdbd4d5879fe6d6f2df60b96ef4640458be40171b76f33468b0b122b17d0dc165cb60feb41bebf98bcbefe963278c29c7f5885f3d47051888f9ca81ce486b7102572d79109d861f1da8d5a2e810f31b8373ccfc5370169a72c2fb9a10a14be97e2ac55cf27623779e27d48aae14f564b899b260ce69bcd06db4e04044eb400d894d6e6f381abb48c350588a069a72a20a9b686db068fbe58b02909de83d08a8f325a2138cca22649a9944e745f1bf146401493e53e1bf4c5a979922e2a1990f9897376c3597e81c71420f8dcccd54adb11d3483a7cd8a9ae59f3b7f97aabe16805f721403ae88562064e29a7d8c6f39658e15771ca6905aaf31d8b17271fe046033024716c1c12df9a042ab56aa3147005e0f6c5430a7b15bf3db69f705e47735bd4c6815c080b822e70a9177043e4ccb1b972b645777f614f7ebd49f18b354c06cfab44fa67e487d536a77555ba1953b89e53499203d268aefb712520b8f1a5b734ce16ece6fe3250c44e571e86a8f5877a6297aa0b36a84d7a1df571878224a2d77af58652e2e83211a2ce09845181f43ff8b9edf58ee3df045bf91afed92d927b3e4cfc3887255d14c21282ef58f5d68b6d9a872125485be0345cfd22973d75717c2c07f11962971c2b28c0f3dab672d59d5c8ec0f0746718f2966ee1444c53537ae9280dce2cf945d7ce59e2000d6fb8f985fb107591492eaa9e0b24583c445a6c959fe309c4d814ec31f5ab10bae2cf12c3fceb34e724a17c34ed2f04f133d604b564db0f56a463b7a9f453d8ea30ad2c11237d47c8161f8e532e245f4d129ed96afa78c7f9c18ee624e9a593639d911b00ea24923455022ef852e07d0068e27c93b9fa5c65facd2a298b79118405a037ddcc97c8f9281088eddfcaa3a10b810c92d961e3eff6eaf45a81da8593a2252bff0bd41253fe4f35b233553329be00babbf1c93b2a716f4ae6f52cc99018b2d45bc8a0d6e9679b16295a8a43e4d38ebfc31a8464115c31af4588579f6fcf065e6a6362f9237681333fa72a3e881ee5b65abeac5b00555813bb6de0e2b37978e902642cce7e062fa70d042ea668480edddf1a31c91faa67187425a025b938112be61d36c637d8e75e740d2ad542507df80bc2dcb48d5125571f360ee142e300833bd9100e564e84b1d9ef8be88dbac834991d2ae5e5fc217cbbe341a4a58b5e61e0a5a2ea6144607b162fb593c8d73f2d8baf7314f966b06dd2723a43d83645769f45645777ac259911115c29d5459e9001b9622486c533a99c0cc8ef566a96457643d0d3a5ba1ec45037a4dc78906ae3def722eb1b21dc9b0a912b372ed28570ca044f4c73fe7c40799b8ad6afc2d3ab2eee14a5ca0855cf452c12bf5ed4b46f1294406876eec5c48aec2713b5e6f24a44472c5ea6f1b83337e960e4a811a4547484e9f42e3c8507c1070821900b313f2b6a45632db9647cdaf595165afc5ca")
 
@@ -501,17 +502,17 @@ class SphinxSpec extends AnyFunSuite {
     val tlvs4 = OnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
     assert(tlvs4.get[OnionTlv.EncryptedRecipientData].nonEmpty)
     val Success((recipientTlvs4, _)) = EncryptedRecipientDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs4.get[EncryptedRecipientDataTlv.RecipientSecret].map(_.data) === Some(associatedData.bytes))
+    assert(recipientTlvs4.get[EncryptedRecipientDataTlv.RecipientSecret].map(_.data).contains(ByteVector(associatedData.toArray)))
 
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
-    assert(packets(0).hmac == ByteVector32(hex"9890f3263d32bccb63a0e1dd1b0db6bf63fe418a0f572ed299d98d343619f098"))
-    assert(packets(1).hmac == ByteVector32(hex"aee30ae716b93ab6782b907b4cc996cfa3e2219d0a32a677fdeff41071fc86f3"))
-    assert(packets(2).hmac == ByteVector32(hex"9835e7410219117010779ec0852af38449bfa6a1a610c306cdc7eed8717ecdc9"))
-    assert(packets(3).hmac == ByteVector32(hex"c02a8c2e221e03f2e2d15266d5838c7f2fedfc1c4467a49d362896dcead60750"))
-    assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
+    assert(packets(0).hmac == new ByteVector32(hex"9890f3263d32bccb63a0e1dd1b0db6bf63fe418a0f572ed299d98d343619f098"))
+    assert(packets(1).hmac == new ByteVector32(hex"aee30ae716b93ab6782b907b4cc996cfa3e2219d0a32a677fdeff41071fc86f3"))
+    assert(packets(2).hmac == new ByteVector32(hex"9835e7410219117010779ec0852af38449bfa6a1a610c306cdc7eed8717ecdc9"))
+    assert(packets(3).hmac == new ByteVector32(hex"c02a8c2e221e03f2e2d15266d5838c7f2fedfc1c4467a49d362896dcead60750"))
+    assert(packets(4).hmac == new ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
 }
@@ -525,22 +526,22 @@ object SphinxSpec {
     OnionCodecs.trampolineOnionPacketCodec.encode(onion).require.toByteVector
 
   val privKeys = Seq(
-    PrivateKey(hex"4141414141414141414141414141414141414141414141414141414141414141"),
-    PrivateKey(hex"4242424242424242424242424242424242424242424242424242424242424242"),
-    PrivateKey(hex"4343434343434343434343434343434343434343434343434343434343434343"),
-    PrivateKey(hex"4444444444444444444444444444444444444444444444444444444444444444"),
-    PrivateKey(hex"4545454545454545454545454545454545454545454545454545454545454545")
+    PrivateKey.fromHex("4141414141414141414141414141414141414141414141414141414141414141"),
+    PrivateKey.fromHex("4242424242424242424242424242424242424242424242424242424242424242"),
+    PrivateKey.fromHex("4343434343434343434343434343434343434343434343434343434343434343"),
+    PrivateKey.fromHex("4444444444444444444444444444444444444444444444444444444444444444"),
+    PrivateKey.fromHex("4545454545454545454545454545454545454545454545454545454545454545")
   )
   val publicKeys = privKeys.map(_.publicKey)
   assert(publicKeys == Seq(
-    PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"),
-    PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c"),
-    PublicKey(hex"027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007"),
-    PublicKey(hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"),
-    PublicKey(hex"02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145")
+    PublicKey.fromHex("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"),
+    PublicKey.fromHex("0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c"),
+    PublicKey.fromHex("027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007"),
+    PublicKey.fromHex("032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"),
+    PublicKey.fromHex("02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145")
   ))
 
-  val sessionKey: PrivateKey = PrivateKey(hex"4141414141414141414141414141414141414141414141414141414141414141")
+  val sessionKey: PrivateKey = PrivateKey.fromHex("4141414141414141414141414141414141414141414141414141414141414141")
 
   // This test vector uses payloads with a fixed size.
   // origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
@@ -596,5 +597,5 @@ object SphinxSpec {
     hex"2d 0109000000000000000000 06204242424242424242424242424242424242424242424242424242424242424242",
   )
 
-  val associatedData = ByteVector32(hex"4242424242424242424242424242424242424242424242424242424242424242")
+  val associatedData = new ByteVector32("4242424242424242424242424242424242424242424242424242424242424242")
 }

@@ -17,34 +17,34 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 
 class GeneratorsSpec extends AnyFunSuite {
-  val base_secret: PrivateKey = PrivateKey(hex"000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
-  val per_commitment_secret: PrivateKey = PrivateKey(hex"1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")
-  val base_point = PublicKey(hex"036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")
-  val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
+  val base_secret: PrivateKey = PrivateKey.fromHex("000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f")
+  val per_commitment_secret: PrivateKey = PrivateKey.fromHex("1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")
+  val base_point = PublicKey.fromHex("036d6caac248af96f6afa7f904f550253a0f3ef3f5aa2fe6838a95b216691468e2")
+  val per_commitment_point = PublicKey.fromHex("025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
 
   test("derivation of key from basepoint and per-commitment-point") {
     val localKey = Generators.derivePubKey(base_point, per_commitment_point)
-    assert(localKey.value == hex"0235f2dbfaa89b57ec7b055afe29849ef7ddfeb1cefdb9ebdc43f5494984db29e5")
+    assert(localKey.value.toHex == "0235f2dbfaa89b57ec7b055afe29849ef7ddfeb1cefdb9ebdc43f5494984db29e5")
   }
 
   test("derivation of secret key from basepoint secret and per-commitment-secret") {
     val localprivkey = Generators.derivePrivKey(base_secret, per_commitment_point)
-    assert(localprivkey.value == ByteVector32(hex"cbced912d3b21bf196a766651e436aff192362621ce317704ea2f75d87e7be0f"))
+    assert(localprivkey.value == new ByteVector32("cbced912d3b21bf196a766651e436aff192362621ce317704ea2f75d87e7be0f"))
   }
 
   test("derivation of revocation key from basepoint and per-commitment-point") {
     val revocationkey = Generators.revocationPubKey(base_point, per_commitment_point)
-    assert(revocationkey.value == hex"02916e326636d19c33f13e8c0c3a03dd157f332f3e99c317c141dd865eb01f8ff0")
+    assert(revocationkey.value.toHex == "02916e326636d19c33f13e8c0c3a03dd157f332f3e99c317c141dd865eb01f8ff0")
   }
 
   test("derivation of revocation secret from basepoint-secret and per-commitment-secret") {
     val revocationprivkey = Generators.revocationPrivKey(base_secret, per_commitment_secret)
-    assert(revocationprivkey.value == ByteVector32(hex"d09ffff62ddb2297ab000cc85bcb4283fdeb6aa052affbc9dddcf33b61078110"))
+    assert(revocationprivkey.value == new ByteVector32("d09ffff62ddb2297ab000cc85bcb4283fdeb6aa052affbc9dddcf33b61078110"))
   }
 }

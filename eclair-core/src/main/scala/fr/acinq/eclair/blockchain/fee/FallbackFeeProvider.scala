@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.SatoshiLong
+import fr.acinq.eclair.KotlinUtils._
 import grizzled.slf4j.Logging
 
 import scala.concurrent.{ExecutionContext, Future}

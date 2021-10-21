@@ -160,7 +160,7 @@ class Setup(val datadir: File,
       ibd = (json \ "initialblockdownload").extract[Boolean]
       blocks = (json \ "blocks").extract[Long]
       headers = (json \ "headers").extract[Long]
-      chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reverse)
+      chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(s => ByteVector32.fromValidHex(s)).map(_.reversed())
       bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => json \ "version").map(_.extract[Int])
       unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) =>
         values
@@ -201,21 +201,21 @@ class Setup(val datadir: File,
 
       defaultFeerates = {
         val confDefaultFeerates = FeeratesPerKB(
-          mempoolMinFee = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
-          block_1 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1"))),
-          blocks_2 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.2"))),
-          blocks_6 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.6"))),
-          blocks_12 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.12"))),
-          blocks_36 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.36"))),
-          blocks_72 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.72"))),
-          blocks_144 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.144"))),
-          blocks_1008 = FeeratePerKB(Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
+          mempoolMinFee = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
+          block_1 = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.1"))),
+          blocks_2 = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.2"))),
+          blocks_6 = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.6"))),
+          blocks_12 = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.12"))),
+          blocks_36 = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.36"))),
+          blocks_72 = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.72"))),
+          blocks_144 = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.144"))),
+          blocks_1008 = FeeratePerKB(new Satoshi(config.getLong("on-chain-fees.default-feerates.1008"))),
         )
         feeratesPerKB.set(confDefaultFeerates)
         feeratesPerKw.set(FeeratesPerKw(confDefaultFeerates))
         confDefaultFeerates
       }
-      minFeeratePerByte = FeeratePerByte(Satoshi(config.getLong("on-chain-fees.min-feerate")))
+      minFeeratePerByte = FeeratePerByte(new Satoshi(config.getLong("on-chain-fees.min-feerate")))
       smoothFeerateWindow = config.getInt("on-chain-fees.smoothing-window")
       feeProvider = nodeParams.chainHash match {
         case Block.RegtestGenesisBlock.hash =>

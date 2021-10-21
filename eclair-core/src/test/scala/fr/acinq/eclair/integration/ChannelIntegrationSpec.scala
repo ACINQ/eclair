@@ -21,7 +21,7 @@ import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.google.common.net.HostAndPort
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, BtcDouble, ByteVector32, Crypto, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -38,6 +38,7 @@ import fr.acinq.eclair.transactions.Transactions.{AnchorOutputsCommitmentFormat,
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, PermanentChannelFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, randomBytes32}
+import fr.acinq.eclair.KotlinUtils._
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
 
@@ -64,17 +65,20 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     }, max = 60 seconds, interval = 1 second)
   }
 
+
   /**
    * We currently use p2pkh script Helpers.getFinalScriptPubKey
    */
-  def scriptPubKeyToAddress(scriptPubKey: ByteVector): String = Script.parse(scriptPubKey) match {
-    case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
-      Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
-    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
-      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
-    case OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil if pubKeyHash.length == 20 => Bech32.encodeWitnessAddress("bcrt", 0, pubKeyHash)
-    case OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil if scriptHash.length == 32 => Bech32.encodeWitnessAddress("bcrt", 0, scriptHash)
-    case _ => ???
+  def scriptPubKeyToAddress(scriptPubKey: ByteVector): String = {
+    val parsed = Script.parse(scriptPubKey)
+    parsed.length match {
+      case 5 if parsed(0) == OP_DUP.INSTANCE && parsed(1) == OP_HASH160.INSTANCE && parsed(2).isPush(20) && parsed(3) == OP_EQUALVERIFY.INSTANCE && parsed(4) == OP_CHECKSIG.INSTANCE =>
+        Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, parsed(2).asInstanceOf[OP_PUSHDATA].data)
+      case 3 if parsed(0) == OP_HASH160.INSTANCE && parsed(1).isPush(32) && parsed(2) == OP_EQUAL.INSTANCE =>
+        Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, parsed(1).asInstanceOf[OP_PUSHDATA].data)
+      case 2 if parsed(0) == OP_0.INSTANCE && (parsed(1).isPush(20) || parsed(1).isPush(32)) => Bech32.encodeWitnessAddress("bcrt", 0, parsed(1).asInstanceOf[OP_PUSHDATA].data)
+      case _ => ???
+    }
   }
 
   def listReceivedByAddress(address: String, sender: TestProbe = TestProbe()): Seq[ByteVector32] = {
@@ -144,7 +148,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val htlcReceiver = TestProbe()
     nodes("F").paymentHandler ! new ForwardHandler(htlcReceiver.ref)
     val preimage = randomBytes32()
-    val paymentHash = Crypto.sha256(preimage)
+    val paymentHash = preimage.sha256()
     // A sends a payment to F
     val paymentReq = SendPaymentToNode(100000000 msat, PaymentRequest(Block.RegtestGenesisBlock.hash, None, paymentHash, nodes("F").nodeParams.privateKey, Left("test"), finalCltvExpiryDelta), maxAttempts = 1, routeParams = integrationTestRouteParams)
     val paymentSender = TestProbe()
@@ -436,7 +440,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     val revokedCommitTx = {
       val commitTx = localCommitF.commitTxAndRemoteSig.commitTx
       val localSig = keyManagerF.sign(commitTx, keyManagerF.fundingPublicKey(commitmentsF.localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
-      Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.localParams.fundingKeyPath).publicKey, commitmentsF.remoteParams.fundingPubKey, localSig, localCommitF.commitTxAndRemoteSig.remoteSig).tx
+      Transactions.addSigs(commitTx, keyManagerF.fundingPublicKey(commitmentsF.localParams.fundingKeyPath).getPublicKey, commitmentsF.remoteParams.fundingPubKey, localSig, localCommitF.commitTxAndRemoteSig.remoteSig).tx
     }
     val htlcSuccess = htlcSuccessTxs.zip(Seq(preimage1, preimage2)).map {
       case (htlcTxAndSigs, preimage) =>
@@ -580,7 +584,7 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     bitcoinClient.lookForSpendingTx(None, fundingOutpoint.txid, fundingOutpoint.index.toInt).pipeTo(sender.ref)
     val closingTx = sender.expectMsgType[Transaction]
-    assert(closingTx.txOut.map(_.publicKeyScript).toSet === Set(finalPubKeyScriptC, finalPubKeyScriptF))
+    assert(closingTx.txOut.map(o => ByteVector.view(o.publicKeyScript.toByteArray)).toSet === Set(finalPubKeyScriptC, finalPubKeyScriptF))
 
     awaitAnnouncements(1)
   }
@@ -679,7 +683,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val toRemoteAddress = Script.pay2wsh(Scripts.toRemoteDelayed(initialStateDataF.commitments.remoteParams.paymentBasepoint))
 
     // toRemote output of C as seen by F
-    val Some(toRemoteOutC) = initialStateDataF.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+    val Some(toRemoteOutC) = initialStateDataF.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txOut.find(_.publicKeyScript.contentEquals(Script.write(toRemoteAddress)))
 
     // let's make a payment to advance the commit index
     val amountMsat = 4200000.msat
@@ -690,7 +694,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     sender.send(nodes("C").paymentInitiator, SendPaymentToNode(amountMsat, pr, maxAttempts = 1, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams))
     val paymentId = sender.expectMsgType[UUID]
     val preimage = sender.expectMsgType[PreimageReceived].paymentPreimage
-    assert(Crypto.sha256(preimage) === pr.paymentHash)
+    assert(preimage.sha256() === pr.paymentHash)
     val ps = sender.expectMsgType[PaymentSent](60 seconds)
     assert(ps.id == paymentId)
 
@@ -705,7 +709,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
     val stateDataF = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
     val commitmentIndex = stateDataF.commitments.localCommit.index
     val commitTx = stateDataF.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript == Script.write(toRemoteAddress))
+    val Some(toRemoteOutCNew) = commitTx.txOut.find(_.publicKeyScript.contentEquals(Script.write(toRemoteAddress)))
 
     // there is a new commitment index in the channel state
     assert(commitmentIndex > initialCommitmentIndex)
@@ -735,7 +739,7 @@ abstract class AnchorChannelIntegrationSpec extends ChannelIntegrationSpec {
 
     // bury the unilateral close in a block, C should claim its main output
     generateBlocks(2)
-    val mainOutputC = OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == toRemoteOutC.publicKeyScript))
+    val mainOutputC = new OutPoint(commitTx, commitTx.txOut.indexWhere(_.publicKeyScript == toRemoteOutC.publicKeyScript))
     awaitCond({
       bitcoinClient.getMempool().pipeTo(sender.ref)
       sender.expectMsgType[Seq[Transaction]].exists(_.txIn.head.outPoint === mainOutputC)

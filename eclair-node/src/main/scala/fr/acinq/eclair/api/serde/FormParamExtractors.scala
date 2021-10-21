@@ -18,7 +18,7 @@ package fr.acinq.eclair.api.serde
 
 import akka.http.scaladsl.unmarshalling.Unmarshaller
 import akka.util.Timeout
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.api.directives.RouteFormat
 import fr.acinq.eclair.api.serde.JsonSupport._
@@ -34,7 +34,7 @@ import scala.util.Try
 
 object FormParamExtractors {
 
-  implicit val publicKeyUnmarshaller: Unmarshaller[String, PublicKey] = Unmarshaller.strict { rawPubKey => PublicKey(ByteVector.fromValidHex(rawPubKey)) }
+  implicit val publicKeyUnmarshaller: Unmarshaller[String, PublicKey] = Unmarshaller.strict { rawPubKey => PublicKey.fromHex(rawPubKey) }
 
   implicit val binaryDataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidHex(str) }
 
@@ -54,13 +54,13 @@ object FormParamExtractors {
 
   implicit val nodeURIUnmarshaller: Unmarshaller[String, NodeURI] = Unmarshaller.strict { str => NodeURI.parse(str) }
 
-  implicit val pubkeyListUnmarshaller: Unmarshaller[String, List[PublicKey]] = listUnmarshaller(pk => PublicKey(ByteVector.fromValidHex(pk)))
+  implicit val pubkeyListUnmarshaller: Unmarshaller[String, List[PublicKey]] = listUnmarshaller(pk => PublicKey.fromHex(pk))
 
-  implicit val satoshiUnmarshaller: Unmarshaller[String, Satoshi] = Unmarshaller.strict { str => Satoshi(str.toLong) }
+  implicit val satoshiUnmarshaller: Unmarshaller[String, Satoshi] = Unmarshaller.strict { str => new Satoshi(str.toLong) }
 
   implicit val millisatoshiUnmarshaller: Unmarshaller[String, MilliSatoshi] = Unmarshaller.strict { str => MilliSatoshi(str.toLong) }
 
-  implicit val feeratePerByteUnmarshaller: Unmarshaller[String, FeeratePerByte] = Unmarshaller.strict { str => FeeratePerByte(Satoshi(str.toLong)) }
+  implicit val feeratePerByteUnmarshaller: Unmarshaller[String, FeeratePerByte] = Unmarshaller.strict { str => FeeratePerByte(new Satoshi(str.toLong)) }
 
   implicit val base64DataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidBase64(str) }
 

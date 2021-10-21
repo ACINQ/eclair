@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.ActorSystem
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
@@ -31,6 +31,7 @@ import fr.acinq.eclair.router.Announcements.{makeChannelAnnouncement, makeChanne
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.Color
+import KotlinUtils._
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
@@ -105,7 +106,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     pipe1.expectNoMessage()
     pipe2.expectNoMessage()
 
-    watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(chan_ab, Right((new Transaction(0, Nil, new TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, 0), UtxoStatus.Unspent))))
     pipe1.expectMsg(TransportHandler.ReadAck(chan_ab))
 
     pipe1.expectMsg(GossipDecision.Accepted(chan_ab))
@@ -183,7 +184,7 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection3a.expectMsg(GossipDecision.NoRelatedChannel(channelUpdate_bc))
 
 
-    watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(chan_ab, Right((new Transaction(0, Nil, new TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, 0), UtxoStatus.Unspent))))
 
     peerConnection1a.expectMsg(TransportHandler.ReadAck(chan_ab))
     peerConnection1b.expectMsg(TransportHandler.ReadAck(chan_ab))

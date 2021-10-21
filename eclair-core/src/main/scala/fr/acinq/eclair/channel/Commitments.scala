@@ -17,7 +17,8 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, OnChainFeeConf}
@@ -30,6 +31,7 @@ import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
+import KotlinUtils._
 import scodec.bits.ByteVector
 
 // @formatter:off
@@ -190,7 +192,7 @@ case class Commitments(channelId: ByteVector32,
     val unsignedCommitTx = localCommit.commitTxAndRemoteSig.commitTx
     val localSig = keyManager.sign(unsignedCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath), TxOwner.Local, commitmentFormat)
     val remoteSig = localCommit.commitTxAndRemoteSig.remoteSig
-    val commitTx = Transactions.addSigs(unsignedCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey, remoteParams.fundingPubKey, localSig, remoteSig)
+    val commitTx = Transactions.addSigs(unsignedCommitTx, keyManager.fundingPublicKey(localParams.fundingKeyPath).getPublicKey, remoteParams.fundingPubKey, localSig, remoteSig)
     // We verify the remote signature when receiving their commit_sig, so this check should always pass.
     require(Transactions.checkSpendable(commitTx).isSuccess, "commit signatures are invalid")
     commitTx
@@ -365,12 +367,12 @@ object Commitments {
     val missingForSender = reduced.toRemote - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees.max(funderFeeBuffer.truncateToSatoshi) else 0.sat)
     val missingForReceiver = reduced.toLocal - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     if (missingForSender < 0.msat) {
-      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
+      return Left(InsufficientFunds(commitments.channelId, amount = cmd.amount, missing = missingForSender.unary_-.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = if (commitments1.localParams.isFunder) fees else 0.sat))
     } else if (missingForReceiver < 0.msat) {
       if (commitments.localParams.isFunder) {
         // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
       } else {
-        return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+        return Left(RemoteCannotAffordFeesForNewHtlc(commitments.channelId, amount = cmd.amount, missing = missingForReceiver.unary_-.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
       }
     }
 
@@ -434,10 +436,10 @@ object Commitments {
     val missingForSender = reduced.toRemote - commitments1.localParams.channelReserve - (if (commitments1.localParams.isFunder) 0.sat else fees)
     val missingForReceiver = reduced.toLocal - commitments1.remoteParams.channelReserve - (if (commitments1.localParams.isFunder) fees else 0.sat)
     if (missingForSender < 0.sat) {
-      return Left(InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = -missingForSender.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = if (commitments1.localParams.isFunder) 0.sat else fees))
+      return Left(InsufficientFunds(commitments.channelId, amount = add.amountMsat, missing = missingForSender.unary_-.truncateToSatoshi, reserve = commitments1.localParams.channelReserve, fees = if (commitments1.localParams.isFunder) 0.sat else fees))
     } else if (missingForReceiver < 0.sat) {
       if (commitments.localParams.isFunder) {
-        return Left(CannotAffordFees(commitments.channelId, missing = -missingForReceiver.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+        return Left(CannotAffordFees(commitments.channelId, missing = missingForReceiver.unary_-.truncateToSatoshi, reserve = commitments1.remoteParams.channelReserve, fees = fees))
       } else {
         // receiver is fundee; it is ok if it can't maintain its channel_reserve for now, as long as its balance is increasing, which is the case if it is receiving a payment
       }
@@ -461,7 +463,7 @@ object Commitments {
       case Some(htlc) if alreadyProposed(commitments.localChanges.proposed, htlc.id) =>
         // we have already sent a fail/fulfill for this htlc
         Left(UnknownHtlcId(commitments.channelId, cmd.id))
-      case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
+      case Some(htlc) if htlc.paymentHash == cmd.r.sha256() =>
         val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
         payment.Monitoring.Metrics.recordIncomingPaymentDistribution(commitments.remoteParams.nodeId, htlc.amountMsat)
@@ -472,7 +474,7 @@ object Commitments {
 
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[ChannelException, (Commitments, Origin, UpdateAddHtlc)] =
     commitments.getOutgoingHtlcCrossSigned(fulfill.id) match {
-      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => commitments.originChannels.get(fulfill.id) match {
+      case Some(htlc) if htlc.paymentHash == fulfill.paymentPreimage.sha256() => commitments.originChannels.get(fulfill.id) match {
         case Some(origin) =>
           payment.Monitoring.Metrics.recordOutgoingPaymentDistribution(commitments.remoteParams.nodeId, htlc.amountMsat)
           Right(addRemoteProposal(commitments, fulfill), origin, htlc)
@@ -548,9 +550,9 @@ object Commitments {
       // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
       // we look from remote's point of view, so if local is funder remote doesn't pay the fees
       val fees = commitTxTotalCost(commitments1.remoteParams.dustLimit, reduced, commitments.commitmentFormat)
-      val missing = reduced.toRemote.truncateToSatoshi - commitments1.remoteParams.channelReserve - fees
+      val missing = reduced.toRemote.truncateToSatoshi minus commitments1.remoteParams.channelReserve minus fees
       if (missing < 0.sat) {
-        return Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.remoteParams.channelReserve, fees = fees))
+        return Left(CannotAffordFees(commitments.channelId, missing = missing.unaryMinus(), reserve = commitments1.remoteParams.channelReserve, fees = fees))
       }
 
       // if we would overflow our dust exposure with the new feerate, we avoid sending this fee update
@@ -598,9 +600,9 @@ object Commitments {
 
         // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
         val fees = commitTxTotalCost(commitments1.localParams.dustLimit, reduced, commitments.commitmentFormat)
-        val missing = reduced.toRemote.truncateToSatoshi - commitments1.localParams.channelReserve - fees
+        val missing = reduced.toRemote.truncateToSatoshi minus commitments1.localParams.channelReserve minus fees
         if (missing < 0.sat) {
-          return Left(CannotAffordFees(commitments.channelId, missing = -missing, reserve = commitments1.localParams.channelReserve, fees = fees))
+          return Left(CannotAffordFees(commitments.channelId, missing = missing.unaryMinus(), reserve = commitments1.localParams.channelReserve, fees = fees))
         }
 
         // if we would overflow our dust exposure with the new feerate, we reject this fee update
@@ -831,9 +833,9 @@ object Commitments {
                    localPerCommitmentPoint: PublicKey,
                    spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
     val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-    val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
+    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).getPublicKey
+    val localDelayedPaymentPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).getPublicKey, localPerCommitmentPoint)
+    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).getPublicKey, localPerCommitmentPoint)
     val remotePaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
       remoteParams.paymentBasepoint
     } else {
@@ -841,7 +843,7 @@ object Commitments {
     }
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).getPublicKey)
     val outputs = makeCommitTxOutputs(localParams.isFunder, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, remotePaymentPubkey, localHtlcPubkey, remoteHtlcPubkey, localFundingPubkey, remoteParams.fundingPubKey, spec, channelFeatures.commitmentFormat)
     val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, localPaymentBasepoint, remoteParams.paymentBasepoint, localParams.isFunder, outputs)
     val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
@@ -858,17 +860,17 @@ object Commitments {
                     remotePerCommitmentPoint: PublicKey,
                     spec: CommitmentSpec): (CommitTx, Seq[HtlcTx]) = {
     val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
-    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
-    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey)
+    val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).getPublicKey
+    val localPaymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).getPublicKey)
     val localPaymentPubkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) {
       localPaymentBasepoint
     } else {
       Generators.derivePubKey(localPaymentBasepoint, remotePerCommitmentPoint)
     }
-    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+    val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(channelKeyPath).getPublicKey, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
-    val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).publicKey, remotePerCommitmentPoint)
+    val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(channelKeyPath).getPublicKey, remotePerCommitmentPoint)
     val outputs = makeCommitTxOutputs(!localParams.isFunder, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localPaymentPubkey, remoteHtlcPubkey, localHtlcPubkey, remoteParams.fundingPubKey, localFundingPubkey, spec, channelFeatures.commitmentFormat)
     val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isFunder, outputs)
     val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)

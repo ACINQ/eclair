@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, forAllDbs, migrationCheck}
 import fr.acinq.eclair.crypto.Sphinx
@@ -27,6 +27,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, UnknownNextPeer}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, ShortChannelId, TestDatabases, TimestampMilli, TimestampMilliLong, TimestampSecond, TimestampSecondLong, randomBytes32, randomBytes64, randomKey}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
 import java.time.Instant
@@ -99,9 +100,9 @@ class PaymentsDbSpec extends AnyFunSuite {
     val id1 = UUID.randomUUID()
     val id2 = UUID.randomUUID()
     val id3 = UUID.randomUUID()
-    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, PrivateKey(ByteVector32.One).publicKey, 1000 unixms, None, OutgoingPaymentStatus.Pending)
-    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32(), PaymentType.Standard, 1105 msat, 1105 msat, PrivateKey(ByteVector32.One).publicKey, 1010 unixms, None, OutgoingPaymentStatus.Failed(Nil, 1050 unixms))
-    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, PrivateKey(ByteVector32.One).publicKey, 1040 unixms, None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, 1060 unixms))
+    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, new PrivateKey(ByteVector32.One).publicKey, 1000 unixms, None, OutgoingPaymentStatus.Pending)
+    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32(), PaymentType.Standard, 1105 msat, 1105 msat, new PrivateKey(ByteVector32.One).publicKey, 1010 unixms, None, OutgoingPaymentStatus.Failed(Nil, 1050 unixms))
+    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, new PrivateKey(ByteVector32.One).publicKey, 1040 unixms, None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, 1060 unixms))
     val i1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash1, davePriv, Left("Some invoice"), CltvExpiryDelta(18), expirySeconds = None, timestamp = 1 unixsec)
     val pr1 = IncomingPayment(i1, preimage1, PaymentType.Standard, i1.timestamp.toTimestampMilli, IncomingPaymentStatus.Received(12345678 msat, 1090 unixms))
     val i2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash2, carolPriv, Left("Another invoice"), CltvExpiryDelta(18), expirySeconds = Some(30), timestamp = 1 unixsec)
@@ -297,9 +298,9 @@ class PaymentsDbSpec extends AnyFunSuite {
     val id1 = UUID.randomUUID()
     val id2 = UUID.randomUUID()
     val id3 = UUID.randomUUID()
-    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2021-01-01T10:15:30.00Z").toEpochMilli), None, OutgoingPaymentStatus.Pending)
-    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32(), PaymentType.Standard, 1105 msat, 1105 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2020-05-14T13:47:21.00Z").toEpochMilli), None, OutgoingPaymentStatus.Failed(Nil, TimestampMilli(Instant.parse("2021-05-15T04:12:40.00Z").toEpochMilli)))
-    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2021-01-28T09:12:05.00Z").toEpochMilli), None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, TimestampMilli.now()))
+    val ps1 = OutgoingPayment(id1, id1, None, randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, new PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2021-01-01T10:15:30.00Z").toEpochMilli), None, OutgoingPaymentStatus.Pending)
+    val ps2 = OutgoingPayment(id2, id2, None, randomBytes32(), PaymentType.Standard, 1105 msat, 1105 msat, new PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2020-05-14T13:47:21.00Z").toEpochMilli), None, OutgoingPaymentStatus.Failed(Nil, TimestampMilli(Instant.parse("2021-05-15T04:12:40.00Z").toEpochMilli)))
+    val ps3 = OutgoingPayment(id3, id3, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, new PrivateKey(ByteVector32.One).publicKey, TimestampMilli(Instant.parse("2021-01-28T09:12:05.00Z").toEpochMilli), None, OutgoingPaymentStatus.Succeeded(preimage1, 0 msat, Nil, TimestampMilli.now()))
     val i1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash1, davePriv, Left("Some invoice"), CltvExpiryDelta(18), expirySeconds = None, timestamp = TimestampSecond.now())
     val pr1 = IncomingPayment(i1, preimage1, PaymentType.Standard, i1.timestamp.toTimestampMilli, IncomingPaymentStatus.Received(12345678 msat, TimestampMilli.now()))
     val i2 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(12345678 msat), paymentHash2, carolPriv, Left("Another invoice"), CltvExpiryDelta(18), expirySeconds = Some(24 * 3600), timestamp = TimestampSecond(Instant.parse("2020-12-30T10:00:55.00Z").getEpochSecond))
@@ -551,7 +552,7 @@ class PaymentsDbSpec extends AnyFunSuite {
     // -- 1st check: result contains 2 incoming PAID, 1 outgoing PENDING. Outgoing1 must not be overridden by Outgoing2
     val check1 = db.listPaymentsOverview(10)
     assert(check1.size == 3)
-    assert(check1.head.paymentHash == paymentHash1)
+    assert(check1.head.paymentHash.contentEquals(paymentHash1))
     assert(check1.head.isInstanceOf[PlainOutgoingPayment])
     assert(check1.head.asInstanceOf[PlainOutgoingPayment].status == OutgoingPaymentStatus.Pending)
 
@@ -571,19 +572,19 @@ class PaymentsDbSpec extends AnyFunSuite {
     // -- 2nd check: result contains 2 incoming PAID, 1 outgoing FAILED and 1 outgoing SUCCEEDED, in correct order
     val check2 = db.listPaymentsOverview(10)
     assert(check2.size == 4)
-    assert(check2.head.paymentHash == paymentHash1)
+    assert(check2.head.paymentHash.contentEquals(paymentHash1))
     assert(check2.head.isInstanceOf[PlainOutgoingPayment])
     assert(check2.head.asInstanceOf[PlainOutgoingPayment].status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
 
-    assert(check2(1).paymentHash == paymentHash1)
+    assert(check2(1).paymentHash.contentEquals(paymentHash1))
     assert(check2(1).isInstanceOf[PlainOutgoingPayment])
     assert(check2(1).asInstanceOf[PlainOutgoingPayment].status.isInstanceOf[OutgoingPaymentStatus.Failed])
 
-    assert(check2(2).paymentHash == paidInvoice2.paymentHash)
+    assert(check2(2).paymentHash.contentEquals(paidInvoice2.paymentHash))
     assert(check2(2).isInstanceOf[PlainIncomingPayment])
     assert(check2(2).asInstanceOf[PlainIncomingPayment].status.isInstanceOf[IncomingPaymentStatus.Received])
 
-    assert(check2(3).paymentHash == paidInvoice1.paymentHash)
+    assert(check2(3).paymentHash.contentEquals(paidInvoice1.paymentHash))
     assert(check2(3).isInstanceOf[PlainIncomingPayment])
     assert(check2(3).asInstanceOf[PlainIncomingPayment].status.isInstanceOf[IncomingPaymentStatus.Received])
   }

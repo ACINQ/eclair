@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
+import fr.acinq.eclair.KotlinUtils._
 
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
@@ -99,7 +100,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     val data = Bolt11Data(timestamp, tags, ByteVector.fill(65)(0)) // fake sig that we are going to strip next
     val bin = Codecs.bolt11DataCodec.encode(data).require
     val message = ByteVector.view(hrp) ++ bin.dropRight(520).toByteVector
-    Crypto.sha256(message)
+    new ByteVector32(Crypto.sha256(message.toArray))
   }
 
   /**
@@ -109,7 +110,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   def sign(priv: PrivateKey): PaymentRequest = {
     val sig64 = Crypto.sign(hash, priv)
     // in order to tell what the recovery id is, we actually recover the pubkey ourselves and compare it to the real one
-    val pub0 = Crypto.recoverPublicKey(sig64, hash, 0.toByte)
+    val pub0 = Crypto.recoverPublicKey(sig64, hash.toByteArray, 0.toByte)
     val recid = if (nodeId == pub0) 0.toByte else 1.toByte
     val signature = sig64 :+ recid
     this.copy(signature = signature)
@@ -243,8 +244,12 @@ object PaymentRequest {
       Try(fromBase58Address(address)).orElse(Try(fromBech32Address(address))).get
     }
 
+    def apply(version: Byte, data: Array[Byte]) = new FallbackAddress(version, ByteVector.view(data))
+
     def fromBase58Address(address: String): FallbackAddress = {
-      val (prefix, hash) = Base58Check.decode(address)
+      val pair = Base58Check.decode(address)
+      val prefix: Byte = pair.getFirst
+      val hash: Array[Byte] = pair.getSecond
       prefix match {
         case Base58.Prefix.PubkeyAddress => FallbackAddress(17.toByte, hash)
         case Base58.Prefix.PubkeyAddressTestnet => FallbackAddress(17.toByte, hash)
@@ -254,7 +259,8 @@ object PaymentRequest {
     }
 
     def fromBech32Address(address: String): FallbackAddress = {
-      val (_, version, hash) = Bech32.decodeWitnessAddress(address)
+      val triple = Bech32.decodeWitnessAddress(address)
+      val (version, hash) = (triple.getSecond, triple.getThird)
       FallbackAddress(version, hash)
     }
 
@@ -265,9 +271,9 @@ object PaymentRequest {
         case 18 if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, data)
         case 17 if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, data)
         case 18 if prefix == "lntb" || prefix == "lnbcrt" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, data)
-        case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, data)
-        case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, data)
-        case version if prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, data)
+        case version if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, data.toArray)
+        case version if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, data.toArray)
+        case version if prefix == "lnbcrt" => Bech32.encodeWitnessAddress("bcrt", version, data.toArray)
       }
     }
   }
@@ -509,7 +515,7 @@ object PaymentRequest {
     val prefix: String = prefixes.values.find(prefix => hrp.startsWith(prefix)).getOrElse(throw new RuntimeException("unknown prefix"))
     val data = string2Bits(lowercaseInput.slice(separatorIndex + 1, lowercaseInput.length - 6)) // 6 == checksum size
     val bolt11Data = Codecs.bolt11DataCodec.decode(data).require.value
-    val signature = ByteVector64(bolt11Data.signature.take(64))
+    val signature = new ByteVector64(bolt11Data.signature.take(64).toArray)
     val message: ByteVector = ByteVector.view(hrp.getBytes) ++ data.dropRight(520).toByteVector // we drop the sig bytes
     val recid = bolt11Data.signature.last
     val pub = Crypto.recoverPublicKey(signature, Crypto.sha256(message), recid)
@@ -579,6 +585,6 @@ object PaymentRequest {
     val hrp = s"${pr.prefix}$hramount"
     val data = Codecs.bolt11DataCodec.encode(Bolt11Data(pr.timestamp, pr.tags, pr.signature)).require
     val int5s = eight2fiveCodec.decode(data).require.value
-    Bech32.encode(hrp, int5s.toArray)
+    Bech32.encode(hrp, int5s.toArray, Bech32.Encoding.Bech32)
   }
 }

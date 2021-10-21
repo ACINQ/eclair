@@ -2,8 +2,8 @@ package fr.acinq.eclair.wire.internal.channel.version1
 
 import akka.actor.ActorSystem
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.PrivateKey
+import fr.acinq.bitcoin.KeyPath
 import fr.acinq.bitcoin.{DeterministicWallet, OutPoint, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.{LocalParams, Origin, RemoteParams}
@@ -17,19 +17,20 @@ import scodec.bits._
 import scodec.{Attempt, Codec, DecodeResult}
 
 import java.util.UUID
+import scala.jdk.CollectionConverters._
 import scala.util.Random
 
 class ChannelCodecs1Spec extends AnyFunSuite {
 
   test("encode/decode key paths (all 0s)") {
-    val keyPath = KeyPath(Seq(0L, 0L, 0L, 0L))
+    val keyPath = new KeyPath(List(0L, 0L, 0L, 0L).map(long2Long).asJava)
     val encoded = keyPathCodec.encode(keyPath).require
     val decoded = keyPathCodec.decode(encoded).require
     assert(keyPath === decoded.value)
   }
 
   test("encode/decode key paths (all 1s)") {
-    val keyPath = KeyPath(Seq(0xffffffffL, 0xffffffffL, 0xffffffffL, 0xffffffffL))
+    val keyPath = new KeyPath(List(0xffffffffL, 0xffffffffL, 0xffffffffL, 0xffffffffL).map(long2Long).asJava)
     val encoded = keyPathCodec.encode(keyPath).require
     val decoded = keyPathCodec.decode(encoded).require
     assert(keyPath === decoded.value)
@@ -60,18 +61,18 @@ class ChannelCodecs1Spec extends AnyFunSuite {
 
     val o = LocalParams(
       nodeId = randomKey().publicKey,
-      fundingKeyPath = DeterministicWallet.KeyPath(Seq(42L)),
-      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
+      fundingKeyPath = new KeyPath(Seq(42L).map(long2Long).asJava),
+      dustLimit = new Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      channelReserve = new Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey)),
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(new PrivateKey(randomBytes32()).publicKey)),
       walletStaticPaymentBasepoint = None,
       isFunder = Random.nextBoolean(),
       initFeatures = Features(randomBytes(256)))
-    val o1 = o.copy(walletStaticPaymentBasepoint = Some(PrivateKey(randomBytes32()).publicKey))
+    val o1 = o.copy(walletStaticPaymentBasepoint = Some(new PrivateKey(randomBytes32()).publicKey))
 
     roundtrip(o, localParamsCodec(ChannelVersion.ZEROES))
     roundtrip(o1, localParamsCodec(ChannelVersion.STATIC_REMOTEKEY))
@@ -81,9 +82,9 @@ class ChannelCodecs1Spec extends AnyFunSuite {
   test("encode/decode remoteparams") {
     val o = RemoteParams(
       nodeId = randomKey().publicKey,
-      dustLimit = Satoshi(Random.nextInt(Int.MaxValue)),
+      dustLimit = new Satoshi(Random.nextInt(Int.MaxValue)),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
-      channelReserve = Satoshi(Random.nextInt(Int.MaxValue)),
+      channelReserve = new Satoshi(Random.nextInt(Int.MaxValue)),
       htlcMinimum = MilliSatoshi(Random.nextInt(Int.MaxValue)),
       toSelfDelay = CltvExpiryDelta(Random.nextInt(Short.MaxValue)),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
@@ -189,10 +190,10 @@ class ChannelCodecs1Spec extends AnyFunSuite {
 
   test("encode/decode map of spending txes") {
     val map = Map(
-      OutPoint(randomBytes32(), 42) -> randomBytes32(),
-      OutPoint(randomBytes32(), 14502) -> randomBytes32(),
-      OutPoint(randomBytes32(), 0) -> randomBytes32(),
-      OutPoint(randomBytes32(), 454513) -> randomBytes32()
+      new OutPoint(randomBytes32(), 42) -> randomBytes32(),
+      new OutPoint(randomBytes32(), 14502) -> randomBytes32(),
+      new OutPoint(randomBytes32(), 0) -> randomBytes32(),
+      new OutPoint(randomBytes32(), 454513) -> randomBytes32()
     )
     assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
   }

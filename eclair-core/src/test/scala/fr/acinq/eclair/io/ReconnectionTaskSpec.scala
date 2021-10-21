@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.Peer.ChannelId
 import fr.acinq.eclair.io.ReconnectionTask.WaitingData

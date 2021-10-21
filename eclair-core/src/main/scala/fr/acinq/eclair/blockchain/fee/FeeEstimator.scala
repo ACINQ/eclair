@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
+import fr.acinq.eclair.Features
 import fr.acinq.eclair.blockchain.CurrentFeerates
 import fr.acinq.eclair.channel.{ChannelTypes, SupportedChannelType}
 import fr.acinq.eclair.transactions.Transactions

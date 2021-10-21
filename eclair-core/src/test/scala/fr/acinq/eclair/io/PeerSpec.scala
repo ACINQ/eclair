@@ -20,7 +20,7 @@ import akka.actor.Status.Failure
 import akka.actor.{ActorContext, ActorRef, FSM}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{Block, Btc, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{AnchorOutputs, AnchorOutputsZeroFeeHtlcTx, StaticRemoteKey, Wumbo}
@@ -34,6 +34,7 @@ import fr.acinq.eclair.io.Peer._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
+import KotlinUtils._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
 import scodec.bits.ByteVector
@@ -267,7 +268,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+    val fundingAmountBig = Channel.MAX_FUNDING plus  10000.sat
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection)
 
@@ -281,7 +282,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
+    val fundingAmountBig = Channel.MAX_FUNDING plus 10000.sat
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
     connect(remoteNodeId, peer, peerConnection) // Bob doesn't support wumbo, Alice does
 
@@ -419,7 +420,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.channelType === ChannelTypes.StaticRemoteKey)
     assert(init.localParams.walletStaticPaymentBasepoint.isDefined)
-    assert(init.localParams.defaultFinalScriptPubKey === Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get)))
+    assert(init.localParams.defaultFinalScriptPubKey.contentEquals(Script.write(Script.pay2wpkh(init.localParams.walletStaticPaymentBasepoint.get))))
   }
 
   test("set origin_opt when spawning a channel") { f =>

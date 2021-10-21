@@ -19,6 +19,7 @@ package fr.acinq.eclair.blockchain.fee
 import fr.acinq.bitcoin.SatoshiLong
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw.MinimumFeeratePerKw
 import org.scalatest.funsuite.AnyFunSuite
+import fr.acinq.eclair.KotlinUtils._
 
 class FeeProviderSpec extends AnyFunSuite {
 

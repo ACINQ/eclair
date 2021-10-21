@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import com.google.common.base.Charsets
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelType
@@ -143,6 +143,10 @@ case class FundingLocked(channelId: ByteVector32,
 case class Shutdown(channelId: ByteVector32,
                     scriptPubKey: ByteVector,
                     tlvStream: TlvStream[ShutdownTlv] = TlvStream.empty) extends ChannelMessage with HasChannelId
+
+object Shutdown {
+  def apply(channelId: ByteVector32, scriptPubKey: Array[Byte]) = new Shutdown(channelId, ByteVector.view(scriptPubKey))
+}
 
 case class ClosingSigned(channelId: ByteVector32,
                          feeSatoshis: Satoshi,
@@ -339,3 +343,6 @@ case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Timest
 //
 
 case class UnknownMessage(tag: Int, data: ByteVector) extends LightningMessage
+object UnknownMessage {
+  def apply(tag: Int, data: Array[Byte]): UnknownMessage = new UnknownMessage(tag, ByteVector.view(data))
+}

@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.{sha256, verifySignature}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampSecond, TimestampSecondLong, serializationResult}
@@ -27,6 +28,9 @@ import shapeless.HNil
  * Created by PM on 03/02/2017.
  */
 object Announcements {
+  private implicit def array2bytevector(input: Array[Byte]): ByteVector = ByteVector.view(input)
+
+  private implicit def bytevector2array(input: ByteVector): Array[Byte] = input.toArray
 
   def channelAnnouncementWitnessEncode(chainHash: ByteVector32, shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: Features, tlvStream: TlvStream[ChannelAnnouncementTlv]): ByteVector =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelAnnouncementWitnessCodec.encode(features :: chainHash :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: tlvStream :: HNil))))
@@ -44,7 +48,7 @@ object Announcements {
       channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, localNodeId, remoteFundingKey, localFundingKey, features, TlvStream.empty)
     }
 
-  def signChannelAnnouncement(witness: ByteVector, key: PrivateKey): ByteVector64 = Crypto.sign(witness, key)
+  def signChannelAnnouncement(witness: ByteVector, key: PrivateKey): ByteVector64 = Crypto.sign(witness.toArray, key)
 
   def makeChannelAnnouncement(chainHash: ByteVector32, shortChannelId: ShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: ByteVector64, remoteNodeSignature: ByteVector64, localBitcoinSignature: ByteVector64, remoteBitcoinSignature: ByteVector64): ChannelAnnouncement = {
     val (nodeId1, nodeId2, bitcoinKey1, bitcoinKey2, nodeSignature1, nodeSignature2, bitcoinSignature1, bitcoinSignature2) =

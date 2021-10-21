@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.channel.CMD_FAIL_HTLC
 import kamon.Kamon
@@ -52,7 +52,7 @@ object Monitoring {
     /**
      * Assign a bucket to a node id. There are 256 buckets.
      */
-    def nodeIdBucket(nodeId: PublicKey): Short = nodeId.value.takeRight(1).toShort(signed = false) // we use short to not have negative values
+    def nodeIdBucket(nodeId: PublicKey): Short = (nodeId.value.get(nodeId.value.size() - 1) & 0xff).toShort // we use short to not have negative values
 
     def recordIncomingPaymentDistribution(nodeId: PublicKey, amount: MilliSatoshi): Unit = {
       val bucket = nodeIdBucket(nodeId)

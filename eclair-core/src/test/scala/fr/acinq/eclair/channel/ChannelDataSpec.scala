@@ -26,6 +26,7 @@ import fr.acinq.eclair.wire.protocol.{CommitSig, RevokeAndAck, UpdateAddHtlc}
 import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.ByteVector
+import fr.acinq.eclair.KotlinUtils._
 
 class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStateTestsHelperMethods {
 
@@ -497,20 +498,20 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
 
     // Scenario 2: they claim the remaining outputs.
     {
-      val remoteMainOutput = rvk.mainPenaltyTx.get.tx.copy(txOut = Seq(TxOut(35_000 sat, ByteVector.empty)))
+      val remoteMainOutput = rvk.mainPenaltyTx.get.tx.updateOutputs(Seq(new TxOut(35_000 sat, Array.emptyByteArray)))
       val rvk4a = Closing.updateRevokedCommitPublished(rvk3, remoteMainOutput)
       assert(!rvk4a.isDone)
 
-      val htlcSuccess = rvk.htlcPenaltyTxs(2).tx.copy(txOut = Seq(TxOut(3_000 sat, ByteVector.empty), TxOut(2_500 sat, ByteVector.empty)))
-      val htlcTimeout = rvk.htlcPenaltyTxs(3).tx.copy(txOut = Seq(TxOut(3_500 sat, ByteVector.empty), TxOut(3_100 sat, ByteVector.empty)))
+      val htlcSuccess = rvk.htlcPenaltyTxs(2).tx.updateOutputs(Seq(new TxOut(3_000 sat, Array.emptyByteArray), new TxOut(2_500 sat, Array.emptyByteArray)))
+      val htlcTimeout = rvk.htlcPenaltyTxs(3).tx.updateOutputs(Seq(new TxOut(3_500 sat, Array.emptyByteArray), new TxOut(3_100 sat, Array.emptyByteArray)))
       // When Bob claims these outputs, the channel should call Helpers.claimRevokedHtlcTxOutputs to punish them by claiming the output of their htlc tx.
       // This is tested in ClosingStateSpec.
       val rvk4b = Seq(htlcSuccess, htlcTimeout).foldLeft(rvk4a) {
         case (current, tx) => Closing.updateRevokedCommitPublished(current, tx)
       }.copy(
         claimHtlcDelayedPenaltyTxs = List(
-          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcSuccess, 0), TxOut(2_500 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcSuccess, 0), ByteVector.empty, 0)), Seq(TxOut(5_000 sat, ByteVector.empty)), 0)),
-          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(OutPoint(htlcTimeout, 0), TxOut(3_000 sat, Nil), Nil), Transaction(2, Seq(TxIn(OutPoint(htlcTimeout, 0), ByteVector.empty, 0)), Seq(TxOut(6_000 sat, ByteVector.empty)), 0))
+          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(new OutPoint(htlcSuccess, 0), new TxOut(2_500 sat, Nil), Nil), new Transaction(2, Seq(new TxIn(new OutPoint(htlcSuccess, 0), 0)), Seq(new TxOut(5_000 sat, ByteVector.empty)), 0)),
+          ClaimHtlcDelayedOutputPenaltyTx(InputInfo(new OutPoint(htlcTimeout, 0), new TxOut(3_000 sat, Nil), Nil), new Transaction(2, Seq(new TxIn(new OutPoint(htlcTimeout, 0), 0)), Seq(new TxOut(6_000 sat, ByteVector.empty)), 0))
         )
       )
       assert(!rvk4b.isDone)
@@ -518,7 +519,7 @@ class ChannelDataSpec extends TestKitBaseClass with AnyFunSuiteLike with Channel
       // We claim one of the remaining outputs, they claim the other.
       val rvk5a = Closing.updateRevokedCommitPublished(rvk4b, rvk4b.claimHtlcDelayedPenaltyTxs.head.tx)
       assert(!rvk5a.isDone)
-      val theirClaimHtlcTimeout = rvk4b.claimHtlcDelayedPenaltyTxs(1).tx.copy(txOut = Seq(TxOut(1_500.sat, ByteVector.empty), TxOut(2_500.sat, ByteVector.empty)))
+      val theirClaimHtlcTimeout = rvk4b.claimHtlcDelayedPenaltyTxs(1).tx.updateOutputs(Seq(new TxOut(1_500.sat, Array.emptyByteArray), new TxOut(2_500.sat, Array.emptyByteArray)))
       val rvk5b = Closing.updateRevokedCommitPublished(rvk5a, theirClaimHtlcTimeout)
       assert(rvk5b.isDone)
     }

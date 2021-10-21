@@ -16,14 +16,15 @@
 
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Crypto, Protocol}
+import fr.acinq.bitcoin.crypto.Pack
+import fr.acinq.bitcoin.{ByteVector32, Crypto, PrivateKey, Protocol, PublicKey}
 import fr.acinq.eclair.randomBytes
 import grizzled.slf4j.Logging
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
 import scodec.bits.ByteVector
+import fr.acinq.eclair.KotlinUtils._
 
 import java.math.BigInteger
 import java.nio.ByteOrder
@@ -55,7 +56,7 @@ object Noise {
 
     override def generateKeyPair(priv: ByteVector): KeyPair = {
       require(priv.length == 32)
-      KeyPair(PrivateKey(priv).publicKey.value, priv)
+      KeyPair(new PrivateKey(priv.toArray).publicKey.value, priv)
     }
 
     /**
@@ -64,10 +65,7 @@ object Noise {
      * @return sha256(publicKey * keyPair.priv in compressed format)
      */
     override def dh(keyPair: KeyPair, publicKey: ByteVector): ByteVector = {
-      val point = Crypto.curve.getCurve.decodePoint(publicKey.toArray)
-      val scalar = new BigInteger(1, keyPair.priv.take(32).toArray)
-      val point1 = point.multiply(scalar).normalize()
-      Crypto.sha256(ByteVector.view(point1.getEncoded(true)))
+      ByteVector.view(Crypto.ecdh(new PrivateKey(keyPair.priv), new PublicKey(publicKey)))
     }
 
     override def dhLen: Int = 32
@@ -96,7 +94,7 @@ object Noise {
     override val name = "ChaChaPoly"
 
     // as specified in BOLT #8
-    def nonce(n: Long): ByteVector = ByteVector.fill(4)(0) ++ Protocol.writeUInt64(n, ByteOrder.LITTLE_ENDIAN)
+    def nonce(n: Long): ByteVector = ByteVector.fill(4)(0) ++ ByteVector.view(Pack.writeInt64LE(n))
 
     // Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique.
     override def encrypt(k: ByteVector, n: Long, ad: ByteVector, plaintext: ByteVector): ByteVector = {
@@ -152,7 +150,7 @@ object Noise {
 
     override val blockLen = 64
 
-    override def hash(data: ByteVector) = Crypto.sha256(data)
+    override def hash(data: ByteVector) = new ByteVector32(Crypto.sha256(data))
 
     override def hmacHash(key: ByteVector, data: ByteVector): ByteVector = {
       val mac = new HMac(new SHA256Digest())
@@ -175,6 +173,8 @@ object Noise {
     def hasKey: Boolean
 
     def encryptWithAd(ad: ByteVector, plaintext: ByteVector): (CipherState, ByteVector)
+
+    def encryptWithAd(ad: ByteVector, plaintext: Array[Byte]): (CipherState, ByteVector) = encryptWithAd(ad, ByteVector.view(plaintext))
 
     def decryptWithAd(ad: ByteVector, ciphertext: ByteVector): (CipherState, ByteVector)
   }

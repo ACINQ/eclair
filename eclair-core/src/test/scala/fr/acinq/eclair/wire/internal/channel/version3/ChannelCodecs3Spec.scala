@@ -78,9 +78,9 @@ class ChannelCodecs3Spec extends AnyFunSuite {
   test("encode/decode optional shutdown script") {
     val remoteParams = RemoteParams(
       randomKey().publicKey,
-      Satoshi(600),
+      new Satoshi(600),
       UInt64(123456L),
-      Satoshi(300),
+      new Satoshi(300),
       MilliSatoshi(1000),
       CltvExpiryDelta(42),
       42,

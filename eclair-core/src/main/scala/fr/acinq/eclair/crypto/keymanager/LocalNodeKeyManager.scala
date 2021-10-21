@@ -16,20 +16,20 @@
 
 package fr.acinq.eclair.crypto.keymanager
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, KeyPath, PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
 import fr.acinq.eclair.router.Announcements
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
+import fr.acinq.eclair.KotlinUtils._
 
 object LocalNodeKeyManager {
   // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
   // Note that the node path and the above channel path are on different branches so even if the
   // node key is compromised there is no way to retrieve the wallet keys
-  def keyBasePath(chainHash: ByteVector32): List[Long] = (chainHash: @unchecked) match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
-    case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
+  def keyBasePath(chainHash: ByteVector32): KeyPath = (chainHash: @unchecked) match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => new KeyPath("m/46'/0'") //  DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
+    case Block.LivenetGenesisBlock.hash => new KeyPath("m/47'/0'")  // DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
   }
 }
 
@@ -47,7 +47,7 @@ class LocalNodeKeyManager(seed: ByteVector, chainHash: ByteVector32) extends Nod
 
   override def signDigest(digest: ByteVector32, privateKey: PrivateKey = nodeKey.privateKey): (ByteVector64, Int) = {
     val signature = Crypto.sign(digest, privateKey)
-    val (pub1, _) = Crypto.recoverPublicKey(signature, digest)
+    val pub1 = Crypto.recoverPublicKey(signature, digest).getFirst
     val recoveryId = if (nodeId == pub1) 0 else 1
     (signature, recoveryId)
   }

@@ -63,7 +63,7 @@ trait Channel {
             val maxFeerate = maxFeerate_opt.map(feerate => FeeratePerKw(feerate)).getOrElse(preferredFeerate * 2)
             ClosingFeerates(preferredFeerate, minFeerate, maxFeerate)
           })
-          if (scriptPubKey_opt.forall(Script.isNativeWitnessScript)) {
+          if (scriptPubKey_opt.forall(script => Script.isNativeWitnessScript(Script.parse(script.toArray)))) {
             complete(eclairApi.close(channels, scriptPubKey_opt, closingFeerates))
           } else {
             reject(MalformedFormFieldRejection("scriptPubKey", "Non-segwit scripts are not allowed"))

@@ -162,9 +162,9 @@ object ExplorerApi {
           val JString(time) = block \ "time"
           val JInt(bits) = block \ "bits"
           val JInt(nonce) = block \ "nonce"
-          val previousBlockHash = (block \ "prev_block").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-          val merkleRoot = (block \ "mrkl_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-          val header = BlockHeader(version.toLong, previousBlockHash, merkleRoot, OffsetDateTime.parse(time).toEpochSecond, bits.toLong, nonce.toLong)
+          val previousBlockHash = (block \ "prev_block").extractOpt[String].map(ByteVector32.fromValidHex(_).reversed()).getOrElse(ByteVector32.Zeroes)
+          val merkleRoot = (block \ "mrkl_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reversed()).getOrElse(ByteVector32.Zeroes)
+          val header = new BlockHeader(version.toLong, previousBlockHash, merkleRoot, OffsetDateTime.parse(time).toEpochSecond, bits.toLong, nonce.toLong)
           BlockHeaderAt(height.toLong, header)
         }))
     } yield header
@@ -191,9 +191,9 @@ object ExplorerApi {
             val JInt(time) = block \ "timestamp"
             val JInt(bits) = block \ "bits"
             val JInt(nonce) = block \ "nonce"
-            val previousBlockHash = (block \ "previousblockhash").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-            val merkleRoot = (block \ "merkle_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reverse).getOrElse(ByteVector32.Zeroes)
-            val header = BlockHeader(version.toLong, previousBlockHash, merkleRoot, time.toLong, bits.toLong, nonce.toLong)
+            val previousBlockHash = (block \ "previousblockhash").extractOpt[String].map(ByteVector32.fromValidHex(_).reversed()).getOrElse(ByteVector32.Zeroes)
+            val merkleRoot = (block \ "merkle_root").extractOpt[String].map(ByteVector32.fromValidHex(_).reversed()).getOrElse(ByteVector32.Zeroes)
+            val header = new BlockHeader(version.toLong, previousBlockHash, merkleRoot, time.toLong, bits.toLong, nonce.toLong)
             BlockHeaderAt(height.toLong, header)
           }))
           .map(headers => LatestHeaders(currentBlockCount, headers.filter(_.blockCount >= currentBlockCount).toSet, name))

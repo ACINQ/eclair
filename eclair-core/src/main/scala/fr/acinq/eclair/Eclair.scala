@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Satoshi}
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
@@ -45,6 +45,7 @@ import fr.acinq.eclair.router.{NetworkStats, Router}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
+import KotlinUtils._
 
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -62,7 +63,7 @@ case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
 object SignedMessage {
   def signedBytes(message: ByteVector): ByteVector32 =
-    Crypto.hash256(ByteVector("Lightning Signed Message:".getBytes(StandardCharsets.UTF_8)) ++ message)
+    Crypto.hash256((ByteVector("Lightning Signed Message:".getBytes(StandardCharsets.UTF_8)) ++ message).toArray)
 }
 
 object ApiTypes {
@@ -466,7 +467,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   override def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage = {
     val signedBytes = SignedMessage.signedBytes(message)
-    val signature = ByteVector64(recoverableSignature.tail)
+    val signature = new ByteVector64(recoverableSignature.tail.toArray)
     val recoveryId = recoverableSignature.head.toInt match {
       case lndFormat if (lndFormat - 31) >= 0 && (lndFormat - 31) <= 3 => lndFormat - 31
       case normalFormat if normalFormat >= 0 && normalFormat <= 3 => normalFormat

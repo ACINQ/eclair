@@ -17,8 +17,8 @@
 package fr.acinq.eclair.json
 
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, KeyPath, OutPoint, PrivateKey, PublicKey, Satoshi, Transaction}
+import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
@@ -42,6 +42,7 @@ import java.net.InetSocketAddress
 import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import scala.jdk.CollectionConverters.CollectionHasAsScala
 
 /**
  * Minimal serializer that only does serialization, not deserialization, and does not depend on external formats.
@@ -255,6 +256,10 @@ object OutPointKeySerializer extends MinimalKeySerializer({
 private case class InputInfoJson(outPoint: OutPoint, amountSatoshis: Satoshi)
 object InputInfoSerializer extends ConvertClassSerializer[InputInfo](i => InputInfoJson(i.outPoint, i.txOut.amount))
 // @formatter:on
+
+object KeyPathSerializer extends MinimalSerializer({
+  case x: KeyPath => JObject(("path", JArray(x.path.asScala.toList.map(l => JLong(l)))))
+})
 
 object ColorSerializer extends MinimalSerializer({
   case c: Color => JString(c.toString)
@@ -486,6 +491,7 @@ object JsonSerializers {
     ChannelOpenResponseSerializer +
     CommandResponseSerializer +
     InputInfoSerializer +
+    KeyPathSerializer +
     ColorSerializer +
     RouteResponseSerializer +
     ThrowableSerializer +

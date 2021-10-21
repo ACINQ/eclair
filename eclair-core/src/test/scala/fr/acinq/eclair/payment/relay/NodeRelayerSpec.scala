@@ -693,7 +693,7 @@ object NodeRelayerSpec {
   val relayId = UUID.randomUUID()
 
   val paymentPreimage = randomBytes32()
-  val paymentHash = Crypto.sha256(paymentPreimage)
+  val paymentHash = paymentPreimage.sha256()
 
   // This is the result of decrypting the incoming trampoline onion packet.
   // It should be forwarded to the next trampoline node.

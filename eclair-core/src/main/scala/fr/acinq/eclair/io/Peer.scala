@@ -21,8 +21,7 @@ import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong, Script}
+import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, KeyPath, PublicKey, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -36,6 +35,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
+import KotlinUtils._
 
 import java.net.InetSocketAddress
 import scala.concurrent.ExecutionContext
@@ -321,7 +321,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
   def createNewChannel(nodeParams: NodeParams, initFeatures: Features, channelType: SupportedChannelType, funder: Boolean, fundingAmount: Satoshi, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val (finalScript, walletStaticPaymentBasepoint) = if (channelType.paysDirectlyToWallet) {
       val walletKey = Helpers.getWalletPaymentBasepoint(wallet)(ExecutionContext.Implicits.global)
-      (Script.write(Script.pay2wpkh(walletKey)), Some(walletKey))
+      (ByteVector.view(Script.write(Script.pay2wpkh(walletKey))), Some(walletKey))
     } else {
       (Helpers.getFinalScriptPubKey(wallet, nodeParams.chainHash)(ExecutionContext.Implicits.global), None)
     }
@@ -462,7 +462,7 @@ object Peer {
       nodeParams.channelKeyManager.newFundingKeyPath(isFunder), // we make sure that funder and fundee key path end differently
       dustLimit = nodeParams.dustLimit,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserve = (fundingAmount * nodeParams.reserveToFundingRatio).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
+      channelReserve = (fundingAmount times nodeParams.reserveToFundingRatio).max(nodeParams.dustLimit), // BOLT #2: make sure that our reserve is above our dust limit
       htlcMinimum = nodeParams.htlcMinimum,
       toSelfDelay = nodeParams.toRemoteDelay, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,

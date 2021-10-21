@@ -16,8 +16,11 @@
 
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{OutPoint, SIGHASH_ALL, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{OutPoint, Satoshi, SatoshiLong, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.SigHash.SIGHASH_ALL
+import fr.acinq.eclair.KotlinUtils._
+import org.scalatest.funsuite.AnyFunSuiteLike
 
 /**
  * Created by PM on 27/01/2017.
@@ -51,20 +54,20 @@ object WatcherSpec {
     // txs send funds to our key
     val pub = priv.publicKey
     val inputs = txs.map(tx => {
-      val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(pub)))
-      (OutPoint(tx, outputIndex), tx.txOut(outputIndex).amount)
+      val outputIndex = tx.txOut.indexWhere(_.publicKeyScript.contentEquals(Script.write(Script.pay2wpkh(pub))))
+      (new OutPoint(tx, outputIndex), tx.txOut(outputIndex).amount)
     })
     // we spend these inputs and create a similar output with a smaller amount
-    val unsigned = Transaction(
+    val unsigned = new Transaction(
       2,
-      inputs.map(_._1).map(outPoint => TxIn(outPoint, Nil, sequence)),
-      TxOut(inputs.map(_._2).sum - fee, Script.pay2wpkh(to)) :: Nil,
+      inputs.map(_._1).map(outPoint => new TxIn(outPoint, Nil, sequence)),
+      new TxOut(inputs.map(_._2).sum minus fee, Script.pay2wpkh(to)) :: Nil,
       lockTime
     )
     val signed = inputs.map(_._2).zipWithIndex.foldLeft(unsigned) {
       case (tx, (amount, i)) =>
         val sig = Transaction.signInput(tx, i, Script.pay2pkh(pub), SIGHASH_ALL, amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-        tx.updateWitness(i, ScriptWitness(sig :: pub.value :: Nil))
+        tx.updateWitness(i, new ScriptWitness().push(sig).push(pub.value))
     }
     Transaction.correctlySpends(signed, txs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     signed

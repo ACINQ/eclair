@@ -21,7 +21,7 @@ import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, TypedActorRefO
 import akka.actor.{Actor, ActorContext, ActorRef, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, typed}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -48,6 +48,7 @@ import fr.acinq.eclair.transactions.Transactions.{ClosingTx, TxOwner}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
+import KotlinUtils._
 
 import java.sql.SQLException
 import scala.collection.immutable.Queue
@@ -197,7 +198,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = true, temporaryChannelId, initialFeeratePerKw, Some(fundingTxFeeratePerKw)))
       activeConnection = remote
       txPublisher ! SetChannelId(remoteNodeId, temporaryChannelId)
-      val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
+      val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath).getPublicKey
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
       // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used
       // See https://github.com/lightningnetwork/lightning-rfc/pull/714.
@@ -214,10 +215,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = fundingPubKey,
-        revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-        paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
-        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-        htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+        revocationBasepoint = keyManager.revocationPoint(channelKeyPath).getPublicKey,
+        paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).getPublicKey),
+        delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).getPublicKey,
+        htlcBasepoint = keyManager.htlcPoint(channelKeyPath).getPublicKey,
         firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
         channelFlags = channelFlags,
         tlvStream = TlvStream(
@@ -332,7 +333,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         case Left(t) => handleLocalError(t, d, Some(open))
         case Right((channelFeatures, remoteShutdownScript)) =>
           context.system.eventStream.publish(ChannelCreated(self, peer, remoteNodeId, isFunder = false, open.temporaryChannelId, open.feeratePerKw, None))
-          val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).publicKey
+          val fundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath).getPublicKey
           val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
           val minimumDepth = Helpers.minDepthForFunding(nodeParams, open.fundingSatoshis)
           // In order to allow TLV extensions and keep backwards-compatibility, we include an empty upfront_shutdown_script if this feature is not used.
@@ -347,10 +348,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             toSelfDelay = localParams.toSelfDelay,
             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
             fundingPubkey = fundingPubkey,
-            revocationBasepoint = keyManager.revocationPoint(channelKeyPath).publicKey,
-            paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).publicKey),
-            delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).publicKey,
-            htlcBasepoint = keyManager.htlcPoint(channelKeyPath).publicKey,
+            revocationBasepoint = keyManager.revocationPoint(channelKeyPath).getPublicKey,
+            paymentBasepoint = localParams.walletStaticPaymentBasepoint.getOrElse(keyManager.paymentPoint(channelKeyPath).getPublicKey),
+            delayedPaymentBasepoint = keyManager.delayedPaymentPoint(channelKeyPath).getPublicKey,
+            htlcBasepoint = keyManager.htlcPoint(channelKeyPath).getPublicKey,
             firstPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, 0),
             tlvStream = TlvStream(
               ChannelTlv.UpfrontShutdownScriptTlv(localShutdownScript),
@@ -406,7 +407,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             shutdownScript = remoteShutdownScript)
           log.debug("remote params: {}", remoteParams)
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-          val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.publicKey, remoteParams.fundingPubKey)))
+          val fundingPubkeyScript = ByteVector.view(Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey.getPublicKey, remoteParams.fundingPubKey))))
           wallet.makeFundingTx(fundingPubkeyScript, fundingSatoshis, fundingTxFeeratePerKw).pipeTo(self)
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, channelConfig, channelFeatures, open)
       }
@@ -482,7 +483,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           // check remote signature validity
           val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
           val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, channelFeatures.commitmentFormat)
-          val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
+          val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.getPublicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
           Transactions.checkSpendable(signedLocalCommitTx) match {
             case Failure(_) => handleLocalError(InvalidCommitmentSignature(temporaryChannelId, signedLocalCommitTx.tx), d, None)
             case Success(_) =>
@@ -499,7 +500,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
                 LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
                 localNextHtlcId = 0L, remoteNextHtlcId = 0L,
                 originChannels = Map.empty,
-                remoteNextCommitInfo = Right(randomKey().publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
+                remoteNextCommitInfo = Right(randomKey().publicKey()), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
                 commitInput, ShaChain.init)
               peer ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
               txPublisher ! SetChannelId(remoteNodeId, channelId)
@@ -528,7 +529,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       // we make sure that their sig checks out and that our first commit tx is spendable
       val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
       val localSigOfLocalTx = keyManager.sign(localCommitTx, fundingPubKey, TxOwner.Local, channelFeatures.commitmentFormat)
-      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
+      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, fundingPubKey.getPublicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           // we rollback the funding tx, it will never be published
@@ -617,7 +618,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           val shortChannelId = ShortChannelId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
           goto(WAIT_FOR_FUNDING_LOCKED) using DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, fundingLocked) storing() sending fundingLocked
         case Failure(t) =>
-          log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx.bin}")
+          log.error(t, s"rejecting channel with invalid funding tx: ${fundingTx}")
           goto(CLOSED)
       }
 
@@ -986,7 +987,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             log.info(s"announcing channelId=${d.channelId} on the network with shortId=${d.shortChannelId}")
             import d.commitments.{localParams, remoteParams}
             val fundingPubKey = keyManager.fundingPublicKey(localParams.fundingKeyPath)
-            val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, remoteParams.nodeId, fundingPubKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
+            val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, nodeParams.nodeId, remoteParams.nodeId, fundingPubKey.getPublicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
             if (!Announcements.checkSigs(channelAnn)) {
               handleLocalError(InvalidAnnouncementSignatures(d.channelId, remoteAnnSigs), d, Some(remoteAnnSigs))
             } else {
@@ -1597,7 +1598,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
         nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
-        yourLastPerCommitmentSecret = PrivateKey(yourLastPerCommitmentSecret),
+        yourLastPerCommitmentSecret = new PrivateKey(yourLastPerCommitmentSecret),
         myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
       )
 

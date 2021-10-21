@@ -16,12 +16,16 @@
 
 package fr.acinq.eclair.crypto
 
+import fr.acinq.bitcoin.crypto.Pack
+
+import java.nio.ByteOrder
 import fr.acinq.bitcoin.{ByteVector32, Protocol}
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.{DecryptionError, EncryptionError, InvalidCounter}
 import grizzled.slf4j.Logging
 import org.bouncycastle.crypto.engines.ChaCha7539Engine
 import org.bouncycastle.crypto.params.{KeyParameter, ParametersWithIV}
 import scodec.bits.ByteVector
+import fr.acinq.eclair.KotlinUtils._
 
 import java.nio.ByteOrder
 
@@ -111,7 +115,8 @@ object ChaCha20Poly1305 extends Logging {
   def encrypt(key: ByteVector, nonce: ByteVector, plaintext: ByteVector, aad: ByteVector): (ByteVector, ByteVector) = {
     val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
     val ciphertext = ChaCha20.encrypt(plaintext, key, nonce, 1)
-    val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
+    val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), ByteVector.view(Pack.writeInt64LE(aad.length)), ByteVector.view(Pack.writeInt64LE(ciphertext.length)))
+
     logger.debug(s"encrypt($key, $nonce, $aad, $plaintext) = ($ciphertext, $tag)")
     (ciphertext, tag)
   }
@@ -126,7 +131,7 @@ object ChaCha20Poly1305 extends Logging {
    */
   def decrypt(key: ByteVector, nonce: ByteVector, ciphertext: ByteVector, aad: ByteVector, mac: ByteVector): ByteVector = {
     val polykey = ChaCha20.encrypt(ByteVector32.Zeroes, key, nonce)
-    val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN), Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN))
+    val tag = Poly1305.mac(polykey, aad, pad16(aad), ciphertext, pad16(ciphertext), ByteVector.view(Pack.writeInt64LE(aad.length)), ByteVector.view(Pack.writeInt64LE(ciphertext.length)))
     if (tag != mac) throw InvalidMac()
     val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
     logger.debug(s"decrypt($key, $nonce, $aad, $ciphertext, $mac) = $plaintext")

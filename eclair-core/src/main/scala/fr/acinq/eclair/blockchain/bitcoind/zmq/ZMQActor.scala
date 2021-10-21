@@ -92,7 +92,7 @@ class ZMQActor(address: String, topic: String, connected: Option[Promise[Done]] 
 
     case msg: ZMsg => msg.popString() match {
       case "hashblock" =>
-        val blockHash = ByteVector32(ByteVector(msg.pop().getData))
+        val blockHash = new ByteVector32(msg.pop().getData)
         log.debug("received blockhash={}", blockHash)
         context.system.eventStream.publish(NewBlock(blockHash))
       case "rawtx" =>

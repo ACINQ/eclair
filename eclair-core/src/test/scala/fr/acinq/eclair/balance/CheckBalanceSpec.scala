@@ -2,7 +2,7 @@ package fr.acinq.eclair.balance
 
 import akka.pattern.pipe
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.{Btc, ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, MainAndHtlcBalance, OffChainBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{apply => _, _}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -14,10 +14,11 @@ import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
 import fr.acinq.eclair.db.pg.PgUtils.using
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecs.stateDataCodec
 import fr.acinq.eclair.wire.protocol.{CommitSig, Error, RevokeAndAck}
-import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TestConstants, TestKitBaseClass, ToMilliSatoshiConversion, randomBytes32}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.sqlite.SQLiteConfig
+import fr.acinq.eclair.KotlinUtils._
 
 import java.io.File
 import java.sql.DriverManager
@@ -29,6 +30,9 @@ import scala.concurrent.{ExecutionContext, Future}
 class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
   type FixtureParam = SetupFixture
+
+  implicit def sat2btc(input: Satoshi): Btc = input.toBtc
+  implicit def sat2msat(input: Satoshi): MilliSatoshi = input.toMilliSatoshi
 
   override def withFixture(test: OneArgTest): Outcome = {
     val setup = init()
@@ -91,7 +95,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
         htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
-        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi + htlcb2.amountMsat.truncateToSatoshi
+        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi plus htlcb2.amountMsat.truncateToSatoshi
       ))
   }
 
@@ -139,7 +143,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
         htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
-        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi + htlcb2.amountMsat.truncateToSatoshi
+        htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi plus htlcb2.amountMsat.truncateToSatoshi
       ))
   }
 
@@ -171,7 +175,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(localCommitPublished.claimMainDelayedOutputTx.get.tx.txid -> localCommitPublished.claimMainDelayedOutputTx.get.tx.txOut.head.amount),
         htlcs = Map.empty,
-        htlcsUnpublished = htlca1.amountMsat.truncateToSatoshi + htlca3.amountMsat.truncateToSatoshi + htlcb1.amountMsat.truncateToSatoshi
+        htlcsUnpublished = htlca1.amountMsat.truncateToSatoshi plus htlca3.amountMsat.truncateToSatoshi plus htlcb1.amountMsat.truncateToSatoshi
       ))
 
     alice2blockchain.expectMsgType[PublishRawTx] // claim-main

@@ -21,8 +21,9 @@ import akka.event.Logging.MDC
 import akka.event._
 import akka.io.Tcp
 import akka.util.ByteString
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Protocol
+import fr.acinq.bitcoin.crypto.Pack
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.crypto.ChaCha20Poly1305.ChaCha20Poly1305Error
 import fr.acinq.eclair.crypto.Noise._
@@ -31,6 +32,7 @@ import fr.acinq.eclair.wire.protocol.{AnnouncementSignatures, RoutingMessage}
 import fr.acinq.eclair.{Diagnostics, FSMDiagnosticActorLogging, Logs, getSimpleClassName}
 import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
+import fr.acinq.eclair.KotlinUtils._
 
 import java.nio.ByteOrder
 import scala.annotation.tailrec
@@ -54,7 +56,7 @@ import scala.util.{Failure, Success, Try}
 class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], connection: ActorRef, codec: Codec[T]) extends Actor with FSMDiagnosticActorLogging[TransportHandler.State, TransportHandler.Data] {
 
   // will hold the peer's public key once it is available (we don't know it right away in case of an incoming connection)
-  var remoteNodeId_opt: Option[PublicKey] = rs.map(PublicKey(_))
+  var remoteNodeId_opt: Option[PublicKey] = rs.map(new PublicKey(_))
 
   val wireLog = new BusLogging(context.system.eventStream, "", classOf[Diagnostics], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
 
@@ -126,7 +128,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
           reader.read(ByteVector.view(payload.asByteBuffer)) match {
             case (writer, _, Some((dec, enc, ck))) =>
-              val remoteNodeId = PublicKey(writer.rs)
+              val remoteNodeId = new PublicKey(writer.rs)
               remoteNodeId_opt = Some(remoteNodeId)
               context.parent ! HandshakeCompleted(remoteNodeId)
               val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
@@ -143,7 +145,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
                 }
                 case (_, message, Some((enc, dec, ck))) => {
                   connection ! Tcp.Write(buf(TransportHandler.prefix +: message))
-                  val remoteNodeId = PublicKey(writer.rs)
+                  val remoteNodeId = new PublicKey(writer.rs)
                   remoteNodeId_opt = Some(remoteNodeId)
                   context.parent ! HandshakeCompleted(remoteNodeId)
                   val nextStateData = WaitingForListenerData(Encryptor(ExtendedCipherState(enc, ck)), Decryptor(ExtendedCipherState(dec, ck), ciphertextLength = None, remainder))
@@ -396,7 +398,7 @@ object TransportHandler {
         case (None, _) =>
           val (ciphertext, remainder) = buffer.splitAt(18)
           val (dec1, plaintext) = state.decryptWithAd(ByteVector.empty, ByteVector.view(ciphertext.asByteBuffer))
-          val length = Protocol.uint16(plaintext.toArray, ByteOrder.BIG_ENDIAN)
+          val length = Pack.int16BE(plaintext.toArray, 0)
           Decryptor(dec1, ciphertextLength = Some(length), buffer = remainder).decrypt(acc)
         case (Some(expectedLength), length) if length < expectedLength + 16 => (Decryptor(state, ciphertextLength, buffer), acc)
         case (Some(expectedLength), _) =>
@@ -430,7 +432,7 @@ object TransportHandler {
      * @return a (cipherstate, ciphertext) tuple where ciphertext is encrypted according to BOLT #8
      */
     def encrypt(plaintext: ByteVector): (Encryptor, ByteVector) = {
-      val (state1, ciphertext1) = state.encryptWithAd(ByteVector.empty, Protocol.writeUInt16(plaintext.length.toInt, ByteOrder.BIG_ENDIAN))
+      val (state1, ciphertext1) = state.encryptWithAd(ByteVector.empty, Pack.writeInt16BE(plaintext.length.toShort))
       val (state2, ciphertext2) = state1.encryptWithAd(ByteVector.empty, plaintext)
       (Encryptor(state2), ciphertext1 ++ ciphertext2)
     }

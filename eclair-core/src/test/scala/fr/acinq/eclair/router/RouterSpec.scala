@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.Status
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -34,8 +34,10 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, randomKey}
+import fr.acinq.eclair.KotlinUtils._
 import scodec.bits._
 
+import scala.jdk.CollectionConverters._
 import scala.concurrent.duration._
 
 /**
@@ -59,7 +61,7 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ac))
       peerConnection.expectNoMessage(100 millis) // we don't immediately acknowledge the announcement (back pressure)
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_ac)
-      watcher.send(router, ValidateResult(chan_ac, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+      watcher.send(router, ValidateResult(chan_ac, Right((new Transaction(0, Nil, new TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c).asJava))) :: Nil, 0), UtxoStatus.Unspent))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ac))
       peerConnection.expectMsg(GossipDecision.Accepted(chan_ac))
       assert(peerConnection.sender() == router)
@@ -93,7 +95,7 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.expectMsg(TransportHandler.ReadAck(update_uc))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_u))
       peerConnection.expectMsg(TransportHandler.ReadAck(node_u))
-      watcher.send(router, ValidateResult(chan_uc, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(2000000 sat, write(pay2wsh(Scripts.multiSig2of2(priv_funding_u.publicKey, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+      watcher.send(router, ValidateResult(chan_uc, Right((new Transaction(0, Nil, new TxOut(2000000 sat, write(pay2wsh(Scripts.multiSig2of2(priv_funding_u.publicKey, funding_c).asJava))) :: Nil, 0), UtxoStatus.Unspent))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_uc))
       peerConnection.expectMsg(GossipDecision.Accepted(chan_uc))
       assert(peerConnection.sender() == router)
@@ -198,7 +200,7 @@ class RouterSpec extends BaseRouterSpec {
       peerConnection.expectMsg(TransportHandler.ReadAck(update_ay))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_y))
       peerConnection.expectMsg(TransportHandler.ReadAck(node_y))
-      watcher.send(router, ValidateResult(chan_ay, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey().publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Unspent)))
+      watcher.send(router, ValidateResult(chan_ay, Right((new Transaction(0, Nil, new TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey().publicKey)))) :: Nil, 0), UtxoStatus.Unspent))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_ay))
       peerConnection.expectMsg(GossipDecision.InvalidAnnouncement(chan_ay))
       peerConnection.expectMsg(GossipDecision.NoRelatedChannel(update_ay))
@@ -229,7 +231,7 @@ class RouterSpec extends BaseRouterSpec {
       val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_az)
-      watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = false))))
+      watcher.send(router, ValidateResult(chan_az, Right((new Transaction(0, Nil, new TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, 0), UtxoStatus.Spent(spendingTxConfirmed = false)))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
       peerConnection.expectMsg(GossipDecision.ChannelClosing(chan_az))
       peerConnection.expectNoMessage(100 millis)
@@ -244,7 +246,7 @@ class RouterSpec extends BaseRouterSpec {
       val chan_az = channelAnnouncement(ShortChannelId(42003), priv_a, priv_z, priv_funding_a, priv_funding_z)
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_az))
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_az)
-      watcher.send(router, ValidateResult(chan_az, Right(Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0), UtxoStatus.Spent(spendingTxConfirmed = true))))
+      watcher.send(router, ValidateResult(chan_az, Right((new Transaction(0, Nil, new TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, 0), UtxoStatus.Spent(spendingTxConfirmed = true)))))
       peerConnection.expectMsg(TransportHandler.ReadAck(chan_az))
       peerConnection.expectMsg(GossipDecision.ChannelClosed(chan_az))
       peerConnection.expectNoMessage(100 millis)
@@ -351,9 +353,9 @@ class RouterSpec extends BaseRouterSpec {
   test("route found (with extra routing info)") { fixture =>
     import fixture._
     val sender = TestProbe()
-    val x = PublicKey(hex"02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73")
-    val y = PublicKey(hex"03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a")
-    val z = PublicKey(hex"0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484")
+    val x = PublicKey.fromHex("02999fa724ec3c244e4da52b4a91ad421dc96c9a810587849cd4b2469313519c73")
+    val y = PublicKey.fromHex("03f1cb1af20fe9ccda3ea128e27d7c39ee27375c8480f11a87c17197e97541ca6a")
+    val z = PublicKey.fromHex("0358e32d245ff5f5a3eb14c78c6f69c67cea7846bdf9aeeb7199e8f6fbb0306484")
     val extraHop_cx = ExtraHop(c, ShortChannelId(1), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_xy = ExtraHop(x, ShortChannelId(2), 10 msat, 11, CltvExpiryDelta(12))
     val extraHop_yz = ExtraHop(y, ShortChannelId(3), 20 msat, 21, CltvExpiryDelta(22))
@@ -557,7 +559,7 @@ class RouterSpec extends BaseRouterSpec {
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, announcement))
     watcher.expectMsgType[ValidateRequest]
     peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, staleUpdate))
-    watcher.send(router, ValidateResult(announcement, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(announcement, Right((new Transaction(0, Nil, new TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, 0), UtxoStatus.Unspent))))
     peerConnection.expectMsg(GossipDecision.Accepted(announcement))
     peerConnection.expectMsg(GossipDecision.Stale(staleUpdate))
 

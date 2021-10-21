@@ -20,7 +20,7 @@ import akka.Done
 import akka.actor.ActorRef
 import akka.event.LoggingAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel._
@@ -34,6 +34,7 @@ import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilli, TimestampMilliLong, randomBytes32}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits.ByteVector
@@ -587,7 +588,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
       }
       def localNodeId: PublicKey = randomExtendedPrivateKey.publicKey
       def remoteNodeId: PublicKey = randomExtendedPrivateKey.publicKey
-      def capacity: Satoshi = Long.MaxValue.sat
+      def capacity: Satoshi = new Satoshi(Long.MaxValue)
       def availableBalanceForReceive: MilliSatoshi = Long.MaxValue.msat
       def availableBalanceForSend: MilliSatoshi = 0.msat
       def originChannels: Map[Long, Origin] = Map.empty
@@ -670,7 +671,7 @@ object PostRestartHtlcCleanerSpec {
   val channelId_bc_5 = randomBytes32()
 
   val (preimage1, preimage2, preimage3) = (randomBytes32(), randomBytes32(), randomBytes32())
-  val (paymentHash1, paymentHash2, paymentHash3) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3))
+  val (paymentHash1, paymentHash2, paymentHash3) = (preimage1.sha256(), preimage2.sha256(), preimage3.sha256())
 
   def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): UpdateAddHtlc = {
     val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, Onion.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32()))

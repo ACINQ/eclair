@@ -82,12 +82,12 @@ class RandomSpec extends AnyFunSuiteLike {
 
     {
       val stream = new ChaCha7539Engine()
-      stream.init(true, new ParametersWithIV(new KeyParameter(ByteVector32.One.toArray), new Array[Byte](12)))
+      stream.init(true, new ParametersWithIV(new KeyParameter(ByteVector32.One.toByteArray), new Array[Byte](12)))
       stream.processBytes(noExtraBuffer, 0, noExtraBuffer.length, noExtraBuffer, 0)
     }
     {
       val stream = new ChaCha7539Engine()
-      stream.init(true, new ParametersWithIV(new KeyParameter(ByteVector32.One.toArray), new Array[Byte](12)))
+      stream.init(true, new ParametersWithIV(new KeyParameter(ByteVector32.One.toByteArray), new Array[Byte](12)))
       val ciphertext = new Array[Byte](withExtraBuffer.length)
       stream.processBytes(withExtraBuffer, 0, withExtraBuffer.length, ciphertext, 0)
       ciphertext.copyToArray(withExtraBuffer)

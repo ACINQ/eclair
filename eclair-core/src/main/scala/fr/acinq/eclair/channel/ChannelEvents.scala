@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, Transaction}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw

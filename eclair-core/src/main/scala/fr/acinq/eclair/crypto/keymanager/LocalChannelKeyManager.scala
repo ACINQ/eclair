@@ -17,9 +17,9 @@
 package fr.acinq.eclair.crypto.keymanager
 
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, DeterministicWallet, KeyPath}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Announcements
@@ -29,11 +29,14 @@ import fr.acinq.eclair.{KamonExt, randomLong}
 import grizzled.slf4j.Logging
 import kamon.tag.TagSet
 import scodec.bits.ByteVector
+import fr.acinq.eclair.KotlinUtils._
+
+import scala.jdk.CollectionConverters._
 
 object LocalChannelKeyManager {
-  def keyBasePath(chainHash: ByteVector32): List[Long] = (chainHash: @unchecked) match {
-    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
-    case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
+  def keyBasePath(chainHash: ByteVector32): KeyPath = (chainHash: @unchecked) match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => new KeyPath("m/46'/1'") //"DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
+    case Block.LivenetGenesisBlock.hash => new KeyPath("m/47'/1'") // DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
   }
 }
 
@@ -58,41 +61,41 @@ class LocalChannelKeyManager(seed: ByteVector, chainHash: ByteVector32) extends 
       override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
     })
 
-  private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): List[Long] = (LocalChannelKeyManager.keyBasePath(chainHash) ++ channelKeyPath.path) :+ index
+  private def internalKeyPath(channelKeyPath: KeyPath, index: Long): KeyPath = (LocalChannelKeyManager.keyBasePath(chainHash) append  channelKeyPath.path) append index
 
-  private def fundingPrivateKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
+  private def fundingPrivateKey(channelKeyPath: KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
 
-  private def revocationSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
+  private def revocationSecret(channelKeyPath: KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
 
-  private def paymentSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
+  private def paymentSecret(channelKeyPath: KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
 
-  private def delayedPaymentSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
+  private def delayedPaymentSecret(channelKeyPath: KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
 
-  private def htlcSecret(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
+  private def htlcSecret(channelKeyPath: KeyPath): ExtendedPrivateKey = privateKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
 
-  private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
+  private def shaSeed(channelKeyPath: KeyPath): ByteVector32 = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.value :+ 1.toByte)
 
   override def newFundingKeyPath(isFunder: Boolean): KeyPath = {
-    val last = DeterministicWallet.hardened(if (isFunder) 1 else 0)
+    val last: java.lang.Long = DeterministicWallet.hardened(if (isFunder) 1 else 0)
 
-    def next(): Long = randomLong() & 0xFFFFFFFFL
+    def next(): java.lang.Long = randomLong() & 0xFFFFFFFFL
 
-    DeterministicWallet.KeyPath(Seq(next(), next(), next(), next(), next(), next(), next(), next(), last))
+    new KeyPath(List(next(), next(), next(), next(), next(), next(), next(), next(), last).asJava)
   }
 
-  override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
+  override def fundingPublicKey(channelKeyPath: KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
 
-  override def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
+  override def revocationPoint(channelKeyPath: KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
 
-  override def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
+  override def paymentPoint(channelKeyPath: KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
 
-  override def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
+  override def delayedPaymentPoint(channelKeyPath: KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
 
-  override def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
+  override def htlcPoint(channelKeyPath: KeyPath): ExtendedPublicKey = publicKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
 
-  override def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
+  override def commitmentSecret(channelKeyPath: KeyPath, index: Long): PrivateKey = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
 
-  override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
+  override def commitmentPoint(channelKeyPath: KeyPath, index: Long): PublicKey = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
   /**
    * @param tx               input transaction

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
@@ -59,14 +59,14 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
     setVersion(statement, DB_NAME, CURRENT_VERSION)
   }
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {
+  override def addOrUpdatePeer(nodeId: PublicKey, nodeaddress: NodeAddress): Unit = withMetrics("peers/add-or-update", DbBackends.Sqlite) {
     val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
     using(sqlite.prepareStatement("UPDATE peers SET data=? WHERE node_id=?")) { update =>
       update.setBytes(1, data)
-      update.setBytes(2, nodeId.value.toArray)
+      update.setBytes(2, nodeId.value.toByteArray)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO peers VALUES (?, ?)")) { statement =>
-          statement.setBytes(1, nodeId.value.toArray)
+          statement.setBytes(1, nodeId.value.toByteArray)
           statement.setBytes(2, data)
           statement.executeUpdate()
         }
@@ -74,16 +74,16 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
     }
   }
 
-  override def removePeer(nodeId: Crypto.PublicKey): Unit = withMetrics("peers/remove", DbBackends.Sqlite) {
+  override def removePeer(nodeId: PublicKey): Unit = withMetrics("peers/remove", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("DELETE FROM peers WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.value.toArray)
+      statement.setBytes(1, nodeId.value.toByteArray)
       statement.executeUpdate()
     }
   }
 
   override def getPeer(nodeId: PublicKey): Option[NodeAddress] = withMetrics("peers/get", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM peers WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.value.toArray)
+      statement.setBytes(1, nodeId.value.toByteArray)
       statement.executeQuery()
         .mapCodec(CommonCodecs.nodeaddress)
         .headOption
@@ -94,7 +94,7 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
     using(sqlite.createStatement()) { statement =>
       statement.executeQuery("SELECT node_id, data FROM peers")
         .map { rs =>
-          val nodeid = PublicKey(rs.getByteVector("node_id"))
+          val nodeid = new PublicKey(rs.getBytes("node_id"))
           val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
           nodeid -> nodeaddress
         }
@@ -102,14 +102,14 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
     }
   }
 
-  override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("peers/add-or-update-relay-fees", DbBackends.Sqlite) {
+  override def addOrUpdateRelayFees(nodeId: PublicKey, fees: RelayFees): Unit = withMetrics("peers/add-or-update-relay-fees", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("UPDATE relay_fees SET fee_base_msat=?, fee_proportional_millionths=? WHERE node_id=?")) { update =>
       update.setLong(1, fees.feeBase.toLong)
       update.setLong(2, fees.feeProportionalMillionths)
-      update.setBytes(3, nodeId.value.toArray)
+      update.setBytes(3, nodeId.value.toByteArray)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO relay_fees VALUES (?, ?, ?)")) { statement =>
-          statement.setBytes(1, nodeId.value.toArray)
+          statement.setBytes(1, nodeId.value.toByteArray)
           statement.setLong(2, fees.feeBase.toLong)
           statement.setLong(3, fees.feeProportionalMillionths)
           statement.executeUpdate()
@@ -120,7 +120,7 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb with Logging {
 
   override def getRelayFees(nodeId: PublicKey): Option[RelayFees] = withMetrics("peers/get-relay-fees", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT fee_base_msat, fee_proportional_millionths FROM relay_fees WHERE node_id=?")) { statement =>
-      statement.setBytes(1, nodeId.value.toArray)
+      statement.setBytes(1, nodeId.value.toByteArray)
       statement.executeQuery()
         .headOption
         .map(rs =>

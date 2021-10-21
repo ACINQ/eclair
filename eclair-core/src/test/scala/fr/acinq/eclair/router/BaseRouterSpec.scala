@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
@@ -34,6 +34,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{TestKitBaseClass, randomKey, _}
+import KotlinUtils._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -50,11 +51,11 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
 
   case class FixtureParam(nodeParams: NodeParams, router: ActorRef, watcher: TestProbe)
 
-  val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
+  val remoteNodeId = PrivateKey.fromHex("01" * 32).publicKey
   val publicChannelCapacity = 1000000 sat
   val htlcMaximum = 500000000 msat
 
-  val seed = ByteVector32(ByteVector.fill(32)(2))
+  val seed = new ByteVector32("02" * 32)
   val testNodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
   val testChannelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
@@ -158,11 +159,11 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_ef)
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_gh)
       // and answers with valid scripts
-      watcher.send(router, ValidateResult(chan_ab, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-      watcher.send(router, ValidateResult(chan_bc, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-      watcher.send(router, ValidateResult(chan_cd, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-      watcher.send(router, ValidateResult(chan_ef, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
-      watcher.send(router, ValidateResult(chan_gh, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_g, funding_h)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_ab, Right((new Transaction(0, Nil,new TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_bc, Right((new Transaction(0, Nil,new TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_cd, Right((new Transaction(0, Nil,new TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_ef, Right((new Transaction(0, Nil,new TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, 0), UtxoStatus.Unspent))))
+      watcher.send(router, ValidateResult(chan_gh, Right((new Transaction(0, Nil,new TxOut(publicChannelCapacity, write(pay2wsh(Scripts.multiSig2of2(funding_g, funding_h)))) :: Nil, 0), UtxoStatus.Unspent))))
       // watcher receives watch-spent request
       val watchedShortChannelIds = Set(
         watcher.expectMsgType[WatchExternalChannelSpent].shortChannelId,

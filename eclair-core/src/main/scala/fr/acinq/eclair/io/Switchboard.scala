@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.channel.Helpers.Closing

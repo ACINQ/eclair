@@ -53,7 +53,7 @@ object NetworkStats {
     if (publicChannels.isEmpty || publicChannels.flatMap(pc => getChannelUpdateField(pc, _ => true)).isEmpty) {
       None
     } else {
-      val capacityStats = Stats.generate(publicChannels.map(_.capacity.toLong), d => Satoshi(d.toLong))
+      val capacityStats = Stats.generate(publicChannels.map(_.capacity.toLong), d => new Satoshi(d.toLong))
       val cltvStats = Stats.generate(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.cltvExpiryDelta.toInt.toLong)), d => CltvExpiryDelta(d.toInt))
       val feeBaseStats = Stats.generate(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeBaseMsat.toLong)), d => MilliSatoshi(d.toLong))
       val feeProportionalStats = Stats.generate(publicChannels.flatMap(pc => getChannelUpdateField(pc, u => u.feeProportionalMillionths)), d => d.toLong)

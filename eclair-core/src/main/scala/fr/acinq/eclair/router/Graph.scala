@@ -16,13 +16,14 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Btc, ByteVector32, MilliBtc, Satoshi}
+import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.{Btc, ByteVector32, MilliBtc, Satoshi, SatoshiLong}
 import fr.acinq.eclair._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import KotlinUtils._
 
 import scala.annotation.tailrec
 import scala.collection.immutable.SortedMap

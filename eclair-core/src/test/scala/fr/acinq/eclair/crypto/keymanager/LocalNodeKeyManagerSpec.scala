@@ -19,8 +19,8 @@ package fr.acinq.eclair.crypto.keymanager
 import java.io.File
 import java.nio.file.Files
 
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.KeyPath
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.{NodeParams, TestUtils}
@@ -34,7 +34,7 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
     // the same seed, which could be a problem during an upgrade
     val seed = hex"17b086b228025fa8f4416324b6ba2ec36e68570ae2fc3d392520969f2a9d0c1501"
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.TestnetGenesisBlock.hash)
-    assert(nodeKeyManager.nodeId == PublicKey(hex"02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
+    assert(nodeKeyManager.nodeId == PublicKey.fromHex("02a051267759c3a149e3e72372f4e0c4054ba597ebfd0eda78a2273023667205ee"))
   }
 
   test("generate different node ids from the same seed on different chains") {
@@ -44,7 +44,7 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
     val channelKeyManager1 = new LocalChannelKeyManager(seed, Block.TestnetGenesisBlock.hash)
     val channelKeyManager2 = new LocalChannelKeyManager(seed, Block.LivenetGenesisBlock.hash)
     assert(nodeKeyManager1.nodeId != nodeKeyManager2.nodeId)
-    val keyPath = KeyPath(1L :: Nil)
+    val keyPath = new KeyPath("m/1")
     assert(channelKeyManager1.fundingPublicKey(keyPath) != channelKeyManager2.fundingPublicKey(keyPath))
     assert(channelKeyManager1.commitmentPoint(keyPath, 1) != channelKeyManager2.commitmentPoint(keyPath, 1))
   }
@@ -65,11 +65,11 @@ class LocalNodeKeyManagerSpec extends AnyFunSuite {
   test("generate a signature from a digest") {
     val seed = hex"deadbeef"
     val testKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
-    val digest = ByteVector32(hex"d7914fe546b684688bb95f4f888a92dfc680603a75f23eb823658031fff766d9") // sha256(sha256("hello"))
+    val digest = new ByteVector32("d7914fe546b684688bb95f4f888a92dfc680603a75f23eb823658031fff766d9") // sha256(sha256("hello"))
 
     val (signature, recid) = testKeyManager.signDigest(digest)
-    val recoveredPubkey = Crypto.recoverPublicKey(signature, digest, recid)
+    val recoveredPubkey = Crypto.recoverPublicKey(signature, digest.toByteArray, recid)
     assert(recoveredPubkey === testKeyManager.nodeId)
-    assert(Crypto.verifySignature(digest, signature, testKeyManager.nodeId))
+    assert(Crypto.verifySignature(digest.toByteArray, signature, testKeyManager.nodeId))
   }
 }

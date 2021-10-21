@@ -20,7 +20,7 @@ import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
@@ -163,7 +163,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID]
     val preimage = sender.expectMsgType[PreimageReceived].paymentPreimage
-    assert(Crypto.sha256(preimage) === pr.paymentHash)
+    assert(preimage.sha256() === pr.paymentHash)
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
   }
@@ -191,7 +191,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // A will receive an error from B that include the updated channel update, then will retry the payment
     val paymentId = sender.expectMsgType[UUID]
     val preimage = sender.expectMsgType[PreimageReceived].paymentPreimage
-    assert(Crypto.sha256(preimage) === pr.paymentHash)
+    assert(preimage.sha256() === pr.paymentHash)
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
 
@@ -657,7 +657,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     generateBlocks(1, Some(address))
     logger.info(s"simulated ${channels.size} channels")
 
-    val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
+    val remoteNodeId = PrivateKey.fromHex("01" * 32).publicKey()
 
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c, bitcoinClient))

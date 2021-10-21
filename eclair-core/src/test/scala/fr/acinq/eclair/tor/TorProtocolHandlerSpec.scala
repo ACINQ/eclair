@@ -185,7 +185,7 @@ class TorProtocolHandlerSpec extends TestKitBaseClass
   test("invalid server hash") {
     val promiseOnionAddress = Promise[NodeAddress]()
 
-    Files.write(CookieFilePath, fr.acinq.eclair.randomBytes32().toArray)
+    Files.write(CookieFilePath, fr.acinq.eclair.randomBytes32().toByteArray)
 
     val protocolHandler = TestActorRef(props(
       version = OnionServiceVersion("v2"),

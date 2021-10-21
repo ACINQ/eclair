@@ -20,8 +20,7 @@ import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, PublicKey, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -37,9 +36,11 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.{FixtureTestSuite, ParallelTestExecution}
+import KotlinUtils._
 
 import java.util.UUID
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 
 /**
  * Created by PM on 23/08/2016.
@@ -351,7 +352,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     val publishedLocalCommitTx = s2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx
     assert(publishedLocalCommitTx.txid == commitTx.txid)
     val commitInput = closingState.commitments.commitInput
-    Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut).asJava, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     if (closingState.commitments.commitmentFormat.isInstanceOf[Transactions.AnchorOutputsCommitmentFormat]) {
       assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     }

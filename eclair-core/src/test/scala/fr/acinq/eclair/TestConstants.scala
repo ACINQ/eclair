@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair
 
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
@@ -30,6 +31,7 @@ import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterCo
 import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
 import scodec.bits.ByteVector
+import KotlinUtils._
 
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -41,7 +43,7 @@ import scala.concurrent.duration._
 object TestConstants {
 
   val defaultBlockHeight = 400000
-  val fundingSatoshis: Satoshi = 1000000L sat
+  val fundingSatoshis: Satoshi = new Satoshi(1000000L)
   val pushMsat: MilliSatoshi = 200000000L msat
   val feeratePerKw: FeeratePerKw = FeeratePerKw(10000 sat)
   val anchorOutputsFeeratePerKw: FeeratePerKw = FeeratePerKw(2500 sat)
@@ -83,7 +85,7 @@ object TestConstants {
 
 
   object Alice {
-    val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
+    val seed = new ByteVector32("01" * 32)
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
@@ -203,7 +205,7 @@ object TestConstants {
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
       nodeParams.features,
-      Script.write(Script.pay2wpkh(randomKey().publicKey)),
+      ByteVector.view(Script.write(Script.pay2wpkh(randomKey().publicKey))),
       None,
       isFunder = true,
       fundingSatoshis
@@ -213,7 +215,7 @@ object TestConstants {
   }
 
   object Bob {
-    val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(2))
+    val seed = new ByteVector32("02" * 32)
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
     val channelKeyManager = new LocalChannelKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
@@ -329,7 +331,7 @@ object TestConstants {
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
       nodeParams.features,
-      Script.write(Script.pay2wpkh(randomKey().publicKey)),
+      ByteVector.view(Script.write(Script.pay2wpkh(randomKey().publicKey))),
       None,
       isFunder = false,
       fundingSatoshis).copy(

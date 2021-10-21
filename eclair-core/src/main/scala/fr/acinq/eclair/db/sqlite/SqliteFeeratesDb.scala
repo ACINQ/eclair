@@ -99,15 +99,15 @@ class SqliteFeeratesDb(sqlite: Connection) extends FeeratesDb with Logging {
         .map { rs =>
           FeeratesPerKB(
             // NB: we don't bother storing this value in the DB, because it's unused on mobile.
-            mempoolMinFee = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_1008"))),
-            block_1 = FeeratePerKB(Satoshi(rs.getLong("rate_block_1"))),
-            blocks_2 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_2"))),
-            blocks_6 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_6"))),
-            blocks_12 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_12"))),
-            blocks_36 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_36"))),
-            blocks_72 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_72"))),
-            blocks_144 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_144"))),
-            blocks_1008 = FeeratePerKB(Satoshi(rs.getLong("rate_blocks_1008"))))
+            mempoolMinFee = FeeratePerKB(new Satoshi(rs.getLong("rate_blocks_1008"))),
+            block_1 = FeeratePerKB(new Satoshi(rs.getLong("rate_block_1"))),
+            blocks_2 = FeeratePerKB(new Satoshi(rs.getLong("rate_blocks_2"))),
+            blocks_6 = FeeratePerKB(new Satoshi(rs.getLong("rate_blocks_6"))),
+            blocks_12 = FeeratePerKB(new Satoshi(rs.getLong("rate_blocks_12"))),
+            blocks_36 = FeeratePerKB(new Satoshi(rs.getLong("rate_blocks_36"))),
+            blocks_72 = FeeratePerKB(new Satoshi(rs.getLong("rate_blocks_72"))),
+            blocks_144 = FeeratePerKB(new Satoshi(rs.getLong("rate_blocks_144"))),
+            blocks_1008 = FeeratePerKB(new Satoshi(rs.getLong("rate_blocks_1008"))))
         }
         .headOption
     }

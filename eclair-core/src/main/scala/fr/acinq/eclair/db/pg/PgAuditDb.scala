@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.pg
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
@@ -27,6 +27,7 @@ import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TimestampMilli}
+import fr.acinq.eclair.KotlinUtils._
 import grizzled.slf4j.Logging
 
 import java.sql.{Statement, Timestamp}
@@ -341,7 +342,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
                 rs.getByteVector32FromHex("payment_hash"),
                 rs.getByteVector32FromHex("payment_preimage"),
                 MilliSatoshi(rs.getLong("recipient_amount_msat")),
-                PublicKey(rs.getByteVectorFromHex("recipient_node_id")),
+                PublicKey.fromHex(rs.getString("recipient_node_id")),
                 Seq(part))
             }
             sentByParentId + (parentId -> sent)
@@ -379,7 +380,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
           .foldLeft(Map.empty[ByteVector32, (MilliSatoshi, PublicKey)]) { (trampolineByHash, rs) =>
             val paymentHash = rs.getByteVector32FromHex("payment_hash")
             val amount = MilliSatoshi(rs.getLong("amount_msat"))
-            val nodeId = PublicKey(rs.getByteVectorFromHex("next_node_id"))
+            val nodeId = PublicKey.fromHex(rs.getString("next_node_id"))
             trampolineByHash + (paymentHash -> (amount, nodeId))
           }
       }
@@ -423,10 +424,10 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
         statement.setTimestamp(2, to.toSqlTimestamp)
         statement.executeQuery().map { rs =>
           NetworkFee(
-            remoteNodeId = PublicKey(rs.getByteVectorFromHex("node_id")),
+            remoteNodeId = PublicKey.fromHex(rs.getString("node_id")),
             channelId = rs.getByteVector32FromHex("channel_id"),
             txId = rs.getByteVector32FromHex("tx_id"),
-            fee = Satoshi(rs.getLong("mining_fee_sat")),
+            fee = new Satoshi(rs.getLong("mining_fee_sat")),
             txType = rs.getString("tx_type"),
             timestamp = TimestampMilli.fromSqlTimestamp(rs.getTimestamp("timestamp")))
         }.toSeq
@@ -435,7 +436,7 @@ class PgAuditDb(implicit ds: DataSource) extends AuditDb with Logging {
 
   override def stats(from: TimestampMilli, to: TimestampMilli): Seq[Stats] = {
     val networkFees = listNetworkFees(from, to).foldLeft(Map.empty[ByteVector32, Satoshi]) { (feeByChannelId, f) =>
-      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) + f.fee))
+      feeByChannelId + (f.channelId -> (feeByChannelId.getOrElse(f.channelId, 0 sat) plus f.fee))
     }
     case class Relayed(amount: MilliSatoshi, fee: MilliSatoshi, direction: String)
     val relayed = listRelayed(from, to).foldLeft(Map.empty[ByteVector32, Seq[Relayed]]) { (previous, e) =>

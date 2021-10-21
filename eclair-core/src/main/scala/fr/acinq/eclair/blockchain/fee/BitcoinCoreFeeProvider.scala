@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.KotlinUtils._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
@@ -78,7 +79,7 @@ object BitcoinCoreFeeProvider {
             FeeratePerKB(Btc(feerate).toSatoshi)
           case JInt(feerate) if feerate.toLong < 0 =>
             // negative value means failure: should (hopefully) never happen
-            FeeratePerKB(feerate.toLong.sat)
+            FeeratePerKB(new Satoshi(feerate.toLong))
           case JInt(feerate) =>
             FeeratePerKB(Btc(feerate.toLong).toSatoshi)
         }

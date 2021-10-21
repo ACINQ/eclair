@@ -22,6 +22,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.transactions.Transactions.CommitmentFormat
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.KotlinUtils._
 
 /**
  * Created by t-bast on 07/10/2021.

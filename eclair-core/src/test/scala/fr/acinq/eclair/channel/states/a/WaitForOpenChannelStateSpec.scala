@@ -27,6 +27,7 @@ import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKi
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
+import fr.acinq.eclair.KotlinUtils._
 
 import scala.concurrent.duration._
 
@@ -135,7 +136,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
   test("recv OpenChannel (fundingSatoshis > max-funding-satoshis)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val highFundingSat = Bob.nodeParams.maxFundingSatoshis + Btc(1)
+    val highFundingSat = Bob.nodeParams.maxFundingSatoshis plus Btc(1).toSatoshi
     bob ! open.copy(fundingSatoshis = highFundingSat)
     val error = bob2alice.expectMsgType[Error]
     assert(error.toAscii === Error(open.temporaryChannelId, InvalidFundingAmount(open.temporaryChannelId, highFundingSat, Bob.nodeParams.minFundingSatoshis, Bob.nodeParams.maxFundingSatoshis).getMessage).toAscii)
@@ -175,7 +176,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
     // 30% is huge, recommended ratio is 1%
-    val reserveTooHigh = TestConstants.fundingSatoshis * 0.3
+    val reserveTooHigh = TestConstants.fundingSatoshis times 0.3
     bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
     val error = bob2alice.expectMsgType[Error]
     assert(error === Error(open.temporaryChannelId, ChannelReserveTooHigh(open.temporaryChannelId, reserveTooHigh, 0.3, 0.05).getMessage))
@@ -209,7 +210,7 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
   test("recv OpenChannel (reserve below dust)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val reserveTooSmall = open.dustLimitSatoshis - 1.sat
+    val reserveTooSmall = open.dustLimitSatoshis minus 1.sat
     bob ! open.copy(channelReserveSatoshis = reserveTooSmall)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
@@ -230,12 +231,12 @@ class WaitForOpenChannelStateSpec extends TestKitBaseClass with FixtureAnyFunSui
   test("recv OpenChannel (toLocal + toRemote below reserve)") { f =>
     import f._
     val open = alice2bob.expectMsgType[OpenChannel]
-    val fundingSatoshis = open.channelReserveSatoshis + 499.sat
+    val fundingSatoshis = open.channelReserveSatoshis plus 499.sat
     val pushMsat = (500 sat).toMilliSatoshi
     bob ! open.copy(fundingSatoshis = fundingSatoshis, pushMsat = pushMsat)
     val error = bob2alice.expectMsgType[Error]
     // we check that the error uses the temporary channel id
-    assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, pushMsat, (open.channelReserveSatoshis - 1.sat).toMilliSatoshi, open.channelReserveSatoshis).getMessage))
+    assert(error === Error(open.temporaryChannelId, ChannelReserveNotMet(open.temporaryChannelId, pushMsat, (open.channelReserveSatoshis minus 1.sat).toMilliSatoshi, open.channelReserveSatoshis).getMessage))
     awaitCond(bob.stateName == CLOSED)
   }
 

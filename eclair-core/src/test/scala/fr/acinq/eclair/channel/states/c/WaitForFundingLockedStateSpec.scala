@@ -24,7 +24,8 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.{MilliSatoshi, MilliSatoshiLong, TestConstants, TestKitBaseClass}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -104,7 +105,7 @@ class WaitForFundingLockedStateSpec extends TestKitBaseClass with FixtureAnyFunS
   test("recv WatchFundingSpentTriggered (other commit)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
+    alice ! WatchFundingSpentTriggered(new Transaction(0, Nil, Nil, 0))
     alice2bob.expectMsgType[Error]
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx.txid === tx.txid)
     alice2blockchain.expectMsgType[TxPublisher.PublishTx]

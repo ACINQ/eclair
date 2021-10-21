@@ -17,6 +17,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
+import KotlinUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
 /**
@@ -55,24 +56,24 @@ class MilliSatoshiSpec extends AnyFunSuite {
     assert(MilliSatoshi(561) >= MilliSatoshi(561))
     assert(MilliSatoshi(1105) >= MilliSatoshi(561))
     assert(MilliSatoshi(1105) > MilliSatoshi(561))
-    assert(MilliSatoshi(1000) <= Satoshi(1))
+    assert(MilliSatoshi(1000) <= new Satoshi(1))
     assert(MilliSatoshi(1000) <= 2.sat)
-    assert(MilliSatoshi(1000) < Satoshi(2))
-    assert(MilliSatoshi(1000) >= Satoshi(1))
-    assert(MilliSatoshi(2000) >= Satoshi(1))
-    assert(MilliSatoshi(2000) > Satoshi(1))
+    assert(MilliSatoshi(1000) < new Satoshi(2))
+    assert(MilliSatoshi(1000) >= new Satoshi(1))
+    assert(MilliSatoshi(2000) >= new Satoshi(1))
+    assert(MilliSatoshi(2000) > new Satoshi(1))
 
     // maxOf
     assert((561 msat).max(1105 msat) === MilliSatoshi(1105))
     assert((1105 msat).max(1 sat) === MilliSatoshi(1105))
     assert((1105 msat).max(2 sat) === MilliSatoshi(2000))
-    assert((1 sat).max(2 sat) === Satoshi(2))
+    assert((1 sat).max(2 sat) === new Satoshi(2))
 
     // minOf
     assert((561 msat).min(1105 msat) === MilliSatoshi(561))
     assert((1105 msat).min(1 sat) === MilliSatoshi(1000))
     assert((1105 msat).min(2 sat) === MilliSatoshi(1105))
-    assert((1 sat).min(2 sat) === Satoshi(1))
+    assert((1 sat).min(2 sat) === new Satoshi(1))
   }
 
 }

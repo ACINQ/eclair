@@ -16,11 +16,12 @@
 
 package fr.acinq
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.crypto.StrongRandom
 import scodec.Attempt
 import scodec.bits.{BitVector, ByteVector}
+import fr.acinq.eclair.KotlinUtils._
 
 import scala.util.{Failure, Success, Try}
 
@@ -34,17 +35,17 @@ package object eclair {
     ByteVector.view(buffer)
   }
 
-  def randomBytes32(): ByteVector32 = ByteVector32(randomBytes(32))
+  def randomBytes32(): ByteVector32 = new ByteVector32(randomBytes(32))
 
-  def randomBytes64(): ByteVector64 = ByteVector64(randomBytes(64))
+  def randomBytes64(): ByteVector64 = new ByteVector64(randomBytes(64).toArray)
 
-  def randomKey(): PrivateKey = PrivateKey(randomBytes32())
+  def randomKey(): PrivateKey = new PrivateKey(randomBytes32())
 
   def randomLong(): Long = randomGen.nextLong()
 
   def toLongId(fundingTxHash: ByteVector32, fundingOutputIndex: Int): ByteVector32 = {
     require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")
-    val channelId = ByteVector32(fundingTxHash.take(30) :+ (fundingTxHash(30) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxHash(31) ^ fundingOutputIndex).toByte)
+    val channelId = new ByteVector32(fundingTxHash.take(30) concat (fundingTxHash.get(30) ^ (fundingOutputIndex >> 8)).toByte concat (fundingTxHash.get(31) ^ fundingOutputIndex).toByte)
     channelId
   }
 
@@ -77,18 +78,22 @@ package object eclair {
    */
   def addressToPublicKeyScript(address: String, chainHash: ByteVector32): Seq[ScriptElt] = {
     Try(Base58Check.decode(address)) match {
-      case Success((Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
-      case Success((Base58.Prefix.PubkeyAddress, pubKeyHash)) if chainHash == Block.LivenetGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
-      case Success((Base58.Prefix.ScriptAddressTestnet, scriptHash)) if chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
-      case Success((Base58.Prefix.ScriptAddress, scriptHash)) if chainHash == Block.LivenetGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
-      case Success(_) => throw new IllegalArgumentException("base58 address does not match our blockchain")
+      case Success(pair) if pair.getFirst == Base58.Prefix.PubkeyAddressTestnet && (chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash) =>
+        Script.pay2pkh(pair.getSecond)
+      case Success(pair) if pair.getFirst == Base58.Prefix.PubkeyAddress && chainHash == Block.LivenetGenesisBlock.hash =>
+        Script.pay2pkh(pair.getSecond)
+      case Success(pair) if pair.getFirst == Base58.Prefix.ScriptAddressTestnet && (chainHash == Block.TestnetGenesisBlock.hash || chainHash == Block.RegtestGenesisBlock.hash) =>
+        Seq(OP_HASH160.INSTANCE, new OP_PUSHDATA(pair.getSecond), OP_EQUAL.INSTANCE)
+      case Success(pair) if pair.getFirst == Base58.Prefix.ScriptAddress && chainHash == Block.LivenetGenesisBlock.hash =>
+        Seq(OP_HASH160.INSTANCE, new OP_PUSHDATA(pair.getSecond), OP_EQUAL.INSTANCE)
+      case Success(pair) => throw new IllegalArgumentException(s"unexpected base58 encoding: $pair")
       case Failure(base58error) =>
         Try(Bech32.decodeWitnessAddress(address)) match {
-          case Success((_, version, _)) if version != 0.toByte => throw new IllegalArgumentException(s"invalid version $version in bech32 address")
-          case Success((_, _, bin)) if bin.length != 20 && bin.length != 32 => throw new IllegalArgumentException("hash length in bech32 address must be either 20 or 32 bytes")
-          case Success(("bc", _, bin)) if chainHash == Block.LivenetGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
-          case Success(("tb", _, bin)) if chainHash == Block.TestnetGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
-          case Success(("bcrt", _, bin)) if chainHash == Block.RegtestGenesisBlock.hash => OP_0 :: OP_PUSHDATA(bin) :: Nil
+          case Success(triple) if triple.getSecond != 0.toByte => throw new IllegalArgumentException(s"invalid version ${triple.getSecond} in bech32 address")
+          case Success(triple) if triple.getThird.length != 20 && triple.getThird.length != 32 => throw new IllegalArgumentException("hash length in bech32 address must be either 20 or 32 bytes")
+          case Success(triple) if triple.getFirst == "bc" && chainHash == Block.LivenetGenesisBlock.hash => List(OP_0.INSTANCE,  new OP_PUSHDATA(triple.getThird))
+          case Success(triple) if triple.getFirst == "tb" && chainHash == Block.TestnetGenesisBlock.hash => List(OP_0.INSTANCE,  new OP_PUSHDATA(triple.getThird))
+          case Success(triple) if triple.getFirst == "bcrt" && chainHash == Block.RegtestGenesisBlock.hash => List(OP_0.INSTANCE,  new OP_PUSHDATA(triple.getThird))
           case Success(_) => throw new IllegalArgumentException("bech32 address does not match our blockchain")
           case Failure(bech32error) => throw new IllegalArgumentException(s"$address is neither a valid Base58 address ($base58error) nor a valid Bech32 address ($bech32error)")
         }

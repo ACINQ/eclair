@@ -5,7 +5,6 @@ import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.testkit
 import akka.testkit.{TestActor, TestFSMRef, TestProbe}
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchFundingSpentTriggered
@@ -18,9 +17,13 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.transactions.Transactions.{ClaimP2WPKHOutputTx, DefaultCommitmentFormat, InputInfo, TxOwner}
 import fr.acinq.eclair.wire.protocol.{ChannelReestablish, CommitSig, Error, FundingLocked, Init, RevokeAndAck}
 import fr.acinq.eclair.{TestKitBaseClass, _}
+import KotlinUtils._
+
+import scala.jdk.CollectionConverters._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
+import java.util
 import scala.concurrent.duration._
 
 class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
@@ -94,39 +97,46 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     sender.send(newAlice, WatchFundingSpentTriggered(bobCommitTx))
 
     // from Bob's commit tx we can extract both funding public keys
-    val OP_2 :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil = Script.parse(bobCommitTx.txIn(0).witness.stack.last)
+    val parsed = Script.parse(bobCommitTx.txIn.get(0).witness.last)
+    require(parsed.size() == 5 && parsed(0) == OP_2.INSTANCE && parsed(1).isPush(33) && parsed(2).isPush(33) && parsed(3) == OP_2.INSTANCE && parsed(4) == OP_CHECKMULTISIG.INSTANCE)
+    val pub1 = parsed(1).asInstanceOf[OP_PUSHDATA].data
+    val pub2 = parsed(2).asInstanceOf[OP_PUSHDATA].data
+    // val OP_2 :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: OP_2 :: OP_CHECKMULTISIG :: Nil = Script.parse(bobCommitTx.txIn.get(0).witness.last)
     // from Bob's commit tx we can also extract our p2wpkh output
-    val ourOutput = bobCommitTx.txOut.find(_.publicKeyScript.length == 22).get
+    val ourOutput = bobCommitTx.txOut.find(_.publicKeyScript.size() == 22).get
 
-    val OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil = Script.parse(ourOutput.publicKeyScript)
+    val parsed1 = Script.parse(ourOutput.publicKeyScript)
+    require(parsed1.size() == 2 && parsed1(0) == OP_0.INSTANCE && parsed1(1).isPush(20))
+    val pubKeyHash = parsed1(1).asInstanceOf[OP_PUSHDATA].data
+    //val OP_0 :: OP_PUSHDATA(pubKeyHash, _) :: Nil = Script.parse(ourOutput.publicKeyScript)
 
     val keyManager = Alice.nodeParams.channelKeyManager
 
     // find our funding pub key
-    val fundingPubKey = Seq(PublicKey(pub1), PublicKey(pub2)).find {
+    val fundingPubKey = Seq(new PublicKey(pub1), new PublicKey(pub2)).find {
       pub =>
         val channelKeyPath = ChannelKeyManager.keyPath(pub)
-        val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint)
-        localPubkey.hash160 == pubKeyHash
+        val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).getPublicKey, ce.myCurrentPerCommitmentPoint)
+        pubKeyHash.contentEquals(localPubkey.hash160())
     } get
 
     // compute our to-remote pubkey
     val channelKeyPath = ChannelKeyManager.keyPath(fundingPubKey)
-    val ourToRemotePubKey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).publicKey, ce.myCurrentPerCommitmentPoint)
+    val ourToRemotePubKey = Generators.derivePubKey(keyManager.paymentPoint(channelKeyPath).getPublicKey, ce.myCurrentPerCommitmentPoint)
 
     // spend our output
-    val tx = Transaction(version = 2,
-      txIn = TxIn(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), sequence = TxIn.SEQUENCE_FINAL, signatureScript = Nil) :: Nil,
-      txOut = TxOut(Satoshi(1000), Script.pay2pkh(fr.acinq.eclair.randomKey().publicKey)) :: Nil,
-      lockTime = 0)
+    val tx = new Transaction(2,
+      new TxIn(new OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), TxIn.SEQUENCE_FINAL) :: Nil,
+      new TxOut(new Satoshi(1000), Script.pay2pkh(fr.acinq.eclair.randomKey().publicKey)) :: Nil,
+      0)
 
     val sig = keyManager.sign(
-      ClaimP2WPKHOutputTx(InputInfo(OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), ourOutput, Script.pay2pkh(ourToRemotePubKey)), tx),
+      ClaimP2WPKHOutputTx(InputInfo(new OutPoint(bobCommitTx, bobCommitTx.txOut.indexOf(ourOutput)), ourOutput, Script.pay2pkh(ourToRemotePubKey)), tx),
       keyManager.paymentPoint(channelKeyPath),
       ce.myCurrentPerCommitmentPoint,
       TxOwner.Local,
       DefaultCommitmentFormat)
-    val tx1 = tx.updateWitness(0, ScriptWitness(Scripts.der(sig) :: ourToRemotePubKey.value :: Nil))
+    val tx1 = tx.updateWitness(0, new ScriptWitness().push(Scripts.der(sig)).push(ourToRemotePubKey.value))
     Transaction.correctlySpends(tx1, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 

@@ -17,6 +17,7 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Protocol
+import fr.acinq.bitcoin.crypto.Pack
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.engines.ChaCha7539Engine
 import org.bouncycastle.crypto.params.{KeyParameter, ParametersWithIV}
@@ -130,7 +131,7 @@ private class WeakRandom() extends RandomGenerator {
   def nextLong(): Long = {
     val bytes = new Array[Byte](8)
     nextBytes(bytes)
-    Protocol.uint64(bytes, ByteOrder.BIG_ENDIAN)
+    Pack.int64BE(bytes, 0)
   }
 
 }

@@ -65,7 +65,7 @@ class ChannelsDbSpec extends AnyFunSuite {
       val commitNumber = 42
       val paymentHash1 = ByteVector32.Zeroes
       val cltvExpiry1 = CltvExpiry(123)
-      val paymentHash2 = ByteVector32(ByteVector.fill(32)(1))
+      val paymentHash2 = new ByteVector32("01" * 32)
       val cltvExpiry2 = CltvExpiry(656)
 
       intercept[SQLException](db.addHtlcInfo(channel1.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
@@ -174,15 +174,15 @@ class ChannelsDbSpec extends AnyFunSuite {
         // insert data
         for (testCase <- testCases) {
           using(sqlite.prepareStatement("INSERT INTO local_channels VALUES (?, ?)")) { statement =>
-            statement.setBytes(1, testCase.channelId.toArray)
+            statement.setBytes(1, testCase.channelId.toByteArray)
             statement.setBytes(2, testCase.data.toArray)
             statement.executeUpdate()
           }
           for (commitmentNumber <- testCase.commitmentNumbers) {
             using(sqlite.prepareStatement("INSERT INTO htlc_infos (channel_id, commitment_number, payment_hash, cltv_expiry) VALUES (?, ?, ?, ?)")) { statement =>
-              statement.setBytes(1, testCase.channelId.toArray)
+              statement.setBytes(1, testCase.channelId.toByteArray)
               statement.setLong(2, commitmentNumber)
-              statement.setBytes(3, randomBytes32().toArray)
+              statement.setBytes(3, randomBytes32().toByteArray)
               statement.setLong(4, 500000 + Random.nextInt(500000))
               statement.executeUpdate()
             }
@@ -266,15 +266,15 @@ class ChannelsDbSpec extends AnyFunSuite {
             // insert data
             testCases.foreach { testCase =>
               using(connection.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, ?)")) { statement =>
-                statement.setBytes(1, testCase.channelId.toArray)
+                statement.setBytes(1, testCase.channelId.toByteArray)
                 statement.setBytes(2, testCase.data.toArray)
                 statement.setBoolean(3, testCase.isClosed)
                 statement.executeUpdate()
                 for (commitmentNumber <- testCase.commitmentNumbers) {
                   using(connection.prepareStatement("INSERT INTO htlc_infos (channel_id, commitment_number, payment_hash, cltv_expiry) VALUES (?, ?, ?, ?)")) { statement =>
-                    statement.setBytes(1, testCase.channelId.toArray)
+                    statement.setBytes(1, testCase.channelId.toByteArray)
                     statement.setLong(2, commitmentNumber)
-                    statement.setBytes(3, randomBytes32().toArray)
+                    statement.setBytes(3, randomBytes32().toByteArray)
                     statement.setLong(4, 500000 + Random.nextInt(500000))
                     statement.executeUpdate()
                   }
@@ -385,7 +385,7 @@ object ChannelsDbSpec {
 
   def getSqliteTimestamp(connection: Connection, channelId: ByteVector32, columnName: String): Option[Long] = {
     using(connection.prepareStatement(s"SELECT $columnName FROM local_channels WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       val rs = statement.executeQuery()
       rs.next()
       rs.getLongNullable(columnName)

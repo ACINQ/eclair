@@ -12,11 +12,13 @@ import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx, HtlcSuccessTx, HtlcTimeoutTx}
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.KotlinUtils._
 
 import scala.concurrent.{ExecutionContext, Future}
 
 object CheckBalance {
 
+  implicit def sat2btc(input: Satoshi): Btc = input.toBtc
   /**
    * Helper to avoid accidental deduplication caused by the [[Set]]
    * Amounts are truncated to the [[Satoshi]] because that is what would happen on-chain.
@@ -131,7 +133,7 @@ object CheckBalance {
     PossiblyPublishedMainAndHtlcBalance(
       toLocal = toLocal,
       htlcs = htlcs,
-      htlcsUnpublished = htlcIn + htlcOut
+      htlcsUnpublished = htlcIn plus htlcOut
     )
   }
 
@@ -140,7 +142,7 @@ object CheckBalance {
     val toLocal = if (c.channelFeatures.paysDirectlyToWallet) {
       // If static remote key is enabled, the commit tx directly pays to our wallet
       // We use the pubkeyscript to retrieve our output
-      Transactions.findPubKeyScriptIndex(remoteCommitPublished.commitTx, c.localParams.defaultFinalScriptPubKey) match {
+      Transactions.findPubKeyScriptIndex(remoteCommitPublished.commitTx, c.localParams.defaultFinalScriptPubKey.toArray) match {
         case Right(outputIndex) => Map(remoteCommitPublished.commitTx.txid -> remoteCommitPublished.commitTx.txOut(outputIndex).amount.toBtc)
         case _ => Map.empty[ByteVector32, Btc] // either we don't have an output (below dust), or we have used a non-default pubkey script
       }
@@ -171,7 +173,7 @@ object CheckBalance {
     PossiblyPublishedMainAndHtlcBalance(
       toLocal = toLocal,
       htlcs = htlcs,
-      htlcsUnpublished = htlcIn + htlcOut
+      htlcsUnpublished = htlcIn plus htlcOut
     )
   }
 
@@ -215,7 +217,7 @@ object CheckBalance {
                   // Normally this would mean that we don't actually have an output, but due to a migration
                   // the data might not be accurate, see [[ChannelTypes0.migrateClosingTx]]
                   // As a (hackish) workaround, we use the pubkeyscript to retrieve our output
-                  Transactions.findPubKeyScriptIndex(mutualClose.tx, d.commitments.localParams.defaultFinalScriptPubKey) match {
+                  Transactions.findPubKeyScriptIndex(mutualClose.tx, d.commitments.localParams.defaultFinalScriptPubKey.toArray) match {
                     case Right(outputIndex) => mutualClose.tx.txOut(outputIndex).amount
                     case _ => 0.sat // either we don't have an output (below dust), or we have used a non-default pubkey script
                   }
@@ -278,8 +280,8 @@ object CheckBalance {
   def computeOnChainBalance(bitcoinClient: BitcoinCoreClient)(implicit ec: ExecutionContext): Future[CorrectedOnChainBalance] = for {
     utxos <- bitcoinClient.listUnspent()
     detailed = utxos.foldLeft(DetailedBalance()) {
-      case (total, utxo) if utxo.confirmations == 0 => total.modify(_.unconfirmed).using(_ + utxo.amount)
-      case (total, utxo) => total.modify(_.confirmed).using(_ + utxo.amount)
+      case (total, utxo) if utxo.confirmations == 0 => total.modify(_.unconfirmed).using(_ plus utxo.amount)
+      case (total, utxo) => total.modify(_.confirmed).using(_ plus utxo.amount)
     }
   } yield CorrectedOnChainBalance(detailed.confirmed, detailed.unconfirmed)
 

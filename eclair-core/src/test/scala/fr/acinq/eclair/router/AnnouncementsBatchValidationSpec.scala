@@ -20,7 +20,7 @@ import akka.actor.ActorSystem
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.{Block, Satoshi, SatoshiLong, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.ValidateResult
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient}
@@ -28,9 +28,11 @@ import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, randomKey}
+import fr.acinq.eclair.KotlinUtils._
 import org.json4s.JsonAST.JString
 import org.scalatest.funsuite.AnyFunSuite
 
+import scala.jdk.CollectionConverters._
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
 

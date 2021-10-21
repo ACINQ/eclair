@@ -24,7 +24,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import com.amazonaws.services.secretsmanager.AWSSecretsManagerClient
 import com.amazonaws.services.secretsmanager.model.GetSecretValueRequest
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.LocalNodeKeyManager
 import fr.acinq.eclair.io.Switchboard.{GetRouterPeerConf, RouterPeerConf}
@@ -72,10 +72,10 @@ class FrontSetup(datadir: File)(implicit system: ActorSystem) extends Logging {
         val nodeSeedFilename: String = "node_seed.dat"
         val seedPath = new File(datadir, nodeSeedFilename)
         val nodeSeed = ByteVector(Files.readAllBytes(seedPath.toPath))
-        new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain)).nodeKey.privateKey.value.bytes
+        ByteVector.view(new LocalNodeKeyManager(nodeSeed, NodeParams.hashFromChain(chain)).nodeKey.privateKey.value.toByteArray)
     }
     val keyPair = KeyPair(pub, priv)
-    require(PrivateKey(priv).publicKey == PublicKey(pub), "priv/pub keys mismatch")
+    require(new PrivateKey(priv.toArray).publicKey == new PublicKey(pub.toArray), "priv/pub keys mismatch")
     keyPair
   }
 

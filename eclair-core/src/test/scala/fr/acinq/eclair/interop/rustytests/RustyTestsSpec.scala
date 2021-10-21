@@ -33,6 +33,7 @@ import fr.acinq.eclair.{MilliSatoshiLong, TestKitBaseClass, TestUtils}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.{BeforeAndAfterAll, Outcome}
+import fr.acinq.eclair.KotlinUtils._
 
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong

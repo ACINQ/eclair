@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, PimpSatoshi, PrivateKey, PublicKey, Satoshi, SatoshiLong, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelFeatures
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -25,6 +24,7 @@ import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, MilliSatoshiLong, TestConstants}
+import fr.acinq.eclair.KotlinUtils._
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
@@ -60,7 +60,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     tests
   }
 
-  def getFeerate(name: String): FeeratePerKw = FeeratePerKw(tests(name)("local_feerate_per_kw").trim.toLong.sat)
+  def getFeerate(name: String): FeeratePerKw = FeeratePerKw(new Satoshi(tests(name)("local_feerate_per_kw").trim.toLong))
 
   def getToLocal(name: String): MilliSatoshi = tests(name)("to_local_msat").trim.toLong.msat
 
@@ -85,19 +85,19 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val commitTxNumber = 42
     val toSelfDelay = CltvExpiryDelta(144)
     val dustLimit = 546 sat
-    val payment_basepoint_secret = PrivateKey(hex"1111111111111111111111111111111111111111111111111111111111111111")
+    val payment_basepoint_secret = PrivateKey.fromHex("1111111111111111111111111111111111111111111111111111111111111111")
     val payment_basepoint = payment_basepoint_secret.publicKey
-    val revocation_basepoint_secret = PrivateKey(hex"2222222222222222222222222222222222222222222222222222222222222222")
+    val revocation_basepoint_secret = PrivateKey.fromHex("2222222222222222222222222222222222222222222222222222222222222222")
     val revocation_basepoint = revocation_basepoint_secret.publicKey
-    val delayed_payment_basepoint_secret = PrivateKey(hex"3333333333333333333333333333333333333333333333333333333333333333")
+    val delayed_payment_basepoint_secret = PrivateKey.fromHex("3333333333333333333333333333333333333333333333333333333333333333")
     val delayed_payment_basepoint = delayed_payment_basepoint_secret.publicKey
-    val funding_privkey = PrivateKey(hex"30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
+    val funding_privkey = PrivateKey.fromHex("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901")
     val funding_pubkey = funding_privkey.publicKey
-    val per_commitment_point = PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
+    val per_commitment_point = PublicKey.fromHex("025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486")
     val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
     val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
     val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
-    val revocation_pubkey = PublicKey(hex"0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
+    val revocation_pubkey = PublicKey.fromHex("0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19")
     val feerate_per_kw = 15000
   }
 
@@ -105,11 +105,11 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
     val commitTxNumber = 42
     val toSelfDelay = CltvExpiryDelta(144)
     val dustLimit = 546 sat
-    val payment_basepoint_secret = PrivateKey(hex"4444444444444444444444444444444444444444444444444444444444444444")
+    val payment_basepoint_secret = PrivateKey.fromHex("4444444444444444444444444444444444444444444444444444444444444444")
     val payment_basepoint = payment_basepoint_secret.publicKey
-    val revocation_basepoint_secret = PrivateKey(hex"2222222222222222222222222222222222222222222222222222222222222222")
+    val revocation_basepoint_secret = PrivateKey.fromHex("2222222222222222222222222222222222222222222222222222222222222222")
     val revocation_basepoint = revocation_basepoint_secret.publicKey
-    val funding_privkey = PrivateKey(hex"1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
+    val funding_privkey = PrivateKey.fromHex("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301")
     val funding_pubkey = funding_privkey.publicKey
     val htlc_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
     val payment_privkey = if (channelFeatures.hasFeature(Features.StaticRemoteKey)) payment_basepoint_secret else htlc_privkey
@@ -141,12 +141,12 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
   assert(commitmentInput.redeemScript == hex"5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae")
 
   val paymentPreimages = Seq(
-    ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"),
-    ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101"),
-    ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202"),
-    ByteVector32(hex"0303030303030303030303030303030303030303030303030303030303030303"),
-    ByteVector32(hex"0404040404040404040404040404040404040404040404040404040404040404"),
-    ByteVector32(hex"0505050505050505050505050505050505050505050505050505050505050505")
+    new ByteVector32("0000000000000000000000000000000000000000000000000000000000000000"),
+    new ByteVector32("0101010101010101010101010101010101010101010101010101010101010101"),
+    new ByteVector32("0202020202020202020202020202020202020202020202020202020202020202"),
+    new ByteVector32("0303030303030303030303030303030303030303030303030303030303030303"),
+    new ByteVector32("0404040404040404040404040404040404040404040404040404040404040404"),
+    new ByteVector32("0505050505050505050505050505050505050505050505050505050505050505")
   )
 
   val htlcs = Seq[DirectedHtlc](
@@ -214,10 +214,10 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
 
     val baseFee = Transactions.commitTxFeeMsat(Local.dustLimit, spec, commitmentFormat)
     logger.info(s"# base commitment transaction fee = ${baseFee.toLong}")
-    val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
+    val actualFee = fundingAmount minus commitTx.tx.txOut.map(_.amount).sum
     logger.info(s"# actual commitment transaction fee = ${actualFee.toLong}")
     commitTx.tx.txOut.foreach(txOut => {
-      txOut.publicKeyScript.length match {
+      txOut.publicKeyScript.size() match {
         case 22 => logger.info(s"# to-remote amount ${txOut.amount.toLong} P2WPKH(${Remote.payment_privkey.publicKey})")
         case 34 =>
           val index = htlcScripts.indexWhere(s => Script.write(Script.pay2wsh(s)) == txOut.publicKeyScript)
@@ -247,7 +247,7 @@ trait TestVectorsSpec extends AnyFunSuite with Logging {
         val localSig = Transactions.sign(tx, Local.htlc_privkey, TxOwner.Local, commitmentFormat)
         val remoteSig = Transactions.sign(tx, Remote.htlc_privkey, TxOwner.Remote, commitmentFormat)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
-        val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
+        val preimage = paymentPreimages.find(p => p.sha256() == tx.paymentHash).get
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage, commitmentFormat)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         logger.info(s"# signature for output #${tx.input.outPoint.index} (htlc-success for htlc #$htlcIndex)")

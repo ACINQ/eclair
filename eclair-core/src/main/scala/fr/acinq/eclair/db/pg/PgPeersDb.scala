@@ -17,7 +17,7 @@
 package fr.acinq.eclair.db.pg
 
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
@@ -75,7 +75,7 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     }
   }
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, nodeaddress: NodeAddress): Unit = withMetrics("peers/add-or-update", DbBackends.Postgres) {
+  override def addOrUpdatePeer(nodeId: PublicKey, nodeaddress: NodeAddress): Unit = withMetrics("peers/add-or-update", DbBackends.Postgres) {
     withLock { pg =>
       val data = CommonCodecs.nodeaddress.encode(nodeaddress).require.toByteArray
       using(pg.prepareStatement(
@@ -92,7 +92,7 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     }
   }
 
-  override def removePeer(nodeId: Crypto.PublicKey): Unit = withMetrics("peers/remove", DbBackends.Postgres) {
+  override def removePeer(nodeId: PublicKey): Unit = withMetrics("peers/remove", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("DELETE FROM local.peers WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
@@ -117,7 +117,7 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
       using(pg.createStatement()) { statement =>
         statement.executeQuery("SELECT node_id, data FROM local.peers")
           .map { rs =>
-            val nodeid = PublicKey(rs.getByteVectorFromHex("node_id"))
+            val nodeid = PublicKey.fromHex(rs.getString("node_id"))
             val nodeaddress = CommonCodecs.nodeaddress.decode(BitVector(rs.getBytes("data"))).require.value
             nodeid -> nodeaddress
           }
@@ -126,7 +126,7 @@ class PgPeersDb(implicit ds: DataSource, lock: PgLock) extends PeersDb with Logg
     }
   }
 
-  override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = withMetrics("peers/add-or-update-relay-fees", DbBackends.Postgres) {
+  override def addOrUpdateRelayFees(nodeId: PublicKey, fees: RelayFees): Unit = withMetrics("peers/add-or-update-relay-fees", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement(
       """

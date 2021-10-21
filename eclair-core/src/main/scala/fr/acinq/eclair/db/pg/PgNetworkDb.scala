@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db.pg
 
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, PublicKey, Satoshi}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
@@ -142,7 +142,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     }
   }
 
-  override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = withMetrics("network/get-node", DbBackends.Postgres) {
+  override def getNode(nodeId: PublicKey): Option[NodeAnnouncement] = withMetrics("network/get-node", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("SELECT data FROM network.nodes WHERE node_id=?")) { statement =>
         statement.setString(1, nodeId.value.toHex)
@@ -153,7 +153,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
     }
   }
 
-  override def removeNode(nodeId: Crypto.PublicKey): Unit = withMetrics("network/remove-node", DbBackends.Postgres) {
+  override def removeNode(nodeId: PublicKey): Unit = withMetrics("network/remove-node", DbBackends.Postgres) {
     inTransaction { pg =>
       using(pg.prepareStatement("DELETE FROM network.nodes WHERE node_id=?")) {
         statement =>
@@ -209,7 +209,7 @@ class PgNetworkDb(implicit ds: DataSource) extends NetworkDb with Logging {
             val capacity = rs.getLong("capacity_sat")
             val channel_update_1_opt = rs.getBitVectorOpt("channel_update_1").map(channelUpdateCodec.decode(_).require.value)
             val channel_update_2_opt = rs.getBitVectorOpt("channel_update_2").map(channelUpdateCodec.decode(_).require.value)
-            m + (ann.shortChannelId -> PublicChannel(ann, txId, Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
+            m + (ann.shortChannelId -> PublicChannel(ann, txId, new Satoshi(capacity), channel_update_1_opt, channel_update_2_opt, None))
           }
       }
     }

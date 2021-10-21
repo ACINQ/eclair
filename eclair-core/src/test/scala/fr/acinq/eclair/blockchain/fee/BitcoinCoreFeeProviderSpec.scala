@@ -20,6 +20,7 @@ import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.KotlinUtils.satsohi2pimp
 import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
@@ -98,12 +99,12 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]
-          val feerate = satoshi2btc(fees(blocks).feerate).toBigDecimal
+          val feerate = (fees(blocks).feerate.toBtc).toBigDecimal
           Future(JObject(List("feerate" -> JDecimal(feerate), "blocks" -> JInt(blocks))))(ec)
         case "getmempoolinfo" =>
           val mempoolInfo = List(
-            "minrelaytxfee" -> JDecimal(satoshi2btc(100 sat).toBigDecimal),
-            "mempoolminfee" -> JDecimal(satoshi2btc(ref.mempoolMinFee.feerate).toBigDecimal)
+            "minrelaytxfee" -> JDecimal(new Satoshi(100).toBtc.toBigDecimal),
+            "mempoolminfee" -> JDecimal((ref.mempoolMinFee.feerate.toBtc).toBigDecimal)
           )
           Future(JObject(mempoolInfo))(ec)
         case _ => Future.failed(new RuntimeException(s"Test BasicBitcoinJsonRPCClient: method $method is not supported"))

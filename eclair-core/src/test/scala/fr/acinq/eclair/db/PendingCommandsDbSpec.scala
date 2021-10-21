@@ -25,6 +25,7 @@ import fr.acinq.eclair.db.sqlite.SqliteUtils.{setVersion, using}
 import fr.acinq.eclair.randomBytes32
 import fr.acinq.eclair.wire.internal.CommandCodecs.cmdCodec
 import fr.acinq.eclair.wire.protocol.{FailureMessageCodecs, UnknownNextPeer}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
 import scala.util.Random
@@ -110,7 +111,7 @@ class PendingCommandsDbSpec extends AnyFunSuite {
             }
             testCases.foreach { testCase =>
               using(connection.prepareStatement("INSERT OR IGNORE INTO pending_relay VALUES (?, ?, ?)")) { statement =>
-                statement.setBytes(1, testCase.channelId.toArray)
+                statement.setBytes(1, testCase.channelId.toByteArray)
                 statement.setLong(2, testCase.cmd.id)
                 statement.setBytes(3, cmdCodec.encode(testCase.cmd).require.toByteArray)
                 statement.executeUpdate()

@@ -3,7 +3,7 @@ package fr.acinq.eclair.io
 import akka.actor.{ActorContext, ActorRef}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector64
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.channel.ChannelIdAssigned
 import fr.acinq.eclair.io.Switchboard.PeerFactory
@@ -36,7 +36,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
   test("when connecting to a new peer forward Peer.Connect to it") {
     val nodeParams = Alice.nodeParams
     val (probe, peer) = (TestProbe(), TestProbe())
-    val remoteNodeId = PublicKey(hex"03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")
+    val remoteNodeId = PublicKey.fromHex("03864ef025fde8fb587d989186ce6a4a186895ee44a926bfc370e2c366597a3f8f")
     val remoteNodeAddress = NodeAddress.fromParts("127.0.0.1", 9735).get
     nodeParams.db.network.addNode(NodeAnnouncement(ByteVector64.Zeroes, Features.empty, 0 unixsec, remoteNodeId, Color(0, 0, 0), "alias", remoteNodeAddress :: Nil))
 

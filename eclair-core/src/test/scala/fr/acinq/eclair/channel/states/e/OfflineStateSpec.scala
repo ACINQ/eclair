@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.states.e
 
 import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob, TestFeeEstimator}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
@@ -79,8 +79,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     disconnect(alice, bob)
 
     val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
-    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, new PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
+    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, new PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
     alice2bob.forward(bob, reestablishA)
     bob2alice.forward(alice, reestablishB)
 
@@ -138,8 +138,8 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     disconnect(alice, bob)
     val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
-    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
-    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+    val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 0, new PrivateKey(ByteVector32.Zeroes), aliceCurrentPerCommitmentPoint))
+    val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, new PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
     alice2bob.forward(bob, reestablishA)
     bob2alice.forward(alice, reestablishB)
 
@@ -187,7 +187,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     {
       val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
       val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 1, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint))
-      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, new PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
       alice2bob.forward(bob, reestablishA)
       bob2alice.forward(alice, reestablishB)
     }
@@ -218,7 +218,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     {
       val (aliceCurrentPerCommitmentPoint, bobCurrentPerCommitmentPoint) = reconnect(alice, bob, alice2bob, bob2alice)
       val reestablishA = alice2bob.expectMsg(ChannelReestablish(htlc.channelId, 2, 1, revB.perCommitmentSecret, aliceCurrentPerCommitmentPoint))
-      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
+      val reestablishB = bob2alice.expectMsg(ChannelReestablish(htlc.channelId, 2, 0, new PrivateKey(ByteVector32.Zeroes), bobCurrentPerCommitmentPoint))
       alice2bob.forward(bob, reestablishA)
       bob2alice.forward(alice, reestablishB)
     }
@@ -324,7 +324,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice is able to claim its main output
     val claimMainOutput = alice2blockchain.expectMsgType[PublishRawTx].tx
-    Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(claimMainOutput, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("discover that they have a more recent commit than the one we know") { f =>
@@ -369,7 +369,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // alice is able to claim its main output
     val claimMainOutput = alice2blockchain.expectMsgType[PublishRawTx].tx
-    Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(claimMainOutput, bobCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("counterparty lies about having a more recent commitment") { f =>
@@ -390,7 +390,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val error = alice2bob.expectMsgType[Error]
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx.txid === aliceCommitTx.txid)
     val claimMainOutput = alice2blockchain.expectMsgType[PublishRawTx].tx
-    Transaction.correctlySpends(claimMainOutput, aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(claimMainOutput, aliceCommitTx, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     assert(error === Error(channelId(alice), InvalidRevokedCommitProof(channelId(alice), 0, 42, invalidReestablish.yourLastPerCommitmentSecret).getMessage))
   }
 

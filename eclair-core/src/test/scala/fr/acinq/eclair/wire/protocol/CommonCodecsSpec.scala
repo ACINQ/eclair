@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.protocol
 
 import com.google.common.net.InetAddresses
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.Hmac256
@@ -197,7 +197,7 @@ class CommonCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode with private key codec") {
-    val value = PrivateKey(randomBytes32())
+    val value = new PrivateKey(randomBytes32())
     val wire = privateKey.encode(value).require
     assert(wire.length == 256)
     val value1 = privateKey.decode(wire).require.value
@@ -205,7 +205,7 @@ class CommonCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode with public key codec") {
-    val value = PrivateKey(randomBytes32()).publicKey
+    val value = new PrivateKey(randomBytes32()).publicKey
     val wire = CommonCodecs.publicKey.encode(value).require
     assert(wire.length == 33 * 8)
     val value1 = CommonCodecs.publicKey.decode(wire).require.value
@@ -238,7 +238,7 @@ class CommonCodecsSpec extends AnyFunSuite {
   }
 
   test("encode/decode with prependmac codec") {
-    val mac = Hmac256(ByteVector32.Zeroes)
+    val mac = Hmac256(ByteVector32.Zeroes.toByteArray)
     val testCases = Seq(
       (uint64, UInt64(561), hex"d5b500b8843e19a34d8ab54740db76a7ea597e4ff2ada3827420f87c7e60b7c6 0000000000000231"),
       (varint, UInt64(65535), hex"71e17e5b97deb6916f7ad97a53650769d4e4f0b1e580ff35ca332200d61e765c fdffff")
@@ -256,7 +256,7 @@ class CommonCodecsSpec extends AnyFunSuite {
 
   test("backward compatibility on feerate codec") {
     val value = 123456
-    val feerate = FeeratePerKw(value sat)
+    val feerate = FeeratePerKw(new Satoshi(value))
     assert(feeratePerKw.decode(uint32.encode(value).require).require === DecodeResult(feerate, BitVector.empty))
   }
 

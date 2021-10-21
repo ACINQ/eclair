@@ -1,7 +1,7 @@
 package fr.acinq.eclair.db
 
 import com.google.common.util.concurrent.ThreadFactoryBuilder
-import fr.acinq.bitcoin.{ByteVector32, Crypto, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, Crypto, PublicKey, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.Databases.{FileBackup, PostgresDatabases, SqliteDatabases}
 import fr.acinq.eclair.db.DbEventHandler.ChannelEvent
@@ -71,12 +71,12 @@ case class DualNetworkDb(sqlite: SqliteNetworkDb, postgres: PgNetworkDb) extends
     sqlite.updateNode(n)
   }
 
-  override def getNode(nodeId: Crypto.PublicKey): Option[NodeAnnouncement] = {
+  override def getNode(nodeId: PublicKey): Option[NodeAnnouncement] = {
     runAsync(postgres.getNode(nodeId))
     sqlite.getNode(nodeId)
   }
 
-  override def removeNode(nodeId: Crypto.PublicKey): Unit = {
+  override def removeNode(nodeId: PublicKey): Unit = {
     runAsync(postgres.removeNode(nodeId))
     sqlite.removeNode(nodeId)
   }
@@ -256,32 +256,32 @@ case class DualPeersDb(sqlite: SqlitePeersDb, postgres: PgPeersDb) extends Peers
 
   private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-peers").build()))
 
-  override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: NodeAddress): Unit = {
+  override def addOrUpdatePeer(nodeId: PublicKey, address: NodeAddress): Unit = {
     runAsync(postgres.addOrUpdatePeer(nodeId, address))
     sqlite.addOrUpdatePeer(nodeId, address)
   }
 
-  override def removePeer(nodeId: Crypto.PublicKey): Unit = {
+  override def removePeer(nodeId: PublicKey): Unit = {
     runAsync(postgres.removePeer(nodeId))
     sqlite.removePeer(nodeId)
   }
 
-  override def getPeer(nodeId: Crypto.PublicKey): Option[NodeAddress] = {
+  override def getPeer(nodeId: PublicKey): Option[NodeAddress] = {
     runAsync(postgres.getPeer(nodeId))
     sqlite.getPeer(nodeId)
   }
 
-  override def listPeers(): Map[Crypto.PublicKey, NodeAddress] = {
+  override def listPeers(): Map[PublicKey, NodeAddress] = {
     runAsync(postgres.listPeers())
     sqlite.listPeers()
   }
 
-  override def addOrUpdateRelayFees(nodeId: Crypto.PublicKey, fees: RelayFees): Unit = {
+  override def addOrUpdateRelayFees(nodeId: PublicKey, fees: RelayFees): Unit = {
     runAsync(postgres.addOrUpdateRelayFees(nodeId, fees))
     sqlite.addOrUpdateRelayFees(nodeId, fees)
   }
 
-  override def getRelayFees(nodeId: Crypto.PublicKey): Option[RelayFees] = {
+  override def getRelayFees(nodeId: PublicKey): Option[RelayFees] = {
     runAsync(postgres.getRelayFees(nodeId))
     sqlite.getRelayFees(nodeId)
   }

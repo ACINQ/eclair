@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.UnknownMessage
 

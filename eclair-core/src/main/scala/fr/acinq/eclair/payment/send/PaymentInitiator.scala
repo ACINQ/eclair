@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment.send
 
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.channel.Channel
@@ -277,7 +277,7 @@ object PaymentInitiator {
                                     routeParams: RouteParams,
                                     userCustomTlvs: Seq[GenericTlv] = Nil,
                                     recordPathFindingMetrics: Boolean = false) {
-    val paymentHash = Crypto.sha256(paymentPreimage)
+    val paymentHash = paymentPreimage.sha256()
   }
 
   /**

@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{ByteVector32, PublicKey}
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.protocol.CommonCodecs._

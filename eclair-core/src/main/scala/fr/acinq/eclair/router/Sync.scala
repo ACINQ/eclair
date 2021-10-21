@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.{ActorContext, ActorRef}
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._

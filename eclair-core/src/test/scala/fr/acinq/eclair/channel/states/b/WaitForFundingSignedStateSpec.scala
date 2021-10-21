@@ -31,6 +31,7 @@ import fr.acinq.eclair.{TestConstants, TestKitBaseClass}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 
+import fr.acinq.eclair.KotlinUtils._
 import scala.concurrent.duration._
 
 /**

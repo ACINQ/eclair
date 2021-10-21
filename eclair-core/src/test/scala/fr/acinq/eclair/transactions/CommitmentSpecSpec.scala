@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto, SatoshiLong}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.wire.protocol.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, MilliSatoshiLong, TestConstants, randomBytes32}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.funsuite.AnyFunSuite
 
 class CommitmentSpecSpec extends AnyFunSuite {

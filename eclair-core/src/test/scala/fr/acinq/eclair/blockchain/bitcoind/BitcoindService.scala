@@ -20,8 +20,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Base58, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{Base58, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, PimpSatoshi, PrivateKey, Satoshi, Transaction}
 import fr.acinq.eclair.TestUtils
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
@@ -161,14 +160,14 @@ trait BitcoindService extends Logging {
   def dumpPrivateKey(address: String, sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): PrivateKey = {
     rpcClient.invoke("dumpprivkey", address).pipeTo(sender.ref)
     val JString(wif) = sender.expectMsgType[JValue]
-    val (priv, _) = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
+    val priv = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet).getFirst
     priv
   }
 
   /** Send to a given address, without generating blocks to confirm. */
   def sendToAddress(address: String, amount: BtcAmount, sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): Transaction = {
     val amountDecimal = amount match {
-      case amount: Satoshi => amount.toBtc.toBigDecimal
+      case amount: PimpSatoshi => amount.toBtc.toBigDecimal
       case amount: MilliBtc => amount.toBtc.toBigDecimal
       case amount: Btc => amount.toBigDecimal
     }
@@ -186,7 +185,7 @@ trait BitcoindService extends Logging {
     locks.map(item => {
       val JString(txid) = item \ "txid"
       val JInt(vout) = item \ "vout"
-      OutPoint(ByteVector32.fromValidHex(txid).reverse, vout.toInt)
+      new OutPoint(ByteVector32.fromValidHex(txid).reversed(), vout.toInt)
     }).toSet
   }
 

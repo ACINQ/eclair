@@ -40,7 +40,7 @@ class FallbackFeeProviderSpec extends AnyFunSuite {
       } else Future.failed(new RuntimeException())
   }
 
-  def dummyFeerate = FeeratePerKB(1000.sat + Random.nextInt(10000).sat)
+  def dummyFeerate = FeeratePerKB(1000.sat plus Random.nextInt(10000).sat)
 
   def dummyFeerates = FeeratesPerKB(dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate, dummyFeerate)
 

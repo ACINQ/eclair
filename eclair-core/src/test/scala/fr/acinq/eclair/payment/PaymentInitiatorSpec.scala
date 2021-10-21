@@ -36,6 +36,7 @@ import fr.acinq.eclair.wire.protocol.Onion.FinalTlvPayload
 import fr.acinq.eclair.wire.protocol.OnionTlv.{AmountToForward, KeySend, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.HexStringSyntax

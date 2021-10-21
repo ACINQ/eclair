@@ -17,7 +17,7 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Block
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
@@ -33,8 +33,8 @@ import scodec.bits._
 class AnnouncementsSpec extends AnyFunSuite {
 
   test("check nodeId1/nodeId2 lexical ordering") {
-    val node1 = PublicKey(hex"027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461")
-    val node2 = PublicKey(hex"0306a730778d55deec162a74409e006034a24c46d541c67c6c45f89a2adde3d9b4")
+    val node1 = PublicKey.fromHex("027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461")
+    val node2 = PublicKey.fromHex("0306a730778d55deec162a74409e006034a24c46d541c67c6c45f89a2adde3d9b4")
     // NB: node1 < node2
     assert(isNode1(node1, node2))
     assert(!isNode1(node2, node1))
@@ -87,8 +87,8 @@ class AnnouncementsSpec extends AnyFunSuite {
   }
 
   test("check flags") {
-    val node1_priv = PrivateKey(hex"5f447b05d86de82de6b245a65359d22f844ae764e2ae3824ac4ace7d8e1c749b01")
-    val node2_priv = PrivateKey(hex"eff467c5b601fdcc07315933767013002cd0705223d8e526cbb0c1bc75ccb62901")
+    val node1_priv = PrivateKey.fromHex("5f447b05d86de82de6b245a65359d22f844ae764e2ae3824ac4ace7d8e1c749b01")
+    val node2_priv = PrivateKey.fromHex("eff467c5b601fdcc07315933767013002cd0705223d8e526cbb0c1bc75ccb62901")
     // NB: node1 < node2 (public keys)
     assert(isNode1(node1_priv.publicKey, node2_priv.publicKey))
     assert(!isNode1(node2_priv.publicKey, node1_priv.publicKey))

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong, Script, Transaction, TxOut}
 import fr.acinq.eclair.TestDatabases.{TestPgDatabases, TestSqliteDatabases, migrationCheck}
 import fr.acinq.eclair._
@@ -32,6 +32,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.PlaceHolderPubKey
 import fr.acinq.eclair.wire.protocol.Error
+import KotlinUtils._
 import org.scalatest.Tag
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.HexStringSyntax
@@ -68,9 +69,9 @@ class AuditDbSpec extends AnyFunSuite {
       val pp2b = PaymentReceived.PartialPayment(42100 msat, randomBytes32())
       val e2 = PaymentReceived(randomBytes32(), pp2a :: pp2b :: Nil)
       val e3 = ChannelPaymentRelayed(42000 msat, 1000 msat, randomBytes32(), randomBytes32(), randomBytes32())
-      val e4a = TransactionPublished(randomBytes32(), randomKey().publicKey, Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
+      val e4a = TransactionPublished(randomBytes32(), randomKey().publicKey, new Transaction(0, Seq.empty, Seq.empty, 0), 42 sat, "mutual")
       val e4b = TransactionConfirmed(e4a.channelId, e4a.remoteNodeId, e4a.tx)
-      val e4c = TransactionConfirmed(randomBytes32(), randomKey().publicKey, Transaction(2, Nil, TxOut(500 sat, hex"1234") :: Nil, 0))
+      val e4c = TransactionConfirmed(randomBytes32(), randomKey().publicKey, new Transaction(2, Nil, new TxOut(500 sat, hex"1234") :: Nil, 0))
       val pp5a = PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None, timestamp = 0 unixms)
       val pp5b = PaymentSent.PartialPayment(UUID.randomUUID(), 42100 msat, 900 msat, randomBytes32(), None, timestamp = 1 unixms)
       val e5 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84100 msat, randomKey().publicKey, pp5a :: pp5b :: Nil)
@@ -133,18 +134,18 @@ class AuditDbSpec extends AnyFunSuite {
       db.add(TrampolinePaymentRelayed(randomBytes32(), Seq(PaymentRelayed.Part(46000 msat, c6)), Seq(PaymentRelayed.Part(16000 msat, c2), PaymentRelayed.Part(10000 msat, c4), PaymentRelayed.Part(14000 msat, c4)), randomKey().publicKey, 37000 msat))
 
       // The following confirmed txs will be taken into account.
-      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0), 200 sat, "funding"))
-      db.add(TransactionConfirmed(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0)))
-      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(4000 sat, hex"00112233")), 0), 300 sat, "mutual"))
-      db.add(TransactionConfirmed(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(4000 sat, hex"00112233")), 0)))
-      db.add(TransactionPublished(c3, n3, Transaction(0, Seq.empty, Seq(TxOut(8000 sat, hex"deadbeef")), 0), 400 sat, "funding"))
-      db.add(TransactionConfirmed(c3, n3, Transaction(0, Seq.empty, Seq(TxOut(8000 sat, hex"deadbeef")), 0)))
-      db.add(TransactionPublished(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(6000 sat, hex"0000000000")), 0), 500 sat, "funding"))
-      db.add(TransactionConfirmed(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(6000 sat, hex"0000000000")), 0)))
+      db.add(TransactionPublished(c2, n2, new Transaction(0, Seq.empty, Seq(new TxOut(5000 sat, hex"12345")), 0), 200 sat, "funding"))
+      db.add(TransactionConfirmed(c2, n2, new Transaction(0, Seq.empty, Seq(new TxOut(5000 sat, hex"12345")), 0)))
+      db.add(TransactionPublished(c2, n2, new Transaction(0, Seq.empty, Seq(new TxOut(4000 sat, hex"00112233")), 0), 300 sat, "mutual"))
+      db.add(TransactionConfirmed(c2, n2, new Transaction(0, Seq.empty, Seq(new TxOut(4000 sat, hex"00112233")), 0)))
+      db.add(TransactionPublished(c3, n3, new Transaction(0, Seq.empty, Seq(new TxOut(8000 sat, hex"deadbeef")), 0), 400 sat, "funding"))
+      db.add(TransactionConfirmed(c3, n3, new Transaction(0, Seq.empty, Seq(new TxOut(8000 sat, hex"deadbeef")), 0)))
+      db.add(TransactionPublished(c4, n4, new Transaction(0, Seq.empty, Seq(new TxOut(6000 sat, hex"0000000000")), 0), 500 sat, "funding"))
+      db.add(TransactionConfirmed(c4, n4, new Transaction(0, Seq.empty, Seq(new TxOut(6000 sat, hex"0000000000")), 0)))
       // The following txs will not be taken into account.
-      db.add(TransactionPublished(c2, n2, Transaction(0, Seq.empty, Seq(TxOut(5000 sat, hex"12345")), 0), 1000 sat, "funding")) // duplicate
-      db.add(TransactionPublished(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(4500 sat, hex"1111222233")), 0), 500 sat, "funding")) // unconfirmed
-      db.add(TransactionConfirmed(c4, n4, Transaction(0, Seq.empty, Seq(TxOut(2500 sat, hex"ffffff")), 0))) // doesn't match a published tx
+      db.add(TransactionPublished(c2, n2, new Transaction(0, Seq.empty, Seq(new TxOut(5000 sat, hex"12345")), 0), 1000 sat, "funding")) // duplicate
+      db.add(TransactionPublished(c4, n4, new Transaction(0, Seq.empty, Seq(new TxOut(4500 sat, hex"1111222233")), 0), 500 sat, "funding")) // unconfirmed
+      db.add(TransactionConfirmed(c4, n4, new Transaction(0, Seq.empty, Seq(new TxOut(2500 sat, hex"ffffff")), 0))) // doesn't match a published tx
 
       // NB: we only count a relay fee for the outgoing channel, no the incoming one.
       assert(db.stats(0 unixms, TimestampMilli.now() + 1.milli).toSet === Set(
@@ -175,7 +176,7 @@ class AuditDbSpec extends AnyFunSuite {
       // Fund channels.
       channelIds.foreach(channelId => {
         val nodeId = nodeIds(Random.nextInt(nodeCount))
-        val fundingTx = Transaction(0, Seq.empty, Seq(TxOut(5000 sat, Script.pay2wpkh(nodeId))), 0)
+        val fundingTx = new Transaction(0, Seq.empty, Seq(new TxOut(5000 sat, Script.pay2wpkh(nodeId))), 0)
         db.add(TransactionPublished(channelId, nodeId, fundingTx, 100 sat, "funding"))
         db.add(TransactionConfirmed(channelId, nodeId, fundingTx))
       })
@@ -204,10 +205,10 @@ class AuditDbSpec extends AnyFunSuite {
 
     val dbs = TestSqliteDatabases()
 
-    val ps = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 42000 msat, PrivateKey(ByteVector32.One).publicKey, PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None) :: Nil)
+    val ps = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 42000 msat, new PrivateKey(ByteVector32.One).publicKey, PaymentSent.PartialPayment(UUID.randomUUID(), 42000 msat, 1000 msat, randomBytes32(), None) :: Nil)
     val pp1 = PaymentSent.PartialPayment(UUID.randomUUID(), 42001 msat, 1001 msat, randomBytes32(), None)
     val pp2 = PaymentSent.PartialPayment(UUID.randomUUID(), 42002 msat, 1002 msat, randomBytes32(), None)
-    val ps1 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84003 msat, PrivateKey(ByteVector32.One).publicKey, pp1 :: pp2 :: Nil)
+    val ps1 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 84003 msat, new PrivateKey(ByteVector32.One).publicKey, pp1 :: pp2 :: Nil)
     val e1 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, null, LocalError(new RuntimeException("oops")), isFatal = true)
     val e2 = ChannelErrorOccurred(null, randomBytes32(), randomKey().publicKey, null, RemoteError(Error(randomBytes32(), "remote oops")), isFatal = true)
 
@@ -319,7 +320,7 @@ class AuditDbSpec extends AnyFunSuite {
 
     val pp1 = PaymentSent.PartialPayment(UUID.randomUUID(), 500 msat, 10 msat, randomBytes32(), None, 100 unixms)
     val pp2 = PaymentSent.PartialPayment(UUID.randomUUID(), 600 msat, 5 msat, randomBytes32(), None, 110 unixms)
-    val ps1 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 1100 msat, PrivateKey(ByteVector32.One).publicKey, pp1 :: pp2 :: Nil)
+    val ps1 = PaymentSent(UUID.randomUUID(), randomBytes32(), randomBytes32(), 1100 msat, new PrivateKey(ByteVector32.One).publicKey, pp1 :: pp2 :: Nil)
 
     val relayed1 = ChannelPaymentRelayed(600 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 105 unixms)
     val relayed2 = ChannelPaymentRelayed(650 msat, 500 msat, randomBytes32(), randomBytes32(), randomBytes32(), 115 unixms)

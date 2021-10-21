@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchOutputSpent, WatchParentTxConfirmed, WatchParentTxConfirmedTriggered, WatchTxConfirmed}
@@ -37,6 +37,7 @@ import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.{MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import org.scalatest.{BeforeAndAfterAll, Tag}
+import fr.acinq.eclair.KotlinUtils._
 
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -289,7 +290,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+      assert((targetFee times 0.9) <= actualFee && actualFee <= (targetFee times 1.1), s"actualFee=$actualFee targetFee=$targetFee")
 
       generateBlocks(5)
       system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
@@ -315,7 +316,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+      assert((targetFee times 0.9) <= actualFee && actualFee <= (targetFee times 1.1), s"actualFee=$actualFee targetFee=$targetFee")
 
       generateBlocks(5)
       system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
@@ -327,7 +328,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("commit tx feerate too low, spending anchor outputs with multiple wallet inputs") {
-    val utxos = Seq(
+    val utxos: Seq[BtcAmount] = Seq(
       // channel funding
       10 millibtc,
       // bumping utxos
@@ -348,7 +349,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
 
       val targetFee = Transactions.weight2fee(targetFeerate, mempoolTxs.map(_.weight).sum.toInt)
       val actualFee = mempoolTxs.map(_.fees).sum
-      assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee")
+      assert((targetFee times 0.9) <= actualFee && actualFee <= (targetFee times 1.1), s"actualFee=$actualFee targetFee=$targetFee")
 
       generateBlocks(5)
       system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
@@ -418,15 +419,15 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val dustLimit = anchorTx.commitments.localParams.dustLimit
       for (_ <- 1 to 100) {
         val walletInputsCount = 1 + Random.nextInt(5)
-        val walletInputs = (1 to walletInputsCount).map(_ => TxIn(OutPoint(randomBytes32(), 0), Nil, 0))
-        val amountIn = dustLimit * walletInputsCount + Random.nextInt(25_000_000).sat
-        val amountOut = dustLimit + Random.nextLong(amountIn.toLong).sat
-        val unsignedTx = anchorTxInfo.copy(tx = anchorTxInfo.tx.copy(
-          txIn = anchorTxInfo.tx.txIn ++ walletInputs,
-          txOut = TxOut(amountOut, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
-        ))
+        val walletInputs = (1 to walletInputsCount).map(_ => new TxIn(new OutPoint(randomBytes32(), 0), Nil, 0))
+        val amountIn = dustLimit times walletInputsCount + Random.nextInt(25_000_000).sat
+        val amountOut = dustLimit plus (Random.nextLong(amountIn.toLong).sat)
+        val unsignedTx = anchorTxInfo.copy(tx = anchorTxInfo.tx
+          .updateInputs(anchorTxInfo.tx.txIn ++ walletInputs)
+          .updateOutputs(new TxOut(amountOut, Script.pay2wpkh(randomKey().publicKey)) :: Nil)
+        )
         val (adjustedTx, fee) = ReplaceableTxPublisher.adjustAnchorOutputChange(unsignedTx, commitTx.tx, amountIn, commitFeerate, TestConstants.feeratePerKw, dustLimit)
-        assert(fee === amountIn - adjustedTx.tx.txOut.map(_.amount).sum)
+        assert(fee === (amountIn minus adjustedTx.tx.txOut.map(_.amount).sum))
         assert(adjustedTx.tx.txIn.size === unsignedTx.tx.txIn.size)
         assert(adjustedTx.tx.txOut.size === 1)
         assert(adjustedTx.tx.txOut.head.amount >= dustLimit)
@@ -434,13 +435,13 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
           // Simulate tx signing to check final feerate.
           val signedTx = {
             val anchorSigned = Transactions.addSigs(adjustedTx, Transactions.PlaceHolderSig)
-            val signedWalletInputs = anchorSigned.tx.txIn.tail.map(txIn => txIn.copy(witness = ScriptWitness(Seq(Scripts.der(Transactions.PlaceHolderSig), Transactions.PlaceHolderPubKey.value))))
-            anchorSigned.tx.copy(txIn = anchorSigned.tx.txIn.head +: signedWalletInputs)
+            val signedWalletInputs = anchorSigned.tx.txIn.tail.map(txIn => txIn.updateWitness(new ScriptWitness().push(Scripts.der(Transactions.PlaceHolderSig)).push(Transactions.PlaceHolderPubKey.value)))
+            anchorSigned.tx.updateInputs(anchorSigned.tx.txIn.head +: signedWalletInputs)
           }
           // We want the package anchor tx + commit tx to reach our target feerate, but the commit tx already pays a (smaller) fee
-          val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, signedTx.weight() + commitTx.tx.weight()) - Transactions.weight2fee(commitFeerate, commitTx.tx.weight())
-          val actualFee = amountIn - signedTx.txOut.map(_.amount).sum
-          assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee amountIn=$amountIn tx=$signedTx")
+          val targetFee = Transactions.weight2fee(TestConstants.feeratePerKw, signedTx.weight() + commitTx.tx.weight()) minus Transactions.weight2fee(commitFeerate, commitTx.tx.weight())
+          val actualFee = amountIn minus signedTx.txOut.map(_.amount).sum
+          assert((targetFee times 0.9) <= actualFee && actualFee <= (targetFee times 1.1), s"actualFee=$actualFee targetFee=$targetFee amountIn=$amountIn tx=$signedTx")
         }
       }
     })
@@ -513,7 +514,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe).toInt, 0, commitTx)
     val htlcSuccessTx = getMempoolTxs(1).head
     val htlcSuccessTargetFee = Transactions.weight2fee(targetFeerate, htlcSuccessTx.weight.toInt)
-    assert(htlcSuccessTargetFee * 0.9 <= htlcSuccessTx.fees && htlcSuccessTx.fees <= htlcSuccessTargetFee * 1.4, s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
+    assert((htlcSuccessTargetFee times 0.9) <= htlcSuccessTx.fees && htlcSuccessTx.fees <= (htlcSuccessTargetFee times 1.4), s"actualFee=${htlcSuccessTx.fees} targetFee=$htlcSuccessTargetFee")
 
     generateBlocks(4)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
@@ -537,7 +538,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     w.replyTo ! WatchParentTxConfirmedTriggered(currentBlockHeight(probe).toInt, 0, commitTx)
     val htlcTimeoutTx = getMempoolTxs(1).head
     val htlcTimeoutTargetFee = Transactions.weight2fee(targetFeerate, htlcTimeoutTx.weight.toInt)
-    assert(htlcTimeoutTargetFee * 0.9 <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= htlcTimeoutTargetFee * 1.4, s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
+    assert((htlcTimeoutTargetFee times 0.9) <= htlcTimeoutTx.fees && htlcTimeoutTx.fees <= (htlcTimeoutTargetFee times 1.4), s"actualFee=${htlcTimeoutTx.fees} targetFee=$htlcTimeoutTargetFee")
 
     generateBlocks(4)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
@@ -588,7 +589,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
   }
 
   test("htlc tx feerate too low, adding multiple wallet inputs") {
-    val utxos = Seq(
+    val utxos: Seq[BtcAmount] = Seq(
       // channel funding
       10 millibtc,
       // bumping utxos
@@ -672,21 +673,21 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val targetFeerate = TestConstants.feeratePerKw
       for (_ <- 1 to 100) {
         val walletInputsCount = 1 + Random.nextInt(5)
-        val walletInputs = (1 to walletInputsCount).map(_ => TxIn(OutPoint(randomBytes32(), 0), Nil, 0))
-        val walletAmountIn = dustLimit * walletInputsCount + Random.nextInt(25_000_000).sat
-        val changeOutput = TxOut(Random.nextLong(walletAmountIn.toLong).sat, Script.pay2wpkh(randomKey().publicKey))
-        val unsignedHtlcSuccessTx = htlcSuccess.txInfo.asInstanceOf[HtlcSuccessTx].copy(tx = htlcSuccess.txInfo.tx.copy(
-          txIn = htlcSuccess.txInfo.tx.txIn ++ walletInputs,
-          txOut = htlcSuccess.txInfo.tx.txOut ++ Seq(changeOutput)
-        ))
-        val unsignedHtlcTimeoutTx = htlcTimeout.txInfo.asInstanceOf[HtlcTimeoutTx].copy(tx = htlcTimeout.txInfo.tx.copy(
-          txIn = htlcTimeout.txInfo.tx.txIn ++ walletInputs,
-          txOut = htlcTimeout.txInfo.tx.txOut ++ Seq(changeOutput)
-        ))
+        val walletInputs = (1 to walletInputsCount).map(_ => new TxIn(new OutPoint(randomBytes32(), 0), Nil, 0))
+        val walletAmountIn = dustLimit times walletInputsCount + Random.nextInt(25_000_000).sat
+        val changeOutput = new TxOut(new Satoshi(Random.nextLong(walletAmountIn.toLong)), Script.pay2wpkh(randomKey().publicKey))
+        val unsignedHtlcSuccessTx = htlcSuccess.txInfo.asInstanceOf[HtlcSuccessTx].copy(tx = htlcSuccess.txInfo.tx
+          .updateInputs(htlcSuccess.txInfo.tx.txIn ++ walletInputs)
+          .updateOutputs(htlcSuccess.txInfo.tx.txOut ++ Seq(changeOutput))
+        )
+        val unsignedHtlcTimeoutTx = htlcTimeout.txInfo.asInstanceOf[HtlcTimeoutTx].copy(tx = htlcTimeout.txInfo.tx
+          .updateInputs(htlcTimeout.txInfo.tx.txIn ++ walletInputs)
+          .updateOutputs(htlcTimeout.txInfo.tx.txOut ++ Seq(changeOutput))
+        )
         for (unsignedTx <- Seq(unsignedHtlcSuccessTx, unsignedHtlcTimeoutTx)) {
-          val totalAmountIn = unsignedTx.input.txOut.amount + walletAmountIn
+          val totalAmountIn = unsignedTx.input.txOut.amount plus walletAmountIn
           val (adjustedTx, fee) = ReplaceableTxPublisher.adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, commitments)
-          assert(fee === totalAmountIn - adjustedTx.tx.txOut.map(_.amount).sum)
+          assert(fee === (totalAmountIn minus adjustedTx.tx.txOut.map(_.amount).sum))
           assert(adjustedTx.tx.txIn.size === unsignedTx.tx.txIn.size)
           assert(adjustedTx.tx.txOut.size === 1 || adjustedTx.tx.txOut.size === 2)
           if (adjustedTx.tx.txOut.size == 2) {
@@ -696,12 +697,12 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
                 case tx: HtlcSuccessTx => Transactions.addSigs(tx, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, ByteVector32.Zeroes, commitments.commitmentFormat)
                 case tx: HtlcTimeoutTx => Transactions.addSigs(tx, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, commitments.commitmentFormat)
               }
-              val signedWalletInputs = htlcSigned.tx.txIn.tail.map(txIn => txIn.copy(witness = ScriptWitness(Seq(Scripts.der(Transactions.PlaceHolderSig), Transactions.PlaceHolderPubKey.value))))
-              htlcSigned.tx.copy(txIn = htlcSigned.tx.txIn.head +: signedWalletInputs)
+              val signedWalletInputs = htlcSigned.tx.txIn.tail.map(txIn => txIn.updateWitness(new ScriptWitness().push(Scripts.der(Transactions.PlaceHolderSig)).push(Transactions.PlaceHolderPubKey.value)))
+              htlcSigned.tx.updateInputs(htlcSigned.tx.txIn.head +: signedWalletInputs)
             }
             val targetFee = Transactions.weight2fee(targetFeerate, signedTx.weight())
-            val actualFee = totalAmountIn - signedTx.txOut.map(_.amount).sum
-            assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee amountIn=$walletAmountIn tx=$signedTx")
+            val actualFee = totalAmountIn minus signedTx.txOut.map(_.amount).sum
+            assert((targetFee times 0.9) <= actualFee && actualFee <= (targetFee times 1.1), s"actualFee=$actualFee targetFee=$targetFee amountIn=$walletAmountIn tx=$signedTx")
           }
         }
       }

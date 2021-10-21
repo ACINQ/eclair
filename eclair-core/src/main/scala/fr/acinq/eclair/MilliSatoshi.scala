@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, Satoshi, btc2satoshi, millibtc2satoshi}
-
+import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, PimpSatoshi, Satoshi}
+import KotlinUtils._
 /**
  * Created by t-bast on 22/08/2019.
  */
@@ -48,10 +48,12 @@ case class MilliSatoshi(private val underlying: Long) extends Ordered[MilliSatos
   // We provide asymmetric min/max functions to provide more control on the return type.
   def max(other: MilliSatoshi): MilliSatoshi = if (this > other) this else other
   def max(other: BtcAmount): MilliSatoshi = if (this > other) this else other.toMilliSatoshi
+  def max(other: Satoshi): MilliSatoshi = if (this > other.toMilliSatoshi) this else other.toMilliSatoshi
   def min(other: MilliSatoshi): MilliSatoshi = if (this < other) this else other
   def min(other: BtcAmount): MilliSatoshi = if (this < other) this else other.toMilliSatoshi
+  def min(other: Satoshi): MilliSatoshi = if (this < other.toMilliSatoshi) this else other.toMilliSatoshi
 
-  def truncateToSatoshi: Satoshi = Satoshi(underlying / 1000)
+  def truncateToSatoshi: Satoshi = new Satoshi(underlying / 1000)
   def toLong: Long = underlying
   override def toString = s"$underlying msat"
   // @formatter:on
@@ -62,10 +64,7 @@ object MilliSatoshi {
 
   private def satoshi2millisatoshi(input: Satoshi): MilliSatoshi = MilliSatoshi(input.toLong * 1000L)
 
-  def toMilliSatoshi(amount: BtcAmount): MilliSatoshi = amount match {
-    case sat: Satoshi => satoshi2millisatoshi(sat)
-    case millis: MilliBtc => satoshi2millisatoshi(millibtc2satoshi(millis))
-    case bitcoin: Btc => satoshi2millisatoshi(btc2satoshi(bitcoin))
-  }
+  def toMilliSatoshi(amount: BtcAmount): MilliSatoshi = satoshi2millisatoshi(amount.toSatoshi)
 
+  def toMilliSatoshi(amount: Satoshi): MilliSatoshi = satoshi2millisatoshi(amount)
 }

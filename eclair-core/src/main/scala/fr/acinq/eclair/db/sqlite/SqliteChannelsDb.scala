@@ -73,7 +73,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
           val state = stateDataCodec.decode(BitVector(rs.getBytes("data"))).require.value
           val data = stateDataCodec.encode(state).require.toByteArray
           statement.setBytes(1, data)
-          statement.setBytes(2, state.channelId.toArray)
+          statement.setBytes(2, state.channelId.toByteArray)
         }
       )(logger)
     }
@@ -104,10 +104,10 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
     val data = stateDataCodec.encode(state).require.toByteArray
     using(sqlite.prepareStatement("UPDATE local_channels SET data=? WHERE channel_id=?")) { update =>
       update.setBytes(1, data)
-      update.setBytes(2, state.channelId.toArray)
+      update.setBytes(2, state.channelId.toByteArray)
       if (update.executeUpdate() == 0) {
         using(sqlite.prepareStatement("INSERT INTO local_channels (channel_id, data, is_closed) VALUES (?, ?, 0)")) { statement =>
-          statement.setBytes(1, state.channelId.toArray)
+          statement.setBytes(1, state.channelId.toByteArray)
           statement.setBytes(2, data)
           statement.executeUpdate()
         }
@@ -117,7 +117,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   override def getChannel(channelId: ByteVector32): Option[HasCommitments] = withMetrics("channels/get-channel", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM local_channels WHERE channel_id=? AND is_closed=0")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.executeQuery.mapCodec(stateDataCodec).lastOption
     }
   }
@@ -128,7 +128,7 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
   private def updateChannelMetaTimestampColumn(channelId: ByteVector32, columnName: String): Unit = {
     using(sqlite.prepareStatement(s"UPDATE local_channels SET $columnName=? WHERE channel_id=?")) { statement =>
       statement.setLong(1, TimestampMilli.now().toLong)
-      statement.setBytes(2, channelId.toArray)
+      statement.setBytes(2, channelId.toByteArray)
       statement.executeUpdate()
     }
   }
@@ -147,17 +147,17 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   override def removeChannel(channelId: ByteVector32): Unit = withMetrics("channels/remove-channel", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("DELETE FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.executeUpdate()
     }
 
     using(sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.executeUpdate()
     }
 
     using(sqlite.prepareStatement("UPDATE local_channels SET is_closed=1 WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.executeUpdate()
     }
   }
@@ -171,9 +171,9 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   override def addHtlcInfo(channelId: ByteVector32, commitmentNumber: Long, paymentHash: ByteVector32, cltvExpiry: CltvExpiry): Unit = withMetrics("channels/add-htlc-info", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.setLong(2, commitmentNumber)
-      statement.setBytes(3, paymentHash.toArray)
+      statement.setBytes(3, paymentHash.toByteArray)
       statement.setLong(4, cltvExpiry.toLong)
       statement.executeUpdate()
     }
@@ -181,10 +181,10 @@ class SqliteChannelsDb(val sqlite: Connection) extends ChannelsDb with Logging {
 
   override def listHtlcInfos(channelId: ByteVector32, commitmentNumber: Long): Seq[(ByteVector32, CltvExpiry)] = withMetrics("channels/list-htlc-infos", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.setLong(2, commitmentNumber)
       statement.executeQuery
-        .map(rs => (ByteVector32(rs.getByteVector32("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry"))))
+        .map(rs => (new ByteVector32(rs.getBytes("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry"))))
         .toSeq
     }
   }

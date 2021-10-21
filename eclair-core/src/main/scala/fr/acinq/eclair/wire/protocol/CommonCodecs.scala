@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, PimpSatoshi, PrivateKey, PublicKey, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.crypto.Mac32
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, ShortChannelId, TimestampSecond, UInt64}
@@ -57,10 +56,10 @@ object CommonCodecs {
   val uint64overflow: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
   val uint64: Codec[UInt64] = bytes(8).xmap(b => UInt64(b), a => a.toByteVector.padLeft(8))
 
-  val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => Satoshi(l))(_.toLong)
+  val satoshi: Codec[Satoshi] = uint64overflow.xmapc(l => new Satoshi(l))(_.toLong)
   val millisatoshi: Codec[MilliSatoshi] = uint64overflow.xmapc(l => MilliSatoshi(l))(_.toLong)
 
-  val feeratePerKw: Codec[FeeratePerKw] = uint32.xmapc(l => FeeratePerKw(Satoshi(l)))(_.toLong)
+  val feeratePerKw: Codec[FeeratePerKw] = uint32.xmapc(l => FeeratePerKw(new Satoshi(l)))(x => x.toLong)
 
   val cltvExpiry: Codec[CltvExpiry] = uint32.xmapc(CltvExpiry)((_: CltvExpiry).toLong)
   val cltvExpiryDelta: Codec[CltvExpiryDelta] = uint16.xmapc(CltvExpiryDelta)((_: CltvExpiryDelta).toInt)
@@ -98,9 +97,9 @@ object CommonCodecs {
   // It is useful in combination with variableSizeBytesLong to encode/decode TLV lengths because those will always be < 2^63.
   val varintoverflow: Codec[Long] = varint.narrow(l => if (l <= UInt64(Long.MaxValue)) Attempt.successful(l.toBigInt.toLong) else Attempt.failure(Err(s"overflow for value $l")), l => UInt64(l))
 
-  val bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => ByteVector32(d), d => d.bytes))
+  val bytes32: Codec[ByteVector32] = limitedSizeBytes(32, bytesStrict(32).xmap(d => new ByteVector32(d.toArray), d => ByteVector.view(d.toByteArray)))
 
-  val bytes64: Codec[ByteVector64] = limitedSizeBytes(64, bytesStrict(64).xmap(d => ByteVector64(d), d => d.bytes))
+  val bytes64: Codec[ByteVector64] = limitedSizeBytes(64, bytesStrict(64).xmap(d => new ByteVector64(d.toArray), d => ByteVector.view(d.toByteArray)))
 
   val sha256: Codec[ByteVector32] = bytes32
 
@@ -129,13 +128,13 @@ object CommonCodecs {
   val shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
 
   val privateKey: Codec[PrivateKey] = Codec[PrivateKey](
-    (priv: PrivateKey) => bytes(32).encode(priv.value),
-    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b)))
+    (priv: PrivateKey) => bytes(32).encode(ByteVector.view(priv.value.toByteArray)),
+    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => new PrivateKey(b.toArray)))
   )
 
   val publicKey: Codec[PublicKey] = Codec[PublicKey](
-    (pub: PublicKey) => bytes(33).encode(pub.value),
-    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b)))
+    (pub: PublicKey) => bytes(33).encode(ByteVector.view(pub.value.toByteArray)),
+    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => new PublicKey(b.toArray)))
   )
 
   val rgb: Codec[Color] = bytes(3).xmap(buf => Color(buf(0), buf(1), buf(2)), t => ByteVector(t.r, t.g, t.b))
@@ -147,7 +146,7 @@ object CommonCodecs {
    * When decoding, verify that a valid mac is prepended.
    */
   def prependmac[A](codec: Codec[A], mac: Mac32) = Codec[A](
-    (a: A) => codec.encode(a).map(bits => mac.mac(bits.toByteVector).bits ++ bits),
+    (a: A) => codec.encode(a).map(bits => ByteVector.view(mac.mac(bits.toByteVector).toByteArray).bits ++ bits),
     (bits: BitVector) => ("mac" | bytes32).decode(bits) match {
       case Attempt.Successful(DecodeResult(msgMac, remainder)) if mac.verify(msgMac, remainder.toByteVector) => codec.decode(remainder)
       case Attempt.Successful(_) => Attempt.Failure(scodec.Err("invalid mac"))

@@ -1,9 +1,10 @@
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding
 import fr.acinq.eclair.wire.protocol.EncryptedRecipientDataTlv.{OutgoingChannelId, OutgoingNodeId, Padding, RecipientSecret}
 import fr.acinq.eclair.{ShortChannelId, UInt64, randomKey}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits.HexStringSyntax
 
@@ -16,7 +17,7 @@ class EncryptedRecipientDataSpec extends AnyFunSuiteLike {
     val nodePrivKeys = Seq(randomKey(), randomKey(), randomKey(), randomKey())
     val payloads = Seq(
       (TlvStream[EncryptedRecipientDataTlv](Padding(hex"000000"), OutgoingChannelId(ShortChannelId(561))), hex"0f 0103000000 02080000000000000231"),
-      (TlvStream[EncryptedRecipientDataTlv](OutgoingNodeId(PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))), hex"23 0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"),
+      (TlvStream[EncryptedRecipientDataTlv](OutgoingNodeId(new PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))), hex"23 0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"),
       (TlvStream[EncryptedRecipientDataTlv](RecipientSecret(hex"0101010101010101010101010101010101010101010101010101010101010101")), hex"22 06200101010101010101010101010101010101010101010101010101010101010101"),
       (TlvStream[EncryptedRecipientDataTlv](Seq(OutgoingChannelId(ShortChannelId(42))), Seq(GenericTlv(UInt64(65535), hex"06c1"))), hex"10 0208000000000000002a fdffff0206c1"),
     )

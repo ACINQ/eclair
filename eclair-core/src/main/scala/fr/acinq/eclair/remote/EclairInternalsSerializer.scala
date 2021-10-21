@@ -18,7 +18,7 @@ package fr.acinq.eclair.remote
 
 import akka.actor.{ActorRef, ExtendedActorSystem}
 import akka.serialization.Serialization
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.Switchboard.RouterPeerConf

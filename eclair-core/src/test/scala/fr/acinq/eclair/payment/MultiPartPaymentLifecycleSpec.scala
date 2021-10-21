@@ -35,6 +35,7 @@ import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.{Announcements, RouteNotFound}
 import fr.acinq.eclair.wire.protocol._
+import KotlinUtils._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.{ByteVector, HexStringSyntax}
@@ -650,7 +651,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 object MultiPartPaymentLifecycleSpec {
 
   val paymentPreimage = randomBytes32()
-  val paymentHash = Crypto.sha256(paymentPreimage)
+  val paymentHash = paymentPreimage.sha256()
   val expiry = CltvExpiry(1105)
   val finalAmount = 1000000 msat
   val finalRecipient = randomKey().publicKey

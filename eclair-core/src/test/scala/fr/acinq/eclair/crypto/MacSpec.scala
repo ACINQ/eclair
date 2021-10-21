@@ -48,11 +48,11 @@ class MacSpec extends AnyFunSuite {
   }
 
   test("HMAC-256 invalid macs") {
-    val instance = Hmac256(ByteVector32.Zeroes)
+    val instance = Hmac256(hex"0000000000000000000000000000000000000000000000000000000000000000")
     val testCases = Seq(
       (hex"0000000000000000000000000000000000000000000000000000000000000000", hex"2a"),
       (hex"4aa79e2da0cb5beae9b5dad4006909cb402e4201e191733bc2b5279629e4ed80", hex"fd0001000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f30313233")
-    ).map(testCase => (ByteVector32(testCase._1), testCase._2))
+    ).map(testCase => (new ByteVector32(testCase._1.toArray), testCase._2))
 
     for ((mac, message) <- testCases) {
       assert(!instance.verify(mac, message))

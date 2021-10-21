@@ -22,7 +22,7 @@ import akka.http.scaladsl.model.StatusCodes.NotFound
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
 import akka.http.scaladsl.server.{Directive1, Directives, MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._

@@ -229,7 +229,7 @@ object MultiPartPaymentFSMSpec {
 
   val paymentHash = randomBytes32()
 
-  def htlcIdToChannelId(htlcId: Long) = ByteVector32(ByteVector.fromLong(htlcId).padLeft(32))
+  def htlcIdToChannelId(htlcId: Long) = new ByteVector32(ByteVector.fromLong(htlcId).padLeft(32).toArray)
 
   def createMultiPartHtlc(totalAmount: MilliSatoshi, htlcAmount: MilliSatoshi, htlcId: Long): HtlcPart = {
     val htlc = UpdateAddHtlc(htlcIdToChannelId(htlcId), htlcId, htlcAmount, paymentHash, CltvExpiry(42), TestConstants.emptyOnionPacket)

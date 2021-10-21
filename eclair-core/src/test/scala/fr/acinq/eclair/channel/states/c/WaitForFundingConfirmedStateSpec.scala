@@ -27,6 +27,7 @@ import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -104,8 +105,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv WatchFundingConfirmedTriggered (bad funding pubkey script)") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    val badOutputScript = fundingTx.txOut.head.copy(publicKeyScript = Script.write(multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
-    val badFundingTx = fundingTx.copy(txOut = Seq(badOutputScript))
+    val badOutputScript = fundingTx.txOut.head.updatePublicKeyScript(Script.write(multiSig2of2(randomKey().publicKey, randomKey().publicKey)))
+    val badFundingTx = fundingTx.updateOutputs(Seq(badOutputScript))
     alice ! WatchFundingConfirmedTriggered(42000, 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)
   }
@@ -113,8 +114,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv WatchFundingConfirmedTriggered (bad funding amount)") { f =>
     import f._
     val fundingTx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].fundingTx.get
-    val badOutputAmount = fundingTx.txOut.head.copy(amount = 1234567.sat)
-    val badFundingTx = fundingTx.copy(txOut = Seq(badOutputAmount))
+    val badOutputAmount = fundingTx.txOut.head.updateAmount(1234567.sat)
+    val badFundingTx = fundingTx.updateOutputs(Seq(badOutputAmount))
     alice ! WatchFundingConfirmedTriggered(42000, 42, badFundingTx)
     awaitCond(alice.stateName == CLOSED)
   }
@@ -187,7 +188,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("recv WatchFundingSpentTriggered (other commit)") { f =>
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    alice ! WatchFundingSpentTriggered(Transaction(0, Nil, Nil, 0))
+    alice ! WatchFundingSpentTriggered(new Transaction(0, Nil, Nil, 0))
     alice2bob.expectMsgType[Error]
     assert(alice2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx.txid === tx.txid)
     awaitCond(alice.stateName == ERR_INFORMATION_LEAK)

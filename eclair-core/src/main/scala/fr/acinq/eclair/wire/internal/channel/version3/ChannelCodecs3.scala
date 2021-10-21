@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.wire.internal.channel.version3
 
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
+import fr.acinq.bitcoin.{KeyPath, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -29,19 +29,32 @@ import fr.acinq.eclair.{FeatureSupport, Features}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
+import shapeless.{::, HNil}
+
+import scala.jdk.CollectionConverters._
 
 private[channel] object ChannelCodecs3 {
 
   private[version3] object Codecs {
 
-    val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
+    implicit def bytearray2bytevector(input: Array[Byte]) : ByteVector  = ByteVector.view(input)
+
+    val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => {
+      val l1: java.util.List[java.lang.Long] = l.map(_.asInstanceOf[java.lang.Long]).asJava
+      new KeyPath(l1)
+    }, keyPath => {
+      keyPath.path.asScala.toList.map(_.toLong)
+    }).as[KeyPath]
 
     val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
       ("secretkeybytes" | bytes32) ::
         ("chaincode" | bytes32) ::
         ("depth" | uint16) ::
         ("path" | keyPathCodec) ::
-        ("parent" | int64)).as[ExtendedPrivateKey]
+        ("parent" | int64)).xmap(
+      { case a :: b :: c :: d :: e :: HNil => new ExtendedPrivateKey(a, b, c, d, e) },
+      { exp => exp.secretkeybytes :: exp.chaincode :: exp.depth :: exp.path :: exp.parent :: HNil }
+    )
 
     val channelConfigCodec: Codec[ChannelConfig] = lengthDelimited(bytes).xmap(b => {
       val activated: Set[ChannelConfigOption] = b.bits.toIndexedSeq.reverse.zipWithIndex.collect {

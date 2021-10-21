@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.blockchain.fee
 
+import fr.acinq.eclair.KotlinUtils._
+
 import scala.concurrent.{ExecutionContext, Future}
 
 class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec: ExecutionContext) extends FeeProvider {
@@ -39,7 +41,7 @@ class SmoothFeeProvider(provider: FeeProvider, windowSize: Int)(implicit ec: Exe
 
 object SmoothFeeProvider {
 
-  def avg(i: Seq[FeeratePerKB]): FeeratePerKB = FeeratePerKB(i.map(_.feerate).sum / i.size)
+  def avg(i: Seq[FeeratePerKB]): FeeratePerKB = FeeratePerKB(i.map(_.feerate.toSatoshi).sum div  i.size)
 
   def smooth(rates: Seq[FeeratesPerKB]): FeeratesPerKB =
     FeeratesPerKB(

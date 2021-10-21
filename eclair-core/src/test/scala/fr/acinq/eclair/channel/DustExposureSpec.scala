@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
+import fr.acinq.eclair.KotlinUtils.satsohi2pimp
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc

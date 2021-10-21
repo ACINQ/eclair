@@ -17,14 +17,19 @@
 package fr.acinq.eclair.wire.internal.channel.version0
 
 import com.softwaremill.quicklens._
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OP_CHECKMULTISIG, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptWitness, Transaction, TxOut}
+import fr.acinq.eclair.KotlinUtils.OrderedSatoshi
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, channel}
 import scodec.bits.BitVector
+
+import java.util
+import scala.jdk.CollectionConverters.SeqHasAsJava
 
 private[channel] object ChannelTypes0 {
 
@@ -45,8 +50,8 @@ private[channel] object ChannelTypes0 {
     // When using the default commitment format, spending txs have a single input. These txs are fully signed and never
     // modified: we don't use the InputInfo in closing business logic, so we don't need to fill everything (this part
     // assumes that we only have standard channels, no anchor output channels - which was the case before version2).
-    val input = childTx.txIn.head.outPoint
-    InputInfo(input, parentTx.txOut(input.index.toInt), Nil)
+    val input = childTx.txIn.get(0).outPoint
+    InputInfo(input, parentTx.txOut.get(input.index.toInt), Nil)
   }
 
   case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTxs: List[Transaction], irrevocablySpent: Map[OutPoint, ByteVector32]) {
@@ -61,7 +66,7 @@ private[channel] object ChannelTypes0 {
       val htlcTimeoutTxsNew = htlcTimeoutTxs.map(tx => HtlcTimeoutTx(getPartialInputInfo(commitTx, tx), tx, 0))
       val htlcTxsNew = (htlcSuccessTxsNew ++ htlcTimeoutTxsNew).map(tx => tx.input.outPoint -> Some(tx)).toMap
       val claimHtlcDelayedTxsNew = claimHtlcDelayedTxs.map(tx => {
-        val htlcTx = htlcTxs.find(_.txid == tx.txIn.head.outPoint.txid)
+        val htlcTx = htlcTxs.find(_.txid == tx.txIn.get(0).outPoint.txid)
         require(htlcTx.nonEmpty, s"3rd-stage htlc tx doesn't spend one of our htlc txs: claim-htlc-tx=$tx, htlc-txs=${htlcTxs.mkString(",")}")
         HtlcDelayedTx(getPartialInputInfo(htlcTx.get, tx), tx)
       })
@@ -95,7 +100,7 @@ private[channel] object ChannelTypes0 {
       val htlcPenaltyTxsNew = htlcPenaltyTxs.map(tx => HtlcPenaltyTx(getPartialInputInfo(commitTx, tx), tx))
       val claimHtlcDelayedPenaltyTxsNew = claimHtlcDelayedPenaltyTxs.map(tx => {
         // We don't have all the `InputInfo` data, but it's ok: we only use the tx that is fully signed.
-        ClaimHtlcDelayedOutputPenaltyTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx)
+        ClaimHtlcDelayedOutputPenaltyTx(InputInfo(tx.txIn.get(0).outPoint, new TxOut(new Satoshi(0), Array.emptyByteArray), Nil), tx)
       })
       channel.RevokedCommitPublished(commitTx, claimMainOutputTxNew, mainPenaltyTxNew, htlcPenaltyTxsNew, claimHtlcDelayedPenaltyTxsNew, irrevocablySpentNew)
     }
@@ -106,7 +111,7 @@ private[channel] object ChannelTypes0 {
    * the raw transaction. It provides more information for auditing but is not used for business logic, so we can safely
    * put dummy values in the migration.
    */
-  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.head.outPoint, TxOut(Satoshi(0), Nil), Nil), tx, None)
+  def migrateClosingTx(tx: Transaction): ClosingTx = ClosingTx(InputInfo(tx.txIn.get(0).outPoint, new TxOut(new Satoshi(0), Array.emptyByteArray), Nil), tx, None)
 
   case class HtlcTxAndSigs(txinfo: HtlcTx, localSig: ByteVector64, remoteSig: ByteVector64)
 
@@ -118,14 +123,18 @@ private[channel] object ChannelTypes0 {
   case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs) {
     def migrate(remoteFundingPubKey: PublicKey): channel.LocalCommit = {
       val remoteSig = extractRemoteSig(publishableTxs.commitTx, remoteFundingPubKey)
-      val unsignedCommitTx = publishableTxs.commitTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+
+      def emptyWitnesses(n: Int): util.List[ScriptWitness] = List.fill(n)(new ScriptWitness()).asJava
+      def removeWitnesses(tx: Transaction) : Transaction = tx.updateWitnesses(emptyWitnesses(tx.txIn.size()))
+
+      val unsignedCommitTx = publishableTxs.commitTx.copy(tx = removeWitnesses(publishableTxs.commitTx.tx))
       val commitTxAndRemoteSig = CommitTxAndRemoteSig(unsignedCommitTx, remoteSig)
       val htlcTxsAndRemoteSigs = publishableTxs.htlcTxsAndSigs map {
         case HtlcTxAndSigs(htlcTx: HtlcSuccessTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+          val unsignedHtlcTx = htlcTx.copy(tx = removeWitnesses(htlcTx.tx))
           HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
         case HtlcTxAndSigs(htlcTx: HtlcTimeoutTx, _, remoteSig) =>
-          val unsignedHtlcTx = htlcTx.modify(_.tx.txIn.each.witness).setTo(ScriptWitness.empty)
+          val unsignedHtlcTx = htlcTx.copy(tx = removeWitnesses(htlcTx.tx))
           HtlcTxAndRemoteSig(unsignedHtlcTx, remoteSig)
       }
       channel.LocalCommit(index, spec, commitTxAndRemoteSig, htlcTxsAndRemoteSigs)
@@ -133,8 +142,14 @@ private[channel] object ChannelTypes0 {
 
     private def extractRemoteSig(commitTx: CommitTx, remoteFundingPubKey: PublicKey): ByteVector64 = {
       require(commitTx.tx.txIn.size == 1, s"commit tx must have exactly one input, found ${commitTx.tx.txIn.size}")
-      val ScriptWitness(Seq(_, sig1, sig2, redeemScript)) = commitTx.tx.txIn.head.witness
-      val _ :: OP_PUSHDATA(pub1, _) :: OP_PUSHDATA(pub2, _) :: _ :: OP_CHECKMULTISIG :: Nil = Script.parse(redeemScript)
+      val witness = commitTx.tx.txIn.get(0).witness
+      require(witness.stack.size() == 4)
+      val sig1 = witness.stack.get(1).toByteArray
+      val sig2 = witness.stack.get(2).toByteArray
+      val redeemScript = Script.parse(witness.stack.get(3))
+      require(redeemScript.size() == 5 && redeemScript.get(1).isPush(33) && redeemScript.get(2).isPush(33) && redeemScript.get(4) == OP_CHECKMULTISIG.INSTANCE)
+      val pub1 = redeemScript.get(1).asInstanceOf[OP_PUSHDATA].data
+      val pub2 = redeemScript.get(2).asInstanceOf[OP_PUSHDATA].data
       require(pub1 == remoteFundingPubKey.value || pub2 == remoteFundingPubKey.value, "unrecognized funding pubkey")
       if (pub1 == remoteFundingPubKey.value) {
         Crypto.der2compact(sig1)
@@ -195,7 +210,7 @@ private[channel] object ChannelTypes0 {
       } else {
         ChannelConfig()
       }
-      val isWumboChannel = commitInput.txOut.amount > Satoshi(16777215)
+      val isWumboChannel = commitInput.txOut.amount > new Satoshi(16777215)
       val baseChannelFeatures: Set[Feature] = if (isWumboChannel) Set(Features.Wumbo) else Set.empty
       val commitmentFeatures: Set[Feature] = if (channelVersion.hasAnchorOutputs) {
         Set(Features.StaticRemoteKey, Features.AnchorOutputs)

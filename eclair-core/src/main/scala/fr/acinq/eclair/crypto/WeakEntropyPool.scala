@@ -19,14 +19,15 @@ package fr.acinq.eclair.crypto
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
-import fr.acinq.eclair.TimestampMilli
+import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.blockchain.NewBlock
 import fr.acinq.eclair.channel.ChannelSignatureReceived
 import fr.acinq.eclair.io.PeerConnected
 import fr.acinq.eclair.payment.ChannelPaymentRelayed
 import fr.acinq.eclair.router.NodeUpdated
+import fr.acinq.eclair.KotlinUtils._
+import fr.acinq.eclair.TimestampMilli
 import scodec.bits.ByteVector
 
 import scala.concurrent.duration.DurationInt
@@ -60,7 +61,7 @@ object WeakEntropyPool {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelPaymentRelayed](e => WrappedPaymentRelayed(e.paymentHash, e.timestamp)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[PeerConnected](e => WrappedPeerConnected(e.nodeId)))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[NodeUpdated](e => WrappedNodeUpdated(e.ann.signature)))
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelSignatureReceived](e => WrappedChannelSignature(e.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.wtxid)))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ChannelSignatureReceived](e => WrappedChannelSignature(e.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid))) // wtxid
       Behaviors.withTimers { timers =>
         timers.startTimerWithFixedDelay(FlushEntropy, 30 seconds)
         collecting(collector, None)
@@ -73,7 +74,7 @@ object WeakEntropyPool {
       case FlushEntropy =>
         entropy_opt match {
           case Some(entropy) =>
-            collector.addEntropy(entropy.toArray)
+            collector.addEntropy(entropy.toByteArray)
             collecting(collector, None)
           case None =>
             Behaviors.same
@@ -92,7 +93,7 @@ object WeakEntropyPool {
   }
 
   private def collect(entropy_opt: Option[ByteVector32], additional: ByteVector): Option[ByteVector32] = {
-    Some(Crypto.sha256(entropy_opt.map(_.bytes).getOrElse(ByteVector.empty) ++ additional))
+    Some(Crypto.sha256(entropy_opt.map(_.toArray).getOrElse(Array.emptyByteArray) ++ additional.toArray))
   }
 
 }

@@ -17,7 +17,7 @@
 package fr.acinq.eclair.channel.states.f
 
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.PrivateKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, SatoshiLong, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
@@ -31,6 +31,9 @@ import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.wire.protocol.{ClosingSigned, CommitSig, Error, FailureMessageCodecs, Onion, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.KotlinUtils._
+
+import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, Tag}
 import scodec.bits.ByteVector
@@ -443,7 +446,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
-    bob ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey)
+    bob ! RevokeAndAck(ByteVector32.Zeroes, new PrivateKey(randomBytes32()), new PrivateKey(randomBytes32()).publicKey)
     bob2alice.expectMsgType[Error]
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid) // commit tx
@@ -456,7 +459,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
-    alice ! RevokeAndAck(ByteVector32.Zeroes, PrivateKey(randomBytes32()), PrivateKey(randomBytes32()).publicKey)
+    alice ! RevokeAndAck(ByteVector32.Zeroes, new PrivateKey(randomBytes32()), new PrivateKey(randomBytes32()).publicKey)
     alice2bob.expectMsgType[Error]
     awaitCond(alice.stateName == CLOSING)
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid) // commit tx
@@ -491,7 +494,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
 
   test("recv RevokeAndAck (forward UpdateFailMalformedHtlc)") { f =>
     import f._
-    bob ! CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(ByteVector.view("should be htlc.onionRoutingPacket".getBytes())), FailureMessageCodecs.BADONION)
+    bob ! CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256("should be htlc.onionRoutingPacket".getBytes()), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()
@@ -516,7 +519,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     import f._
     val sender = TestProbe()
     val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-    alice ! CMD_UPDATE_FEE(FeeratePerKw(20000 sat), replyTo_opt = Some(sender.ref))
+    alice ! CMD_UPDATE_FEE(FeeratePerKw(20000.sat), replyTo_opt = Some(sender.ref))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_FEE]]
     val fee = alice2bob.expectMsgType[UpdateFee]
     awaitCond(alice.stateData == initialState.copy(
@@ -562,7 +565,7 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     bob.feeEstimator.setFeerate(FeeratesPerKw.single(fee.feeratePerKw))
     bob ! fee
     val error = bob2alice.expectMsgType[Error]
-    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missing = 72120000L sat, reserve = 20000L sat, fees = 72400000L sat).getMessage)
+    assert(new String(error.data.toArray) === CannotAffordFees(channelId(bob), missing = 72120000.sat, reserve = 20000.sat, fees = 72400000.sat).getMessage)
     awaitCond(bob.stateName == CLOSING)
     assert(bob2blockchain.expectMsgType[PublishRawTx].tx.txid === tx.txid) // commit tx
     //bob2blockchain.expectMsgType[PublishTx] // main delayed (removed because of the high fees)

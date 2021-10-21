@@ -17,7 +17,8 @@
 package fr.acinq.eclair.db.sqlite
 
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
+import fr.acinq.eclair.MilliSatoshi
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db._
@@ -55,7 +56,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.executeUpdate("ALTER TABLE sent_payments RENAME TO _sent_payments_old")
       statement.executeUpdate("CREATE TABLE sent_payments (id TEXT NOT NULL PRIMARY KEY, parent_id TEXT NOT NULL, external_id TEXT, payment_hash BLOB NOT NULL, amount_msat INTEGER NOT NULL, target_node_id BLOB NOT NULL, created_at INTEGER NOT NULL, payment_request TEXT, completed_at INTEGER, payment_preimage BLOB, fees_msat INTEGER, payment_route BLOB, failures BLOB)")
       // Old rows will be missing a target node id, so we use an easy-to-spot default value.
-      val defaultTargetNodeId = PrivateKey(ByteVector32.One).publicKey
+      val defaultTargetNodeId = new PrivateKey(ByteVector32.One).publicKey
       statement.executeUpdate(s"INSERT INTO sent_payments (id, parent_id, payment_hash, amount_msat, target_node_id, created_at, completed_at, payment_preimage) SELECT id, id, payment_hash, amount_msat, X'${defaultTargetNodeId.toString}', created_at, completed_at, preimage FROM _sent_payments_old")
       statement.executeUpdate("DROP table _sent_payments_old")
 
@@ -128,11 +129,11 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       statement.setString(1, sent.id.toString)
       statement.setString(2, sent.parentId.toString)
       statement.setString(3, sent.externalId.orNull)
-      statement.setBytes(4, sent.paymentHash.toArray)
+      statement.setBytes(4, sent.paymentHash.toByteArray)
       statement.setString(5, sent.paymentType)
       statement.setLong(6, sent.amount.toLong)
       statement.setLong(7, sent.recipientAmount.toLong)
-      statement.setBytes(8, sent.recipientNodeId.value.toArray)
+      statement.setBytes(8, sent.recipientNodeId.value.toByteArray)
       statement.setLong(9, sent.createdAt.toLong)
       statement.setString(10, sent.paymentRequest.map(PaymentRequest.write).orNull)
       statement.executeUpdate()
@@ -143,7 +144,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("UPDATE sent_payments SET (completed_at, payment_preimage, fees_msat, payment_route) = (?, ?, ?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
       paymentResult.parts.foreach(p => {
         statement.setLong(1, p.timestamp.toLong)
-        statement.setBytes(2, paymentResult.paymentPreimage.toArray)
+        statement.setBytes(2, paymentResult.paymentPreimage.toByteArray)
         statement.setLong(3, p.feesPaid.toLong)
         statement.setBytes(4, paymentRouteCodec.encode(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList).require.toByteArray)
         statement.setString(5, p.id.toString)
@@ -178,7 +179,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       rs.getString("payment_type"),
       MilliSatoshi(rs.getLong("amount_msat")),
       MilliSatoshi(rs.getLong("recipient_amount_msat")),
-      PublicKey(rs.getByteVector("recipient_node_id")),
+      new PublicKey(rs.getBytes("recipient_node_id")),
       TimestampMilli(rs.getLong("created_at")),
       rs.getStringNullable("payment_request").map(PaymentRequest.read),
       status
@@ -226,7 +227,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment] = withMetrics("payments/list-outgoing-by-payment-hash", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM sent_payments WHERE payment_hash = ? ORDER BY created_at")) { statement =>
-      statement.setBytes(1, paymentHash.toArray)
+      statement.setBytes(1, paymentHash.toByteArray)
       statement.executeQuery().map(parseOutgoingPayment).toSeq
     }
   }
@@ -241,8 +242,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setBytes(1, pr.paymentHash.toArray)
-      statement.setBytes(2, preimage.toArray)
+      statement.setBytes(1, pr.paymentHash.toByteArray)
+      statement.setBytes(2, preimage.toByteArray)
       statement.setString(3, paymentType)
       statement.setString(4, PaymentRequest.write(pr))
       statement.setLong(5, pr.timestamp.toTimestampMilli.toLong) // BOLT11 timestamp is in seconds
@@ -255,7 +256,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     using(sqlite.prepareStatement("UPDATE received_payments SET (received_msat, received_at) = (? + COALESCE(received_msat, 0), ?) WHERE payment_hash = ?")) { update =>
       update.setLong(1, amount.toLong)
       update.setLong(2, receivedAt.toLong)
-      update.setBytes(3, paymentHash.toArray)
+      update.setBytes(3, paymentHash.toByteArray)
       val updated = update.executeUpdate()
       updated > 0
     }
@@ -281,7 +282,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   override def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment] = withMetrics("payments/get-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT * FROM received_payments WHERE payment_hash = ?")) { statement =>
-      statement.setBytes(1, paymentHash.toArray)
+      statement.setBytes(1, paymentHash.toByteArray)
       statement.executeQuery().map(parseIncomingPayment).headOption
     }
   }
@@ -293,7 +294,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
           case _: IncomingPaymentStatus.Received => Failure(new IllegalArgumentException("Cannot remove a received incoming payment"))
           case _: IncomingPaymentStatus =>
             using(sqlite.prepareStatement("DELETE FROM received_payments WHERE payment_hash = ?")) { delete =>
-              delete.setBytes(1, paymentHash.toArray)
+              delete.setBytes(1, paymentHash.toByteArray)
               delete.executeUpdate()
               Success(())
             }

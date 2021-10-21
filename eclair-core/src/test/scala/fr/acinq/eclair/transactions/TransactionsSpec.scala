@@ -16,9 +16,10 @@
 
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
+import fr.acinq.bitcoin.Crypto.{ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, Protocol, SIGHASH_ALL, SIGHASH_ANYONECANPAY, SIGHASH_NONE, SIGHASH_SINGLE, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{Btc, ByteVector32, Crypto, MilliBtc, MilliBtcDouble, OutPoint, PimpSatoshi, PrivateKey, Protocol, Satoshi, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.SigHash._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Helpers.Funding
@@ -27,12 +28,15 @@ import fr.acinq.eclair.transactions.Scripts.{anchor, htlcOffered, htlcReceived, 
 import fr.acinq.eclair.transactions.Transactions.AnchorOutputsCommitmentFormat.anchorAmount
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol.UpdateAddHtlc
+import KotlinUtils._
+import fr.acinq.bitcoin.crypto.Pack
 import grizzled.slf4j.Logging
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
 
 import java.nio.ByteOrder
 import scala.io.Source
+import scala.math.Numeric.Implicits.infixNumericOps
 import scala.util.Random
 
 /**
@@ -40,18 +44,18 @@ import scala.util.Random
  */
 
 class TransactionsSpec extends AnyFunSuite with Logging {
-  val localFundingPriv = PrivateKey(randomBytes32())
-  val remoteFundingPriv = PrivateKey(randomBytes32())
-  val localRevocationPriv = PrivateKey(randomBytes32())
-  val localPaymentPriv = PrivateKey(randomBytes32())
-  val localDelayedPaymentPriv = PrivateKey(randomBytes32())
-  val remotePaymentPriv = PrivateKey(randomBytes32())
-  val localHtlcPriv = PrivateKey(randomBytes32())
-  val remoteHtlcPriv = PrivateKey(randomBytes32())
-  val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
+  val localFundingPriv = new PrivateKey(randomBytes32())
+  val remoteFundingPriv = new PrivateKey(randomBytes32())
+  val localRevocationPriv = new PrivateKey(randomBytes32())
+  val localPaymentPriv = new PrivateKey(randomBytes32())
+  val localDelayedPaymentPriv = new PrivateKey(randomBytes32())
+  val remotePaymentPriv = new PrivateKey(randomBytes32())
+  val localHtlcPriv = new PrivateKey(randomBytes32())
+  val remoteHtlcPriv = new PrivateKey(randomBytes32())
+  val finalPubKeyScript = Script.write(Script.pay2wpkh(new PrivateKey(randomBytes32()).publicKey))
   val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
   val toLocalDelay = CltvExpiryDelta(144)
-  val localDustLimit = Satoshi(546)
+  val localDustLimit = new Satoshi(546)
   val feeratePerKw = FeeratePerKw(22000 sat)
 
   test("extract csv and cltv timeouts") {
@@ -59,13 +63,13 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val parentTxId2 = randomBytes32()
     val parentTxId3 = randomBytes32()
     val txIn = Seq(
-      TxIn(OutPoint(parentTxId1.reverse, 3), Nil, 3),
-      TxIn(OutPoint(parentTxId2.reverse, 1), Nil, 4),
-      TxIn(OutPoint(parentTxId3.reverse, 0), Nil, 5),
-      TxIn(OutPoint(randomBytes32(), 4), Nil, 0),
-      TxIn(OutPoint(parentTxId1.reverse, 2), Nil, 5),
+      new TxIn(new OutPoint(parentTxId1.reversed(), 3), Nil, 3),
+      new TxIn(new OutPoint(parentTxId2.reversed(), 1), Nil, 4),
+      new TxIn(new OutPoint(parentTxId3.reversed(), 0), Nil, 5),
+      new TxIn(new OutPoint(randomBytes32(), 4), Nil, 0),
+      new TxIn(new OutPoint(parentTxId1.reversed(), 2), Nil, 5),
     )
-    val tx = Transaction(2, txIn, Nil, 10)
+    val tx = new Transaction(2, txIn, Nil, 10)
     val expected = Map(
       parentTxId1 -> 5,
       parentTxId2 -> 4,
@@ -109,7 +113,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("check pre-computed transaction weights") {
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
+    val finalPubKeyScript = ByteVector.view(Script.write(Script.pay2wpkh(new PrivateKey(randomBytes32()).publicKey)))
     val localDustLimit = 546 sat
     val toLocalDelay = CltvExpiryDelta(144)
     val feeratePerKw = FeeratePerKw.MinimumFeeratePerKw
@@ -119,7 +123,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // ClaimP2WPKHOutputTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimP2WPKHOutputTx
       val pubKeyScript = write(pay2wpkh(localPaymentPriv.publicKey))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = new Transaction(0, Nil, new TxOut(20000 sat, pubKeyScript) :: Nil, 0)
       val Right(claimP2WPKHOutputTx) = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, PlaceHolderSig).tx)
@@ -130,7 +134,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // HtlcDelayedTx
       // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the 3rd-stage tx
       val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
-      val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
+      val htlcSuccessOrTimeoutTx = new Transaction(0, Nil, new TxOut(20000 sat, pubKeyScript) :: Nil, 0)
       val Right(htlcDelayedTx) = makeHtlcDelayedTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(htlcDelayedTx, PlaceHolderSig).tx)
@@ -141,7 +145,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // MainPenaltyTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
       val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(20000 sat, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = new Transaction(0, Nil, new TxOut(20000 sat, pubKeyScript) :: Nil, 0)
       val Right(mainPenaltyTx) = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(mainPenaltyTx, PlaceHolderSig).tx)
@@ -155,7 +159,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val htlc = UpdateAddHtlc(ByteVector32.Zeroes, 0, (20000 * 1000) msat, sha256(paymentPreimage), CltvExpiryDelta(144).toCltvExpiry(blockHeight), TestConstants.emptyOnionPacket)
       val redeemScript = htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry, DefaultCommitmentFormat)
       val pubKeyScript = write(pay2wsh(redeemScript))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = new Transaction(0, Nil, new TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, 0)
       val Right(htlcPenaltyTx) = makeHtlcPenaltyTx(commitTx, 0, Script.write(redeemScript), localDustLimit, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(htlcPenaltyTx, PlaceHolderSig, localRevocationPriv.publicKey).tx)
@@ -170,7 +174,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val spec = CommitmentSpec(Set(OutgoingHtlc(htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
       val outputs = makeCommitTxOutputs(localIsFunder = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, DefaultCommitmentFormat)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), DefaultCommitmentFormat)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = new Transaction(0, Nil, new TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, 0)
       val Right(claimHtlcSuccessTx) = makeClaimHtlcSuccessTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw, DefaultCommitmentFormat)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, PlaceHolderSig, paymentPreimage).tx)
@@ -185,7 +189,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val spec = CommitmentSpec(Set(IncomingHtlc(htlc)), feeratePerKw, toLocal = 0 msat, toRemote = 0 msat)
       val outputs = makeCommitTxOutputs(localIsFunder = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, DefaultCommitmentFormat)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.cltvExpiry, DefaultCommitmentFormat)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = new Transaction(0, Nil, new TxOut(htlc.amountMsat.truncateToSatoshi, pubKeyScript) :: Nil, 0)
       val Right(claimClaimHtlcTimeoutTx) = makeClaimHtlcTimeoutTx(commitTx, outputs, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw, DefaultCommitmentFormat)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, PlaceHolderSig).tx)
@@ -196,16 +200,16 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // ClaimAnchorOutputTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimAnchorOutputTx
       val pubKeyScript = write(pay2wsh(anchor(localFundingPriv.publicKey)))
-      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(anchorAmount, pubKeyScript) :: Nil, lockTime = 0)
+      val commitTx = new Transaction(0, Nil, new TxOut(anchorAmount, pubKeyScript) :: Nil, 0)
       val Right(claimAnchorOutputTx) = makeClaimLocalAnchorOutputTx(commitTx, localFundingPriv.publicKey)
       assert(claimAnchorOutputTx.tx.txOut.isEmpty)
       // we will always add at least one input and one output to be able to set our desired feerate
       // we use dummy signatures to compute the weight
-      val p2wpkhWitness = ScriptWitness(Seq(Scripts.der(PlaceHolderSig), PlaceHolderPubKey.value))
-      val claimAnchorOutputTxWithFees = claimAnchorOutputTx.copy(tx = claimAnchorOutputTx.tx.copy(
-        txIn = claimAnchorOutputTx.tx.txIn :+ TxIn(OutPoint(randomBytes32(), 3), ByteVector.empty, 0, p2wpkhWitness),
-        txOut = Seq(TxOut(1500 sat, Script.pay2wpkh(randomKey().publicKey)))
-      ))
+      val p2wpkhWitness = new ScriptWitness().push(Scripts.der(PlaceHolderSig)).push(PlaceHolderPubKey.value)
+      val claimAnchorOutputTxWithFees = claimAnchorOutputTx.copy(tx = claimAnchorOutputTx.tx
+        .updateInputs(claimAnchorOutputTx.tx.txIn :+ new TxIn(new OutPoint(randomBytes32(), 3), 0).updateWitness(p2wpkhWitness))
+        .updateOutputs(Seq(new TxOut(1500 sat, Script.pay2wpkh(randomKey().publicKey))))
+      )
       val weight = Transaction.weight(addSigs(claimAnchorOutputTxWithFees, PlaceHolderSig).tx)
       assert(weight === 717)
       assert(weight >= claimAnchorOutputMinWeight)
@@ -215,8 +219,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   test("generate valid commitment with some outputs that don't materialize (default commitment format)") {
     val spec = CommitmentSpec(htlcs = Set.empty, commitTxFeerate = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
     val commitFee = commitTxTotalCost(localDustLimit, spec, DefaultCommitmentFormat)
-    val belowDust = (localDustLimit * 0.9).toMilliSatoshi
-    val belowDustWithFee = (localDustLimit + commitFee * 0.9).toMilliSatoshi
+    val belowDust = (localDustLimit times 0.9).toMilliSatoshi
+    val belowDustWithFee = ((localDustLimit plus commitFee) times 0.9).toMilliSatoshi
 
     {
       val toRemoteFundeeBelowDust = spec.copy(toRemote = belowDust)
@@ -250,7 +254,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("generate valid commitment and htlc transactions (default commitment format)") {
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
+    val finalPubKeyScript = ByteVector.view(Script.write(Script.pay2wpkh(new PrivateKey(randomBytes32()).publicKey)))
     val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
 
     // htlc1 and htlc2 are regular IN/OUT htlcs
@@ -260,12 +264,12 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val htlc2 = UpdateAddHtlc(ByteVector32.Zeroes, 1, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(310), TestConstants.emptyOnionPacket)
     // htlc3 and htlc4 are dust IN/OUT htlcs, with an amount large enough to be included in the commit tx, but too small to be claimed at 2nd stage
     val paymentPreimage3 = randomBytes32()
-    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (localDustLimit + weight2fee(feeratePerKw, DefaultCommitmentFormat.htlcTimeoutWeight)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(295), TestConstants.emptyOnionPacket)
+    val htlc3 = UpdateAddHtlc(ByteVector32.Zeroes, 2, (localDustLimit plus weight2fee(feeratePerKw, DefaultCommitmentFormat.htlcTimeoutWeight)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(295), TestConstants.emptyOnionPacket)
     val paymentPreimage4 = randomBytes32()
-    val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 3, (localDustLimit + weight2fee(feeratePerKw, DefaultCommitmentFormat.htlcSuccessWeight)).toMilliSatoshi, sha256(paymentPreimage4), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 3, (localDustLimit plus weight2fee(feeratePerKw, DefaultCommitmentFormat.htlcSuccessWeight)).toMilliSatoshi, sha256(paymentPreimage4), CltvExpiry(300), TestConstants.emptyOnionPacket)
     // htlc5 and htlc6 are dust IN/OUT htlcs
-    val htlc5 = UpdateAddHtlc(ByteVector32.Zeroes, 4, (localDustLimit * 0.9).toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(295), TestConstants.emptyOnionPacket)
-    val htlc6 = UpdateAddHtlc(ByteVector32.Zeroes, 5, (localDustLimit * 0.9).toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(305), TestConstants.emptyOnionPacket)
+    val htlc5 = UpdateAddHtlc(ByteVector32.Zeroes, 4, (localDustLimit times 0.9).toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(295), TestConstants.emptyOnionPacket)
+    val htlc6 = UpdateAddHtlc(ByteVector32.Zeroes, 5, (localDustLimit times 0.9).toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(305), TestConstants.emptyOnionPacket)
     val spec = CommitmentSpec(
       htlcs = Set(
         OutgoingHtlc(htlc1),
@@ -291,8 +295,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
     {
       assert(getCommitTxNumber(commitTx.tx, isFunder = true, localPaymentPriv.publicKey, remotePaymentPriv.publicKey) == commitTxNumber)
-      val hash = Crypto.sha256(localPaymentPriv.publicKey.value ++ remotePaymentPriv.publicKey.value)
-      val num = Protocol.uint64(hash.takeRight(8).toArray, ByteOrder.BIG_ENDIAN) & 0xffffffffffffL
+      val hash = ByteVector.view(Crypto.sha256(localPaymentPriv.publicKey.value ++ remotePaymentPriv.publicKey.value))
+      val num = Pack.int64BE(hash.takeRight(8).toArray, 0) & 0xffffffffffffL
       val check = ((commitTx.tx.txIn.head.sequence & 0xffffff) << 24) | (commitTx.tx.lockTime & 0xffffff)
       assert((check ^ num) == commitTxNumber)
     }
@@ -432,8 +436,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   test("generate valid commitment with some outputs that don't materialize (anchor outputs)") {
     val spec = CommitmentSpec(htlcs = Set.empty, commitTxFeerate = feeratePerKw, toLocal = 400.millibtc.toMilliSatoshi, toRemote = 300.millibtc.toMilliSatoshi)
     val commitFeeAndAnchorCost = commitTxTotalCost(localDustLimit, spec, UnsafeLegacyAnchorOutputsCommitmentFormat)
-    val belowDust = (localDustLimit * 0.9).toMilliSatoshi
-    val belowDustWithFeeAndAnchors = (localDustLimit + commitFeeAndAnchorCost * 0.9).toMilliSatoshi
+    val belowDust = (localDustLimit times 0.9).toMilliSatoshi
+    val belowDustWithFeeAndAnchors = (localDustLimit plus commitFeeAndAnchorCost times 0.9).toMilliSatoshi
 
     {
       val outputs = makeCommitTxOutputs(localIsFunder = true, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, remotePaymentPriv.publicKey, localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localFundingPriv.publicKey, remoteFundingPriv.publicKey, spec, UnsafeLegacyAnchorOutputsCommitmentFormat)
@@ -479,7 +483,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("generate valid commitment and htlc transactions (anchor outputs)") {
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
+    val finalPubKeyScript = ByteVector.view(Script.write(Script.pay2wpkh(new PrivateKey(randomBytes32()).publicKey)))
     val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
 
     // htlc1, htlc2a and htlc2b are regular IN/OUT htlcs
@@ -494,8 +498,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
     val paymentPreimage4 = randomBytes32()
     val htlc4 = UpdateAddHtlc(ByteVector32.Zeroes, 4, (localDustLimit + weight2fee(feeratePerKw, UnsafeLegacyAnchorOutputsCommitmentFormat.htlcSuccessWeight)).toMilliSatoshi, sha256(paymentPreimage4), CltvExpiry(300), TestConstants.emptyOnionPacket)
     // htlc5 and htlc6 are dust IN/OUT htlcs
-    val htlc5 = UpdateAddHtlc(ByteVector32.Zeroes, 5, (localDustLimit * 0.9).toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(295), TestConstants.emptyOnionPacket)
-    val htlc6 = UpdateAddHtlc(ByteVector32.Zeroes, 6, (localDustLimit * 0.9).toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(305), TestConstants.emptyOnionPacket)
+    val htlc5 = UpdateAddHtlc(ByteVector32.Zeroes, 5, (localDustLimit times 0.9).toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(295), TestConstants.emptyOnionPacket)
+    val htlc6 = UpdateAddHtlc(ByteVector32.Zeroes, 6, (localDustLimit times 0.9).toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(305), TestConstants.emptyOnionPacket)
     // htlc7 and htlc8 are at the dust limit when we ignore 2nd-stage tx fees
     val htlc7 = UpdateAddHtlc(ByteVector32.Zeroes, 7, localDustLimit.toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(300), TestConstants.emptyOnionPacket)
     val htlc8 = UpdateAddHtlc(ByteVector32.Zeroes, 8, localDustLimit.toMilliSatoshi, sha256(randomBytes32()), CltvExpiry(302), TestConstants.emptyOnionPacket)
@@ -693,7 +697,7 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       // remote spends all htlc txs aggregated in a single tx
       val txIn = htlcTimeoutTxs.flatMap(_.tx.txIn) ++ htlcSuccessTxs.flatMap(_.tx.txIn)
       val txOut = htlcTimeoutTxs.flatMap(_.tx.txOut) ++ htlcSuccessTxs.flatMap(_.tx.txOut)
-      val aggregatedHtlcTx = Transaction(2, txIn, txOut, 0)
+      val aggregatedHtlcTx = new Transaction(2, txIn, txOut, 0)
       val claimHtlcDelayedPenaltyTxs = makeClaimHtlcDelayedOutputPenaltyTxs(aggregatedHtlcTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localDelayedPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       assert(claimHtlcDelayedPenaltyTxs.size === 5)
       val skipped = claimHtlcDelayedPenaltyTxs.collect { case Left(reason) => reason }
@@ -732,27 +736,27 @@ class TransactionsSpec extends AnyFunSuite with Logging {
   }
 
   test("sort the htlc outputs using BIP69 and cltv expiry") {
-    val localFundingPriv = PrivateKey(hex"a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
-    val remoteFundingPriv = PrivateKey(hex"a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2")
-    val localRevocationPriv = PrivateKey(hex"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3")
-    val localPaymentPriv = PrivateKey(hex"a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4")
-    val localDelayedPaymentPriv = PrivateKey(hex"a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5")
-    val remotePaymentPriv = PrivateKey(hex"a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
-    val localHtlcPriv = PrivateKey(hex"a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
-    val remoteHtlcPriv = PrivateKey(hex"a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
-    val commitInput = Funding.makeFundingInputInfo(ByteVector32(hex"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
+    val localFundingPriv = PrivateKey.fromHex("a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1")
+    val remoteFundingPriv = PrivateKey.fromHex("a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2")
+    val localRevocationPriv = PrivateKey.fromHex("a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3")
+    val localPaymentPriv = PrivateKey.fromHex("a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4")
+    val localDelayedPaymentPriv = PrivateKey.fromHex("a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5")
+    val remotePaymentPriv = PrivateKey.fromHex("a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6")
+    val localHtlcPriv = PrivateKey.fromHex("a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7")
+    val remoteHtlcPriv = PrivateKey.fromHex("a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8a8")
+    val commitInput = Funding.makeFundingInputInfo(new ByteVector32("a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
 
     // htlc1 and htlc2 are two regular incoming HTLCs with different amounts.
     // htlc2 and htlc3 have the same amounts and should be sorted according to their scriptPubKey
     // htlc4 is identical to htlc3 and htlc5 has same payment_hash/amount but different CLTV
-    val paymentPreimage1 = ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")
-    val paymentPreimage2 = ByteVector32(hex"2222222222222222222222222222222222222222222222222222222222222222")
-    val paymentPreimage3 = ByteVector32(hex"3333333333333333333333333333333333333333333333333333333333333333")
-    val htlc1 = UpdateAddHtlc(randomBytes32(), 1, millibtc2satoshi(MilliBtc(100)).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), TestConstants.emptyOnionPacket)
-    val htlc2 = UpdateAddHtlc(randomBytes32(), 2, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(300), TestConstants.emptyOnionPacket)
-    val htlc3 = UpdateAddHtlc(randomBytes32(), 3, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
-    val htlc4 = UpdateAddHtlc(randomBytes32(), 4, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
-    val htlc5 = UpdateAddHtlc(randomBytes32(), 5, millibtc2satoshi(MilliBtc(200)).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(301), TestConstants.emptyOnionPacket)
+    val paymentPreimage1 = new ByteVector32("1111111111111111111111111111111111111111111111111111111111111111")
+    val paymentPreimage2 = new ByteVector32("2222222222222222222222222222222222222222222222222222222222222222")
+    val paymentPreimage3 = new ByteVector32("3333333333333333333333333333333333333333333333333333333333333333")
+    val htlc1 = UpdateAddHtlc(randomBytes32(), 1, MilliBtc(100).toMilliSatoshi, sha256(paymentPreimage1), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc2 = UpdateAddHtlc(randomBytes32(), 2, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage2), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc3 = UpdateAddHtlc(randomBytes32(), 3, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc4 = UpdateAddHtlc(randomBytes32(), 4, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(300), TestConstants.emptyOnionPacket)
+    val htlc5 = UpdateAddHtlc(randomBytes32(), 5, MilliBtc(200).toMilliSatoshi, sha256(paymentPreimage3), CltvExpiry(301), TestConstants.emptyOnionPacket)
 
     val spec = CommitmentSpec(
       htlcs = Set(
@@ -763,8 +767,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
         OutgoingHtlc(htlc5)
       ),
       commitTxFeerate = feeratePerKw,
-      toLocal = millibtc2satoshi(MilliBtc(400)).toMilliSatoshi,
-      toRemote = millibtc2satoshi(MilliBtc(300)).toMilliSatoshi)
+      toLocal = MilliBtc(400).toMilliSatoshi,
+      toRemote = MilliBtc(300).toMilliSatoshi)
 
     val commitTxNumber = 0x404142434446L
     val (commitTx, outputs, htlcTxs) = {
@@ -801,8 +805,8 @@ class TransactionsSpec extends AnyFunSuite with Logging {
 
   test("find our output in closing tx") {
     val commitInput = Funding.makeFundingInputInfo(randomBytes32(), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
-    val localPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
-    val remotePubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(randomBytes32()).publicKey))
+    val localPubKeyScript = ByteVector.view(Script.write(Script.pay2wpkh(new PrivateKey(randomBytes32()).publicKey)))
+    val remotePubKeyScript = ByteVector.view(Script.write(Script.pay2wpkh(new PrivateKey(randomBytes32()).publicKey)))
 
     {
       // Different amounts, both outputs untrimmed, local is funder:
@@ -885,11 +889,11 @@ class TransactionsSpec extends AnyFunSuite with Logging {
       val htlcs = htlcRegex.findAllIn(s).map(l => {
         val htlcRegex(direction, amount) = l
         direction match {
-          case "offered" => htlcOut(Satoshi(amount.toLong))
-          case "received" => htlcIn(Satoshi(amount.toLong))
+          case "offered" => htlcOut(new Satoshi(amount.toLong))
+          case "received" => htlcIn(new Satoshi(amount.toLong))
         }
       }).toSet
-      TestVector(name, CommitmentSpec(htlcs, FeeratePerKw(feerate_per_kw.toLong.sat), MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), Satoshi(fee.toLong))
+      TestVector(name, CommitmentSpec(htlcs, FeeratePerKw(new Satoshi(feerate_per_kw.toLong)), MilliSatoshi(to_local_msat.toLong), MilliSatoshi(to_remote_msat.toLong)), new Satoshi(fee.toLong))
     }).toSeq
 
     assert(tests.size === 30, "there were 15 tests at b201efe0546120c14bf154ce5f4e18da7243fe7a") // simple non-reg to make sure we are not missing tests

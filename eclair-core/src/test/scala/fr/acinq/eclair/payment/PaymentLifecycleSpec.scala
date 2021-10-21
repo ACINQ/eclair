@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorRef
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
@@ -43,6 +43,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
+import KotlinUtils._
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -57,7 +58,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   val defaultMaxFee = 4260000 msat // 3% of defaultAmountMsat
   val defaultExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(40000)
   val defaultPaymentPreimage = randomBytes32()
-  val defaultPaymentHash = Crypto.sha256(defaultPaymentPreimage)
+  val defaultPaymentHash = defaultPaymentPreimage.sha256()
   val defaultOrigin = Origin.LocalCold(UUID.randomUUID())
   val defaultExternalId = UUID.randomUUID().toString
   val defaultInvoice = PaymentRequest(Block.RegtestGenesisBlock.hash, None, defaultPaymentHash, priv_d, Left("test"), Channel.MIN_CLTV_EXPIRY_DELTA)
@@ -679,7 +680,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_bh)
     router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_hb)
     assert(watcher.expectMsgType[ValidateRequest].ann === chan_bh)
-    watcher.send(router, ValidateResult(chan_bh, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_h)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
+    watcher.send(router, ValidateResult(chan_bh, Right((new Transaction(0, Nil, new TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_h)))) :: Nil, 0), UtxoStatus.Unspent))))
     watcher.expectMsgType[WatchExternalChannelSpent]
 
     val payFixture = createPaymentLifecycle()

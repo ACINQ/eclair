@@ -17,7 +17,7 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, DeterministicWallet, OutPoint, Satoshi, SatoshiLong, TxOut}
 import fr.acinq.eclair.Features._
@@ -32,6 +32,7 @@ import fr.acinq.eclair.wire.protocol.Onion.{ChannelRelayTlvPayload, FinalTlvPayl
 import fr.acinq.eclair.wire.protocol.OnionTlv.{AmountToForward, OutgoingCltv, PaymentData}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, nodeFee, randomBytes32, randomKey}
+import fr.acinq.eclair.KotlinUtils._
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.Attempt
@@ -279,7 +280,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
   }
 
   test("fail to decrypt when payment hash doesn't match associated data") {
-    val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash.reverse, hops, Onion.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret))
+    val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash.reversed(), hops, Onion.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret))
     val add = UpdateAddHtlc(randomBytes32(), 1, firstAmount, paymentHash, firstExpiry, onion.packet)
     val Left(failure) = decrypt(add, priv_b.privateKey)
     assert(failure.isInstanceOf[InvalidOnionHmac])
@@ -366,7 +367,7 @@ object PaymentPacketSpec {
   def makeCommitments(channelId: ByteVector32, testAvailableBalanceForSend: MilliSatoshi = 50000000 msat, testAvailableBalanceForReceive: MilliSatoshi = 50000000 msat, testCapacity: Satoshi = 100000 sat): Commitments = {
     val params = LocalParams(null, null, null, null, null, null, null, 0, isFunder = true, null, None, null)
     val remoteParams = RemoteParams(randomKey().publicKey, null, null, null, null, null, maxAcceptedHtlcs = 0, null, null, null, null, null, null, None)
-    val commitInput = InputInfo(OutPoint(randomBytes32(), 1), TxOut(testCapacity, Nil), Nil)
+    val commitInput = InputInfo(new OutPoint(randomBytes32(), 1), new TxOut(testCapacity, Nil), Nil)
     new Commitments(channelId, ChannelConfig.standard, ChannelFeatures(), params, remoteParams, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, commitInput, null) {
       override lazy val availableBalanceForSend: MilliSatoshi = testAvailableBalanceForSend.max(0 msat)
       override lazy val availableBalanceForReceive: MilliSatoshi = testAvailableBalanceForReceive.max(0 msat)
@@ -396,7 +397,7 @@ object PaymentPacketSpec {
   val currentBlockCount = 400000
   val finalExpiry = CltvExpiry(currentBlockCount) + Channel.MIN_CLTV_EXPIRY_DELTA
   val paymentPreimage = randomBytes32()
-  val paymentHash = Crypto.sha256(paymentPreimage)
+  val paymentHash = paymentPreimage.sha256()
   val paymentSecret = randomBytes32()
 
   val expiry_de = finalExpiry

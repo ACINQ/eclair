@@ -16,12 +16,15 @@
 
 package fr.acinq.eclair.router
 
+import java.util.UUID
+
 import akka.Done
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated, typed}
 import akka.event.DiagnosticLoggingAdapter
 import akka.event.Logging.MDC
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
+import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -38,6 +41,8 @@ import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.wire.protocol._
 import kamon.context.Context
+import KotlinUtils._
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.collection.immutable.SortedMap

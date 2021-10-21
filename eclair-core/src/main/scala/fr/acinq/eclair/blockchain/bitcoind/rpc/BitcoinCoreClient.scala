@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
-import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
 import fr.acinq.eclair.{TimestampSecond, TxCoordinates}
@@ -29,6 +28,8 @@ import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.Formats
 import org.json4s.JsonAST._
+import fr.acinq.eclair.KotlinUtils._
+import fr.acinq.secp256k1.Hex
 import scodec.bits.ByteVector
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -138,7 +139,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       }
       // with a verbosity of 0, getblock returns the raw serialized block
       block <- rpcClient.invoke("getblock", blockhash, 0).collect { case JString(b) => Block.read(b) }
-      prevblockhash = block.header.hashPreviousBlock.reverse
+      prevblockhash = block.header.hashPreviousBlock.reversed()
       res <- block.tx.find(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
         case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
         case Some(tx) => Future.successful(tx)
@@ -152,7 +153,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       // fee is optional and only included for sent transactions
       val fee = tx \ "fee" match {
         case JDecimal(fee) => toSatoshi(fee)
-        case _ => Satoshi(0)
+        case _ => new Satoshi(0)
       }
       val JInt(confirmations) = tx \ "confirmations"
       // while transactions are still in the mempool, block hash will no be included
@@ -181,11 +182,11 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   }
 
   def makeFundingTx(pubkeyScript: ByteVector, amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
-    val partialFundingTx = Transaction(
-      version = 2,
-      txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, pubkeyScript) :: Nil,
-      lockTime = 0)
+    val partialFundingTx =new Transaction(
+      2,
+      Seq.empty[TxIn],
+      new TxOut(amount, pubkeyScript) :: Nil,
+      0)
     for {
       feerate <- mempoolMinFee().map(minFee => FeeratePerKw(minFee).max(targetFeerate))
       // we ask bitcoin core to add inputs to the funding tx, and use the specified change address
@@ -193,13 +194,16 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       // now let's sign the funding tx
       SignTransactionResponse(fundingTx, true) <- signTransactionOrUnlock(fundTxResponse.tx)
       // there will probably be a change output, so we need to find which output is ours
-      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript) match {
+      outputIndex <- Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript.toArray) match {
         case Right(outputIndex) => Future.successful(outputIndex)
         case Left(skipped) => Future.failed(new RuntimeException(skipped.toString))
       }
       _ = logger.debug(s"created funding txid=${fundingTx.txid} outputIndex=$outputIndex fee=${fundTxResponse.fee}")
     } yield MakeFundingTxResponse(fundingTx, outputIndex, fundTxResponse.fee)
   }
+
+  def makeFundingTx(pubkeyScript: Array[Byte], amount: Satoshi, targetFeerate: FeeratePerKw)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
+    makeFundingTx(ByteVector.view(pubkeyScript), amount, targetFeerate)
 
   def commit(tx: Transaction)(implicit ec: ExecutionContext): Future[Boolean] = publishTransaction(tx).transformWith {
     case Success(_) => Future.successful(true)
@@ -318,10 +322,10 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
     JString(address) <- rpcClient.invoke("getnewaddress", label)
   } yield address
 
-  def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[Crypto.PublicKey] = for {
+  def getReceivePubkey(receiveAddress: Option[String] = None)(implicit ec: ExecutionContext): Future[PublicKey] = for {
     address <- receiveAddress.map(Future.successful).getOrElse(getReceiveAddress())
     JString(rawKey) <- rpcClient.invoke("getaddressinfo", address).map(_ \ "pubkey")
-  } yield PublicKey(ByteVector.fromValidHex(rawKey))
+  } yield PublicKey.fromHex(rawKey)
 
   /**
    * @return the public key hash of a bech32 raw change address.
@@ -329,8 +333,8 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
   def getChangeAddress()(implicit ec: ExecutionContext): Future[ByteVector] = {
     rpcClient.invoke("getrawchangeaddress", "bech32").collect {
       case JString(changeAddress) =>
-        val (_, _, pubkeyHash) = Bech32.decodeWitnessAddress(changeAddress)
-        pubkeyHash
+        val pubkeyHash = Bech32.decodeWitnessAddress(changeAddress).component3()
+        ByteVector.view(pubkeyHash)
     }
   }
 
@@ -434,7 +438,7 @@ object BitcoinCoreClient {
   }
 
   case class FundTransactionResponse(tx: Transaction, fee: Satoshi, changePosition: Option[Int]) {
-    val amountIn: Satoshi = fee + tx.txOut.map(_.amount).sum
+    val amountIn: Satoshi = fee plus tx.txOut.map(_.amount).sum
   }
 
   case class PreviousTx(txid: ByteVector32, vout: Long, scriptPubKey: String, redeemScript: String, witnessScript: String, amount: BigDecimal)
@@ -445,7 +449,7 @@ object BitcoinCoreClient {
       inputInfo.outPoint.index,
       inputInfo.txOut.publicKeyScript.toHex,
       inputInfo.redeemScript.toHex,
-      ScriptWitness.write(witness).toHex,
+      Hex.encode(witness.serializer().write(witness)),
       inputInfo.txOut.amount.toBtc.toBigDecimal
     )
   }
@@ -473,6 +477,6 @@ object BitcoinCoreClient {
 
   case class Utxo(txid: ByteVector32, amount: MilliBtc, confirmations: Long, safe: Boolean, label_opt: Option[String])
 
-  def toSatoshi(btcAmount: BigDecimal): Satoshi = Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
+  def toSatoshi(btcAmount: BigDecimal): Satoshi = new Satoshi(btcAmount.bigDecimal.scaleByPowerOfTen(8).longValue)
 
 }

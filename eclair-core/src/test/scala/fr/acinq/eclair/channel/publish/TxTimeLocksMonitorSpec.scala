@@ -27,6 +27,7 @@ import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, Stop, TimeLo
 import fr.acinq.eclair.{NodeParams, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
+import fr.acinq.eclair.KotlinUtils._
 
 import java.util.UUID
 import scala.concurrent.duration.DurationInt
@@ -48,7 +49,7 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("transaction with absolute delay") { f =>
     import f._
 
-    val tx = Transaction(2, Nil, TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, nodeParams.currentBlockHeight + 3)
+    val tx =new Transaction(2, Nil, new TxOut(150_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, nodeParams.currentBlockHeight + 3)
     monitor ! CheckTx(probe.ref, tx, "absolute-delay")
     probe.expectNoMessage(100 millis)
 
@@ -62,8 +63,8 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("transaction with relative delay") { f =>
     import f._
 
-    val parentTx = Transaction(2, Nil, TxOut(30_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
-    val tx = Transaction(2, TxIn(OutPoint(parentTx, 0), Nil, 3) :: Nil, TxOut(25_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+    val parentTx = new Transaction(2, Nil, new TxOut(30_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+    val tx = new Transaction(2, new TxIn(new OutPoint(parentTx, 0), Nil, 3) :: Nil, new TxOut(25_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
     monitor ! CheckTx(probe.ref, tx, "relative-delay")
 
     val w = watcher.expectMsgType[WatchParentTxConfirmed]
@@ -78,12 +79,12 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("transaction with multiple relative delays") { f =>
     import f._
 
-    val parentTx1 = Transaction(2, Nil, TxOut(30_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: TxOut(35_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
-    val parentTx2 = Transaction(2, Nil, TxOut(45_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
-    val tx = Transaction(
+    val parentTx1 =new Transaction(2, Nil, new TxOut(30_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: new TxOut(35_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+    val parentTx2 =new Transaction(2, Nil, new TxOut(45_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+    val tx = new Transaction(
       2,
-      TxIn(OutPoint(parentTx1, 0), Nil, 3) :: TxIn(OutPoint(parentTx1, 1), Nil, 1) :: TxIn(OutPoint(parentTx2, 0), Nil, 1) :: Nil,
-      TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
+      new TxIn(new OutPoint(parentTx1, 0), Nil, 3) :: new TxIn(new OutPoint(parentTx1, 1), Nil, 1) :: new TxIn(new OutPoint(parentTx2, 0), Nil, 1) :: Nil,
+      new TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
       0
     )
     monitor ! CheckTx(probe.ref, tx, "many-relative-delays")
@@ -105,12 +106,12 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("transaction with absolute and relative delay") { f =>
     import f._
 
-    val parentTx1 = Transaction(2, Nil, TxOut(30_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
-    val parentTx2 = Transaction(2, Nil, TxOut(45_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
-    val tx = Transaction(
+    val parentTx1 = new Transaction(2, Nil, new TxOut(30_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+    val parentTx2 = new Transaction(2, Nil, new TxOut(45_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, 0)
+    val tx = new Transaction(
       2,
-      TxIn(OutPoint(parentTx1, 0), Nil, 3) :: TxIn(OutPoint(parentTx2, 0), Nil, 6) :: Nil,
-      TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
+      new TxIn(new OutPoint(parentTx1, 0), Nil, 3) :: new TxIn(new OutPoint(parentTx2, 0), Nil, 6) :: Nil,
+      new TxOut(50_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
       nodeParams.currentBlockHeight + 3
     )
     monitor ! CheckTx(probe.ref, tx, "absolute-and-relative-delays")
@@ -134,7 +135,7 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
   test("stop actor before time locks") { f =>
     import f._
 
-    val tx = Transaction(2, Nil, TxOut(100_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, nodeParams.currentBlockHeight + 3)
+    val tx =new Transaction(2, Nil, new TxOut(100_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, nodeParams.currentBlockHeight + 3)
     monitor ! CheckTx(probe.ref, tx, "absolute-delay")
     probe.watch(monitor.toClassic)
     probe.expectNoMessage(100 millis)

@@ -19,6 +19,7 @@ package fr.acinq.eclair.channel.publish
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.eclair.KotlinUtils._
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -82,10 +83,10 @@ object ReplaceableTxPublisher {
     val dummySignedClaimAnchorTx = addSigs(unsignedTx, PlaceHolderSig)
     // NB: we assume that our bitcoind wallet uses only P2WPKH inputs when funding txs.
     val estimatedWeight = commitTx.weight() + dummySignedClaimAnchorTx.tx.weight() + claimP2WPKHOutputWitnessWeight * (dummySignedClaimAnchorTx.tx.txIn.size - 1)
-    val targetFee = weight2fee(targetFeerate, estimatedWeight) - weight2fee(currentFeerate, commitTx.weight())
-    val amountOut = dustLimit.max(amountIn - targetFee)
-    val updatedAnchorTx = unsignedTx.copy(tx = unsignedTx.tx.copy(txOut = unsignedTx.tx.txOut.head.copy(amount = amountOut) :: Nil))
-    val fee = amountIn - updatedAnchorTx.tx.txOut.map(_.amount).sum
+    val targetFee = weight2fee(targetFeerate, estimatedWeight) minus weight2fee(currentFeerate, commitTx.weight())
+    val amountOut = dustLimit.max(amountIn minus targetFee)
+    val updatedAnchorTx = unsignedTx.copy(tx = unsignedTx.tx.updateOutputs(unsignedTx.tx.txOut.get(0).updateAmount(amountOut) :: Nil))
+    val fee = amountIn minus updatedAnchorTx.tx.txOut.map(_.amount).sum
     (updatedAnchorTx, fee)
   }
 
@@ -103,19 +104,19 @@ object ReplaceableTxPublisher {
     // We adjust the change output to obtain the targeted feerate.
     val estimatedWeight = dummySignedTx.tx.weight() + claimP2WPKHOutputWitnessWeight * (dummySignedTx.tx.txIn.size - 1)
     val targetFee = weight2fee(targetFeerate, estimatedWeight)
-    val changeAmount = amountIn - dummySignedTx.tx.txOut.head.amount - targetFee
+    val changeAmount = amountIn minus dummySignedTx.tx.txOut.get(0).amount minus targetFee
     val updatedHtlcTx = if (dummySignedTx.tx.txOut.length == 2 && changeAmount >= commitments.localParams.dustLimit) {
       unsignedTx match {
-        case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = htlcSuccess.tx.copy(txOut = Seq(htlcSuccess.tx.txOut.head, htlcSuccess.tx.txOut(1).copy(amount = changeAmount))))
-        case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = htlcTimeout.tx.copy(txOut = Seq(htlcTimeout.tx.txOut.head, htlcTimeout.tx.txOut(1).copy(amount = changeAmount))))
+        case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = htlcSuccess.tx.updateOutputs(Seq(htlcSuccess.tx.txOut.head, htlcSuccess.tx.txOut(1).updateAmount(changeAmount))))
+        case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = htlcTimeout.tx.updateOutputs(Seq(htlcTimeout.tx.txOut.head, htlcTimeout.tx.txOut(1).updateAmount(changeAmount))))
       }
     } else {
       unsignedTx match {
-        case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = htlcSuccess.tx.copy(txOut = Seq(htlcSuccess.tx.txOut.head)))
-        case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = htlcTimeout.tx.copy(txOut = Seq(htlcTimeout.tx.txOut.head)))
+        case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = htlcSuccess.tx.updateOutputs(Seq(htlcSuccess.tx.txOut.head)))
+        case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = htlcTimeout.tx.updateOutputs(Seq(htlcTimeout.tx.txOut.head)))
       }
     }
-    val fee = amountIn - updatedHtlcTx.tx.txOut.map(_.amount).sum
+    val fee = amountIn minus updatedHtlcTx.tx.txOut.map(_.amount).sum
     (updatedHtlcTx, fee)
   }
 
@@ -147,7 +148,7 @@ object ReplaceableTxPublisher {
       txInfo match {
         case tx: HtlcSuccessTx =>
           commitments.localChanges.all.collectFirst {
-            case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == tx.paymentHash => u.paymentPreimage
+            case u: UpdateFulfillHtlc if u.paymentPreimage.sha256() == tx.paymentHash => u.paymentPreimage
           }.flatMap(preimage => {
             commitments.localCommit.htlcTxsAndRemoteSigs.collectFirst {
               case HtlcTxAndRemoteSig(HtlcSuccessTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => HtlcSuccess(tx, remoteSig, preimage)
@@ -310,7 +311,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         context.pipeToSelf(bitcoinClient.signTransaction(signedHtlcTx.tx, Seq(inputInfo), allowIncomplete = true).map(signTxResponse => {
           // NB: bitcoind versions older than 0.21.1 messes up the witness stack for our htlc input, so we need to restore it.
           // See https://github.com/bitcoin/bitcoin/issues/21151
-          signedHtlcTx.tx.copy(txIn = signedHtlcTx.tx.txIn.head +: signTxResponse.tx.txIn.tail)
+          signedHtlcTx.tx.updateInputs(signedHtlcTx.tx.txIn.head +: signTxResponse.tx.txIn.tail)
         })) {
           case Success(signedTx) => PublishSignedTx(signedTx)
           case Failure(reason) => UnknownFailure(reason)
@@ -386,7 +387,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     // Thus we have: anchorFeerate = targetFeerate + (weight-commit-tx / weight-anchor-tx) * (targetFeerate - commitTxFeerate)
     // If we use the smallest weight possible for the anchor tx, the feerate we use will thus be greater than what we want,
     // and we can adjust it afterwards by raising the change output amount.
-    val anchorFeerate = targetFeerate + FeeratePerKw(targetFeerate.feerate - commitFeerate.feerate) * commitTx.weight() / claimAnchorOutputMinWeight
+    val anchorFeerate = targetFeerate + FeeratePerKw(targetFeerate.feerate minus commitFeerate.feerate) * commitTx.weight() / claimAnchorOutputMinWeight
     // NB: fundrawtransaction requires at least one output, and may add at most one additional change output.
     // Since the purpose of this transaction is just to do a CPFP, the resulting tx should have a single change output
     // (note that bitcoind doesn't let us publish a transaction with no outputs).
@@ -396,32 +397,32 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     // That means bitcoind will not take our anchor input's weight into account when adding inputs to set the fee.
     // That's ok, we can increase the fee later by decreasing the output amount. But we need to ensure we'll have enough
     // to cover the weight of our anchor input, which is why we set it to the following value.
-    val dummyChangeAmount = weight2fee(anchorFeerate, claimAnchorOutputMinWeight) + dustLimit
-    val txNotFunded = Transaction(2, Nil, TxOut(dummyChangeAmount, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil, 0)
+    val dummyChangeAmount = weight2fee(anchorFeerate, claimAnchorOutputMinWeight) plus dustLimit
+    val txNotFunded = new Transaction(2, Nil, new TxOut(dummyChangeAmount, Script.pay2wpkh(PlaceHolderPubKey)) :: Nil, 0)
     bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(anchorFeerate, lockUtxos = true)).flatMap(fundTxResponse => {
       // We merge the outputs if there's more than one.
       fundTxResponse.changePosition match {
         case Some(changePos) =>
           val changeOutput = fundTxResponse.tx.txOut(changePos)
-          val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(changeOutput.copy(amount = changeOutput.amount + dummyChangeAmount)))
+          val txSingleOutput = fundTxResponse.tx.updateOutputs(Seq(changeOutput.updateAmount(changeOutput.amount plus dummyChangeAmount)))
           Future.successful(fundTxResponse.copy(tx = txSingleOutput))
         case None =>
           bitcoinClient.getChangeAddress().map(pubkeyHash => {
-            val txSingleOutput = fundTxResponse.tx.copy(txOut = Seq(TxOut(dummyChangeAmount, Script.pay2wpkh(pubkeyHash))))
+            val txSingleOutput = fundTxResponse.tx.updateOutputs(Seq(new TxOut(dummyChangeAmount, Script.pay2wpkh(pubkeyHash.toArray))))
             fundTxResponse.copy(tx = txSingleOutput)
           })
       }
     }).map(fundTxResponse => {
       require(fundTxResponse.tx.txOut.size == 1, "funded transaction should have a single change output")
       // NB: we insert the anchor input in the *first* position because our signing helpers only sign input #0.
-      val unsignedTx = txInfo.copy(tx = fundTxResponse.tx.copy(txIn = txInfo.tx.txIn.head +: fundTxResponse.tx.txIn))
-      adjustAnchorOutputChange(unsignedTx, commitTx, fundTxResponse.amountIn + AnchorOutputsCommitmentFormat.anchorAmount, commitFeerate, targetFeerate, dustLimit)
+      val unsignedTx = txInfo.copy(tx = fundTxResponse.tx.updateInputs(txInfo.tx.txIn.head +: fundTxResponse.tx.txIn))
+      adjustAnchorOutputChange(unsignedTx, commitTx, fundTxResponse.amountIn plus AnchorOutputsCommitmentFormat.anchorAmount, commitFeerate, targetFeerate, dustLimit)
     })
   }
 
   private def addInputs(txInfo: HtlcTx, targetFeerate: FeeratePerKw, commitments: Commitments): Future[(HtlcTx, Satoshi)] = {
     // NB: fundrawtransaction doesn't support non-wallet inputs, so we clear the input and re-add it later.
-    val txNotFunded = txInfo.tx.copy(txIn = Nil, txOut = txInfo.tx.txOut.head.copy(amount = commitments.localParams.dustLimit) :: Nil)
+    val txNotFunded = txInfo.tx.updateInputs(Nil).updateOutputs(txInfo.tx.txOut.head.updateAmount(commitments.localParams.dustLimit) :: Nil)
     val htlcTxWeight = txInfo match {
       case _: HtlcSuccessTx => commitments.commitmentFormat.htlcSuccessWeight
       case _: HtlcTimeoutTx => commitments.commitmentFormat.htlcTimeoutWeight
@@ -441,15 +442,15 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     bitcoinClient.fundTransaction(txNotFunded, FundTransactionOptions(targetFeerate * weightRatio, lockUtxos = true, changePosition = Some(1))).map(fundTxResponse => {
       // We add the HTLC input (from the commit tx) and restore the HTLC output.
       // NB: we can't modify them because they are signed by our peer (with SIGHASH_SINGLE | SIGHASH_ANYONECANPAY).
-      val txWithHtlcInput = fundTxResponse.tx.copy(
-        txIn = txInfo.tx.txIn ++ fundTxResponse.tx.txIn,
-        txOut = txInfo.tx.txOut ++ fundTxResponse.tx.txOut.tail
-      )
+      val txWithHtlcInput = fundTxResponse.tx
+        .updateInputs(txInfo.tx.txIn ++ fundTxResponse.tx.txIn)
+        .updateOutputs(txInfo.tx.txOut ++ fundTxResponse.tx.txOut.tail)
+
       val unsignedTx = txInfo match {
         case htlcSuccess: HtlcSuccessTx => htlcSuccess.copy(tx = txWithHtlcInput)
         case htlcTimeout: HtlcTimeoutTx => htlcTimeout.copy(tx = txWithHtlcInput)
       }
-      adjustHtlcTxChange(unsignedTx, fundTxResponse.amountIn + unsignedTx.input.txOut.amount, targetFeerate, commitments)
+      adjustHtlcTxChange(unsignedTx, fundTxResponse.amountIn plus unsignedTx.input.txOut.amount, targetFeerate, commitments)
     })
   }
 

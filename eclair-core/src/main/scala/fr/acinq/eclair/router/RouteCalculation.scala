@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.{ActorContext, ActorRef, Status}
 import akka.event.DiagnosticLoggingAdapter
 import com.softwaremill.quicklens.ModifyPimp
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi, SatoshiLong}
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair._
@@ -30,6 +30,7 @@ import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
+import KotlinUtils._
 import kamon.tag.TagSet
 
 import scala.annotation.tailrec
@@ -160,7 +161,7 @@ object RouteCalculation {
   }
 
   /** Bolt 11 routing hints don't include the channel's capacity, so we round up the maximum htlc amount. */
-  private def htlcMaxToCapacity(htlcMaximum: MilliSatoshi): Satoshi = htlcMaximum.truncateToSatoshi + 1.sat
+  private def htlcMaxToCapacity(htlcMaximum: MilliSatoshi): Satoshi = htlcMaximum.truncateToSatoshi plus 1.sat
 
   /** This method is used after a payment failed, and we want to exclude some nodes that we know are failing */
   def getIgnoredChannelDesc(channels: Map[ShortChannelId, PublicChannel], ignoreNodes: Set[PublicKey]): Iterable[ChannelDesc] = {

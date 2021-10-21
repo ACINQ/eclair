@@ -32,6 +32,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, TxConfirmed, T
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
+import fr.acinq.eclair.KotlinUtils._
 
 import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global

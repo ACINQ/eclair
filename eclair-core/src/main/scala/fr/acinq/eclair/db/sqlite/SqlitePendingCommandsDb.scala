@@ -58,7 +58,7 @@ class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with
 
   override def addSettlementCommand(channelId: ByteVector32, cmd: HtlcSettlementCommand): Unit = withMetrics("pending-relay/add", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO pending_settlement_commands VALUES (?, ?, ?)")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.setLong(2, cmd.id)
       statement.setBytes(3, cmdCodec.encode(cmd).require.toByteArray)
       statement.executeUpdate()
@@ -67,7 +67,7 @@ class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with
 
   override def removeSettlementCommand(channelId: ByteVector32, htlcId: Long): Unit = withMetrics("pending-relay/remove", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("DELETE FROM pending_settlement_commands WHERE channel_id=? AND htlc_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.setLong(2, htlcId)
       statement.executeUpdate()
     }
@@ -75,7 +75,7 @@ class SqlitePendingCommandsDb(sqlite: Connection) extends PendingCommandsDb with
 
   override def listSettlementCommands(channelId: ByteVector32): Seq[HtlcSettlementCommand] = withMetrics("pending-relay/list-channel", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("SELECT data FROM pending_settlement_commands WHERE channel_id=?")) { statement =>
-      statement.setBytes(1, channelId.toArray)
+      statement.setBytes(1, channelId.toByteArray)
       statement.executeQuery()
         .mapCodec(cmdCodec).toSeq
     }

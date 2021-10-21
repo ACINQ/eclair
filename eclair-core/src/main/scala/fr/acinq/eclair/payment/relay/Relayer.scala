@@ -23,7 +23,7 @@ import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{Actor, ActorRef, DiagnosticActorLogging, Props, typed}
 import akka.event.Logging.MDC
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment._

@@ -247,7 +247,7 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
         statement.setLong(2, commitmentNumber)
         statement.executeQuery
           .map { rs =>
-            (ByteVector32(rs.getByteVector32FromHex("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
+            (new ByteVector32(rs.getString("payment_hash")), CltvExpiry(rs.getLong("cltv_expiry")))
           }.toSeq
       }
     }

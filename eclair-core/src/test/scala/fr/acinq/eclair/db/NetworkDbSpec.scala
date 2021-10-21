@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.db
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, SatoshiLong}
+import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, PrivateKey, PublicKey, Satoshi, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Optional
 import fr.acinq.eclair.Features.VariableLengthOnion
 import fr.acinq.eclair.TestDatabases._
@@ -83,8 +82,8 @@ class NetworkDbSpec extends AnyFunSuite {
       val sig = ByteVector64.Zeroes
       val c = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, ShortChannelId(42), randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, sig, sig, sig, sig)
       val txid = ByteVector32.fromValidHex("0001" * 16)
-      db.addChannel(c, txid, Satoshi(42))
-      assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, Satoshi(42), None, None, None)))
+      db.addChannel(c, txid, new Satoshi(42))
+      assert(db.listChannels() === SortedMap(c.shortChannelId -> PublicChannel(c, txid, new Satoshi(42), None, None, None)))
     }
   }
 

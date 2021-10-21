@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.wire.protocol
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.wire.protocol.CommonCodecs.{publicKey, shortchannelid, uint64, varint}
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
@@ -192,9 +192,9 @@ class TlvCodecsSpec extends AnyFunSuite {
       (hex"01 07 01000000000000", TlvStream[TestTlv](TestType1(281474976710656L))),
       (hex"01 08 0100000000000000", TlvStream[TestTlv](TestType1(72057594037927936L))),
       (hex"02 08 0000000000000226", TlvStream[TestTlv](TestType2(ShortChannelId(550)))),
-      (hex"03 31 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb 0000000000000231 0000000000000451", TlvStream[TestTlv](TestType3(PublicKey(hex"023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb"), 561, 1105))),
+      (hex"03 31 023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb 0000000000000231 0000000000000451", TlvStream[TestTlv](TestType3(PublicKey.fromHex("023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb"), 561, 1105))),
       (hex"fd00fe 02 0226", TlvStream[TestTlv](TestType254(550))),
-      (hex"01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451", TlvStream[TestTlv](TestType1(561), TestType2(ShortChannelId(1105)), TestType3(PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 561, 1105))),
+      (hex"01020231 02080000000000000451 033102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661900000000000002310000000000000451", TlvStream[TestTlv](TestType1(561), TestType2(ShortChannelId(1105)), TestType3(PublicKey.fromHex("02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), 561, 1105))),
       (hex"01020231 0b020451 fd00fe02002a", TlvStream[TestTlv](Seq(TestType1(561), TestType254(42)), Seq(GenericTlv(11, hex"0451"))))
     )
 

@@ -19,7 +19,7 @@ package fr.acinq.eclair.router
 import akka.actor.typed.scaladsl.adapter.actorRefAdapter
 import akka.actor.{Actor, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
@@ -32,6 +32,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
+import KotlinUtils._
 import org.scalatest.ParallelTestExecution
 import org.scalatest.funsuite.AnyFunSuiteLike
 
@@ -57,11 +58,11 @@ class RoutingSyncSpec extends TestKitBaseClass with AnyFunSuiteLike with Paralle
       case ValidateRequest(replyTo, c) =>
         val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(c.bitcoinKey1, c.bitcoinKey2)))
         val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(c.shortChannelId)
-        val fakeFundingTx = Transaction(
-          version = 2,
-          txIn = Seq.empty[TxIn],
-          txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
-          lockTime = 0)
+        val fakeFundingTx = new Transaction(
+          2,
+          Seq.empty[TxIn],
+          List.fill(outputIndex + 1)(new TxOut(new Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
+          0)
         replyTo ! ValidateResult(c, Right(fakeFundingTx, UtxoStatus.Unspent))
     }
   }
@@ -354,7 +355,7 @@ object RoutingSyncSpec {
     val channelUpdate_21 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv2, priv1.publicKey, shortChannelId, cltvExpiryDelta = CltvExpiryDelta(7), 0 msat, feeBaseMsat = 766000 msat, feeProportionalMillionths = 10, 500000000L msat, timestamp = timestamp)
     val nodeAnnouncement_1 = makeNodeAnnouncement(priv1, "a", Color(0, 0, 0), List(), TestConstants.Bob.nodeParams.features)
     val nodeAnnouncement_2 = makeNodeAnnouncement(priv2, "b", Color(0, 0, 0), List(), Features.empty)
-    val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21), None)
+    val publicChannel = PublicChannel(channelAnn_12, ByteVector32.Zeroes, new Satoshi(0), Some(channelUpdate_12), Some(channelUpdate_21), None)
     (publicChannel, nodeAnnouncement_1, nodeAnnouncement_2)
   }
 

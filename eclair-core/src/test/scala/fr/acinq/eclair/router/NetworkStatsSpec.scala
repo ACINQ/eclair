@@ -16,8 +16,9 @@
 
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.PublicKey
 import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
+import fr.acinq.eclair.KotlinUtils.OrderedSatoshi
 import fr.acinq.eclair.router.Router.{ChannelMeta, PublicChannel}
 import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, randomBytes32, randomBytes64, randomKey}
@@ -65,7 +66,7 @@ class NetworkStatsSpec extends AnyFunSuite {
     val channels = Seq.fill(500)(PublicChannel(
       fakeChannelAnnouncement(nodes(rand.nextInt(nodes.size)), nodes(rand.nextInt(nodes.size))),
       randomBytes32(),
-      Satoshi(1000 + rand.nextInt(10000)),
+      new Satoshi(1000 + rand.nextInt(10000)),
       Some(fakeChannelUpdate1(CltvExpiryDelta(12 + rand.nextInt(144)), MilliSatoshi(21000 + rand.nextInt(79000)), rand.nextInt(1000))),
       Some(fakeChannelUpdate2(CltvExpiryDelta(12 + rand.nextInt(144)), MilliSatoshi(21000 + rand.nextInt(79000)), rand.nextInt(1000))),
       None

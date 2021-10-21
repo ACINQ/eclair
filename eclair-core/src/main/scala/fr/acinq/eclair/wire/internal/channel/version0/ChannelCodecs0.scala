@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair.wire.internal.channel.version0
 
-import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.TimestampSecond
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, KeyPath, OutPoint, Transaction, TxOut}
+import fr.acinq.eclair.{MilliSatoshi, TimestampSecond}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -30,9 +30,12 @@ import fr.acinq.eclair.wire.protocol._
 import scodec.Codec
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
+import scodec.{Attempt, Codec}
+import shapeless.{::, HNil}
 
 import java.util.UUID
 import scala.concurrent.duration._
+import scala.jdk.CollectionConverters._
 
 /**
  * Those codecs are here solely for backward compatibility reasons.
@@ -43,14 +46,24 @@ private[channel] object ChannelCodecs0 {
 
   private[version0] object Codecs {
 
-    val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath].decodeOnly
+    implicit def bytearray2bytevector(input: Array[Byte]) : ByteVector  = ByteVector.view(input)
+
+    val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => {
+      val l1: java.util.List[java.lang.Long] = l.map(_.asInstanceOf[java.lang.Long]).asJava
+      new KeyPath(l1)
+    }, keyPath => {
+      keyPath.path.asScala.toList.map(_.toLong)
+    }).as[KeyPath]
 
     val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
       ("secretkeybytes" | bytes32) ::
         ("chaincode" | bytes32) ::
         ("depth" | uint16) ::
         ("path" | keyPathCodec) ::
-        ("parent" | int64)).as[ExtendedPrivateKey].decodeOnly
+        ("parent" | int64)).xmap(
+      { case a :: b :: c :: d :: e :: HNil => new ExtendedPrivateKey(a, b, c, d, e) },
+      { exp => exp.secretkeybytes :: exp.chaincode :: exp.depth :: exp.path :: exp.parent :: HNil }
+    )
 
     val channelVersionCodec: Codec[ChannelTypes0.ChannelVersion] = discriminatorWithDefault[ChannelTypes0.ChannelVersion](
       discriminator = discriminated[ChannelTypes0.ChannelVersion].by(byte)
@@ -147,10 +160,10 @@ private[channel] object ChannelCodecs0 {
 
     // this is a backward compatible codec (we used to store the sig as DER encoded), now we store it as 64-bytes
     val sig64OrDERCodec: Codec[ByteVector64] = Codec[ByteVector64](
-      (value: ByteVector64) => bytes(64).encode(value),
+      (value: ByteVector64) => bytes(64).encode(ByteVector.view(value.toByteArray)),
       (wire: BitVector) => bytes.decode(wire).map(_.map {
-        case bin64 if bin64.size == 64 => ByteVector64(bin64)
-        case der => Crypto.der2compact(der)
+        case bin64 if bin64.size == 64 => new ByteVector64(bin64.toArray)
+        case der => Crypto.der2compact(der.toArray)
       })
     )
 

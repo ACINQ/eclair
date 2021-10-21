@@ -17,6 +17,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.{Satoshi, SatoshiLong}
+import fr.acinq.eclair.KotlinUtils.OrderedSatoshi
 
 import scala.concurrent.Future
 
@@ -35,7 +36,7 @@ case class FeeratePerByte(feerate: Satoshi) {
 }
 
 object FeeratePerByte {
-  def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(FeeratePerKB(feeratePerKw).feerate / 1000)
+  def apply(feeratePerKw: FeeratePerKw): FeeratePerByte = FeeratePerByte(FeeratePerKB(feeratePerKw).feerate div 1000)
 }
 
 /** Fee rate in satoshi-per-kilo-bytes (1 kB = 1000 bytes). */
@@ -51,8 +52,8 @@ case class FeeratePerKB(feerate: Satoshi) extends Ordered[FeeratePerKB] {
 
 object FeeratePerKB {
   // @formatter:off
-  def apply(feeratePerByte: FeeratePerByte): FeeratePerKB = FeeratePerKB(feeratePerByte.feerate * 1000)
-  def apply(feeratePerKw: FeeratePerKw): FeeratePerKB = FeeratePerKB(feeratePerKw.feerate * 4)
+  def apply(feeratePerByte: FeeratePerByte): FeeratePerKB = FeeratePerKB(feeratePerByte.feerate times 1000)
+  def apply(feeratePerKw: FeeratePerKw): FeeratePerKB = FeeratePerKB(feeratePerKw.feerate times 4)
   // @formatter:on
 }
 
@@ -62,10 +63,10 @@ case class FeeratePerKw(feerate: Satoshi) extends Ordered[FeeratePerKw] {
   override def compare(that: FeeratePerKw): Int = feerate.compare(that.feerate)
   def max(other: FeeratePerKw): FeeratePerKw = if (this > other) this else other
   def min(other: FeeratePerKw): FeeratePerKw = if (this < other) this else other
-  def +(other: FeeratePerKw): FeeratePerKw = FeeratePerKw(feerate + other.feerate)
-  def *(d: Double): FeeratePerKw = FeeratePerKw(feerate * d)
-  def *(l: Long): FeeratePerKw = FeeratePerKw(feerate * l)
-  def /(l: Long): FeeratePerKw = FeeratePerKw(feerate / l)
+  def +(other: FeeratePerKw): FeeratePerKw = FeeratePerKw(feerate plus other.feerate)
+  def *(d: Double): FeeratePerKw = FeeratePerKw(feerate times d)
+  def *(l: Long): FeeratePerKw = FeeratePerKw(feerate times l)
+  def /(l: Long): FeeratePerKw = FeeratePerKw(feerate div l)
   def toLong: Long = feerate.toLong
   override def toString: String = s"$feerate/kw"
   // @formatter:on
@@ -99,7 +100,7 @@ object FeeratePerKw {
   val MinimumFeeratePerKw = FeeratePerKw(253 sat)
 
   // @formatter:off
-  def apply(feeratePerKB: FeeratePerKB): FeeratePerKw = MinimumFeeratePerKw.max(FeeratePerKw(feeratePerKB.feerate / 4))
+  def apply(feeratePerKB: FeeratePerKB): FeeratePerKw = MinimumFeeratePerKw.max(FeeratePerKw(feeratePerKB.feerate div 4))
   def apply(feeratePerByte: FeeratePerByte): FeeratePerKw = FeeratePerKw(FeeratePerKB(feeratePerByte))
   // @formatter:on
 }
