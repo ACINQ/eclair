@@ -27,7 +27,7 @@ import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.RouteResponse
+import fr.acinq.eclair.router.Router.{ChannelHop, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
@@ -260,14 +260,22 @@ object ColorSerializer extends MinimalSerializer({
   case c: Color => JString(c.toString)
 })
 
-object RouteResponseSerializer extends MinimalSerializer({
-  case route: RouteResponse =>
-    val nodeIds = route.routes.head.hops match {
-      case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
-      case Nil => Nil
-    }
-    JArray(nodeIds.toList.map(n => JString(n.toString)))
+// @formatter:off
+private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHop])
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops))
+
+private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
+object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
+  val nodeIds = route.hops match {
+    case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
+    case Nil => Nil
+  }
+  RouteNodeIdsJson(route.amount, nodeIds)
 })
+
+private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.lastUpdate.shortChannelId)))
+// @formatter:on
 
 // @formatter:off
 private case class PaymentFailureSummaryJson(amount: MilliSatoshi, route: Seq[PublicKey], message: String)
@@ -487,7 +495,6 @@ object JsonSerializers {
     CommandResponseSerializer +
     InputInfoSerializer +
     ColorSerializer +
-    RouteResponseSerializer +
     ThrowableSerializer +
     FailureMessageSerializer +
     FailureTypeSerializer +

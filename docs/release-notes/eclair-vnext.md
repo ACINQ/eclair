@@ -51,6 +51,10 @@ Examples:
 This release contains many other API updates:
 
 - `deleteinvoice` allows you to remove unpaid invoices (#1984)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` supports new output format `full` (#1969)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--ignoreNodeIds` to specify nodes you want to be ignored in path-finding (#1969)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--ignoreShortChannelIds` to specify channels you want to be ignored in path-finding (#1969)
+- `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--maxFeeMsat` to specify an upper bound of fees (#1969)
 
 Have a look at our [API documentation](https://acinq.github.io/eclair) for more details.
 
