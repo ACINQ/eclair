@@ -85,7 +85,7 @@ trait BitcoindService extends Logging {
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
     bitcoinrpcauthmethod = if (useCookie) {
-      SafeCookie(PATH_BITCOIND_DATADIR.getPath + "/regtest/.cookie")
+      SafeCookie(s"$PATH_BITCOIND_DATADIR/regtest/.cookie")
     } else {
       UserPassword("foo", "bar")
     }
