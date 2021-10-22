@@ -379,31 +379,21 @@ object Sphinx extends Logging {
   object RouteBlinding {
 
     /**
-     * @param publicKey            introduction node's public key (which cannot be blinded since the sender need to find a route to it).
-     * @param blindingEphemeralKey blinding tweak that can be used by the introduction node to derive the private key that
-     *                             lets it decrypt the encrypted payload.
-     * @param encryptedPayload     encrypted payload that can be decrypted with the introduction node's private key and the
-     *                             blinding ephemeral key.
-     */
-    case class IntroductionNode(publicKey: PublicKey, blindingEphemeralKey: PublicKey, encryptedPayload: ByteVector)
-
-    /**
      * @param blindedPublicKey     blinded public key, which hides the real public key.
-     * @param blindingEphemeralKey blinding tweak that can be used by the receiving node to derive the private key that
-     *                             matches the blinded public key.
      * @param encryptedPayload     encrypted payload that can be decrypted with the receiving node's private key and the
      *                             blinding ephemeral key.
      */
-    case class BlindedNode(blindedPublicKey: PublicKey, blindingEphemeralKey: PublicKey, encryptedPayload: ByteVector)
+    case class BlindedNode(blindedPublicKey: PublicKey, encryptedPayload: ByteVector)
 
     /**
-     * @param introductionNode the first node should not be blinded, otherwise the sender cannot locate it.
-     * @param blindedNodes     blinded nodes (not including the introduction node).
+     * @param introductionNodeId the first node, not be blinded so that the sender can locate it.
+     * @param blindingKey        blinding tweak that can be used by the introduction node to derive the private key that
+     *                           matches the blinded public key.
+     * @param blindedNodes       blinded nodes (including the introduction node).
      */
-    case class BlindedRoute(introductionNode: IntroductionNode, blindedNodes: Seq[BlindedNode]) {
-      val nodeIds: Seq[PublicKey] = introductionNode.publicKey +: blindedNodes.map(_.blindedPublicKey)
-      val blindingEphemeralKeys: Seq[PublicKey] = introductionNode.blindingEphemeralKey +: blindedNodes.map(_.blindingEphemeralKey)
-      val encryptedPayloads: Seq[ByteVector] = introductionNode.encryptedPayload +: blindedNodes.map(_.encryptedPayload)
+    case class BlindedRoute(introductionNodeId: PublicKey, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) {
+      val nodeIds: Seq[PublicKey] = introductionNodeId +: blindedNodes.tail.map(_.blindedPublicKey)
+      val encryptedPayloads: Seq[ByteVector] = blindedNodes.map(_.encryptedPayload)
     }
 
     /**
@@ -424,10 +414,9 @@ object Sphinx extends Logging {
         val rho = generateKey("rho", sharedSecret)
         val (encryptedPayload, mac) = ChaCha20Poly1305.encrypt(rho, zeroes(12), payload, ByteVector.empty)
         e = e.multiply(PrivateKey(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes)))
-        BlindedNode(blindedPublicKey, blindingKey, encryptedPayload ++ mac)
+        BlindedNode(blindedPublicKey, encryptedPayload ++ mac)
       }
-      val introductionNode = IntroductionNode(publicKeys.head, blindedHops.head.blindingEphemeralKey, blindedHops.head.encryptedPayload)
-      BlindedRoute(introductionNode, blindedHops.tail)
+      BlindedRoute(publicKeys.head, sessionKey.publicKey, blindedHops)
     }
 
     /**

@@ -367,31 +367,18 @@ class SphinxSpec extends AnyFunSuite {
   test("create blinded route (reference test vector)") {
     val sessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
-    assert(blindedRoute.introductionNode.publicKey === publicKeys(0))
-    assert(blindedRoute.introductionNode.blindingEphemeralKey === PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
-    assert(blindedRoute.introductionNode.encryptedPayload === hex"a245b767bd52520bdf8179b2dc681d1a36c2ededaf59429dfc4bea342fa460c9")
-    assert(blindedRoute.nodeIds === Seq(
-      publicKeys(0),
-      PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
-      PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
-      PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
-      PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
-    ))
+    assert(blindedRoute.introductionNodeId === publicKeys(0))
+    assert(blindedRoute.nodeIds(0) === publicKeys(0))
+    assert(blindedRoute.blindingKey == PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
     assert(blindedRoute.blindedNodes.map(_.blindedPublicKey) === Seq(
+      PublicKey(hex"02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"),
       PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
       PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
       PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
       PublicKey(hex"03a8588bc4a0a2f0d2fb8d5c0f8d062fb4d78bfba24a85d0ddeb4fd35dd3b34110"),
     ))
-    assert(blindedRoute.blindingEphemeralKeys === blindedRoute.introductionNode.blindingEphemeralKey +: blindedRoute.blindedNodes.map(_.blindingEphemeralKey))
-    assert(blindedRoute.blindedNodes.map(_.blindingEphemeralKey) === Seq(
-      PublicKey(hex"035cb4c003d58e16cc9207270b3596c2be3309eca64c36b208c946bbb599bfcad0"),
-      PublicKey(hex"02e105bc01a7af07074a1b0b1d9a112a1d89c6cd87cc4e2b6ba3a824731d9508bd"),
-      PublicKey(hex"0349164db5398925ef234002e62d2834da115b8eafc73436fab98ed12266e797cc"),
-      PublicKey(hex"020a6d1951916adcac22125063f62c35b3686f36e5db2f77073f3d35b19c7a118a"),
-    ))
-    assert(blindedRoute.encryptedPayloads === blindedRoute.introductionNode.encryptedPayload +: blindedRoute.blindedNodes.map(_.encryptedPayload))
     assert(blindedRoute.blindedNodes.map(_.encryptedPayload) === Seq(
+      hex"a245b767bd52520bdf8179b2dc681d1a36c2ededaf59429dfc4bea342fa460c9",
       hex"38748f94ead7de2a54fc43e8bb927bfc377dda7ed5a2e36b327b739c3c82a602e43e07e378f17cd46ee32d987eb8b6d03b3403acb095bd2868f640b92ea1",
       hex"a5ddddd448f15208452f4d65da0d53679e9652c8f9c9882d795388a492b4060afb5f2f556e36aed51d089f60f7c94f714b34cb30f1dac0c17f3855a827cb",
       hex"7ead52884542d180e76fec6ae2d137b6b4c771dc0d41390e992839dea0f4fcefb4a31589125e2ba535d0dc3bf1bc94e6c9039323579547921686d3b54c22",
@@ -399,36 +386,36 @@ class SphinxSpec extends AnyFunSuite {
     ))
 
     // The introduction point can decrypt its encrypted payload and obtain the next ephemeral public key.
-    val Success((payload0, ephKey1)) = RouteBlinding.decryptPayload(privKeys(0), blindedRoute.blindingEphemeralKeys(0), blindedRoute.encryptedPayloads(0))
+    val Success((payload0, ephKey1)) = RouteBlinding.decryptPayload(privKeys(0), blindedRoute.blindingKey, blindedRoute.blindedNodes(0).encryptedPayload)
     assert(payload0 === routeBlindingPayloads(0))
-    assert(ephKey1 === blindedRoute.blindingEphemeralKeys(1))
+    assert(ephKey1 === PublicKey(hex"035cb4c003d58e16cc9207270b3596c2be3309eca64c36b208c946bbb599bfcad0"))
 
     // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
-    assert(RouteBlinding.derivePrivateKey(privKeys(1), ephKey1).publicKey === blindedRoute.nodeIds(1))
-    val Success((payload1, ephKey2)) = RouteBlinding.decryptPayload(privKeys(1), ephKey1, blindedRoute.encryptedPayloads(1))
+    assert(RouteBlinding.derivePrivateKey(privKeys(1), ephKey1).publicKey === blindedRoute.blindedNodes(1).blindedPublicKey)
+    val Success((payload1, ephKey2)) = RouteBlinding.decryptPayload(privKeys(1), ephKey1, blindedRoute.blindedNodes(1).encryptedPayload)
     assert(payload1 === routeBlindingPayloads(1))
-    assert(ephKey2 === blindedRoute.blindingEphemeralKeys(2))
+    assert(ephKey2 === PublicKey(hex"02e105bc01a7af07074a1b0b1d9a112a1d89c6cd87cc4e2b6ba3a824731d9508bd"))
 
     // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
-    assert(RouteBlinding.derivePrivateKey(privKeys(2), ephKey2).publicKey === blindedRoute.nodeIds(2))
-    val Success((payload2, ephKey3)) = RouteBlinding.decryptPayload(privKeys(2), ephKey2, blindedRoute.encryptedPayloads(2))
+    assert(RouteBlinding.derivePrivateKey(privKeys(2), ephKey2).publicKey === blindedRoute.blindedNodes(2).blindedPublicKey)
+    val Success((payload2, ephKey3)) = RouteBlinding.decryptPayload(privKeys(2), ephKey2, blindedRoute.blindedNodes(2).encryptedPayload)
     assert(payload2 === routeBlindingPayloads(2))
-    assert(ephKey3 === blindedRoute.blindingEphemeralKeys(3))
+    assert(ephKey3 === PublicKey(hex"0349164db5398925ef234002e62d2834da115b8eafc73436fab98ed12266e797cc"))
 
     // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
-    assert(RouteBlinding.derivePrivateKey(privKeys(3), ephKey3).publicKey === blindedRoute.nodeIds(3))
-    val Success((payload3, ephKey4)) = RouteBlinding.decryptPayload(privKeys(3), ephKey3, blindedRoute.encryptedPayloads(3))
+    assert(RouteBlinding.derivePrivateKey(privKeys(3), ephKey3).publicKey === blindedRoute.blindedNodes(3).blindedPublicKey)
+    val Success((payload3, ephKey4)) = RouteBlinding.decryptPayload(privKeys(3), ephKey3, blindedRoute.blindedNodes(3).encryptedPayload)
     assert(payload3 === routeBlindingPayloads(3))
-    assert(ephKey4 === blindedRoute.blindingEphemeralKeys(4))
+    assert(ephKey4 === PublicKey(hex"020a6d1951916adcac22125063f62c35b3686f36e5db2f77073f3d35b19c7a118a"))
 
     // The last node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
-    assert(RouteBlinding.derivePrivateKey(privKeys(4), ephKey4).publicKey === blindedRoute.nodeIds(4))
-    val Success((payload4, _)) = RouteBlinding.decryptPayload(privKeys(4), ephKey4, blindedRoute.encryptedPayloads(4))
+    assert(RouteBlinding.derivePrivateKey(privKeys(4), ephKey4).publicKey === blindedRoute.blindedNodes(4).blindedPublicKey)
+    val Success((payload4, _)) = RouteBlinding.decryptPayload(privKeys(4), ephKey4, blindedRoute.blindedNodes(4).encryptedPayload)
     assert(payload4 === routeBlindingPayloads(4))
   }
 
   test("invalid blinded route") {
-    val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).encryptedPayloads
+    val encryptedPayloads = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads).blindedNodes.map(_.encryptedPayload)
     // Invalid node private key:
     val ephKey0 = sessionKey.publicKey
     assert(RouteBlinding.decryptPayload(privKeys(1), ephKey0, encryptedPayloads(0)).isFailure)
@@ -447,7 +434,8 @@ class SphinxSpec extends AnyFunSuite {
 
     // The sender obtains this information (e.g. from a Bolt11 invoice) and prepends two normal hops to reach the introduction node.
     val nodeIds = publicKeys.take(2) ++ blindedRoute.nodeIds
-    assert(blindedRoute.encryptedPayloads === Seq(
+    val encryptedPayloads = blindedRoute.blindedNodes.map(_.encryptedPayload)
+    assert(encryptedPayloads === Seq(
       hex"192256e1c0b289eee9a509bf94455c111838cab3f47010aeedc1367aa77cf44743c6cf49726ddb96b426cdbf6767e462f940638879805b04dd97d3bb823f",
       hex"38c490e3f4f29cc7af8620002fb497591e043377d19fdf4c9cc913600a4d7ae2842e538181790fe7309c85c845b360eab73c8eaa1068866d1a42fb3afb54",
       hex"d2706bb65ac8e1c2a319ba53a371d97dc237132b22ce4f7439983545e37164d792dc6925a3c7cde855ac824871c2417052efa103e5b53ec49a2bb4ab7cfc",
@@ -457,10 +445,10 @@ class SphinxSpec extends AnyFunSuite {
       TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(500)), OnionTlv.OutgoingCltv(CltvExpiry(1000)), OnionTlv.OutgoingChannelId(ShortChannelId(10))),
       TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(450)), OnionTlv.OutgoingCltv(CltvExpiry(900)), OnionTlv.OutgoingChannelId(ShortChannelId(15))),
       // The sender includes the blinding key and the first encrypted recipient data in the introduction node's payload.
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(400)), OnionTlv.OutgoingCltv(CltvExpiry(860)), OnionTlv.BlindingPoint(blindingEphemeralKey0), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(0))),
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(400)), OnionTlv.OutgoingCltv(CltvExpiry(860)), OnionTlv.BlindingPoint(blindingEphemeralKey0), OnionTlv.EncryptedRecipientData(encryptedPayloads(0))),
       // The sender includes the correct encrypted recipient data in each blinded node's payload.
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(encryptedPayloads(1))),
+      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(encryptedPayloads(2))),
     ).map(tlvs => OnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes)
 
     val senderSessionKey = PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")
