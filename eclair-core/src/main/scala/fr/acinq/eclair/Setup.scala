@@ -28,7 +28,8 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, RPCPassword, RPCSafeCookie}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.{Channel, Register}
@@ -51,7 +52,6 @@ import scodec.bits.ByteVector
 
 import java.io.File
 import java.net.InetSocketAddress
-import java.nio.file.Path
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
@@ -148,8 +148,8 @@ class Setup(val datadir: File,
       if (!name.isBlank) Some(name) else None
     }
     val rpcAuthMethod = config.getString("bitcoind.auth") match {
-      case "safecookie" => RPCSafeCookie(Path.of(config.getString("bitcoind.cookie")))
-      case "password" => RPCPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
+      case "safecookie" => SafeCookie(config.getString("bitcoind.cookie"))
+      case "password" => UserPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
       rpcAuthMethod = rpcAuthMethod,
