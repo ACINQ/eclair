@@ -368,6 +368,7 @@ class SphinxSpec extends AnyFunSuite {
     val sessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
     assert(blindedRoute.introductionNode.publicKey === publicKeys(0))
+    assert(blindedRoute.introductionNode.blindedPublicKey === PublicKey(hex"02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"))
     assert(blindedRoute.introductionNode.blindingEphemeralKey === PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
     assert(blindedRoute.introductionNode.encryptedPayload === hex"a245b767bd52520bdf8179b2dc681d1a36c2ededaf59429dfc4bea342fa460c9")
     assert(blindedRoute.nodeIds === Seq(
