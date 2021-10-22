@@ -62,7 +62,7 @@ object EncryptedRecipientDataCodecs {
     .typecase(UInt64(4), outgoingNodeId)
     .typecase(UInt64(6), recipientSecret)
 
-  val encryptedRecipientDataCodec: Codec[TlvStream[EncryptedRecipientDataTlv]] = TlvCodecs.lengthPrefixedTlvStream[EncryptedRecipientDataTlv](encryptedRecipientDataTlvCodec).complete
+  val encryptedRecipientDataCodec: Codec[TlvStream[EncryptedRecipientDataTlv]] = TlvCodecs.tlvStream[EncryptedRecipientDataTlv](encryptedRecipientDataTlvCodec).complete
 
   /**
    * Decrypt and decode the contents of an encrypted_recipient_data TLV field.

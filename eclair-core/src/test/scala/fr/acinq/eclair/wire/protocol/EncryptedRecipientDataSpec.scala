@@ -15,10 +15,10 @@ class EncryptedRecipientDataSpec extends AnyFunSuiteLike {
     val sessionKey = randomKey()
     val nodePrivKeys = Seq(randomKey(), randomKey(), randomKey(), randomKey())
     val payloads = Seq(
-      (TlvStream[EncryptedRecipientDataTlv](Padding(hex"000000"), OutgoingChannelId(ShortChannelId(561))), hex"0f 0103000000 02080000000000000231"),
-      (TlvStream[EncryptedRecipientDataTlv](OutgoingNodeId(PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))), hex"23 0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"),
-      (TlvStream[EncryptedRecipientDataTlv](RecipientSecret(hex"0101010101010101010101010101010101010101010101010101010101010101")), hex"22 06200101010101010101010101010101010101010101010101010101010101010101"),
-      (TlvStream[EncryptedRecipientDataTlv](Seq(OutgoingChannelId(ShortChannelId(42))), Seq(GenericTlv(UInt64(65535), hex"06c1"))), hex"10 0208000000000000002a fdffff0206c1"),
+      (TlvStream[EncryptedRecipientDataTlv](Padding(hex"000000"), OutgoingChannelId(ShortChannelId(561))), hex"0103000000 02080000000000000231"),
+      (TlvStream[EncryptedRecipientDataTlv](OutgoingNodeId(PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))), hex"0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"),
+      (TlvStream[EncryptedRecipientDataTlv](RecipientSecret(hex"0101010101010101010101010101010101010101010101010101010101010101")), hex"06200101010101010101010101010101010101010101010101010101010101010101"),
+      (TlvStream[EncryptedRecipientDataTlv](Seq(OutgoingChannelId(ShortChannelId(42))), Seq(GenericTlv(UInt64(65535), hex"06c1"))), hex"0208000000000000002a fdffff0206c1"),
     )
 
     val blindedRoute = RouteBlinding.create(sessionKey, nodePrivKeys.map(_.publicKey), payloads.map(_._2))
@@ -32,17 +32,15 @@ class EncryptedRecipientDataSpec extends AnyFunSuiteLike {
 
   test("decode invalid encrypted recipient data") {
     val testCases = Seq(
-      hex"0a 02080000000000000231 ff", // additional trailing bytes after tlv stream
-      hex"0b 02080000000000000231", // invalid length (too long)
-      hex"08 02080000000000000231", // invalid length (too short)
-      hex"0e 01040000 02080000000000000231", // invalid padding tlv
-      hex"0f 02080000000000000231 0103000000", // invalid tlv stream ordering
-      hex"14 02080000000000000231 10080000000000000231", // unknown even tlv field
+      hex"02080000000000000231 ff", // additional trailing bytes after tlv stream
+      hex"01040000 02080000000000000231", // invalid padding tlv
+      hex"02080000000000000231 0103000000", // invalid tlv stream ordering
+      hex"02080000000000000231 10080000000000000231", // unknown even tlv field
     )
 
     for (testCase <- testCases) {
       val nodePrivKeys = Seq(randomKey(), randomKey())
-      val payloads = Seq(hex"0a 02080000000000000231", testCase)
+      val payloads = Seq(hex"02080000000000000231", testCase)
       val blindingPrivKey = randomKey()
       val blindedRoute = RouteBlinding.create(blindingPrivKey, nodePrivKeys.map(_.publicKey), payloads)
       // The payload for the first node is valid.
