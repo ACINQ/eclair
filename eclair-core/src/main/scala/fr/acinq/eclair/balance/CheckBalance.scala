@@ -2,7 +2,6 @@ package fr.acinq.eclair.balance
 
 import com.softwaremill.quicklens._
 import fr.acinq.bitcoin.{Btc, ByteVector32, Satoshi, SatoshiLong}
-import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose, NextRemoteClose, RemoteClose}
@@ -25,14 +24,24 @@ object CheckBalance {
     def sumAmount: Satoshi = htlcs.toList.map(_.amountMsat.truncateToSatoshi).sum
   }
 
+  /** if local has preimage of an incoming htlc, then we know it will get the funds */
+  def localHasPreimage(c: Commitments, htlcId: Long): Boolean = {
+    c.localChanges.all.collectFirst { case u: UpdateFulfillHtlc if u.id == htlcId => true }.isDefined
+  }
+
+  /** if remote proved it had the preimage of an outgoing htlc, then we know it won't timeout */
+  def remoteHasPreimage(c: Commitments, htlcId: Long): Boolean = {
+    c.remoteChanges.all.collectFirst { case u: UpdateFulfillHtlc if u.id == htlcId => true }.isDefined
+  }
+
   /**
    * For more fine-grained analysis, we count the in-flight amounts separately from the main amounts.
    *
-   * The base assumption regarding htlcs is that they will all timeout. That means that we ignore incoming htlcs, and we
-   * count outgoing htlcs in our balance.
+   * The base assumption regarding htlcs is that they will all timeout. That means that we ignore incoming htlcs (except
+   * if we know the preimage), and we count outgoing htlcs in our balance.
    */
-  case class MainAndHtlcBalance(toLocal: Btc = 0.sat, htlcOut: Btc = 0.sat) {
-    val total: Btc = toLocal + htlcOut
+  case class MainAndHtlcBalance(toLocal: Btc = 0.sat, htlcs: Btc = 0.sat) {
+    val total: Btc = toLocal + htlcs
   }
 
   /**
@@ -82,24 +91,21 @@ object CheckBalance {
     v + toLocal
   }
 
-  def updateMainAndHtlcBalance(localCommit: LocalCommit, knownPreimages: Set[(ByteVector32, Long)]): MainAndHtlcBalance => MainAndHtlcBalance = { b: MainAndHtlcBalance =>
-    val toLocal = localCommit.spec.toLocal.truncateToSatoshi
+  def updateMainAndHtlcBalance(c: Commitments, knownPreimages: Set[(ByteVector32, Long)]): MainAndHtlcBalance => MainAndHtlcBalance = { b: MainAndHtlcBalance =>
+    val toLocal = c.localCommit.spec.toLocal.truncateToSatoshi
     // we only count htlcs in if we know the preimage
-    val htlcIn = localCommit.spec.htlcs.collect(incoming).filter(add => knownPreimages.contains((add.channelId, add.id))).sumAmount
-    val htlcOut = localCommit.spec.htlcs.collect(outgoing).sumAmount
+    val htlcIn = c.localCommit.spec.htlcs.collect(incoming)
+      .filter(add => knownPreimages.contains((add.channelId, add.id)) || localHasPreimage(c, add.id))
+      .sumAmount
+    val htlcOut = c.localCommit.spec.htlcs.collect(outgoing).sumAmount
     b.modify(_.toLocal).using(_ + toLocal)
-      .modify(_.htlcOut).using(_ + htlcIn + htlcOut)
+      .modify(_.htlcs).using(_ + htlcIn + htlcOut)
   }
 
   def updatePossiblyPublishedBalance(b1: PossiblyPublishedMainAndHtlcBalance): PossiblyPublishedMainAndHtlcBalance => PossiblyPublishedMainAndHtlcBalance = { b: PossiblyPublishedMainAndHtlcBalance =>
     b.modify(_.toLocal).using(_ ++ b1.toLocal)
       .modify(_.htlcs).using(_ ++ b1.htlcs)
       .modify(_.htlcsUnpublished).using(_ + b1.htlcsUnpublished)
-  }
-
-  /** if remote proved it had the preimage of an outgoing htlc, then we know it won't timeout */
-  def remoteHasPreimages(c: Commitments, htlcId: Long): Boolean = {
-    c.remoteChanges.all.collectFirst { case u: UpdateFulfillHtlc if u.id == htlcId => true }.isDefined
   }
 
   def computeLocalCloseBalance(c: Commitments, l: LocalClose, knownPreimages: Set[(ByteVector32, Long)]): PossiblyPublishedMainAndHtlcBalance = {
@@ -118,12 +124,12 @@ object CheckBalance {
     // incoming htlcs for which we have a preimage but we are still waiting for the to-local delay
     val htlcIn = localCommit.spec.htlcs.collect(incoming)
       .filterNot(htlc => htlcsInOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
-      .filter(add => knownPreimages.contains((add.channelId, add.id)))
+      .filter(add => knownPreimages.contains((add.channelId, add.id)) || localHasPreimage(c, add.id))
       .sumAmount
     // all outgoing htlcs for which remote didn't prove it had the preimage are expected to time out
     val htlcOut = localCommit.spec.htlcs.collect(outgoing)
       .filterNot(htlc => htlcsOutOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
-      .filterNot(htlc => remoteHasPreimages(c, htlc.id))
+      .filterNot(htlc => remoteHasPreimage(c, htlc.id))
       .sumAmount
     // all claim txs have possibly been published
     val htlcs = localCommitPublished.claimHtlcDelayedTxs
@@ -157,13 +163,13 @@ object CheckBalance {
       .toSet
     // incoming htlcs for which we have a preimage
     val htlcIn = remoteCommit.spec.htlcs.collect(outgoing)
-      .filter(add => knownPreimages.contains((add.channelId, add.id)))
+      .filter(add => knownPreimages.contains((add.channelId, add.id)) || localHasPreimage(c, add.id))
       .filterNot(htlc => htlcsInOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
       .sumAmount
     // all outgoing htlcs for which remote didn't prove it had the preimage are expected to time out
     val htlcOut = remoteCommit.spec.htlcs.collect(incoming)
       .filterNot(htlc => htlcsOutOnChain.contains(htlc.id)) // we filter the htlc that already pay us on-chain
-      .filterNot(htlc => remoteHasPreimages(c, htlc.id))
+      .filterNot(htlc => remoteHasPreimage(c, htlc.id))
       .sumAmount
     // all claim txs have possibly been published
     val htlcs = remoteCommitPublished.claimHtlcTxs.values.flatten
@@ -196,8 +202,8 @@ object CheckBalance {
       .foldLeft(OffChainBalance()) {
         case (r, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => r.modify(_.waitForFundingConfirmed).using(updateMainBalance(d.commitments.localCommit))
         case (r, d: DATA_WAIT_FOR_FUNDING_LOCKED) => r.modify(_.waitForFundingLocked).using(updateMainBalance(d.commitments.localCommit))
-        case (r, d: DATA_NORMAL) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.commitments.localCommit, knownPreimages))
-        case (r, d: DATA_SHUTDOWN) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.commitments.localCommit, knownPreimages))
+        case (r, d: DATA_NORMAL) => r.modify(_.normal).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
+        case (r, d: DATA_SHUTDOWN) => r.modify(_.shutdown).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
         case (r, d: DATA_NEGOTIATING) => r.modify(_.negotiating).using(updateMainBalance(d.commitments.localCommit))
         case (r, d: DATA_CLOSING) =>
           Closing.isClosingTypeAlreadyKnown(d) match {
@@ -234,7 +240,7 @@ object CheckBalance {
                 NextRemoteClose(waitingForRevocation.nextRemoteCommit, d.nextRemoteCommitPublished.get)
               }
               r.modify(_.closing.remoteCloseBalance).using(updatePossiblyPublishedBalance(computeRemoteCloseBalance(d.commitments, remoteClose, knownPreimages)))
-            case _ => r.modify(_.closing.unknownCloseBalance).using(updateMainAndHtlcBalance(d.commitments.localCommit, knownPreimages))
+            case _ => r.modify(_.closing.unknownCloseBalance).using(updateMainAndHtlcBalance(d.commitments, knownPreimages))
           }
         case (r, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => r.modify(_.waitForPublishFutureCommitment).using(updateMainBalance(d.commitments.localCommit))
       }

@@ -58,6 +58,13 @@ This release contains many other API updates:
 
 Have a look at our [API documentation](https://acinq.github.io/eclair) for more details.
 
+#### Balance
+
+The detailed balance json format has been slightly updated for channels in state `normal` and `shutdown`, and `closing`.
+
+Amounts corresponding to incoming htlcs for which we knew the preimage were previously included in `toLocal`, they are
+now grouped with outgoing htlcs amounts and the field has been renamed from `htlcOut` to `htlcs`.
+
 ### Miscellaneous improvements and bug fixes
 
 <insert changes>
