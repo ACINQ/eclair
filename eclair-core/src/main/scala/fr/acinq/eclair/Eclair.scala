@@ -482,15 +482,17 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   private def getChannelDescs(shortChannelIds: Set[ShortChannelId])(implicit timeout: Timeout): Future[Set[ChannelDesc]] = {
-    if (shortChannelIds.isEmpty){
+    if (shortChannelIds.isEmpty) {
       Future.successful(Set.empty)
     } else {
       for {
         channelsMap <- (appKit.router ? GetChannelsMap).mapTo[SortedMap[ShortChannelId, PublicChannel]]
       } yield {
-        shortChannelIds.map { id =>
+        shortChannelIds.flatMap { id =>
           val c = channelsMap.getOrElse(id, throw new IllegalArgumentException(s"unknown channel: $id"))
-          ChannelDesc(c.ann.shortChannelId, c.ann.nodeId1, c.ann.nodeId2)
+          Set(
+            ChannelDesc(c.ann.shortChannelId, c.ann.nodeId1, c.ann.nodeId2),
+            ChannelDesc(c.ann.shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
         }
       }
     }
