@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
@@ -114,6 +115,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
       case Event(err@Error(channelId, reason, _), d: ConnectedData) if channelId == CHANNELID_ZERO =>
         log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
+        context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Info, s"$remoteNodeId sent us a connection-level error, closing all channels (reason=${new String(reason.toArray)})"))
         d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         d.peerConnection ! PeerConnection.Kill(KillReason.AllChannelsFail)
         stay()

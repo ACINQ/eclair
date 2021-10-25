@@ -19,13 +19,16 @@ package fr.acinq.eclair.blockchain.watchdogs
 import akka.actor.typed.Behavior
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
+import com.softwaremill.sttp.SttpBackend
 import fr.acinq.bitcoin.BlockHeader
-import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.watchdogs.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.tor.Socks5ProxyParams
+import fr.acinq.eclair.{NodeParams, NotificationsLogger}
 
 import java.util.UUID
+import scala.concurrent.Future
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 import scala.util.Random
 
@@ -69,22 +72,21 @@ object BlockchainWatchdog {
   def apply(nodeParams: NodeParams, maxRandomDelay: FiniteDuration, blockTimeout: FiniteDuration = 15 minutes): Behavior[Command] = {
     Behaviors.setup { context =>
       val socksProxy_opt = nodeParams.socksProxy_opt.flatMap(params => if (params.useForWatchdogs) Some(params) else None)
-      implicit val sttpBackend = ExplorerApi.createSttpBackend(socksProxy_opt)
-      val chainHash = nodeParams.chainHash
-      val sources = nodeParams.blockchainWatchdogSources
+      implicit val sttpBackend: SttpBackend[Future, Nothing] = ExplorerApi.createSttpBackend(socksProxy_opt)
 
       val explorers = Seq(
         ExplorerApi.BlockstreamExplorer(socksProxy_opt),
         ExplorerApi.BlockcypherExplorer(socksProxy_opt),
-        ExplorerApi.MempoolSpaceExplorer(socksProxy_opt)).filter { e =>
-        val enabled = sources.contains(e.name)
+        ExplorerApi.MempoolSpaceExplorer(socksProxy_opt)
+      ).filter { e =>
+        val enabled = nodeParams.blockchainWatchdogSources.contains(e.name)
         if (!enabled) {
           context.log.warn(s"blockchain watchdog ${e.name} is disabled")
         }
         enabled
       }
 
-      val headersOverDnsEnabled = socksProxy_opt.isEmpty && sources.contains(HeadersOverDns.Source)
+      val headersOverDnsEnabled = socksProxy_opt.isEmpty && nodeParams.blockchainWatchdogSources.contains(HeadersOverDns.Source)
       if (!headersOverDnsEnabled) {
         context.log.warn(s"blockchain watchdog ${HeadersOverDns.Source} is disabled")
       }
@@ -107,10 +109,10 @@ object BlockchainWatchdog {
           case CheckLatestHeaders(blockCount) =>
             val id = UUID.randomUUID()
             if (headersOverDnsEnabled) {
-              context.spawn(HeadersOverDns(chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
+              context.spawn(HeadersOverDns(nodeParams.chainHash, blockCount), s"${HeadersOverDns.Source}-$blockCount-$id") ! HeadersOverDns.CheckLatestHeaders(context.self)
             }
             explorers.foreach { explorer =>
-              context.spawn(ExplorerApi(chainHash, blockCount, explorer), s"${explorer.name}-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
+              context.spawn(ExplorerApi(nodeParams.chainHash, blockCount, explorer), s"${explorer.name}-$blockCount-$id") ! ExplorerApi.CheckLatestHeaders(context.self)
             }
             Behaviors.same
           case headers@LatestHeaders(blockCount, blockHeaders, source) =>
@@ -121,6 +123,7 @@ object BlockchainWatchdog {
             if (missingBlocks >= 6) {
               context.log.warn("{}: we are {} blocks late: we may be eclipsed from the bitcoin network", source, missingBlocks)
               context.system.eventStream ! EventStream.Publish(DangerousBlocksSkew(headers))
+              context.system.eventStream ! EventStream.Publish(NotifyNodeOperator(NotificationsLogger.Warning, s"we are $missingBlocks late according to $source: we may be eclipsed from the bitcoin network, check your bitcoind node."))
             } else if (missingBlocks > 0) {
               context.log.info("{}: we are {} blocks late", source, missingBlocks)
             } else {

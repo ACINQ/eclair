@@ -24,8 +24,19 @@
         </encoder>
     </appender>
 
+    <appender name="CONSOLE_NOTIFICATIONS" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <encoder>
+            <pattern>%d %highlight(%-5level)- %msg%ex{12}%n</pattern>
+        </encoder>
+    </appender>
+
+    <logger level="INFO" name="notifications">
+        <!--<appender-ref ref="CONSOLE_NOTIFICATIONS"/>-->
+    </logger>
+
     <root level="INFO">
-        <!--appender-ref ref="CONSOLE"/-->
+        <!--<appender-ref ref="CONSOLE"/>-->
     </root>
 
 </configuration>

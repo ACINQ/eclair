@@ -4,7 +4,13 @@
 
 ## Major changes
 
-<insert changes>
+### Separate log for important notifications
+
+Eclair added a new log file (`notifications.log`) for important notifications that require an action from the node operator.
+Node operators should watch this file very regularly.
+
+An event is also sent to the event stream for every such notification.
+This lets plugins notify the node operator via external systems (push notifications, email, etc).
 
 ### API changes
 

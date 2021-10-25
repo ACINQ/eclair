@@ -16,6 +16,9 @@
 
 package fr.acinq.eclair
 
+import akka.actor.typed.Behavior
+import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.scaladsl.Behaviors
 import akka.event.DiagnosticLoggingAdapter
 import akka.io.Tcp
 import fr.acinq.bitcoin.ByteVector32
@@ -28,6 +31,7 @@ import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.protocol._
+import grizzled.slf4j.Logger
 
 import java.util.UUID
 
@@ -35,9 +39,9 @@ object Logs {
 
   /**
    * @param parentPaymentId_opt depending on the context, this may be:
-   *                            - for a send : the parent payment id
-   *                            - for a channel-relay : the relay id
-   *                            - for a trampoline-relay : the relay id and the parent payment id of the outgoing payment
+   *                            - for a send: the parent payment id
+   *                            - for a channel-relay: the relay id
+   *                            - for a trampoline-relay: the relay id and the parent payment id of the outgoing payment
    */
   def mdc(category_opt: Option[LogCategory] = None, remoteNodeId_opt: Option[PublicKey] = None, channelId_opt: Option[ByteVector32] = None, parentPaymentId_opt: Option[UUID] = None, paymentId_opt: Option[UUID] = None, paymentHash_opt: Option[ByteVector32] = None): Map[String, String] =
     Seq(
@@ -77,7 +81,6 @@ object Logs {
     }
   }
 
-  // @formatter: off
   sealed trait LogCategory {
     def category: String
   }
@@ -138,8 +141,44 @@ object Logs {
     }
   }
 
-  // @formatter: on
 }
 
 // we use a dedicated class so that the logging can be independently adjusted
 case class Diagnostics()
+
+object NotificationsLogger {
+
+  // @formatter:off
+  sealed trait Severity
+  case object Info extends Severity
+  case object Warning extends Severity
+  case object Error extends Severity
+  // @formatter:on
+
+  /** This event should be used to send important notifications for the node operator. */
+  case class NotifyNodeOperator(severity: Severity, message: String)
+
+  /** This logger should be used to log important notifications for the node operator. */
+  private val log = Logger("notifications")
+
+  /**
+   * Use this function instead of the [[NotifyNodeOperator]] event when a fatal error leads to stopping eclair immediately.
+   * Otherwise the actor wouldn't have time to handle the notification and log it before the actor system is shutdown.
+   */
+  def logFatalError(message: String, t: Throwable): Unit = log.error(message, t)
+
+  def apply(): Behavior[NotifyNodeOperator] =
+    Behaviors.setup { context =>
+      context.system.eventStream ! EventStream.Subscribe(context.self)
+      Behaviors.receiveMessage {
+        case NotifyNodeOperator(severity, message) =>
+          severity match {
+            case Info => log.info(message)
+            case Warning => log.warn(message)
+            case Error => log.error(message)
+          }
+          Behaviors.same
+      }
+    }
+
+}
