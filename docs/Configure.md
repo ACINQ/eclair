@@ -48,19 +48,21 @@ related to routing configuration, and include it from `eclair.conf`.
 
 Here are some of the most common options:
 
-name                         | description                                                | default value
------------------------------|------------------------------------------------------------|--------------
- eclair.chain                | Which blockchain to use: *regtest*, *testnet* or *mainnet* | mainnet
- eclair.server.port          | Lightning TCP port                                         | 9735
- eclair.api.port             | API HTTP port                                              | 8080
- eclair.api.enabled          | Enables the JSON API                                       | false
- eclair.api.password         | Password protecting the API (BASIC auth)                   | _no default_
- eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                      | foo
- eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                  | bar
- eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                             | "tcp://127.0.0.1:29000"
- eclair.bitcoind.zmqtx       | Bitcoin Core ZMQ tx address                                | "tcp://127.0.0.1:29000"
- eclair.bitcoind.wallet      | Bitcoin Core wallet name                                   | ""
- eclair.server.public-ips    | List of node public ip                                     | _no default_
+name                         | description                                                        | default value
+-----------------------------|--------------------------------------------------------------------|--------------
+ eclair.chain                | Which blockchain to use: *regtest*, *testnet* or *mainnet*         | mainnet
+ eclair.server.port          | Lightning TCP port                                                 | 9735
+ eclair.api.port             | API HTTP port                                                      | 8080
+ eclair.api.enabled          | Enables the JSON API                                               | false
+ eclair.api.password         | Password protecting the API (BASIC auth)                           | _no default_
+ eclair.bitcoind.auth        | Bitcoin Core RPC authentication method: *password* or *safecookie* | password
+ eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                              | foo
+ eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                          | bar
+ eclair.bitcoind.cookie      | Bitcoin Core RPC cookie path                                       | ${user.home}"/.bitcoin/.cookie"
+ eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                                     | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.zmqtx       | Bitcoin Core ZMQ tx address                                        | "tcp://127.0.0.1:29000"
+ eclair.bitcoind.wallet      | Bitcoin Core wallet name                                           | ""
+ eclair.server.public-ips    | List of node public ip                                             | _no default_
 
 &rarr; see [`reference.conf`](https://github.com/ACINQ/eclair/blob/master/eclair-core/src/main/resources/reference.conf) for full reference. There are many more options!
 
@@ -202,6 +204,20 @@ eclair.server.public-ips=[x.x.x.x]
 ```
 
 You'll also have to make sure the node is accessible from the outside world (port forwarding, firewall,...).
+
+### Bitcoin Core cookie authentication
+
+If you run Eclair and Bitcoin on the same computer an alternative way to handle the bitcoin core RPC authentication 
+is to use the safecookie. To use the safecookie auth, you need to remove `rpspassword=***` and `rpcuser=***` from the 
+Bitcoin `.conf` file and add the following to `eclair.conf`:
+
+```conf
+eclair.bitcoind.auth = "safecookie"
+eclair.bitcoind.cookie = "PATH TO THE COOKIE FILE"
+```
+Setting `eclair.bitcoind.cookie` might not be necessary if Bitcoin is running on mainnet and using the default datadir.
+
+You'll also need to run Eclair under the same user as Bitcoin.
 
 ### AB-testing for path-finding
 
