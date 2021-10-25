@@ -208,7 +208,7 @@ You'll also have to make sure the node is accessible from the outside world (por
 ### Bitcoin Core cookie authentication
 
 If you run Eclair and Bitcoin on the same computer an alternative way to handle the bitcoin core RPC authentication 
-is to use the safecookie. To use the safecookie auth, you need to remove `rpspassword=***` and `rpcuser=***` from the 
+is to use the safecookie. To use safecookie authentication, you need to remove `rpspassword=***` and `rpcuser=***` from the 
 Bitcoin `.conf` file and add the following to `eclair.conf`:
 
 ```conf
