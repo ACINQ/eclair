@@ -106,7 +106,7 @@ object BitcoinJsonRPCAuthMethod {
   case class SafeCookie(path: String, credentials: BitcoinJsonRPCCredentials = BitcoinJsonRPCCredentials("","")) extends BitcoinJsonRPCAuthMethod
 
   def readCookie(path: String): Try[SafeCookie] = Try {
-    val cookieContents = Files.readString(Path.of(path), StandardCharsets.UTF_8).split(":",2)
+    val cookieContents = Files.readString(Path.of(path), StandardCharsets.UTF_8).split(':')
     SafeCookie(path, BitcoinJsonRPCCredentials(cookieContents(0), cookieContents(1)))
   }
 }

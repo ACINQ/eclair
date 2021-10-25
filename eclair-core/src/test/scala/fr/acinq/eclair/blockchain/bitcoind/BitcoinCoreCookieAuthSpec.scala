@@ -16,31 +16,52 @@
 
 package fr.acinq.eclair.blockchain.bitcoind
 
+import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.eclair.TestKitBaseClass
-import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
-import org.json4s.JsonAST.JDecimal
+import fr.acinq.eclair.blockchain.OnChainWallet.OnChainBalance
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
 
+import scala.concurrent.ExecutionContext.Implicits.global
+
 class BitcoinCoreCookieAuthSpec extends TestKitBaseClass with BitcoindService with AnyFunSuiteLike with BeforeAndAfterAll {
 
-
   override def beforeAll(): Unit = {
-    //do nothing
-  }
-
-  test("bitcoind cookie authentication") {
     startBitcoind(useCookie = true)
     waitForBitcoindReady()
-
-    val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("getbalance"))
-    sender.expectMsgType[JDecimal]
-
-    restartBitcoind(useCookie = true)
-
-    sender.send(bitcoincli, BitcoinReq("getbalance"))
-    sender.expectMsgType[JDecimal]
   }
+
+  override def afterAll(): Unit = {
+    stopBitcoind()
+  }
+
+  test("call bitcoind with cookie authentication") {
+    val sender = TestProbe()
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    bitcoinClient.onChainBalance().pipeTo(sender.ref)
+    sender.expectMsgType[OnChainBalance]
+  }
+
+  test("automatically fetch updated credentials after restart") {
+    val sender = TestProbe()
+    // We make a first call before restarting bitcoind to ensure we have a first set of valid credentials.
+    val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    bitcoinClient.getBlockCount.pipeTo(sender.ref)
+    val blockCount = sender.expectMsgType[Long]
+
+    restartBitcoind(sender, useCookie = true)
+
+    // We use the previous bitcoin client: its credentials are now obsolete since bitcoind changes the cookie credentials
+    // after restarting.
+    bitcoinClient.getBlockCount.pipeTo(sender.ref)
+    sender.expectMsg(blockCount)
+
+    // A fresh bitcoin client will automatically fetch the latest credentials.
+    val postRestartBitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
+    postRestartBitcoinClient.getBlockCount.pipeTo(sender.ref)
+    sender.expectMsg(blockCount)
+  }
+
 }
