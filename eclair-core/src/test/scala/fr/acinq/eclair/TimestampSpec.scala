@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair
 
-import akka.actor.InvalidActorNameException
 import org.scalatest.funsuite.AnyFunSuite
 
 
@@ -30,7 +29,13 @@ class TimestampSpec extends AnyFunSuite {
 
     intercept[IllegalArgumentException] {
       TimestampSecond(Long.MaxValue / 1000 + 1)
+    }
+
+    intercept[IllegalArgumentException] {
       TimestampSecond(-1)
+    }
+
+    intercept[IllegalArgumentException] {
       TimestampMilli(-1)
     }
   }
