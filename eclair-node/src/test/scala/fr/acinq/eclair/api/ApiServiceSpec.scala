@@ -1072,6 +1072,40 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       }
   }
 
+  test("'audit'") {
+    val eclair = mock[Eclair]
+    val mockService = new MockService(eclair)
+    val auditResponse = AuditResponse(Seq.empty, Seq.empty, Seq.empty)
+    eclair.audit(any, any)(any[Timeout]) returns Future.successful(auditResponse)
+
+    Post("/audit") ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.audit) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.audit(0 unixsec, 4102441200L unixsec)(any[Timeout]).wasCalled(once)
+      }
+
+    Post("/audit", FormData("from" -> 0.toString, "to" -> 4102441200L.toString)) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.audit) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.audit(0 unixsec, 4102441200L unixsec)(any[Timeout]).wasCalled(twice)
+      }
+
+    Post("/audit", FormData("from" -> 123456.toString, "to" -> 654321.toString)) ~>
+      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
+      Route.seal(mockService.audit) ~>
+      check {
+        assert(handled)
+        assert(status == OK)
+        eclair.audit(123456 unixsec, 654321 unixsec)(any[Timeout]).wasCalled(once)
+      }
+  }
+
   test("the websocket should return typed objects") {
     val mockService = new MockService(mock[Eclair])
     val fixedUUID = UUID.fromString("487da196-a4dc-4b1e-92b4-3e5e905e9f3f")
