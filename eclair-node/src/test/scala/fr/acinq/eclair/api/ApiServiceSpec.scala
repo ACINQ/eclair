@@ -1084,16 +1084,16 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.audit(0 unixsec, 4102441200L unixsec)(any[Timeout]).wasCalled(once)
+        eclair.audit(TimestampSecond.min, TimestampSecond.max)(any[Timeout]).wasCalled(once)
       }
 
-    Post("/audit", FormData("from" -> 0.toString, "to" -> 4102441200L.toString)) ~>
+    Post("/audit", FormData("from" -> TimestampSecond.min.toLong.toString, "to" -> TimestampSecond.max.toLong.toString)) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.audit) ~>
       check {
         assert(handled)
         assert(status == OK)
-        eclair.audit(0 unixsec, 4102441200L unixsec)(any[Timeout]).wasCalled(twice)
+        eclair.audit(TimestampSecond.min, TimestampSecond.max)(any[Timeout]).wasCalled(twice)
       }
 
     Post("/audit", FormData("from" -> 123456.toString, "to" -> 654321.toString)) ~>
