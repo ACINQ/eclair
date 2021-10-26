@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, MilliBtcDouble, OutPoin
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
@@ -135,7 +136,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     0 to 9 foreach { satoshi =>
       val apiAmount = JDecimal(BigDecimal(s"0.0000000$satoshi"))
-      val rpcClient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 0) {
+      val rpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = UserPassword("foo", "bar"), host = "localhost", port = 0) {
         override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
           case "getbalances" => Future(JObject("mine" -> JObject("trusted" -> apiAmount, "untrusted_pending" -> apiAmount)))(ec)
           case "getmempoolinfo" => Future(JObject("mempoolminfee" -> JDecimal(0.0002)))(ec)

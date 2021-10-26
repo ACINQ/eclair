@@ -23,7 +23,8 @@ import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.TestUtils
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
@@ -58,22 +59,37 @@ trait BitcoindService extends Logging {
 
   var bitcoind: Process = _
   var bitcoinrpcclient: BitcoinJsonRPCClient = _
+  var bitcoinrpcauthmethod: BitcoinJsonRPCAuthMethod = _
   var bitcoincli: ActorRef = _
 
-  def startBitcoind(): Unit = {
+  def startBitcoind(useCookie: Boolean = false): Unit = {
     Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
     if (!Files.exists(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)) {
       val is = classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf")
-      val conf = Source.fromInputStream(is).mkString
-        .replace("28333", bitcoindPort.toString)
-        .replace("28332", bitcoindRpcPort.toString)
-        .replace("28334", bitcoindZmqBlockPort.toString)
-        .replace("28335", bitcoindZmqTxPort.toString)
+      val conf = {
+        val defaultConf = Source.fromInputStream(is).mkString
+          .replace("28333", bitcoindPort.toString)
+          .replace("28332", bitcoindRpcPort.toString)
+          .replace("28334", bitcoindZmqBlockPort.toString)
+          .replace("28335", bitcoindZmqTxPort.toString)
+        if (useCookie) {
+          defaultConf
+            .replace("rpcuser=foo", "")
+            .replace("rpcpassword=bar", "")
+        } else {
+          defaultConf
+        }
+      }
       Files.writeString(new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath, conf)
     }
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
-    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
+    bitcoinrpcauthmethod = if (useCookie) {
+      SafeCookie(s"$PATH_BITCOIND_DATADIR/regtest/.cookie")
+    } else {
+      UserPassword("foo", "bar")
+    }
+    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(defaultWallet))
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
         case BitcoinReq(method) => bitcoinrpcclient.invoke(method).pipeTo(sender())
@@ -91,9 +107,9 @@ trait BitcoindService extends Logging {
     bitcoind.exitValue()
   }
 
-  def restartBitcoind(sender: TestProbe = TestProbe()): Unit = {
+  def restartBitcoind(sender: TestProbe = TestProbe(), useCookie: Boolean = false): Unit = {
     stopBitcoind()
-    startBitcoind()
+    startBitcoind(useCookie = useCookie)
     waitForBitcoindUp(sender)
     sender.send(bitcoincli, BitcoinReq("loadwallet", defaultWallet))
     sender.expectMsgType[JValue]
@@ -148,7 +164,7 @@ trait BitcoindService extends Logging {
   def createWallet(walletName: String, sender: TestProbe = TestProbe()): BitcoinJsonRPCClient = {
     sender.send(bitcoincli, BitcoinReq("createwallet", walletName))
     sender.expectMsgType[JValue]
-    new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
+    new BasicBitcoinJsonRPCClient(rpcAuthMethod = bitcoinrpcauthmethod, host = "localhost", port = bitcoindRpcPort, wallet = Some(walletName))
   }
 
   def getNewAddress(sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): String = {

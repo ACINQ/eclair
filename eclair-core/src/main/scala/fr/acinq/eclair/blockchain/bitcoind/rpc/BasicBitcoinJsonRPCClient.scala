@@ -25,9 +25,13 @@ import org.json4s.JsonAST.{JString, JValue}
 import org.json4s.jackson.Serialization
 import org.json4s.{CustomSerializer, DefaultFormats}
 
+import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path}
+import java.util.concurrent.atomic.AtomicReference
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 
-class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient {
+class BasicBitcoinJsonRPCClient(rpcAuthMethod: BitcoinJsonRPCAuthMethod, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false, wallet: Option[String] = None)(implicit http: SttpBackend[Future, Nothing]) extends BitcoinJsonRPCClient {
 
   // necessary to properly serialize ByteVector32 into String readable by bitcoind
   object ByteVector32Serializer extends CustomSerializer[ByteVector32](_ => ( {
@@ -42,6 +46,7 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
     case Some(name) => uri"$scheme://$host:$port/wallet/$name"
     case None => uri"$scheme://$host:$port"
   }
+  private val credentials = new AtomicReference[BitcoinJsonRPCCredentials](rpcAuthMethod.credentials)
   implicit val serialization = Serialization
 
   override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
@@ -52,20 +57,57 @@ class BasicBitcoinJsonRPCClient(user: String, password: String, host: String = "
     case o => o
   }
 
-  def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] = {
+  private def send(requests: Seq[JsonRPCRequest], user: String, password: String)(implicit ec: ExecutionContext): Future[Response[Seq[JsonRPCResponse]]] = {
     requests.groupBy(_.method).foreach {
       case (method, calls) => Metrics.RpcBasicInvokeCount.withTag(Tags.Method, method).increment(calls.size)
     }
     KamonExt.timeFuture(Metrics.RpcBasicInvokeDuration.withoutTags()) {
       for {
-        res <- sttp
+        response <- sttp
           .post(serviceUri)
           .body(requests)
           .auth.basic(user, password)
           .response(asJson[Seq[JsonRPCResponse]])
           .send()
-      } yield res.unsafeBody
+      } yield response
     }
   }
 
+  def invoke(requests: Seq[JsonRPCRequest])(implicit ec: ExecutionContext): Future[Seq[JsonRPCResponse]] = {
+    val BitcoinJsonRPCCredentials(user, password) = credentials.get()
+    send(requests, user, password).flatMap {
+      response =>
+        response.code match {
+          case StatusCodes.Unauthorized => rpcAuthMethod match {
+            case _: BitcoinJsonRPCAuthMethod.UserPassword => Future.failed(new IllegalArgumentException("could not authenticate to bitcoind RPC server: check your configured user/password"))
+            case BitcoinJsonRPCAuthMethod.SafeCookie(path, _) =>
+              // bitcoind may have restarted and generated a new cookie file, let's read it again and retry
+              BitcoinJsonRPCAuthMethod.readCookie(path) match {
+                case Success(cookie) =>
+                  credentials.set(cookie.credentials)
+                  send(requests, cookie.credentials.user, cookie.credentials.password).map(_.unsafeBody)
+                case Failure(e) => Future.failed(e)
+              }
+          }
+          case _ => Future.successful(response.unsafeBody)
+        }
+    }
+  }
 }
+
+case class BitcoinJsonRPCCredentials(user: String, password: String)
+
+// @formatter:off
+sealed abstract class BitcoinJsonRPCAuthMethod {
+  def credentials: BitcoinJsonRPCCredentials
+}
+object BitcoinJsonRPCAuthMethod {
+  case class UserPassword(user: String, password: String) extends BitcoinJsonRPCAuthMethod { override val credentials = BitcoinJsonRPCCredentials(user, password) }
+  case class SafeCookie(path: String, credentials: BitcoinJsonRPCCredentials = BitcoinJsonRPCCredentials("","")) extends BitcoinJsonRPCAuthMethod
+
+  def readCookie(path: String): Try[SafeCookie] = Try {
+    val cookieContents = Files.readString(Path.of(path), StandardCharsets.UTF_8).split(':')
+    SafeCookie(path, BitcoinJsonRPCCredentials(cookieContents(0), cookieContents(1)))
+  }
+}
+// @formatter:on
