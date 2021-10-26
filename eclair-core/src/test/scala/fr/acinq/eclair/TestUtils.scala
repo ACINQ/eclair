@@ -18,8 +18,8 @@ package fr.acinq.eclair
 
 import akka.actor.ActorRef
 import akka.event.DiagnosticLoggingAdapter
-import akka.testkit
 import akka.testkit.{TestActor, TestProbe}
+import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.protocol.LightningMessage
 
@@ -31,8 +31,8 @@ import java.util.UUID
 object TestUtils {
 
   /**
-    * Get the module's target directory (works from command line and within intellij)
-    */
+   * Get the module's target directory (works from command line and within intellij)
+   */
   val BUILD_DIRECTORY = sys
     .props
     .get("buildDirectory") // this is defined if we run from maven
@@ -53,18 +53,18 @@ object TestUtils {
   def newIntegrationTmpDir(baseDir: String = TestUtils.BUILD_DIRECTORY) = new File(baseDir, s"integration-${UUID.randomUUID()}")
 
   object NoLoggingDiagnostics extends DiagnosticLoggingAdapter {
+    // @formatter:off
     override def isErrorEnabled: Boolean = false
     override def isWarningEnabled: Boolean = false
     override def isInfoEnabled: Boolean = false
     override def isDebugEnabled: Boolean = false
-
     override protected def notifyError(message: String): Unit = ()
     override protected def notifyError(cause: Throwable, message: String): Unit = ()
     override protected def notifyWarning(message: String): Unit = ()
     override protected def notifyInfo(message: String): Unit = ()
     override protected def notifyDebug(message: String): Unit = ()
+    // @formatter:on
   }
-
 
   /**
    * [[Channel]] encapsulates outgoing messages in [[Peer.OutgoingMessage]] due to how connection management works.
@@ -73,13 +73,11 @@ object TestUtils {
    * easier. You can now pass a [[TestProbe]] as a connection and only deal with incoming/outgoing [[LightningMessage]].
    */
   def forwardOutgoingToPipe(peer: TestProbe, pipe: ActorRef): Unit = {
-    peer.setAutoPilot(new testkit.TestActor.AutoPilot {
-      override def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = msg match {
-        case Peer.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
-          pipe.tell(msg, sender)
-          TestActor.KeepRunning
-        case _ => TestActor.KeepRunning
-      }
+    peer.setAutoPilot((sender: ActorRef, msg: Any) => msg match {
+      case Peer.OutgoingMessage(msg: LightningMessage, _: ActorRef) =>
+        pipe.tell(msg, sender)
+        TestActor.KeepRunning
+      case _ => TestActor.KeepRunning
     })
   }
 

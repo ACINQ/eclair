@@ -1,0 +1,56 @@
+name: Latest Bitcoin Core
+
+on:
+  # TODO: remove, keep only the bi-weekly trigger
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  schedule:
+    # Run at midnight on Sunday and Wednesday.
+    - cron: '0 0 * * 0,3'
+
+jobs:
+
+  regression-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout bitcoind master
+        uses: actions/checkout@v2
+        with:
+          repository: bitcoin/bitcoin
+          path: bitcoin
+
+      - name: Install bitcoind dependencies
+        run: sudo apt-get install build-essential libtool autotools-dev automake pkg-config bsdmainutils python3 libssl-dev libevent-dev libboost-system-dev libboost-filesystem-dev libboost-chrono-dev libboost-test-dev libboost-thread-dev libminiupnpc-dev libzmq3-dev libqt5gui5 libqt5core5a libqt5dbus5 qttools5-dev qttools5-dev-tools libprotobuf-dev protobuf-compiler git libsqlite3-dev ccache
+        working-directory: ./bitcoin
+
+      - name: Autogen bitcoind
+        run: ./autogen.sh
+        working-directory: ./bitcoin
+
+      - name: Configure bitcoind
+        run: ./configure
+        working-directory: ./bitcoin
+
+      - name: Build bitcoind
+        run: make -j "$(($(nproc)))"
+        working-directory: ./bitcoin
+
+      - name: Checkout eclair master
+        uses: actions/checkout@v2
+        with:
+          path: eclair
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v1
+        with:
+          java-version: 11
+
+      - name: Configure OS settings
+        run: echo "fs.file-max = 1024000" | sudo tee -a /etc/sysctl.conf
+
+      - name: Run eclair tests
+        run: BITCOIND_DIR=$GITHUB_WORKSPACE/bitcoin/src mvn test
+        working-directory: ./eclair

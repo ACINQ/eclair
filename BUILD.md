@@ -45,6 +45,12 @@ To run tests for a specific class, run:
 mvn test -Dsuites=*<TestClassName>
 ```
 
+To run tests with a specific version of `bitcoind`, run:
+
+```shell
+BITCOIND_DIR=<absolute/path/to/directory> mvn test
+```
+
 ### Build specific module
 
 To only build the `eclair-node` module, run:
