@@ -216,7 +216,8 @@ eclair.bitcoind.cookie = "PATH TO THE COOKIE FILE"
 ```
 Setting `eclair.bitcoind.cookie` might not be necessary if Bitcoin is running on mainnet and using the default datadir.
 
-You'll also need to run Eclair under the same user as Bitcoin.
+Eclair will need read access to Bitcoin Core's cookie file.
+You can either run Eclair and Bitcoin Core with the same user, or grant read permissions to the Eclair user.
 
 ### AB-testing for path-finding
 
