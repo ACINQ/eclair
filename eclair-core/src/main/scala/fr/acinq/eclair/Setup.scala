@@ -149,7 +149,7 @@ class Setup(val datadir: File,
     val rpcAuthMethod = config.getString("bitcoind.auth") match {
       case "safecookie" => BitcoinJsonRPCAuthMethod.readCookie(config.getString("bitcoind.cookie")) match {
         case Success(safeCookie) => safeCookie
-        case Failure(exception) => throw new RuntimeException("could not read bitcoind cookie file", exception);
+        case Failure(exception) => throw new RuntimeException("could not read bitcoind cookie file", exception)
       }
       case "password" => BitcoinJsonRPCAuthMethod.UserPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
     }
