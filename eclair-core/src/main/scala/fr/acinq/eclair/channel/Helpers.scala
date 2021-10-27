@@ -327,9 +327,9 @@ object Helpers {
   }
     // @formatter:on
 
-  /**
+    /**
      * Check whether we are in sync with our peer.
-   */
+     */
     def checkSync(keyManager: ChannelKeyManager, d: HasCommitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
 
       // This is done in two steps:
@@ -339,9 +339,9 @@ object Helpers {
 
       // step 2: we check the remote commitment
       def checkRemoteCommit(d: HasCommitments, remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
-    d.commitments.remoteNextCommitInfo match {
+        d.commitments.remoteNextCommitInfo match {
           case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
-        // we just sent a new commit_sig but they didn't receive it
+            // we just sent a new commit_sig but they didn't receive it
             // we resend the same updates and the same sig, and preserve the same ordering
             val signedUpdates = d.commitments.localChanges.signed
             val commitSig = waitingForRevocation.sent
@@ -354,10 +354,10 @@ object Helpers {
                 SyncResult.Success(retransmit = revocation +: signedUpdates :+ commitSig)
             }
           case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == (waitingForRevocation.nextRemoteCommit.index + 1) =>
-        // we just sent a new commit_sig, they have received it but we haven't received their revocation
+            // we just sent a new commit_sig, they have received it but we haven't received their revocation
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
           case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber < waitingForRevocation.nextRemoteCommit.index =>
-        // they are behind
+            // they are behind
             SyncResult.RemoteLate
           case Left(waitingForRevocation) =>
             // we are behind
@@ -366,13 +366,13 @@ object Helpers {
               theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
             )
           case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (d.commitments.remoteCommit.index + 1) =>
-        // they have acknowledged the last commit_sig we sent
+            // they have acknowledged the last commit_sig we sent
             SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
           case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber < (d.commitments.remoteCommit.index + 1) =>
-        // they are behind
+            // they are behind
             SyncResult.RemoteLate
           case Right(_) =>
-        // we are behind
+            // we are behind
             SyncResult.LocalLateUnproven(
               ourRemoteCommitmentNumber = d.commitments.remoteCommit.index,
               theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
