@@ -4,6 +4,14 @@
 
 ## Major changes
 
+### Advanced strategies to avoid mass force-close of channels
+
+In order to minimize force-closes of channels (especially for larger nodes), it is possible to customize the way eclair handles certain situations, like outdated commitment and internal errors.
+
+:warning: There is no magic: non-default strategies are a trade-off where it is assumed that the node is closely monitored. Instead of automatically reacting to some events, eclair will stop and await manual intervention. It is therefore reserved for advanced or professional node operators. Default strategies are best suited for smaller loosely administered nodes.
+
+This feature is documented [here](../Advanced.md).
+
 ### Separate log for important notifications
 
 Eclair added a new log file (`notifications.log`) for important notifications that require an action from the node operator.
