@@ -167,6 +167,8 @@ object NotificationsLogger {
    */
   def logFatalError(message: String, t: Throwable): Unit = log.error(message, t)
 
+  def logFatalError(message: String): Unit = log.error(message)
+
   def apply(): Behavior[NotifyNodeOperator] =
     Behaviors.setup { context =>
       context.system.eventStream ! EventStream.Subscribe(context.self)
