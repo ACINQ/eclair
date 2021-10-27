@@ -209,9 +209,9 @@ object RouteCalculation {
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(amountToSend))
       KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
         val result = if (r.allowMultiPart) {
-          findMultiPartRoute(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight)
+          findMultiPartRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, extraEdges, ignoredEdges, r.ignore.nodes, r.pendingPayments, r.routeParams, currentBlockHeight)
         } else {
-          findRoute(d.graphWithBalances.graph, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight)
+          findRoute(d.graphWithBalances, r.source, targetNodeId, amountToSend, maxFee, routesToFind, extraEdges, ignoredEdges, r.ignore.nodes, r.routeParams, currentBlockHeight)
         }
         result.map(routes => addFinalHop(r.target, routes)) match {
           case Success(routes) =>
@@ -294,7 +294,7 @@ object RouteCalculation {
    * @param routeParams     a set of parameters that can restrict the route search
    * @return the computed routes to the destination @param targetNodeId
    */
-  def findRoute(g: DirectedGraph,
+  def findRoute(g: GraphWithBalanceEstimates,
                 localNodeId: PublicKey,
                 targetNodeId: PublicKey,
                 amount: MilliSatoshi,
@@ -312,7 +312,7 @@ object RouteCalculation {
   }
 
   @tailrec
-  private def findRouteInternal(g: DirectedGraph,
+  private def findRouteInternal(g: GraphWithBalanceEstimates,
                                 localNodeId: PublicKey,
                                 targetNodeId: PublicKey,
                                 amount: MilliSatoshi,
@@ -370,7 +370,7 @@ object RouteCalculation {
    * @param routeParams     a set of parameters that can restrict the route search
    * @return a set of disjoint routes to the destination @param targetNodeId with the payment amount split between them
    */
-  def findMultiPartRoute(g: DirectedGraph,
+  def findMultiPartRoute(g: GraphWithBalanceEstimates,
                          localNodeId: PublicKey,
                          targetNodeId: PublicKey,
                          amount: MilliSatoshi,
@@ -394,7 +394,7 @@ object RouteCalculation {
     }
   }
 
-  private def findMultiPartRouteInternal(g: DirectedGraph,
+  private def findMultiPartRouteInternal(g: GraphWithBalanceEstimates,
                                          localNodeId: PublicKey,
                                          targetNodeId: PublicKey,
                                          amount: MilliSatoshi,
@@ -409,7 +409,7 @@ object RouteCalculation {
     // When the recipient is a direct peer, we have complete visibility on our local channels so we can use more accurate MPP parameters.
     val routeParams1 = {
       case class DirectChannel(balance: MilliSatoshi, isEmpty: Boolean)
-      val directChannels = g.getEdgesBetween(localNodeId, targetNodeId).collect {
+      val directChannels = g.graph.getEdgesBetween(localNodeId, targetNodeId).collect {
         // We should always have balance information available for local channels.
         // NB: htlcMinimumMsat is set by our peer and may be 0 msat (even though it's not recommended).
         case GraphEdge(_, params, _, Some(balance)) => DirectChannel(balance, balance <= 0.msat || balance < params.htlcMinimum)
