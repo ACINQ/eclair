@@ -875,6 +875,22 @@ object Commitments {
     (commitTx, htlcTxs)
   }
 
+  /**
+   * When reconnecting, we drop all unsigned changes.
+   */
+  def discardUnsignedUpdates(commitments: Commitments)(implicit log: LoggingAdapter): Commitments = {
+    log.debug("discarding proposed OUT: {}", commitments.localChanges.proposed.map(msg2String(_)).mkString(","))
+    log.debug("discarding proposed IN: {}", commitments.remoteChanges.proposed.map(msg2String(_)).mkString(","))
+    val commitments1 = commitments.copy(
+      localChanges = commitments.localChanges.copy(proposed = Nil),
+      remoteChanges = commitments.remoteChanges.copy(proposed = Nil),
+      localNextHtlcId = commitments.localNextHtlcId - commitments.localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
+      remoteNextHtlcId = commitments.remoteNextHtlcId - commitments.remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
+    log.debug(s"localNextHtlcId=${commitments.localNextHtlcId}->${commitments1.localNextHtlcId}")
+    log.debug(s"remoteNextHtlcId=${commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
+    commitments1
+  }
+
   def msg2String(msg: LightningMessage): String = msg match {
     case u: UpdateAddHtlc => s"add-${u.id}"
     case u: UpdateFulfillHtlc => s"ful-${u.id}"
