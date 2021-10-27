@@ -127,6 +127,17 @@ object Channel {
   /** We don't immediately process [[CurrentBlockCount]] to avoid herd effects */
   case class ProcessCurrentBlockCount(c: CurrentBlockCount)
 
+  // @formatter:off
+  /** What do we do if we have a local unhandled exception. */
+  sealed trait UnhandledExceptionStrategy
+  object UnhandledExceptionStrategy {
+    /** Ask our counterparty to close the channel. This may be the best choice for smaller loosely administered nodes.*/
+    case object LocalClose extends UnhandledExceptionStrategy
+    /** Just log an error and stop the node. May be better for larger nodes, to prevent unwanted mass force-close.*/
+    case object Stop extends UnhandledExceptionStrategy
+  }
+  // @formatter:on
+
 }
 
 class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remoteNodeId: PublicKey, blockchain: typed.ActorRef[ZmqWatcher.Command], relayer: ActorRef, txPublisherFactory: Channel.TxPublisherFactory, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[ChannelState, ChannelData] with FSMDiagnosticActorLogging[ChannelState, ChannelData] {
@@ -1669,6 +1680,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         case syncSuccess: SyncResult.Success =>
           var sendQueue = Queue.empty[LightningMessage]
           // normal case, our data is up-to-date
+
           if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
             // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
             log.debug("re-sending fundingLocked")
@@ -2288,7 +2300,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
 
   private def handleLocalError(cause: Throwable, d: ChannelData, msg: Option[Any]) = {
     cause match {
-      case _: ForcedLocalCommit => log.warning(s"force-closing channel at user request")
+      case _: ForcedLocalCommit =>
+        log.warning(s"force-closing channel at user request")
       case _ if msg.exists(_.isInstanceOf[OpenChannel]) || msg.exists(_.isInstanceOf[AcceptChannel]) =>
         // invalid remote channel parameters are logged as warning
         log.warning(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
@@ -2308,7 +2321,31 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         log.info(s"we have a valid closing tx, publishing it instead of our commitment: closingTxId=${bestUnpublishedClosingTx.tx.txid}")
         // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
         handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
-      case dd: HasCommitments => spendLocalCurrent(dd) sending error // otherwise we use our current commitment
+      case dd: HasCommitments =>
+        cause match {
+          case _: ChannelException =>
+            // known channel exception: we force close using our current commitment
+            spendLocalCurrent(dd) sending error
+          case _ =>
+            // unhandled exception: we apply the configured strategy
+            nodeParams.unhandledExceptionStrategy match {
+              case UnhandledExceptionStrategy.LocalClose =>
+                spendLocalCurrent(dd) sending error
+              case UnhandledExceptionStrategy.Stop =>
+                log.error("unhandled exception: standard procedure would be to force-close the channel, but eclair has been configured to halt instead.")
+                NotificationsLogger.logFatalError(
+                  s"""stopping node as configured strategy to unhandled exceptions for nodeId=$remoteNodeId channelId=${d.channelId}
+                     |
+                     |Eclair has been configured to shut down when an unhandled exception happens, instead of requesting a
+                     |force-close from the peer. This gives the operator a chance of avoiding an unnecessary mass force-close
+                     |of channels that may be caused by a bug in Eclair, or issues like running out of disk space, etc.
+                     |
+                     |You should get in touch with Eclair developers and provide logs of your node for analysis.
+                     |""".stripMargin, cause)
+                System.exit(1)
+                stop(FSM.Shutdown)
+            }
+        }
       case _ => goto(CLOSED) sending error // when there is no commitment yet, we just send an error to our peer and go to CLOSED state
     }
   }

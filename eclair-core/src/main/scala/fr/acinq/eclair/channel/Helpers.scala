@@ -324,7 +324,7 @@ object Helpers {
       case class LocalLateUnproven(ourRemoteCommitmentNumber: Long, theirLocalCommitmentNumber: Long) extends Failure
       case class RemoteLying(ourLocalCommitmentNumber: Long, theirRemoteCommitmentNumber: Long, invalidPerCommitmentSecret: PrivateKey) extends Failure
       case object RemoteLate extends Failure
-  }
+    }
     // @formatter:on
 
     /**
