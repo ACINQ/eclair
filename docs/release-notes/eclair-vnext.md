@@ -4,6 +4,12 @@
 
 ## Major changes
 
+### Alternate strategy to avoid mass force-close of channels in certain cases
+
+The default strategy, when an unhandled exception or internal error happens, is to locally force-close the channel. Not only is there a delay before the channel balance gets refunded, but if the exception was due to some misconfiguration or bug in eclair that affects all channels, we risk force-closing all channels.
+
+This is why an alternative behavior is to simply log an error and stop the node. Note that if you don't closely monitor your node, there is a risk that your peers take advantage of the downtime to try and cheat by publishing a revoked commitment. Additionally, while there is no known way of triggering an internal error in eclair from the outside, there may very well be a bug that allows just that, which could be used as a way to remotely stop the node (with the default behavior, it would "only" cause a local force-close of the channel).
+
 ### Separate log for important notifications
 
 Eclair added a new log file (`notifications.log`) for important notifications that require an action from the node operator.
