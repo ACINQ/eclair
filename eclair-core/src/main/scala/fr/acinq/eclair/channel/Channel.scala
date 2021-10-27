@@ -2237,9 +2237,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         handleOutdatedCommitment(channelReestablish, d)
       case res: Syncing.SyncResult.LocalLateUnproven =>
         log.error(s"our local commitment is in sync, but counterparty says that they have a more recent remote commitment than the one we know of (they could be lying)!!! ourRemoteCommitmentNumber=${res.ourRemoteCommitmentNumber} theirCommitmentNumber=${res.theirLocalCommitmentNumber}")
-        // there is no way to make sure that they are saying the truth, the best thing to do is ask them to publish their commitment right now
-        // maybe they will publish their commitment, in that case we need to remember their commitment point in order to be able to claim our outputs
-        // note that if they don't comply, we could publish our own commitment (it is not stale, otherwise we would be in the case above)
+        // there is no way to make sure that they are saying the truth, the best thing to do is "call their bluff" and
+        // ask them to publish their commitment right now. If they weren't lying and they do publish their commitment,
+        // we need to remember their commitment point in order to be able to claim our outputs
         handleOutdatedCommitment(channelReestablish, d)
       case res: Syncing.SyncResult.RemoteLying =>
         log.error(s"counterparty is lying about us having an outdated commitment!!! ourLocalCommitmentNumber=${res.ourLocalCommitmentNumber} theirRemoteCommitmentNumber=${res.theirRemoteCommitmentNumber}")
