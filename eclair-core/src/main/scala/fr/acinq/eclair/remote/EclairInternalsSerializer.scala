@@ -95,7 +95,8 @@ object EclairInternalsSerializer {
         .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
-      ("pathFindingExperimentConf" | pathFindingExperimentConfCodec)).as[RouterConf]
+      ("pathFindingExperimentConf" | pathFindingExperimentConfCodec) ::
+      ("balanceEstimateHalfLife" | finiteDurationCodec)).as[RouterConf]
 
   val overrideFeaturesListCodec: Codec[List[(PublicKey, Features[Feature])]] = listOfN(uint16, publicKey ~ variableSizeBytes(uint16, featuresCodec))
 

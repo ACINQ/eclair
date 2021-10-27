@@ -450,6 +450,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, addCompleted(HtlcResult.RemoteFail(UpdateFailHtlc(ByteVector32.Zeroes, 0, Sphinx.FailurePacket.create(sharedSecrets1.head._1, failure)))))
 
     // payment lifecycle will ask the router to temporarily exclude this channel from its route calculations
+    routerForwarder.expectMsgType[ChannelCouldNotRelay]
     routerForwarder.expectMsg(ExcludeChannel(ChannelDesc(update_bc.shortChannelId, b, c)))
     routerForwarder.forward(routerFixture.router)
     // payment lifecycle forwards the embedded channelUpdate to the router

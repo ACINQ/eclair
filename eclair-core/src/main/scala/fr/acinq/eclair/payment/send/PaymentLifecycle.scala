@@ -102,6 +102,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       handleLocalFail(d, DisconnectedException, isFatal = false)
 
     case Event(RES_ADD_SETTLED(_, htlc, fulfill: HtlcResult.Fulfill), d: WaitingForComplete) =>
+      router ! Router.RouteDidRelay(d.route)
       Metrics.PaymentAttempt.withTag(Tags.MultiPart, value = false).record(d.failures.size + 1)
       val p = PartialPayment(id, d.c.finalPayload.amount, d.cmd.amount - d.c.finalPayload.amount, htlc.channelId, Some(cfg.fullRoute(d.route)))
       myStop(d.c, Right(cfg.createPaymentSent(fulfill.paymentPreimage, p :: Nil)))
@@ -198,41 +199,58 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         log.warning(s"cannot parse returned error: ${t.getMessage}, route=${route.printNodes()}")
         val failure = UnreadableRemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route))
         retry(failure, d)
-      case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Node)) =>
-        log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
-        val failure = RemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route), e)
-        retry(failure, d)
-      case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage: Update)) =>
-        log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
-        val failure = RemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route), e)
-        if (Announcements.checkSig(failureMessage.update, nodeId)) {
-          val assistedRoutes1 = handleUpdate(nodeId, failureMessage, d)
-          val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
-          // let's try again, router will have updated its state
-          c match {
-            case _: SendPaymentToRoute =>
-              log.error("unexpected retry during SendPaymentToRoute")
-              stop(FSM.Normal)
-            case c: SendPaymentToNode =>
-              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
-              goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
-          }
-        } else {
-          // this node is fishy, it gave us a bad sig!! let's filter it out
-          log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
-          c match {
-            case _: SendPaymentToRoute =>
-              log.error("unexpected retry during SendPaymentToRoute")
-              stop(FSM.Normal)
-            case c: SendPaymentToNode =>
-              router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
-              goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore + nodeId)
-          }
-        }
       case Success(e@Sphinx.DecryptedFailurePacket(nodeId, failureMessage)) =>
-        log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
-        val failure = RemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route), e)
-        retry(failure, d)
+        val stoppedRoute = d.route.stopAt(nodeId)
+        if (stoppedRoute.hops.length > 1) {
+          router ! Router.RouteCouldRelay(stoppedRoute)
+        }
+        failureMessage match {
+          case TemporaryChannelFailure(update) =>
+            d.route.hops.find(_.nodeId == nodeId) match {
+              case Some(failingHop) =>
+                if (Announcements.areSame(failingHop.lastUpdate, update))
+                  router ! Router.ChannelCouldNotRelay(stoppedRoute.amount, failingHop)
+              case None => ()
+            }
+          case _ => ()
+        }
+        failureMessage match {
+          case failureMessage: Node =>
+            log.info(s"received 'Node' type error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
+            val failure = RemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route), e)
+            retry(failure, d)
+          case failureMessage: Update =>
+            log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
+            val failure = RemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route), e)
+            if (Announcements.checkSig(failureMessage.update, nodeId)) {
+              val assistedRoutes1 = handleUpdate(nodeId, failureMessage, d)
+              val ignore1 = PaymentFailure.updateIgnored(failure, ignore)
+              // let's try again, router will have updated its state
+              c match {
+                case _: SendPaymentToRoute =>
+                  log.error("unexpected retry during SendPaymentToRoute")
+                  stop(FSM.Normal)
+                case c: SendPaymentToNode =>
+                  router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, assistedRoutes1, ignore1, c.routeParams, paymentContext = Some(cfg.paymentContext))
+                  goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore1)
+              }
+            } else {
+              // this node is fishy, it gave us a bad sig!! let's filter it out
+              log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
+              c match {
+                case _: SendPaymentToRoute =>
+                  log.error("unexpected retry during SendPaymentToRoute")
+                  stop(FSM.Normal)
+                case c: SendPaymentToNode =>
+                  router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, ignore + nodeId, c.routeParams, paymentContext = Some(cfg.paymentContext))
+                  goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, failures :+ failure, ignore + nodeId)
+              }
+            }
+          case failureMessage =>
+            log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
+            val failure = RemoteFailure(d.c.finalPayload.amount, cfg.fullRoute(route), e)
+            retry(failure, d)
+        }
     }
   }
 
