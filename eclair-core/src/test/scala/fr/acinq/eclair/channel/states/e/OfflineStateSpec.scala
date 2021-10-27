@@ -27,7 +27,6 @@ import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.HtlcSuccessTx
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshiLong, TestConstants, TestKitBaseClass, randomBytes32}
@@ -278,7 +277,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index === 4)
   }
 
-  test("discover that we have a revoked commitment") { f =>
+  test("reconnect with an outdated commitment") { f =>
     import f._
 
     val (ra1, htlca1) = addHtlc(250000000 msat, alice, bob, alice2bob, bob2alice)
@@ -313,6 +312,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // ... and ask bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
+    alice2bob.forward(bob)
 
     // alice now waits for bob to publish its commitment
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
@@ -327,7 +327,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
-  test("discover that they have a more recent commit than the one we know") { f =>
+  test("reconnect with an outdated commitment (but counterparty can't tell)") { f =>
     import f._
 
     // we start by storing the current state
@@ -341,6 +341,9 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.expectMsgType[CommitSig]
 
+    // we keep track of bob commitment tx for later
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
+
     // we simulate a disconnection
     disconnect(alice, bob)
 
@@ -350,21 +353,28 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // then we reconnect them
     reconnect(alice, bob, alice2bob, bob2alice)
 
-    // peers exchange channel_reestablish messages
-    alice2bob.expectMsgType[ChannelReestablish]
-    bob2alice.expectMsgType[ChannelReestablish]
+    val reestablishA = alice2bob.expectMsgType[ChannelReestablish]
+    val reestablishB = bob2alice.expectMsgType[ChannelReestablish]
 
-    // alice then realizes it has an old state...
-    bob2alice.forward(alice)
-    // ... and ask bob to publish its current commitment
+    // bob cannot detect that alice is late (because alice has just missed one state), so it starts normally
+    alice2bob.forward(bob, reestablishA)
+    bob2alice.expectMsgType[RevokeAndAck]
+    bob2alice.expectMsgType[CommitSig]
+    bob2blockchain.expectMsgType[WatchFundingDeeplyBuried]
+    bob2alice.expectNoMessage(100 millis)
+    bob2blockchain.expectNoMessage(100 millis)
+
+    // alice realizes she has an old state when receiving Bob's reestablish
+    bob2alice.forward(alice, reestablishB)
+    // alice asks bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
     assert(error === Error(channelId(alice), PleasePublishYourCommitment(channelId(alice)).getMessage))
+    alice2bob.forward(bob)
 
     // alice now waits for bob to publish its commitment
     awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
 
     // bob is nice and publishes its commitment
-    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // alice is able to claim its main output
