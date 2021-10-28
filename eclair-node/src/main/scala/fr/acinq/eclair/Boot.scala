@@ -25,6 +25,10 @@ import grizzled.slf4j.Logging
 import kamon.Kamon
 
 import java.io.File
+import java.nio.charset.StandardCharsets
+import java.nio.file.attribute.PosixFilePermissions
+import java.nio.file.{Files, Path, StandardOpenOption}
+import java.security.SecureRandom
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
@@ -68,12 +72,21 @@ object Boot extends App with Logging {
     if (config.getBoolean("api.enabled")) {
       logger.info(s"json API enabled on port=${config.getInt("api.port")}")
       val apiPassword = config.getString("api.password") match {
-        case "" => throw EmptyAPIPasswordException
-        case valid => valid
+        case "" => None
+        case valid => Some(valid)
+      }
+      val apiCookiePassword = if (config.getBoolean("api.cookie-enabled")) {
+        Some(generateCookie(config.getString("api.cookie-path")))
+      } else {
+        None
+      }
+      if (apiPassword.isEmpty && apiCookiePassword.isEmpty) {
+        throw new RuntimeException("neither password nor cookie is enabled")
       }
       val service: Service = new Service {
         override val actorSystem: ActorSystem = system
-        override val password: String = apiPassword
+        override val password: Option[String] = apiPassword
+        override val cookiePassword: Option[String] = apiCookiePassword
         override val eclairApi: Eclair = new EclairImpl(kit)
       }
       Http().newServerAt(config.getString("api.binding-ip"), config.getInt("api.port")).bindFlow(service.finalRoutes(providers)).recover {
@@ -82,6 +95,20 @@ object Boot extends App with Logging {
     } else {
       logger.info("json API disabled")
     }
+  }
+
+  /**
+   * Generates the cookie file and return the password
+   */
+  def generateCookie(path: String): String = {
+    val bytes = new Array[Byte](32)
+    SecureRandom.getInstanceStrong.nextBytes(bytes)
+    val password = bytes.map("%02X" format _).mkString
+
+    Files.deleteIfExists(Path.of(path))
+    Files.createFile(Path.of(path), PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
+    Files.writeString(Path.of(path), s"__COOKIE__:$password", StandardCharsets.UTF_8, StandardOpenOption.CREATE)
+    password
   }
 
   def onError(t: Throwable): Unit = {

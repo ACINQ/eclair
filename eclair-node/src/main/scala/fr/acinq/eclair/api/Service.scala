@@ -28,7 +28,12 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
   /**
    * Allows router access to the API password as configured in eclair.conf
    */
-  def password: String
+  def password: Option[String]
+
+  /**
+   * password for cookie authentication if enabled in eclair.conf
+   */
+  def cookiePassword: Option[String]
 
   /**
    * The API of Eclair core.

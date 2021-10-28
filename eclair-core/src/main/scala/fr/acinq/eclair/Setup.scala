@@ -401,8 +401,6 @@ case class BitcoinRPCConnectionException(e: Throwable) extends RuntimeException(
 
 case class BitcoinWalletDisabledException(e: Throwable) extends RuntimeException("bitcoind wallet not available", e)
 
-case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
-
 case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
 
 case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")
