@@ -20,6 +20,7 @@ import akka.Done
 import akka.actor.{ActorSystem, CoordinatedShutdown}
 import com.typesafe.config.Config
 import com.zaxxer.hikari.{HikariConfig, HikariDataSource}
+import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.db.pg.PgUtils.PgLock.LockFailureHandler
 import fr.acinq.eclair.db.pg.PgUtils._
 import fr.acinq.eclair.db.pg._
@@ -30,6 +31,7 @@ import java.io.File
 import java.nio.file._
 import java.sql.Connection
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
@@ -94,12 +96,22 @@ object Databases extends Logging {
   }
 
   object PostgresDatabases {
+
+    case class SafetyChecks(localChannelsMaxAge: FiniteDuration,
+                            networkNodesMaxAge: FiniteDuration,
+                            auditRelayedMaxAge: FiniteDuration,
+                            localChannelsMinCount: Int,
+                            networkNodesMinCount: Int,
+                            networkChannelsMinCount: Int
+                           )
+
     def apply(hikariConfig: HikariConfig,
               instanceId: UUID,
               lock: PgLock = PgLock.NoLock,
               jdbcUrlFile_opt: Option[File],
               readOnlyUser_opt: Option[String],
-              resetJsonColumns: Boolean)(implicit system: ActorSystem): PostgresDatabases = {
+              resetJsonColumns: Boolean,
+              safetyChecks_opt: Option[SafetyChecks])(implicit system: ActorSystem): PostgresDatabases = {
 
       jdbcUrlFile_opt.foreach(jdbcUrlFile => checkIfDatabaseUrlIsUnchanged(hikariConfig.getJdbcUrl, jdbcUrlFile))
 
@@ -159,6 +171,71 @@ object Databases extends Logging {
         PgUtils.inTransaction { connection =>
           databases.channels.resetJsonColumns(connection)
           databases.network.resetJsonColumns(connection)
+        }
+      }
+
+      safetyChecks_opt foreach { initChecks =>
+
+        PgUtils.inTransaction { connection =>
+          using(connection.createStatement()) { statement =>
+
+            def checkMaxAge(name: String, maxAge: FiniteDuration, sqlQuery: String): Unit = {
+              import ExtendedResultSet._
+              val smallestAge_opt = statement
+                .executeQuery(sqlQuery)
+                .headOption // sql max() will always return a result, with perhaps a null value if there was no records
+                .flatMap(_.getTimestampNullable("max"))
+                .map(ts => TimestampMilli.now() - TimestampMilli.fromSqlTimestamp(ts))
+              require(smallestAge_opt.isDefined, s"db check failed: no $name found")
+              require(smallestAge_opt.get <= maxAge, s"db check failed: most recent $name is too old (${smallestAge_opt.get.toMinutes} minutes > ${maxAge.toMinutes} minutes)")
+              logger.info(s"db check ok: max age ${smallestAge_opt.get.toMinutes} minutes <= ${maxAge.toMinutes} minutes for $name")
+            }
+
+            checkMaxAge(name = "local channel",
+              maxAge = initChecks.localChannelsMaxAge,
+              sqlQuery =
+                """
+                  |SELECT MAX(GREATEST(created_timestamp, last_payment_sent_timestamp, last_payment_received_timestamp, last_connected_timestamp, closed_timestamp))
+                  |FROM local.channels
+                  |WHERE NOT is_closed""".stripMargin)
+
+            checkMaxAge(name = "network node",
+              maxAge = initChecks.networkNodesMaxAge,
+              sqlQuery =
+                """
+                  |SELECT MAX((json->'timestamp'->>'iso')::timestamptz)
+                  |FROM network.nodes""".stripMargin)
+
+            checkMaxAge(name = "audit relayed",
+              maxAge = initChecks.auditRelayedMaxAge,
+              sqlQuery =
+                """
+                  |SELECT MAX(timestamp)
+                  |FROM audit.relayed""".stripMargin)
+
+            def checkMinCount(name: String, minCount: Int, sqlQuery: String): Unit = {
+              import ExtendedResultSet._
+              val count = statement
+                .executeQuery(sqlQuery)
+                .map(_.getInt("count"))
+                .head
+              require(count >= minCount, s"db check failed: min count not reached for $name ($count < $minCount)")
+              logger.info(s"db check ok: min count $count > $minCount for $name")
+            }
+
+            checkMinCount(name = "local channels",
+              minCount = initChecks.localChannelsMinCount,
+              sqlQuery = "SELECT COUNT(*) FROM local.channels")
+
+            checkMinCount(name = "network node",
+              minCount = initChecks.networkNodesMinCount,
+              sqlQuery = "SELECT COUNT(*) FROM network.nodes")
+
+            checkMinCount(name = "network channels",
+              minCount = initChecks.networkChannelsMinCount,
+              sqlQuery = "SELECT COUNT(*) FROM network.public_channels")
+
+          }
         }
       }
 
@@ -245,13 +322,25 @@ object Databases extends Logging {
 
     val jdbcUrlFile = new File(dbdir, "last_jdbcurl")
 
+    val safetyChecks_opt = if (dbConfig.getBoolean("postgres.safety-checks.enabled")) {
+      Some(PostgresDatabases.SafetyChecks(
+        localChannelsMaxAge = FiniteDuration(dbConfig.getDuration("postgres.safety-checks.max-age.local-channels").getSeconds, TimeUnit.SECONDS),
+        networkNodesMaxAge = FiniteDuration(dbConfig.getDuration("postgres.safety-checks.max-age.network-nodes").getSeconds, TimeUnit.SECONDS),
+        auditRelayedMaxAge = FiniteDuration(dbConfig.getDuration("postgres.safety-checks.max-age.audit-relayed").getSeconds, TimeUnit.SECONDS),
+        localChannelsMinCount = dbConfig.getInt("postgres.safety-checks.min-count.local-channels"),
+        networkNodesMinCount = dbConfig.getInt("postgres.safety-checks.min-count.network-nodes"),
+        networkChannelsMinCount = dbConfig.getInt("postgres.safety-checks.min-count.network-channels"),
+      ))
+    } else None
+
     Databases.PostgresDatabases(
       hikariConfig = hikariConfig,
       instanceId = instanceId,
       lock = lock,
       jdbcUrlFile_opt = Some(jdbcUrlFile),
       readOnlyUser_opt = readOnlyUser_opt,
-      resetJsonColumns = resetJsonColumns
+      resetJsonColumns = resetJsonColumns,
+      safetyChecks_opt = safetyChecks_opt
     )
   }
 
