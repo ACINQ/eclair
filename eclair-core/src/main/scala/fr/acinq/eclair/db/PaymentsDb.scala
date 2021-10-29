@@ -207,7 +207,9 @@ object HopSummary {
 }
 
 /** A minimal representation of a payment failure (suitable to store in a database). */
-case class FailureSummary(failureType: FailureType.Value, failureMessage: String, failedRoute: List[HopSummary])
+trait GenericFailureSummary
+
+case class FailureSummary(failureType: FailureType.Value, failureMessage: String, failedRoute: List[HopSummary], failedNode: Option[PublicKey]) extends GenericFailureSummary
 
 object FailureType extends Enumeration {
   type FailureType = Value
@@ -218,9 +220,9 @@ object FailureType extends Enumeration {
 
 object FailureSummary {
   def apply(f: PaymentFailure): FailureSummary = f match {
-    case LocalFailure(_, route, t) => FailureSummary(FailureType.LOCAL, t.getMessage, route.map(h => HopSummary(h)).toList)
-    case RemoteFailure(_, route, e) => FailureSummary(FailureType.REMOTE, e.failureMessage.message, route.map(h => HopSummary(h)).toList)
-    case UnreadableRemoteFailure(_, route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
+    case LocalFailure(_, route, t) => FailureSummary(FailureType.LOCAL, t.getMessage, route.map(h => HopSummary(h)).toList, route.headOption.map(_.nodeId))
+    case RemoteFailure(_, route, e) => FailureSummary(FailureType.REMOTE, e.failureMessage.message, route.map(h => HopSummary(h)).toList, Some(e.originNode))
+    case UnreadableRemoteFailure(_, route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList, None)
   }
 }
 
@@ -263,3 +265,49 @@ case class PlainOutgoingPayment(parentId: Option[UUID],
                                 status: OutgoingPaymentStatus,
                                 createdAt: TimestampMilli,
                                 completedAt: Option[TimestampMilli]) extends PlainPayment
+
+object PaymentsDb {
+
+  import fr.acinq.eclair.wire.protocol.CommonCodecs
+  import scodec.Attempt
+  import scodec.bits.BitVector
+  import scodec.codecs._
+
+  private case class LegacyFailureSummary(failureType: FailureType.Value, failureMessage: String, failedRoute: List[HopSummary]) extends GenericFailureSummary {
+    def toFailureSummary: FailureSummary = FailureSummary(failureType, failureMessage, failedRoute, None)
+  }
+
+  private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
+  val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)
+    .typecase(0x01, listOfN(uint8, hopSummaryCodec))
+  private val legacyFailureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec).as[LegacyFailureSummary]
+  private val failureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec :: ("node_id" | optional(bool, CommonCodecs.publicKey))).as[FailureSummary]
+  private val paymentFailuresCodec = discriminated[List[GenericFailureSummary]].by(byte)
+    .typecase(0x02, listOfN(uint8, failureSummaryCodec))
+    .typecase(0x01, listOfN(uint8, legacyFailureSummaryCodec).decodeOnly)
+
+  def encodeRoute(route: List[HopSummary]): Array[Byte] = {
+    paymentRouteCodec.encode(route).require.toByteArray
+  }
+
+  def decodeRoute(b: BitVector): List[HopSummary] = {
+    paymentRouteCodec.decode(b) match {
+      case Attempt.Successful(route) => route.value
+      case Attempt.Failure(_) => Nil
+    }
+  }
+
+  def encodeFailures(failures: List[FailureSummary]): Array[Byte] = {
+    paymentFailuresCodec.encode(failures).require.toByteArray
+  }
+
+  def decodeFailures(b: BitVector): List[FailureSummary] = {
+    paymentFailuresCodec.decode(b) match {
+      case Attempt.Successful(f) => f.value.collect {
+        case failure: FailureSummary => failure
+        case legacy: LegacyFailureSummary => legacy.toFailureSummary
+      }
+      case Attempt.Failure(_) => Nil
+    }
+  }
+}

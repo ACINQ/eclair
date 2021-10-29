@@ -214,7 +214,7 @@ class PaymentsDbSpec extends AnyFunSuite {
     val (id1, id2, id3) = (UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID())
     val parentId = UUID.randomUUID()
     val invoice1 = PaymentRequest(Block.TestnetGenesisBlock.hash, Some(2834 msat), paymentHash1, bobPriv, Left("invoice #1"), CltvExpiryDelta(18), expirySeconds = Some(30))
-    val ps1 = OutgoingPayment(id1, id1, Some("42"), randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, alice, 1000 unixms, None, OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.REMOTE, "no candy for you", List(HopSummary(hop_ab), HopSummary(hop_bc)))), 1020 unixms))
+    val ps1 = OutgoingPayment(id1, id1, Some("42"), randomBytes32(), PaymentType.Standard, 561 msat, 561 msat, alice, 1000 unixms, None, OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.REMOTE, "no candy for you", List(HopSummary(hop_ab), HopSummary(hop_bc)), Some(bob))), 1020 unixms))
     val ps2 = OutgoingPayment(id2, parentId, Some("42"), paymentHash1, PaymentType.Standard, 1105 msat, 1105 msat, bob, 1010 unixms, Some(invoice1), OutgoingPaymentStatus.Pending)
     val ps3 = OutgoingPayment(id3, parentId, None, paymentHash1, PaymentType.Standard, 1729 msat, 1729 msat, bob, 1040 unixms, None, OutgoingPaymentStatus.Succeeded(preimage1, 10 msat, Seq(HopSummary(hop_ab), HopSummary(hop_bc)), 1060 unixms))
 
@@ -244,7 +244,7 @@ class PaymentsDbSpec extends AnyFunSuite {
           statement.setBytes(6, ps1.recipientNodeId.value.toArray)
           statement.setLong(7, ps1.createdAt.toLong)
           statement.setLong(8, ps1.status.asInstanceOf[OutgoingPaymentStatus.Failed].completedAt.toLong)
-          statement.setBytes(9, SqlitePaymentsDb.paymentFailuresCodec.encode(ps1.status.asInstanceOf[OutgoingPaymentStatus.Failed].failures.toList).require.toByteArray)
+          statement.setBytes(9, PaymentsDb.encodeFailures(ps1.status.asInstanceOf[OutgoingPaymentStatus.Failed].failures.toList))
           statement.executeUpdate()
         }
 
@@ -270,7 +270,7 @@ class PaymentsDbSpec extends AnyFunSuite {
           statement.setLong(7, ps3.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].completedAt.toLong)
           statement.setBytes(8, ps3.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].paymentPreimage.toArray)
           statement.setLong(9, ps3.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid.toLong)
-          statement.setBytes(10, SqlitePaymentsDb.paymentRouteCodec.encode(ps3.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].route.toList).require.toByteArray)
+          statement.setBytes(10, PaymentsDb.encodeRoute(ps3.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].route.toList))
           statement.executeUpdate()
         }
 
@@ -492,7 +492,7 @@ class PaymentsDbSpec extends AnyFunSuite {
       val ss3 = s3.copy(status = OutgoingPaymentStatus.Failed(Nil, 310 unixms))
       assert(db.getOutgoingPayment(s3.id) === Some(ss3))
       db.updateOutgoingPayment(PaymentFailed(s4.id, s4.paymentHash, Seq(LocalFailure(s4.amount, Seq(hop_ab), new RuntimeException("woops")), RemoteFailure(s4.amount, Seq(hop_ab, hop_bc), Sphinx.DecryptedFailurePacket(carol, UnknownNextPeer))), 320 unixms))
-      val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", List(HopSummary(alice, bob, Some(ShortChannelId(42))))), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)))), 320 unixms))
+      val ss4 = s4.copy(status = OutgoingPaymentStatus.Failed(Seq(FailureSummary(FailureType.LOCAL, "woops", List(HopSummary(alice, bob, Some(ShortChannelId(42)))), Some(alice)), FailureSummary(FailureType.REMOTE, "processing node does not know the next peer in the route", List(HopSummary(alice, bob, Some(ShortChannelId(42))), HopSummary(bob, carol, None)), Some(carol))), 320 unixms))
       assert(db.getOutgoingPayment(s4.id) === Some(ss4))
 
       // can't update again once it's in a final state
