@@ -288,7 +288,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
               }
           }
           // no need to go OFFLINE, we can directly switch to CLOSING
-          if (closing.waitingSinceBlock > 1500000) {
+          if (closing.waitingSinceBlock > 1_500_000_000) {
             // we were using timestamps instead of block heights when the channel was created: we reset it *and* we use block heights
             goto(CLOSING) using closing.copy(waitingSinceBlock = nodeParams.currentBlockHeight) storing()
           } else {
@@ -318,7 +318,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           watchFundingTx(funding.commitments)
           // we make sure that the funding tx has been published
           blockchain ! GetTxWithMeta(self, funding.commitments.commitInput.outPoint.txid)
-          if (funding.waitingSinceBlock > 1500000) {
+          if (funding.waitingSinceBlock > 1_500_000_000) {
             // we were using timestamps instead of block heights when the channel was created: we reset it *and* we use block heights
             goto(OFFLINE) using funding.copy(waitingSinceBlock = nodeParams.currentBlockHeight) storing()
           } else {
