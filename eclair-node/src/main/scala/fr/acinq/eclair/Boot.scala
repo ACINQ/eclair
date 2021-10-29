@@ -26,8 +26,8 @@ import kamon.Kamon
 
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.nio.file.attribute.PosixFilePermissions
-import java.nio.file.{Files, Path, StandardOpenOption}
+import java.nio.file.attribute.{PosixFileAttributeView, PosixFilePermissions}
+import java.nio.file.{Files, Path}
 import java.security.SecureRandom
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
@@ -100,15 +100,21 @@ object Boot extends App with Logging {
   /**
    * Generates the cookie file and return the password
    */
-  def generateCookie(path: String): String = {
+  def generateCookie(pathString: String): String = {
     val bytes = new Array[Byte](32)
     SecureRandom.getInstanceStrong.nextBytes(bytes)
-    val password = bytes.map("%02X" format _).mkString
+    val hexPassword = bytes.map("%02X" format _).mkString // convert the bytes to an hex string
 
-    Files.deleteIfExists(Path.of(path))
-    Files.createFile(Path.of(path), PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))
-    Files.writeString(Path.of(path), s"__COOKIE__:$password", StandardCharsets.UTF_8, StandardOpenOption.CREATE)
-    password
+    val path = Path.of(pathString)
+    Files.deleteIfExists(path)
+    Files.createFile(path)
+
+    Option(Files.getFileAttributeView(path, classOf[PosixFileAttributeView])).foreach(posixView =>
+      posixView.setPermissions(PosixFilePermissions.fromString("rw-------"))
+    )
+
+    Files.writeString(path, s"__COOKIE__:$hexPassword", StandardCharsets.UTF_8)
+    hexPassword
   }
 
   def onError(t: Throwable): Unit = {
