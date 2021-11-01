@@ -55,3 +55,6 @@ trait Service extends EclairDirectives with WebSocket with Node with Channel wit
     extraRouteProviders.map(_.route(this)).foldLeft(baseRoutes)(_ ~ _)
   }
 }
+object Service{
+  val CookieUserName = "__COOKIE__"
+}

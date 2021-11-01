@@ -19,6 +19,7 @@ package fr.acinq.eclair.api.directives
 import akka.http.scaladsl.server.Directive0
 import akka.http.scaladsl.server.directives.Credentials
 import fr.acinq.eclair.api.Service
+import fr.acinq.eclair.api.Service.CookieUserName
 
 import scala.concurrent.Future
 import scala.concurrent.duration.DurationInt
@@ -35,7 +36,7 @@ trait AuthDirective {
   def authenticated: Directive0 = authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator).tflatMap { _ => pass }
 
   private def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
-    case p@Credentials.Provided(id@"__COOKIE__") if cookiePassword.exists(password => p.verify(password)) => Future.successful(Some(id))
+    case p@Credentials.Provided(id@CookieUserName) if cookiePassword.exists(password => p.verify(password)) => Future.successful(Some(id))
     case p@Credentials.Provided(id) if password.exists(password => p.verify(password)) => Future.successful(Some(id))
     case _ => akka.pattern.after(1 second, using = actorSystem.scheduler)(Future.successful(None))(actorSystem.dispatcher) // force a 1 sec pause to deter brute force
   }

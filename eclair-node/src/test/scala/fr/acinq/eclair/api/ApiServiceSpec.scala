@@ -138,7 +138,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   }
 
 
-  test("API returns unauthorized with cookie password and without __COOKIE__ id") {
+  test("API returns unauthorized with cookie password and without the cookie username id") {
     Post("/getinfo") ~>
       addCredentials(BasicHttpCredentials("", mockApi().cookiePassword.get)) ~>
       Route.seal(mockApi().route) ~>
@@ -176,7 +176,7 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
     val mockService = mockApi(eclair)
     eclair.getInfo()(any[Timeout]) returns Future.successful(null)
     Post("/getinfo") ~>
-      addCredentials(BasicHttpCredentials("__COOKIE__", mockApi().cookiePassword.get)) ~>
+      addCredentials(BasicHttpCredentials(Service.CookieUserName, mockApi().cookiePassword.get)) ~>
       Route.seal(mockService.getInfo) ~>
       check {
         assert(handled)

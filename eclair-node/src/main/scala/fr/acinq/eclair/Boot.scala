@@ -134,7 +134,7 @@ object Boot extends App with Logging {
       aclView.setAcl(List(entry).asJava)
     })
 
-    Files.writeString(path, s"__COOKIE__:$hexPassword", StandardCharsets.UTF_8)
+    Files.writeString(path, s"${Service.CookieUserName}:$hexPassword", StandardCharsets.UTF_8)
     hexPassword
   }
 
