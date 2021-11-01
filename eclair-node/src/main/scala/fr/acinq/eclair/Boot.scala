@@ -103,7 +103,7 @@ object Boot extends App with Logging {
   def generateCookie(pathString: String): String = {
     val bytes = new Array[Byte](32)
     SecureRandom.getInstanceStrong.nextBytes(bytes)
-    val hexPassword = bytes.map("%02X" format _).mkString // convert the bytes to an hex string
+    val hexPassword = bytes.map("%02X".format(_)).mkString // convert the bytes to an hex string
 
     val path = Path.of(pathString)
     Files.deleteIfExists(path)

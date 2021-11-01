@@ -4,6 +4,8 @@
 api_url='http://localhost:8080'
 # uncomment the line below if you don't want to provide a password each time you call eclair-cli
 # api_password='your_api_password'
+# uncomment the line below if you want to use cookie authentication when you call eclair-cli
+# cookie_file="${HOME}/.eclair/.cookie"
 # for some commands the json output can be shortened for better readability
 short=false
 
@@ -147,11 +149,18 @@ fi
 
 jq_filter="$jq_filter end";
 
+# if cookie_file is set and exist, use cookie authentication
+if [ ! -z $cookie_file ] && [ -f $cookie_file ]; then
+  auth=$(<$cookie_file)
+fi
+
 # if no password is provided, auth should only contain user login so that curl prompts for the api password
-if [ -z $api_password ]; then
-  auth="eclair-cli";
-else
-  auth="eclair-cli:$api_password";
+if [ -z $auth ]; then
+  if [ -z $api_password ]; then
+    auth="eclair-cli";
+  else
+    auth="eclair-cli:$api_password";
+  fi
 fi
 
 # we're now ready to execute the API call
