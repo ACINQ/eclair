@@ -26,10 +26,11 @@ import kamon.Kamon
 
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.nio.file.attribute.{PosixFileAttributeView, PosixFilePermissions}
-import java.nio.file.{Files, Path}
+import java.nio.file.attribute.{AclEntry, AclEntryPermission, AclEntryType, AclFileAttributeView, PosixFileAttributeView, PosixFilePermissions}
+import java.nio.file.{Files, Path, attribute}
 import java.security.SecureRandom
 import scala.concurrent.ExecutionContext
+import scala.jdk.CollectionConverters.SeqHasAsJava
 import scala.util.{Failure, Success}
 
 /**
@@ -110,8 +111,28 @@ object Boot extends App with Logging {
     Files.createFile(path)
 
     Option(Files.getFileAttributeView(path, classOf[PosixFileAttributeView])).foreach(posixView =>
+      // Change permissions for the .cookie file on Linux/Mac OS
       posixView.setPermissions(PosixFilePermissions.fromString("rw-------"))
     )
+
+    Option(Files.getFileAttributeView(path, classOf[AclFileAttributeView])).foreach(aclView => {
+      // Change permissions for the .cookie file on Windows
+      val entry = AclEntry.newBuilder()
+        .setPermissions(
+          AclEntryPermission.READ_DATA,
+          AclEntryPermission.READ_ATTRIBUTES,
+          AclEntryPermission.READ_NAMED_ATTRS,
+          AclEntryPermission.SYNCHRONIZE,
+          AclEntryPermission.WRITE_DATA,
+          AclEntryPermission.WRITE_ATTRIBUTES,
+          AclEntryPermission.WRITE_NAMED_ATTRS,
+          AclEntryPermission.APPEND_DATA,
+          AclEntryPermission.DELETE)
+        .setPrincipal(aclView.getOwner)
+        .setType(AclEntryType.ALLOW)
+        .build()
+      aclView.setAcl(List(entry).asJava)
+    })
 
     Files.writeString(path, s"__COOKIE__:$hexPassword", StandardCharsets.UTF_8)
     hexPassword
