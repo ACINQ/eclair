@@ -1366,6 +1366,11 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
       handleMutualClose(getMutualClosePublished(tx, d.closingTxProposed), Left(d))
 
+    case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.bestUnpublishedClosingTx_opt.map(_.tx).contains(tx) =>
+      log.warning(s"looks like a mutual close tx has been published from the outside of the channel: closingTxId=${tx.txid}")
+      // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
+      handleMutualClose(d.bestUnpublishedClosingTx_opt.get, Left(d))
+
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchFundingSpentTriggered(tx), d: DATA_NEGOTIATING) if d.commitments.remoteNextCommitInfo.left.toOption.exists(_.nextRemoteCommit.txid == tx.txid) => handleRemoteSpentNext(tx, d)
