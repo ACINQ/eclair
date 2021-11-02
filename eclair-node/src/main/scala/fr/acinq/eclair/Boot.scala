@@ -28,9 +28,8 @@ import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.attribute._
 import java.nio.file.{Files, Path}
-import java.security.SecureRandom
 import scala.concurrent.ExecutionContext
-import scala.jdk.CollectionConverters.SeqHasAsJava
+import scala.jdk.CollectionConverters.{SeqHasAsJava, SetHasAsJava}
 import scala.util.{Failure, Success}
 
 /**
@@ -77,7 +76,7 @@ object Boot extends App with Logging {
         case valid => Some(valid)
       }
       val apiCookiePassword = if (config.getBoolean("api.cookie-enabled")) {
-        Some(generateCookie(config.getString("api.cookie-path")))
+        Some(generateCookie(config.getString("api.cookie-path"), config.getBoolean("api.cookie-group-readable")))
       } else {
         None
       }
@@ -101,10 +100,8 @@ object Boot extends App with Logging {
   /**
    * Generates the cookie file and return the password
    */
-  def generateCookie(pathString: String): String = {
-    val bytes = new Array[Byte](32)
-    SecureRandom.getInstanceStrong.nextBytes(bytes)
-    val hexPassword = bytes.map("%02X".format(_)).mkString // convert the bytes to an hex string
+  def generateCookie(pathString: String, groupReadable: Boolean): String = {
+    val hexPassword = randomBytes32().toHex
 
     val path = Path.of(pathString)
     Files.deleteIfExists(path)
@@ -114,25 +111,25 @@ object Boot extends App with Logging {
     val aclView = Files.getFileAttributeView(path, classOf[AclFileAttributeView])
     if (posixView != null) {
       // Change permissions for the .cookie file on Linux/Mac OS
-      posixView.setPermissions(PosixFilePermissions.fromString("rw-------"))
+      if (groupReadable) {
+        posixView.setPermissions(PosixFilePermissions.fromString("rw-------"))
+      } else {
+        posixView.setPermissions(PosixFilePermissions.fromString("rw-r-----"))
+      }
     } else if (aclView != null) {
       // Change permissions for the .cookie file on Windows
-      val entry = AclEntry.newBuilder()
-        .setPermissions(
-          AclEntryPermission.READ_DATA,
-          AclEntryPermission.READ_ATTRIBUTES,
-          AclEntryPermission.READ_NAMED_ATTRS,
-          AclEntryPermission.SYNCHRONIZE,
-          AclEntryPermission.WRITE_DATA,
-          AclEntryPermission.WRITE_ATTRIBUTES,
-          AclEntryPermission.WRITE_NAMED_ATTRS,
-          AclEntryPermission.APPEND_DATA,
-          AclEntryPermission.DELETE)
+      val aclEntry = AclEntry.newBuilder()
+        .setPermissions(Set.from(AclEntryPermission.values()).asJava)
         .setPrincipal(aclView.getOwner)
         .setType(AclEntryType.ALLOW)
         .build()
-      aclView.setAcl(List(entry).asJava)
-    }else{
+      // setAcl() replaces all acl entries for the file.
+      // That means setting acl with an list containing only an entry that gives access to the owner, every one else loses access to the file.
+      aclView.setAcl(List(aclEntry).asJava)
+      if (groupReadable) {
+        logger.warn("could not make the .cookie file group readable")
+      }
+    } else {
       logger.warn("could not change the permissions of the .cookie file")
     }
 

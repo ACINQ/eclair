@@ -12,6 +12,7 @@
   * [Basic configuration](#basic-configuration)
   * [Regtest mode](#regtest-mode)
   * [Public node](#public-node)
+  * [Bitcoin Core cookie authentication](#Bitcoin-Core-cookie-authentication)
   * [AB-testing for path-finding](#ab-testing-for-path-finding)
 
 ---
@@ -55,6 +56,7 @@ name                         | description                                      
  eclair.api.port             | API HTTP port                                                      | 8080
  eclair.api.enabled          | Enables the JSON API                                               | false
  eclair.api.password         | Password protecting the API (BASIC auth)                           | _no default_
+ eclair.api.cookie-enabled   | API cookie authentication                                          | true
  eclair.bitcoind.auth        | Bitcoin Core RPC authentication method: *password* or *safecookie* | password
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                              | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                          | bar

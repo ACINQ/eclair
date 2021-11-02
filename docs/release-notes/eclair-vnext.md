@@ -80,6 +80,7 @@ now grouped with outgoing htlcs amounts and the field has been renamed from `htl
 ### Miscellaneous improvements and bug fixes
 
 - Eclair now supports cookie authentication for Bitcoin Core RPC (#1986)
+- The Eclair JSON API now supports cookie authentication (#2040)
 
 ## Verifying signatures
 

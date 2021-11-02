@@ -118,9 +118,10 @@ name                         | description                                      
 -----------------------------|---------------------------------------------------------------------------------------|--------------
  eclair.chain                | Which blockchain to use: *regtest*, *testnet* or *mainnet*                            | mainnet
  eclair.server.port          | Lightning TCP port                                                                    | 9735
- eclair.api.enabled          | Enable/disable the API                                                                | false. By default the API is disabled. If you want to enable it, you must set a password.
+ eclair.api.enabled          | Enable/disable the API                                                                | false. By default the API is disabled.
  eclair.api.port             | API HTTP port                                                                         | 8080
- eclair.api.password         | API password (BASIC)                                                                  | "" (must be set if the API is enabled)
+ eclair.api.password         | API password (BASIC)                                                                  | "" (change to something else if you want to enable password authentication)
+ eclair.api.cookie-enabled   | API cookie authentication                                                             | true
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                                                 | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                                             | bar
  eclair.bitcoind.zmqblock    | Bitcoin Core ZMQ block address                                                        | "tcp://127.0.0.1:29000"

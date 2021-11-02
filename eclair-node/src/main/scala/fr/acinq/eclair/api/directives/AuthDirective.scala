@@ -36,8 +36,8 @@ trait AuthDirective {
   def authenticated: Directive0 = authenticateBasicAsync(realm = "Access restricted", userPassAuthenticator).tflatMap { _ => pass }
 
   private def userPassAuthenticator(credentials: Credentials): Future[Option[String]] = credentials match {
-    case p@Credentials.Provided(id@CookieUserName) if cookiePassword.exists(password => p.verify(password)) => Future.successful(Some(id))
-    case p@Credentials.Provided(id) if password.exists(password => p.verify(password)) => Future.successful(Some(id))
+    case p@Credentials.Provided(id@CookieUserName) if cookiePassword.exists(p.verify) => Future.successful(Some(id))
+    case p@Credentials.Provided(id) if password.exists(p.verify) => Future.successful(Some(id))
     case _ => akka.pattern.after(1 second, using = actorSystem.scheduler)(Future.successful(None))(actorSystem.dispatcher) // force a 1 sec pause to deter brute force
   }
 
