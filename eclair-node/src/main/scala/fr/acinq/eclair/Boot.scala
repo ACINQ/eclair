@@ -112,9 +112,9 @@ object Boot extends App with Logging {
     if (posixView != null) {
       // Change permissions for the .cookie file on Linux/Mac OS
       if (groupReadable) {
-        posixView.setPermissions(PosixFilePermissions.fromString("rw-------"))
-      } else {
         posixView.setPermissions(PosixFilePermissions.fromString("rw-r-----"))
+      } else {
+        posixView.setPermissions(PosixFilePermissions.fromString("rw-------"))
       }
     } else if (aclView != null) {
       // Change permissions for the .cookie file on Windows
@@ -124,7 +124,7 @@ object Boot extends App with Logging {
         .setType(AclEntryType.ALLOW)
         .build()
       // setAcl() replaces all acl entries for the file.
-      // That means setting acl with an list containing only an entry that gives access to the owner, every one else loses access to the file.
+      // That means setting acl with an list containing only an entry that gives access to the owner, everyone else lose access to the file.
       aclView.setAcl(List(aclEntry).asJava)
       if (groupReadable) {
         logger.warn("could not make the .cookie file group readable")
