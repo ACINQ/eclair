@@ -494,6 +494,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.reply(RES_GETINFO(map(c2.channelId), c2.channelId, NORMAL, ChannelCodecsSpec.normal))
     val c3 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
     register.reply(RES_GETINFO(map(c3.channelId), c3.channelId, NORMAL, ChannelCodecsSpec.normal))
+    register.expectNoMessage()
 
     awaitCond(res.isCompleted)
 
@@ -514,17 +515,17 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val a1 = randomBytes32()
     val a2 = randomBytes32()
     val b1 = randomBytes32()
-    val map = Map(a1 -> a, a2 -> a, b1 -> b)
+    val channels2Nodes = Map(a1 -> a, a2 -> a, b1 -> b)
 
     val res = eclair.channelsInfo(toRemoteNode_opt = Some(a))
 
     register.expectMsg(Symbol("channelsTo"))
-    register.reply(map)
+    register.reply(channels2Nodes)
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
-    register.reply(RES_GETINFO(map(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
+    register.reply(RES_GETINFO(channels2Nodes(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
     val c2 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
-    register.reply(RES_GETINFO(map(c2.channelId), c2.channelId, NORMAL, ChannelCodecsSpec.normal))
+    register.reply(RES_GETINFO(channels2Nodes(c2.channelId), c2.channelId, NORMAL, ChannelCodecsSpec.normal))
     register.expectNoMessage()
 
     awaitCond(res.isCompleted)
@@ -545,12 +546,12 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val a1 = randomBytes32()
     val a2 = randomBytes32()
     val b1 = randomBytes32()
-    val map = Map(a1 -> a, a2 -> a, b1 -> b)
+    val channels2Nodes = Map(a1 -> a, a2 -> a, b1 -> b)
 
     val res = eclair.channelInfo(Left(a2))
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
-    register.reply(RES_GETINFO(map(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
+    register.reply(RES_GETINFO(channels2Nodes(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
     register.expectNoMessage()
 
     awaitCond(res.isCompleted)
@@ -568,7 +569,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val a1 = randomBytes32()
     val a2 = randomBytes32()
     val b1 = randomBytes32()
-    val map = Map(a1 -> a, a2 -> a, b1 -> b)
 
     val res = eclair.close(List(Left(a2), Left(b1)), None, None)
 
@@ -615,6 +615,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     register.reply(RES_FAILURE(u2.message, CommandUnavailableInThisState(u2.channelId, "CMD_UPDATE_RELAY_FEE", channel.CLOSING)))
     val u3 = register.expectMsgType[Register.Forward[CMD_UPDATE_RELAY_FEE]]
     register.reply(Register.ForwardFailure(u3))
+    register.expectNoMessage()
 
     awaitCond(res.isCompleted)
 
