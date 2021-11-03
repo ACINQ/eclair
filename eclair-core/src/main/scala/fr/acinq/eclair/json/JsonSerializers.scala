@@ -191,6 +191,7 @@ object ChannelOpenResponseSerializer extends MinimalSerializer({
 
 object CommandResponseSerializer extends MinimalSerializer({
   case RES_SUCCESS(_: CloseCommand, channelId) => JString(s"closed channel $channelId")
+  case RES_SUCCESS(_, _) => JString("ok")
   case RES_FAILURE(_: Command, ex: Throwable) => JString(ex.getMessage)
 })
 

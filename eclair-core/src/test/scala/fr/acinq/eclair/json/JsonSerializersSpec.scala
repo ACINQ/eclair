@@ -16,11 +16,12 @@
 
 package fr.acinq.eclair.json
 
+import akka.actor.ActorRef
 import fr.acinq.bitcoin.{Btc, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
-import fr.acinq.eclair.channel.Origin
+import fr.acinq.eclair.channel.{CMD_UPDATE_RELAY_FEE, CommandResponse, CommandUnavailableInThisState, Origin, RES_FAILURE, RES_SUCCESS}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
@@ -271,6 +272,21 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     JsonSerializers.serialization.write(ts)(JsonSerializers.formats) shouldBe """{"iso":"2021-10-04T14:32:41Z","unix":1633357961}"""
     val tsms = TimestampMilli(1633357961456L)
     JsonSerializers.serialization.write(tsms)(JsonSerializers.formats) shouldBe """{"iso":"2021-10-04T14:32:41.456Z","unix":1633357961}"""
+  }
+
+  test("serialize channel command responses") {
+    val id1 = ByteVector32(hex"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff")
+    val id2 = ByteVector32(hex"8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3")
+    val id3 = ByteVector32(hex"74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8")
+    val res1 = RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986, None), id1)
+    val res2 = RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 420L msat, 986, None), CommandUnavailableInThisState(id2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))
+    val res3 = ApiTypes.ChannelNotFound(Left(id3))
+    val map = Map(
+      Left(id1) -> Right(res1),
+      Left(id2) -> Right(res2),
+      Left(id3) -> Left(res3)
+    )
+    JsonSerializers.serialization.write(map)(JsonSerializers.formats) shouldBe s"""{"e2fc57221cfb1942224082174022f3f70a32005aa209956f9c94c6903f7669ff":"ok","8e3ec6e16436b7dc61b86340192603d05f16d4f8e06c8aaa02fbe2ad63209af3":"cannot execute command=CMD_UPDATE_RELAY_FEE in state=CLOSING","74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8":"channel 74ca7a86e52d597aa2248cd2ff3b24428ede71345262be7fb31afddfe18dc0d8 not found"}"""
   }
 
   /** utility method that strips line breaks in the expected json */
