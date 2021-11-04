@@ -162,7 +162,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     }
     // We assume that the trampoline node supports multi-part payments (it should).
     val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (r.paymentRequest.features.allowTrampoline) {
-      OutgoingPaymentPacket.buildPacket(Sphinx.TrampolinePacket)(r.paymentHash, trampolineRoute, finalPayload)
+      OutgoingPaymentPacket.buildTrampolinePacket(r.paymentHash, trampolineRoute, finalPayload)
     } else {
       OutgoingPaymentPacket.buildTrampolineToLegacyPacket(r.paymentRequest, trampolineRoute, finalPayload)
     }
@@ -260,13 +260,13 @@ object PaymentInitiator {
                                blockUntilComplete: Boolean = false) extends SendRequestedPayment
 
   /**
-   * @param recipientAmount amount that should be received by the final recipient.
-   * @param recipientNodeId id of the final recipient.
-   * @param paymentPreimage payment preimage.
-   * @param maxAttempts     maximum number of retries.
-   * @param externalId      (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
-   * @param routeParams     (optional) parameters to fine-tune the routing algorithm.
-   * @param userCustomTlvs  (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
+   * @param recipientAmount          amount that should be received by the final recipient.
+   * @param recipientNodeId          id of the final recipient.
+   * @param paymentPreimage          payment preimage.
+   * @param maxAttempts              maximum number of retries.
+   * @param externalId               (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
+   * @param routeParams              (optional) parameters to fine-tune the routing algorithm.
+   * @param userCustomTlvs           (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
    * @param recordPathFindingMetrics will be used to build [[SendPaymentConfig]].
    */
   case class SendSpontaneousPayment(recipientAmount: MilliSatoshi,
@@ -339,22 +339,22 @@ object PaymentInitiator {
   /**
    * Configuration for an instance of a payment state machine.
    *
-   * @param id              id of the outgoing payment (mapped to a single outgoing HTLC).
-   * @param parentId        id of the whole payment (if using multi-part, there will be N associated child payments,
-   *                        each with a different id).
-   * @param externalId      externally-controlled identifier (to reconcile between application DB and eclair DB).
-   * @param paymentHash     payment hash.
-   * @param recipientAmount amount that should be received by the final recipient (usually from a Bolt 11 invoice).
-   * @param recipientNodeId id of the final recipient.
-   * @param upstream        information about the payment origin (to link upstream to downstream when relaying a payment).
-   * @param paymentRequest  Bolt 11 invoice.
-   * @param storeInDb       whether to store data in the payments DB (e.g. when we're relaying a trampoline payment, we
-   *                        don't want to store in the DB).
-   * @param publishEvent    whether to publish a [[fr.acinq.eclair.payment.PaymentEvent]] on success/failure (e.g. for
-   *                        multi-part child payments, we don't want to emit events for each child, only for the whole payment).
-   * @param recordPathFindingMetrics   We don't record metrics for payments that don't use path finding or that are a part of a bigger payment.
-   * @param additionalHops  additional hops that the payment state machine isn't aware of (e.g. when using trampoline, hops
-   *                        that occur after the first trampoline node).
+   * @param id                       id of the outgoing payment (mapped to a single outgoing HTLC).
+   * @param parentId                 id of the whole payment (if using multi-part, there will be N associated child payments,
+   *                                 each with a different id).
+   * @param externalId               externally-controlled identifier (to reconcile between application DB and eclair DB).
+   * @param paymentHash              payment hash.
+   * @param recipientAmount          amount that should be received by the final recipient (usually from a Bolt 11 invoice).
+   * @param recipientNodeId          id of the final recipient.
+   * @param upstream                 information about the payment origin (to link upstream to downstream when relaying a payment).
+   * @param paymentRequest           Bolt 11 invoice.
+   * @param storeInDb                whether to store data in the payments DB (e.g. when we're relaying a trampoline payment, we
+   *                                 don't want to store in the DB).
+   * @param publishEvent             whether to publish a [[fr.acinq.eclair.payment.PaymentEvent]] on success/failure (e.g. for
+   *                                 multi-part child payments, we don't want to emit events for each child, only for the whole payment).
+   * @param recordPathFindingMetrics We don't record metrics for payments that don't use path finding or that are a part of a bigger payment.
+   * @param additionalHops           additional hops that the payment state machine isn't aware of (e.g. when using trampoline, hops
+   *                                 that occur after the first trampoline node).
    */
   case class SendPaymentConfig(id: UUID,
                                parentId: UUID,

@@ -18,7 +18,6 @@ package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
@@ -208,13 +207,16 @@ object PaymentOnion {
     def records: TlvStream[OnionPaymentPayloadTlv]
   }
 
-  /** Payment onion packet type (see [[fr.acinq.eclair.crypto.Sphinx.OnionRoutingPacket]]). */
+  /** Payment onion packet type. */
   sealed trait PacketType
 
-  /** See [[fr.acinq.eclair.crypto.Sphinx.PaymentPacket]]. */
+  /** A payment onion packet is used when offering an HTLC to a remote node. */
   sealed trait PaymentPacket extends PacketType
 
-  /** See [[fr.acinq.eclair.crypto.Sphinx.TrampolinePacket]]. */
+  /**
+   * A trampoline onion packet is used to defer route construction to trampoline nodes.
+   * It is usually embedded inside a [[PaymentPacket]] in the final node's payload.
+   */
   sealed trait TrampolinePacket extends PacketType
 
   /** Per-hop payload from an HTLC's payment onion (after decryption and decoding). */
@@ -309,9 +311,10 @@ object PaymentOnionCodecs {
   import scodec.codecs._
   import scodec.{Attempt, Codec, DecodeResult, Decoder}
 
-  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(Sphinx.PaymentPacket.PayloadLength)
-
-  val trampolineOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(Sphinx.TrampolinePacket.PayloadLength)
+  val paymentOnionPayloadLength = 1300
+  val trampolineOnionPayloadLength = 400
+  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(paymentOnionPayloadLength)
+  val trampolineOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(trampolineOnionPayloadLength)
 
   /**
    * The 1.1 BOLT spec changed the payment onion frame format to use variable-length per-hop payloads.
@@ -396,9 +399,8 @@ object PaymentOnionCodecs {
     case FinalTlvPayload(tlvs) => tlvs
   })
 
-  def perHopPayloadCodecByPacketType[T <: PacketType](packetType: Sphinx.OnionRoutingPacket[T], isLastPacket: Boolean): Codec[PacketType] = packetType match {
-    case Sphinx.PaymentPacket => if (isLastPacket) finalPerHopPayloadCodec.upcast[PacketType] else channelRelayPerHopPayloadCodec.upcast[PacketType]
-    case Sphinx.TrampolinePacket => if (isLastPacket) finalPerHopPayloadCodec.upcast[PacketType] else nodeRelayPerHopPayloadCodec.upcast[PacketType]
-  }
+  def paymentOnionPerHopPayloadCodec(isLastPacket: Boolean): Codec[PaymentPacket] = if (isLastPacket) finalPerHopPayloadCodec.upcast[PaymentPacket] else channelRelayPerHopPayloadCodec.upcast[PaymentPacket]
+
+  def trampolineOnionPerHopPayloadCodec(isLastPacket: Boolean): Codec[TrampolinePacket] = if (isLastPacket) finalPerHopPayloadCodec.upcast[TrampolinePacket] else nodeRelayPerHopPayloadCodec.upcast[TrampolinePacket]
 
 }

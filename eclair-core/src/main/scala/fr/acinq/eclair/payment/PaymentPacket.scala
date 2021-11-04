@@ -29,7 +29,6 @@ import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
 import java.util.UUID
-import scala.reflect.ClassTag
 
 /**
  * Created by t-bast on 08/10/2019.
@@ -56,11 +55,24 @@ object IncomingPaymentPacket {
 
   case class DecodedOnionPacket[T <: PaymentOnion.PacketType](payload: T, next: OnionRoutingPacket)
 
-  private[payment] def decryptOnion[T <: PaymentOnion.PacketType : ClassTag](paymentHash: ByteVector32, privateKey: PrivateKey)(packet: OnionRoutingPacket, packetType: Sphinx.OnionRoutingPacket[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
-    packetType.peel(privateKey, paymentHash, packet) match {
+  private[payment] def decryptPaymentOnion(paymentHash: ByteVector32, privateKey: PrivateKey, packet: OnionRoutingPacket)(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[PaymentOnion.PaymentPacket]] =
+    Sphinx.peel(privateKey, paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
-        (PaymentOnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits): @unchecked) match {
-          case Attempt.Successful(DecodeResult(perHopPayload: T, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
+        PaymentOnionCodecs.paymentOnionPerHopPayloadCodec(p.isLastPacket).decode(payload.bits) match {
+          case Attempt.Successful(DecodeResult(perHopPayload: PaymentOnion.PaymentPacket, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
+          case Attempt.Failure(e: OnionRoutingCodecs.MissingRequiredTlv) => Left(e.failureMessage)
+          // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
+          // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
+          case Attempt.Failure(_) => Left(InvalidOnionPayload(UInt64(0), 0))
+        }
+      case Left(badOnion) => Left(badOnion)
+    }
+
+  private[payment] def decryptTrampolineOnion(paymentHash: ByteVector32, privateKey: PrivateKey, packet: OnionRoutingPacket)(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[PaymentOnion.TrampolinePacket]] =
+    Sphinx.peel(privateKey, paymentHash, packet) match {
+      case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
+        PaymentOnionCodecs.trampolineOnionPerHopPayloadCodec(p.isLastPacket).decode(payload.bits) match {
+          case Attempt.Successful(DecodeResult(perHopPayload: PaymentOnion.TrampolinePacket, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
           case Attempt.Failure(e: OnionRoutingCodecs.MissingRequiredTlv) => Left(e.failureMessage)
           // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
           // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
@@ -81,12 +93,12 @@ object IncomingPaymentPacket {
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
   def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPaymentPacket] = {
-    decryptOnion(add.paymentHash, privateKey)(add.onionRoutingPacket, Sphinx.PaymentPacket) match {
+    decryptPaymentOnion(add.paymentHash, privateKey, add.onionRoutingPacket) match {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
       case Right(DecodedOnionPacket(payload: PaymentOnion.ChannelRelayPayload, next)) => Right(ChannelRelayPacket(add, payload, next))
       case Right(DecodedOnionPacket(payload: PaymentOnion.FinalTlvPayload, _)) => payload.records.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
-        case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) => decryptOnion(add.paymentHash, privateKey)(trampolinePacket, Sphinx.TrampolinePacket) match {
+        case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) => decryptTrampolineOnion(add.paymentHash, privateKey, trampolinePacket) match {
           case Left(failure) => Left(failure)
           case Right(DecodedOnionPacket(innerPayload: PaymentOnion.NodeRelayPayload, next)) => validateNodeRelay(add, payload, innerPayload, next)
           case Right(DecodedOnionPacket(innerPayload: PaymentOnion.FinalPayload, _)) => validateFinal(add, payload, innerPayload)
@@ -140,7 +152,7 @@ object OutgoingPaymentPacket {
   /**
    * Build an encrypted onion packet from onion payloads and node public keys.
    */
-  def buildOnion[T <: PaymentOnion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(nodes: Seq[PublicKey], payloads: Seq[PaymentOnion.PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
+  private def buildOnion(packetPayloadLength: Int, nodes: Seq[PublicKey], payloads: Seq[PaymentOnion.PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey()
     val payloadsBin: Seq[ByteVector] = payloads
@@ -153,7 +165,7 @@ object OutgoingPaymentPacket {
         case Attempt.Successful(bitVector) => bitVector.bytes
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
       }
-    packetType.create(sessionKey, nodes, payloadsBin, associatedData)
+    Sphinx.create(sessionKey, packetPayloadLength, nodes, payloadsBin, associatedData)
   }
 
   /**
@@ -187,13 +199,19 @@ object OutgoingPaymentPacket {
    *         - firstExpiry is the cltv expiry for the first htlc in the route
    *         - the onion to include in the HTLC
    */
-  def buildPacket[T <: PaymentOnion.PacketType](packetType: Sphinx.OnionRoutingPacket[T])(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
+  private def buildPacket(packetPayloadLength: Int, paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
     val (firstAmount, firstExpiry, payloads) = buildPayloads(hops.drop(1), finalPayload)
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
-    val onion = buildOnion(packetType)(nodes, payloads, paymentHash)
+    val onion = buildOnion(packetPayloadLength, nodes, payloads, paymentHash)
     (firstAmount, firstExpiry, onion)
   }
+
+  def buildPaymentPacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) =
+    buildPacket(PaymentOnionCodecs.paymentOnionPayloadLength, paymentHash, hops, finalPayload)
+
+  def buildTrampolinePacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) =
+    buildPacket(PaymentOnionCodecs.trampolineOnionPayloadLength, paymentHash, hops, finalPayload)
 
   /**
    * Build an encrypted trampoline onion packet when the final recipient doesn't support trampoline.
@@ -219,7 +237,7 @@ object OutgoingPaymentPacket {
         (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads)
     }
     val nodes = hops.map(_.nextNodeId)
-    val onion = buildOnion(Sphinx.TrampolinePacket)(nodes, payloads, invoice.paymentHash)
+    val onion = buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, nodes, payloads, invoice.paymentHash)
     (firstAmount, firstExpiry, onion)
   }
 
@@ -240,12 +258,12 @@ object OutgoingPaymentPacket {
    * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
    */
   def buildCommand(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: PaymentOnion.FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
-    val (firstAmount, firstExpiry, onion) = buildPacket(Sphinx.PaymentPacket)(paymentHash, hops, finalPayload)
+    val (firstAmount, firstExpiry, onion) = buildPaymentPacket(paymentHash, hops, finalPayload)
     CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, Origin.Hot(replyTo, upstream), commit = true) -> onion.sharedSecrets
   }
 
   def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
-    Sphinx.PaymentPacket.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
+    Sphinx.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
         val encryptedReason = reason match {
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
