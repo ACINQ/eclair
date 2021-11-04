@@ -320,7 +320,7 @@ object MultiPartPaymentLifecycle {
                                   maxAttempts: Int,
                                   assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                   routeParams: RouteParams,
-                                  additionalTlvs: Seq[OnionTlv] = Nil,
+                                  additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
                                   userCustomTlvs: Seq[GenericTlv] = Nil) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
   }
@@ -400,7 +400,7 @@ object MultiPartPaymentLifecycle {
       Some(cfg.paymentContext))
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
-    val finalPayload = Onion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs, request.userCustomTlvs)
+    val finalPayload = PaymentOnion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs, request.userCustomTlvs)
     SendPaymentToRoute(replyTo, Right(route), finalPayload)
   }
 

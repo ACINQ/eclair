@@ -96,7 +96,7 @@ object Sphinx extends Logging {
         // The first bytes contain a varint encoding the length of the payload data (not including the trailing mac).
         // Since messages are always smaller than 65535 bytes, this varint will either be 1 or 3 bytes long.
         Metrics.OnionPayloadFormat.withTag(Tags.LegacyOnion, value = false).increment()
-        MacLength + OnionCodecs.payloadLengthDecoder.decode(payload.bits).require.value.toInt
+        MacLength + PaymentOnionCodecs.payloadLengthDecoder.decode(payload.bits).require.value.toInt
     }
   }
 
@@ -122,7 +122,7 @@ object Sphinx extends Logging {
    */
   case class PacketAndSecrets(packet: protocol.OnionRoutingPacket, sharedSecrets: Seq[(ByteVector32, PublicKey)])
 
-  sealed trait OnionRoutingPacket[T <: Onion.PacketType] {
+  sealed trait OnionRoutingPacket[T <: PaymentOnion.PacketType] {
 
     /**
      * Supported packet version. Note that since this value is outside of the onion encrypted payload, intermediate
@@ -272,14 +272,14 @@ object Sphinx extends Logging {
      * When an invalid onion is received, its hash should be included in the failure message.
      */
     def hash(onion: protocol.OnionRoutingPacket): ByteVector32 =
-      Crypto.sha256(OnionCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
+      Crypto.sha256(PaymentOnionCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
 
   }
 
   /**
    * A payment onion packet is used when offering an HTLC to a remote node.
    */
-  object PaymentPacket extends OnionRoutingPacket[Onion.PaymentPacket] {
+  object PaymentPacket extends OnionRoutingPacket[PaymentOnion.PaymentPacket] {
     override val PayloadLength = 1300
   }
 
@@ -287,7 +287,7 @@ object Sphinx extends Logging {
    * A trampoline onion packet is used to defer route construction to trampoline nodes.
    * It is usually embedded inside a payment onion packet in the final node's payload.
    */
-  object TrampolinePacket extends OnionRoutingPacket[Onion.TrampolinePacket] {
+  object TrampolinePacket extends OnionRoutingPacket[PaymentOnion.TrampolinePacket] {
     override val PayloadLength = 400
   }
 

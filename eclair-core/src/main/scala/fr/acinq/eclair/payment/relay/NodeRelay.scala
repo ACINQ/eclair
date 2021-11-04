@@ -102,7 +102,7 @@ object NodeRelay {
       }
     }
 
-  def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload): Option[FailureMessage] = {
+  def validateRelay(nodeParams: NodeParams, upstream: Upstream.Trampoline, payloadOut: PaymentOnion.NodeRelayPayload): Option[FailureMessage] = {
     val fee = nodeFee(nodeParams.relayParams.minTrampolineFees.feeBase, nodeParams.relayParams.minTrampolineFees.feeProportionalMillionths, payloadOut.amountToForward)
     if (upstream.amountIn - payloadOut.amountToForward < fee) {
       Some(TrampolineFeeInsufficient)
@@ -132,7 +132,7 @@ object NodeRelay {
    * This helper method translates relaying errors (returned by the downstream nodes) to a BOLT 4 standard error that we
    * should return upstream.
    */
-  def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload): Option[FailureMessage] = {
+  def translateError(nodeParams: NodeParams, failures: Seq[PaymentFailure], upstream: Upstream.Trampoline, nextPayload: PaymentOnion.NodeRelayPayload): Option[FailureMessage] = {
     val routeNotFound = failures.collectFirst { case f@LocalFailure(_, _, RouteNotFound) => f }.nonEmpty
     val routingFeeHigh = upstream.amountIn - nextPayload.amountToForward >= nodeFee(nodeParams.relayParams.minTrampolineFees.feeBase, nodeParams.relayParams.minTrampolineFees.feeProportionalMillionths, nextPayload.amountToForward) * 5
     failures match {
@@ -178,7 +178,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPacket  trampoline onion to relay to the next trampoline node.
    * @param handler     actor handling the aggregation of the incoming HTLC set.
    */
-  private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
+  private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: PaymentOnion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       case Relay(IncomingPacket.NodeRelayPacket(add, outer, _, _)) =>
         require(outer.paymentSecret == paymentSecret, "payment secret mismatch")
@@ -203,7 +203,7 @@ class NodeRelay private(nodeParams: NodeParams,
         }
     }
 
-  private def doSend(upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, nextPacket: OnionRoutingPacket): Behavior[Command] = {
+  private def doSend(upstream: Upstream.Trampoline, nextPayload: PaymentOnion.NodeRelayPayload, nextPacket: OnionRoutingPacket): Behavior[Command] = {
     context.log.info(s"relaying trampoline payment (amountIn=${upstream.amountIn} expiryIn=${upstream.expiryIn} amountOut=${nextPayload.amountToForward} expiryOut=${nextPayload.outgoingCltv})")
     relay(upstream, nextPayload, nextPacket)
     sending(upstream, nextPayload, fulfilledUpstream = false)
@@ -216,7 +216,7 @@ class NodeRelay private(nodeParams: NodeParams,
    * @param nextPayload       relay instructions.
    * @param fulfilledUpstream true if we already fulfilled the payment upstream.
    */
-  private def sending(upstream: Upstream.Trampoline, nextPayload: Onion.NodeRelayPayload, fulfilledUpstream: Boolean): Behavior[Command] =
+  private def sending(upstream: Upstream.Trampoline, nextPayload: PaymentOnion.NodeRelayPayload, fulfilledUpstream: Boolean): Behavior[Command] =
     Behaviors.receiveMessagePartial {
       rejectExtraHtlcPartialFunction orElse {
         // this is the fulfill that arrives from downstream channels
@@ -261,7 +261,7 @@ class NodeRelay private(nodeParams: NodeParams,
     context.messageAdapter[PaymentFailed](WrappedPaymentFailed)
   }.toClassic
 
-  private def relay(upstream: Upstream.Trampoline, payloadOut: Onion.NodeRelayPayload, packetOut: OnionRoutingPacket): ActorRef = {
+  private def relay(upstream: Upstream.Trampoline, payloadOut: PaymentOnion.NodeRelayPayload, packetOut: OnionRoutingPacket): ActorRef = {
     val paymentCfg = SendPaymentConfig(relayId, relayId, None, paymentHash, payloadOut.amountToForward, payloadOut.outgoingNodeId, upstream, None, storeInDb = false, publishEvent = false, recordPathFindingMetrics = true, Nil)
     val routeParams = computeRouteParams(nodeParams, upstream.amountIn, upstream.expiryIn, payloadOut.amountToForward, payloadOut.outgoingCltv)
     // If invoice features are provided in the onion, the sender is asking us to relay to a non-trampoline recipient.
@@ -277,7 +277,7 @@ class NodeRelay private(nodeParams: NodeParams,
           payFSM
         } else {
           context.log.debug("sending the payment to non-trampoline recipient without MPP")
-          val finalPayload = Onion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret)
+          val finalPayload = PaymentOnion.createSinglePartPayload(payloadOut.amountToForward, payloadOut.outgoingCltv, paymentSecret)
           val payment = SendPaymentToNode(payFsmAdapters, payloadOut.outgoingNodeId, finalPayload, nodeParams.maxPaymentAttempts, routingHints, routeParams)
           val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = false)
           payFSM ! payment
@@ -287,7 +287,7 @@ class NodeRelay private(nodeParams: NodeParams,
         context.log.debug("sending the payment to the next trampoline node")
         val payFSM = outgoingPaymentFactory.spawnOutgoingPayFSM(context, paymentCfg, multiPart = true)
         val paymentSecret = randomBytes32() // we generate a new secret to protect against probing attacks
-        val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = routeParams, additionalTlvs = Seq(OnionTlv.TrampolineOnion(packetOut)))
+        val payment = SendMultiPartPayment(payFsmAdapters, paymentSecret, payloadOut.outgoingNodeId, payloadOut.amountToForward, payloadOut.outgoingCltv, nodeParams.maxPaymentAttempts, routeParams = routeParams, additionalTlvs = Seq(OnionPaymentPayloadTlv.TrampolineOnion(packetOut)))
         payFSM ! payment
         payFSM
     }

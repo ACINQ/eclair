@@ -30,7 +30,7 @@ import fr.acinq.eclair.payment.IncomingPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
 import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.protocol.Onion.{ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.{ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, NodeParams, TestConstants, randomBytes32, _}
 import org.scalatest.Outcome
@@ -88,9 +88,9 @@ class ChannelRelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("a
 
   test("relay an htlc-add with onion tlv payload") { f =>
     import f._
-    import fr.acinq.eclair.wire.protocol.OnionTlv._
+    import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv._
 
-    val payload = ChannelRelayTlvPayload(TlvStream[OnionTlv](AmountToForward(outgoingAmount), OutgoingCltv(outgoingExpiry), OutgoingChannelId(shortId1)))
+    val payload = ChannelRelayTlvPayload(TlvStream[OnionPaymentPayloadTlv](AmountToForward(outgoingAmount), OutgoingCltv(outgoingExpiry), OutgoingChannelId(shortId1)))
     val r = createValidIncomingPacket(1100000 msat, CltvExpiry(400100), payload)
     val u = createLocalUpdate(shortId1)
 

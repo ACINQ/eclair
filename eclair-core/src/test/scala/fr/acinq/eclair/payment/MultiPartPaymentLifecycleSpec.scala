@@ -147,15 +147,15 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     import f._
 
     // We include a bunch of additional tlv records.
-    val trampolineTlv = OnionTlv.TrampolineOnion(OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(400)(0), randomBytes32()))
+    val trampolineTlv = OnionPaymentPayloadTlv.TrampolineOnion(OnionRoutingPacket(0, ByteVector.fill(33)(0), ByteVector.fill(400)(0), randomBytes32()))
     val userCustomTlv = GenericTlv(UInt64(561), hex"deadbeef")
     val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount + 1000.msat, expiry, 1, routeParams = routeParams, additionalTlvs = Seq(trampolineTlv), userCustomTlvs = Seq(userCustomTlv))
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
     router.send(payFsm, RouteResponse(Seq(Route(500000 msat, hop_ab_1 :: hop_be :: Nil), Route(501000 msat, hop_ac_1 :: hop_ce :: Nil))))
     val childPayments = childPayFsm.expectMsgType[SendPaymentToRoute] :: childPayFsm.expectMsgType[SendPaymentToRoute] :: Nil
-    childPayments.map(_.finalPayload.asInstanceOf[Onion.FinalTlvPayload]).foreach(p => {
-      assert(p.records.get[OnionTlv.TrampolineOnion] === Some(trampolineTlv))
+    childPayments.map(_.finalPayload.asInstanceOf[PaymentOnion.FinalTlvPayload]).foreach(p => {
+      assert(p.records.get[OnionPaymentPayloadTlv.TrampolineOnion] === Some(trampolineTlv))
       assert(p.records.unknown.toSeq === Seq(userCustomTlv))
     })
 

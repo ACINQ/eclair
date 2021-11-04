@@ -32,8 +32,8 @@ import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{PaymentError, PaymentInitiator, PaymentLifecycle}
 import fr.acinq.eclair.router.RouteNotFound
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.wire.protocol.Onion.FinalTlvPayload
-import fr.acinq.eclair.wire.protocol.OnionTlv.{AmountToForward, KeySend, OutgoingCltv}
+import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalTlvPayload
+import fr.acinq.eclair.wire.protocol.OnionPaymentPayloadTlv.{AmountToForward, KeySend, OutgoingCltv}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -134,7 +134,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, SendPaymentToRoute(finalAmount, finalAmount, pr, ignoredFinalExpiryDelta, route, None, None, None, 0 msat, CltvExpiryDelta(0), Nil))
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, Nil))
-    payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(sender.ref, Left(route), Onion.createSinglePartPayload(finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1), pr.paymentSecret.get)))
+    payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.createSinglePartPayload(finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1), pr.paymentSecret.get)))
   }
 
   test("forward single-part payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
@@ -146,7 +146,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     payFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount, c, Upstream.Local(id), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
-    payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(sender.ref, c, FinalTlvPayload(TlvStream(OnionTlv.AmountToForward(finalAmount), OnionTlv.OutgoingCltv(req.finalExpiry(nodeParams.currentBlockHeight)), OnionTlv.PaymentData(pr.paymentSecret.get, finalAmount))), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+    payFsm.expectMsg(PaymentLifecycle.SendPaymentToNode(sender.ref, c, FinalTlvPayload(TlvStream(OnionPaymentPayloadTlv.AmountToForward(finalAmount), OnionPaymentPayloadTlv.OutgoingCltv(req.finalExpiry(nodeParams.currentBlockHeight)), OnionPaymentPayloadTlv.PaymentData(pr.paymentSecret.get, finalAmount))), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
   }
 
   test("forward multi-part payment") { f =>
@@ -191,14 +191,14 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.targetNodeId === b)
     assert(msg.targetExpiry.toLong === currentBlockCount + 9 + 12 + 1)
     assert(msg.totalAmount === finalAmount + trampolineFees)
-    assert(msg.additionalTlvs.head.isInstanceOf[OnionTlv.TrampolineOnion])
+    assert(msg.additionalTlvs.head.isInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion])
     assert(msg.maxAttempts === nodeParams.maxPaymentAttempts)
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
-    val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionTlv.TrampolineOnion].packet
+    val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion].packet
     val Right(decrypted) = Sphinx.TrampolinePacket.peel(priv_b.privateKey, pr.paymentHash, trampolineOnion)
     assert(!decrypted.isLastPacket)
-    val trampolinePayload = OnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
+    val trampolinePayload = PaymentOnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
     assert(trampolinePayload.amountToForward === finalAmount)
     assert(trampolinePayload.totalAmount === finalAmount)
     assert(trampolinePayload.outgoingCltv.toLong === currentBlockCount + 9 + 1)
@@ -210,7 +210,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // Verify that the recipient can correctly peel the trampoline onion.
     val Right(decrypted1) = Sphinx.TrampolinePacket.peel(priv_c.privateKey, pr.paymentHash, decrypted.nextPacket)
     assert(decrypted1.isLastPacket)
-    val finalPayload = OnionCodecs.finalPerHopPayloadCodec.decode(decrypted1.payload.bits).require.value
+    val finalPayload = PaymentOnionCodecs.finalPerHopPayloadCodec.decode(decrypted1.payload.bits).require.value
     assert(finalPayload.amount === finalAmount)
     assert(finalPayload.totalAmount === finalAmount)
     assert(finalPayload.expiry.toLong === currentBlockCount + 9 + 1)
@@ -231,13 +231,13 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.targetNodeId === b)
     assert(msg.targetExpiry.toLong === currentBlockCount + 9 + 12 + 1)
     assert(msg.totalAmount === finalAmount + trampolineFees)
-    assert(msg.additionalTlvs.head.isInstanceOf[OnionTlv.TrampolineOnion])
+    assert(msg.additionalTlvs.head.isInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion])
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
-    val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionTlv.TrampolineOnion].packet
+    val trampolineOnion = msg.additionalTlvs.head.asInstanceOf[OnionPaymentPayloadTlv.TrampolineOnion].packet
     val Right(decrypted) = Sphinx.TrampolinePacket.peel(priv_b.privateKey, pr.paymentHash, trampolineOnion)
     assert(!decrypted.isLastPacket)
-    val trampolinePayload = OnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
+    val trampolinePayload = PaymentOnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
     assert(trampolinePayload.amountToForward === finalAmount)
     assert(trampolinePayload.totalAmount === finalAmount)
     assert(trampolinePayload.outgoingCltv.toLong === currentBlockCount + 9 + 1)
@@ -367,14 +367,14 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(msg.finalPayload.amount === finalAmount + trampolineFees)
     assert(msg.finalPayload.paymentSecret === payment.trampolineSecret.get)
     assert(msg.finalPayload.totalAmount === finalAmount + trampolineFees)
-    assert(msg.finalPayload.isInstanceOf[Onion.FinalTlvPayload])
-    val trampolineOnion = msg.finalPayload.asInstanceOf[Onion.FinalTlvPayload].records.get[OnionTlv.TrampolineOnion]
+    assert(msg.finalPayload.isInstanceOf[PaymentOnion.FinalTlvPayload])
+    val trampolineOnion = msg.finalPayload.asInstanceOf[PaymentOnion.FinalTlvPayload].records.get[OnionPaymentPayloadTlv.TrampolineOnion]
     assert(trampolineOnion.nonEmpty)
 
     // Verify that the trampoline node can correctly peel the trampoline onion.
     val Right(decrypted) = Sphinx.TrampolinePacket.peel(priv_b.privateKey, pr.paymentHash, trampolineOnion.get.packet)
     assert(!decrypted.isLastPacket)
-    val trampolinePayload = OnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
+    val trampolinePayload = PaymentOnionCodecs.nodeRelayPerHopPayloadCodec.decode(decrypted.payload.bits).require.value
     assert(trampolinePayload.amountToForward === finalAmount)
     assert(trampolinePayload.totalAmount === finalAmount)
     assert(trampolinePayload.outgoingNodeId === c)

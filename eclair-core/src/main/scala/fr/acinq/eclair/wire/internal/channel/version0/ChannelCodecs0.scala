@@ -97,7 +97,7 @@ private[channel] object ChannelCodecs0 {
         ("amountMsat" | millisatoshi) ::
         ("paymentHash" | bytes32) ::
         ("expiry" | cltvExpiry) ::
-        ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec) ::
+        ("onionRoutingPacket" | PaymentOnionCodecs.paymentOnionPacketCodec) ::
         ("tlvStream" | provide(TlvStream.empty[UpdateAddHtlcTlv]))).as[UpdateAddHtlc]
 
     val htlcCodec: Codec[DirectedHtlc] = discriminated[DirectedHtlc].by(bool)
