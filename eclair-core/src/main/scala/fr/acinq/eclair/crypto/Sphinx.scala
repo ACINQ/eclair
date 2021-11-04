@@ -272,7 +272,7 @@ object Sphinx extends Logging {
      * When an invalid onion is received, its hash should be included in the failure message.
      */
     def hash(onion: protocol.OnionRoutingPacket): ByteVector32 =
-      Crypto.sha256(PaymentOnionCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
+      Crypto.sha256(OnionRoutingCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
 
   }
 

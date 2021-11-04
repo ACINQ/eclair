@@ -61,7 +61,7 @@ object IncomingPaymentPacket {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         (PaymentOnionCodecs.perHopPayloadCodecByPacketType(packetType, p.isLastPacket).decode(payload.bits): @unchecked) match {
           case Attempt.Successful(DecodeResult(perHopPayload: T, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
-          case Attempt.Failure(e: PaymentOnionCodecs.MissingRequiredTlv) => Left(e.failureMessage)
+          case Attempt.Failure(e: OnionRoutingCodecs.MissingRequiredTlv) => Left(e.failureMessage)
           // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
           // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
           case Attempt.Failure(_) => Left(InvalidOnionPayload(UInt64(0), 0))

@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
+import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64}
 import scodec.bits.{BitVector, ByteVector}
@@ -119,8 +120,6 @@ Notes:
   - as in normal trampoline scenario, payment secrets in the outer onion are NOT the invoice secret
 
 */
-
-case class OnionRoutingPacket(version: Int, publicKey: ByteVector, payload: ByteVector, hmac: ByteVector32)
 
 /** Tlv types used inside a payment onion. */
 sealed trait OnionPaymentPayloadTlv extends Tlv
@@ -305,20 +304,14 @@ object PaymentOnion {
 
 object PaymentOnionCodecs {
 
-  import PaymentOnion._
   import OnionPaymentPayloadTlv._
+  import PaymentOnion._
   import scodec.codecs._
-  import scodec.{Attempt, Codec, DecodeResult, Decoder, Err}
+  import scodec.{Attempt, Codec, DecodeResult, Decoder}
 
-  def onionRoutingPacketCodec(payloadLength: Int): Codec[OnionRoutingPacket] = (
-    ("version" | uint8) ::
-      ("publicKey" | bytes(33)) ::
-      ("onionPayload" | bytes(payloadLength)) ::
-      ("hmac" | bytes32)).as[OnionRoutingPacket]
+  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(Sphinx.PaymentPacket.PayloadLength)
 
-  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = onionRoutingPacketCodec(Sphinx.PaymentPacket.PayloadLength)
-
-  val trampolineOnionPacketCodec: Codec[OnionRoutingPacket] = onionRoutingPacketCodec(Sphinx.TrampolinePacket.PayloadLength)
+  val trampolineOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(Sphinx.TrampolinePacket.PayloadLength)
 
   /**
    * The 1.1 BOLT spec changed the payment onion frame format to use variable-length per-hop payloads.
@@ -373,15 +366,6 @@ object PaymentOnionCodecs {
       ("amt_to_forward" | millisatoshi) ::
       ("outgoing_cltv_value" | cltvExpiry) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[RelayLegacyPayload]
-
-  case class MissingRequiredTlv(tag: UInt64) extends Err {
-    // @formatter:off
-    val failureMessage: FailureMessage = InvalidOnionPayload(tag, 0)
-    override def message = failureMessage.message
-    override def context: List[String] = Nil
-    override def pushContext(ctx: String): Err = this
-    // @formatter:on
-  }
 
   val channelRelayPerHopPayloadCodec: Codec[ChannelRelayPayload] = fallback(tlvPerHopPayloadCodec, legacyRelayPerHopPayloadCodec).narrow({
     case Left(tlvs) if tlvs.get[AmountToForward].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(2)))
