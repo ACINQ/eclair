@@ -35,16 +35,16 @@ import scala.reflect.ClassTag
  * Created by t-bast on 08/10/2019.
  */
 
-sealed trait IncomingPacket
+sealed trait IncomingPaymentPacket
 
 /** Helpers to handle incoming payment packets. */
-object IncomingPacket {
+object IncomingPaymentPacket {
 
   // @formatter:off
   /** We are the final recipient. */
-  case class FinalPacket(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload) extends IncomingPacket
+  case class FinalPacket(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload) extends IncomingPaymentPacket
   /** We are an intermediate node. */
-  sealed trait RelayPacket extends IncomingPacket
+  sealed trait RelayPacket extends IncomingPaymentPacket
   /** We must relay the payment to a direct peer. */
   case class ChannelRelayPacket(add: UpdateAddHtlc, payload: PaymentOnion.ChannelRelayPayload, nextPacket: OnionRoutingPacket) extends RelayPacket {
     val relayFeeMsat: MilliSatoshi = add.amountMsat - payload.amountToForward
@@ -80,7 +80,7 @@ object IncomingPacket {
    * @param privateKey this node's private key
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
-  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPacket] = {
+  def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPaymentPacket] = {
     decryptOnion(add.paymentHash, privateKey)(add.onionRoutingPacket, Sphinx.PaymentPacket) match {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
@@ -96,7 +96,7 @@ object IncomingPacket {
     }
   }
 
-  private def validateFinal(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload): Either[FailureMessage, IncomingPacket] = {
+  private def validateFinal(add: UpdateAddHtlc, payload: PaymentOnion.FinalPayload): Either[FailureMessage, IncomingPaymentPacket] = {
     if (add.amountMsat != payload.amount) {
       Left(FinalIncorrectHtlcAmount(add.amountMsat))
     } else if (add.cltvExpiry != payload.expiry) {
@@ -106,7 +106,7 @@ object IncomingPacket {
     }
   }
 
-  private def validateFinal(add: UpdateAddHtlc, outerPayload: PaymentOnion.FinalPayload, innerPayload: PaymentOnion.FinalPayload): Either[FailureMessage, IncomingPacket] = {
+  private def validateFinal(add: UpdateAddHtlc, outerPayload: PaymentOnion.FinalPayload, innerPayload: PaymentOnion.FinalPayload): Either[FailureMessage, IncomingPaymentPacket] = {
     if (add.amountMsat != outerPayload.amount) {
       Left(FinalIncorrectHtlcAmount(add.amountMsat))
     } else if (add.cltvExpiry != outerPayload.expiry) {
@@ -122,7 +122,7 @@ object IncomingPacket {
     }
   }
 
-  private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: PaymentOnion.FinalPayload, innerPayload: PaymentOnion.NodeRelayPayload, next: OnionRoutingPacket): Either[FailureMessage, IncomingPacket] = {
+  private def validateNodeRelay(add: UpdateAddHtlc, outerPayload: PaymentOnion.FinalPayload, innerPayload: PaymentOnion.NodeRelayPayload, next: OnionRoutingPacket): Either[FailureMessage, IncomingPaymentPacket] = {
     if (add.amountMsat < outerPayload.amount) {
       Left(FinalIncorrectHtlcAmount(add.amountMsat))
     } else if (add.cltvExpiry != outerPayload.expiry) {
@@ -135,7 +135,7 @@ object IncomingPacket {
 }
 
 /** Helpers to create outgoing payment packets. */
-object OutgoingPacket {
+object OutgoingPaymentPacket {
 
   /**
    * Build an encrypted onion packet from onion payloads and node public keys.

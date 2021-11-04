@@ -24,7 +24,7 @@ import fr.acinq.eclair.Features._
 import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment

@@ -151,7 +151,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID]
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds).add
+    val htlc = htlcReceiver.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds).add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
@@ -376,19 +376,19 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     val buffer = TestProbe()
     send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator)
-    forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerF.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator)
-    forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerF.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(120000000 msat, paymentHandlerC, nodes("F").paymentInitiator)
-    forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerC.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F").paymentInitiator)
-    forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerC.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMessage(1 second)
@@ -404,22 +404,22 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     assert(htlcTimeoutTxs.size === 2)
     assert(htlcSuccessTxs.size === 2)
     // we fulfill htlcs to get the preimages
-    buffer.expectMsgType[IncomingPacket.FinalPacket]
+    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage1 = sender.expectMsgType[PreimageReceived].paymentPreimage
     assert(sender.expectMsgType[PaymentSent].paymentPreimage === preimage1)
-    buffer.expectMsgType[IncomingPacket.FinalPacket]
+    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage2 = sender.expectMsgType[PreimageReceived].paymentPreimage
     assert(sender.expectMsgType[PaymentSent].paymentPreimage === preimage2)
-    buffer.expectMsgType[IncomingPacket.FinalPacket]
+    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PreimageReceived]
     sender.expectMsgType[PaymentSent]
-    buffer.expectMsgType[IncomingPacket.FinalPacket]
+    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PreimageReceived]

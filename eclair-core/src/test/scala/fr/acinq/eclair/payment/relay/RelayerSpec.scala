@@ -25,11 +25,11 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.IncomingPacket.FinalPacket
-import fr.acinq.eclair.payment.OutgoingPacket.{Upstream, buildCommand}
+import fr.acinq.eclair.payment.IncomingPaymentPacket.FinalPacket
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.{Upstream, buildCommand}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.Relayer._
-import fr.acinq.eclair.payment.{OutgoingPacket, PaymentPacketSpec}
+import fr.acinq.eclair.payment.{OutgoingPaymentPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Router.{ChannelHop, NodeHop}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{NodeParams, TestConstants, randomBytes32, _}
@@ -114,7 +114,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     // We simulate a payment split between multiple trampoline routes.
     val totalAmount = finalAmount * 3
     val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: Nil
-    val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPacket.buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, PaymentOnion.createMultiPartPayload(finalAmount, totalAmount, finalExpiry, paymentSecret))
+    val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPaymentPacket.buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, PaymentOnion.createMultiPartPayload(finalAmount, totalAmount, finalExpiry, paymentSecret))
     assert(trampolineAmount === finalAmount)
     assert(trampolineExpiry === finalExpiry)
     val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, PaymentOnion.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32(), trampolineOnion.packet))
@@ -159,7 +159,7 @@ class RelayerSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     // we use this to build a valid trampoline onion inside a normal onion
     val trampolineHops = NodeHop(a, b, channelUpdate_ab.cltvExpiryDelta, 0 msat) :: NodeHop(b, c, channelUpdate_bc.cltvExpiryDelta, fee_b) :: Nil
-    val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPacket.buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, PaymentOnion.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret))
+    val (trampolineAmount, trampolineExpiry, trampolineOnion) = OutgoingPaymentPacket.buildPacket(Sphinx.TrampolinePacket)(paymentHash, trampolineHops, PaymentOnion.createSinglePartPayload(finalAmount, finalExpiry, paymentSecret))
     val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, b, channelUpdate_ab) :: Nil, PaymentOnion.createTrampolinePayload(trampolineAmount, trampolineAmount, trampolineExpiry, randomBytes32(), trampolineOnion.packet))
 
     // and then manually build an htlc

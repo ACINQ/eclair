@@ -26,9 +26,9 @@ import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, Satoshi, Sat
 import fr.acinq.eclair.TestConstants.emptyOnionPacket
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.payment.IncomingPacket.ChannelRelayPacket
+import fr.acinq.eclair.payment.IncomingPaymentPacket.ChannelRelayPacket
 import fr.acinq.eclair.payment.relay.ChannelRelayer._
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentPacketSpec}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentPacketSpec}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol.PaymentOnion.{ChannelRelayPayload, ChannelRelayTlvPayload, RelayLegacyPayload}
 import fr.acinq.eclair.wire.protocol._
@@ -485,7 +485,7 @@ object ChannelRelayerSpec {
     shortId2 -> randomBytes32()
   )
 
-  def createValidIncomingPacket(amountIn: MilliSatoshi, expiryIn: CltvExpiry, payload: ChannelRelayPayload): IncomingPacket.ChannelRelayPacket = {
+  def createValidIncomingPacket(amountIn: MilliSatoshi, expiryIn: CltvExpiry, payload: ChannelRelayPayload): IncomingPaymentPacket.ChannelRelayPacket = {
     val add_ab = UpdateAddHtlc(channelId = randomBytes32(), id = 123456, amountIn, paymentHash, expiryIn, emptyOnionPacket)
     ChannelRelayPacket(add_ab, payload, emptyOnionPacket)
   }

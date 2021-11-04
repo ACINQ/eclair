@@ -25,9 +25,9 @@ import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.PendingCommandsDb
-import fr.acinq.eclair.payment.IncomingPacket.NodeRelayPacket
+import fr.acinq.eclair.payment.IncomingPaymentPacket.NodeRelayPacket
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM
 import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
@@ -51,7 +51,7 @@ object NodeRelay {
 
   // @formatter:off
   sealed trait Command
-  case class Relay(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
+  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
   case object Stop extends Command
   private case class WrappedMultiPartExtraPaymentReceived(mppExtraReceived: MultiPartPaymentFSM.ExtraPaymentReceived[HtlcPart]) extends Command
   private case class WrappedMultiPartPaymentFailed(mppFailed: MultiPartPaymentFSM.MultiPartPaymentFailed) extends Command
@@ -180,7 +180,7 @@ class NodeRelay private(nodeParams: NodeParams,
    */
   private def receiving(htlcs: Queue[UpdateAddHtlc], nextPayload: PaymentOnion.NodeRelayPayload, nextPacket: OnionRoutingPacket, handler: ActorRef): Behavior[Command] =
     Behaviors.receiveMessagePartial {
-      case Relay(IncomingPacket.NodeRelayPacket(add, outer, _, _)) =>
+      case Relay(IncomingPaymentPacket.NodeRelayPacket(add, outer, _, _)) =>
         require(outer.paymentSecret == paymentSecret, "payment secret mismatch")
         context.log.debug("forwarding incoming htlc #{} from channel {} to the payment FSM", add.id, add.channelId)
         handler ! MultiPartPaymentFSM.HtlcPart(outer.totalAmount, add)
