@@ -3,27 +3,17 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
+import fr.acinq.eclair.wire.protocol.EncryptedRecipientDataCodecs.encryptedRecipientDataCodec
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv, onionRoutingPacketCodec}
 import scodec.bits.ByteVector
 
 sealed trait OnionMessagePayloadTlv extends Tlv
 
-sealed trait BlindedTlv extends Tlv
-
 object MessageTlv {
-
-  /** Blinding ephemeral public key that should be used to derive shared secrets when using route blinding. */
-  case class BlindingPoint(publicKey: PublicKey) extends BlindedTlv
 
   case class ReplyPath(blindedRoute: BlindedRoute) extends OnionMessagePayloadTlv
 
   case class EncTlv(bytes: ByteVector) extends OnionMessagePayloadTlv
-
-  case class NextNodeId(nodeId: PublicKey) extends BlindedTlv
-
-  case class Padding(bytes: ByteVector) extends BlindedTlv
-
-  case class PathId(bytes: ByteVector) extends BlindedTlv
 
   sealed trait MessagePacket
 
@@ -36,13 +26,13 @@ object MessageTlv {
     val replyPath: Option[MessageTlv.ReplyPath] = records.get[MessageTlv.ReplyPath]
   }
 
-  case class RelayBlindedTlv(records: TlvStream[BlindedTlv]) {
-    val nextNodeId: PublicKey = records.get[MessageTlv.NextNodeId].get.nodeId
-    val nextBlinding: Option[PublicKey] = records.get[MessageTlv.BlindingPoint].map(_.publicKey)
+  case class RelayBlindedTlv(records: TlvStream[EncryptedRecipientDataTlv]) {
+    val nextNodeId: PublicKey = records.get[EncryptedRecipientDataTlv.OutgoingNodeId].get.nodeId
+    val nextBlinding: Option[PublicKey] = records.get[EncryptedRecipientDataTlv.NextBlinding].map(_.blinding)
   }
 
-  case class FinalBlindedTlv(records: TlvStream[BlindedTlv]) {
-    val pathId: Option[ByteVector] = records.get[MessageTlv.PathId].map(_.bytes)
+  case class FinalBlindedTlv(records: TlvStream[EncryptedRecipientDataTlv]) {
+    val recipientSecret: Option[ByteVector] = records.get[EncryptedRecipientDataTlv.RecipientSecret].map(_.data)
   }
 }
 
@@ -80,30 +70,15 @@ object MessageOnion {
     case MessageFinalPayload(tlvs) => tlvs
   })
 
-  private val padding: Codec[Padding] = variableSizeBytesLong(varintoverflow, "padding" | bytes).as[Padding]
-
-  private val nextNodeId: Codec[NextNodeId] = variableSizeBytesLong(varintoverflow, "node_id" | publicKey).as[NextNodeId]
-
-  private val blindingKey: Codec[BlindingPoint] = variableSizeBytesLong(varintoverflow, "blinding" | publicKey).as[BlindingPoint]
-
-  private val pathId: Codec[PathId] = variableSizeBytesLong(varintoverflow, "path_id" | bytes).as[PathId]
-
-  private val blindedTlvCodec: Codec[TlvStream[BlindedTlv]] = TlvCodecs.tlvStream[BlindedTlv](
-    discriminated[BlindedTlv].by(varint)
-      .typecase(UInt64(1), padding)
-      .typecase(UInt64(4), nextNodeId)
-      .typecase(UInt64(12), blindingKey)
-      .typecase(UInt64(14), pathId)).complete
-
-  val relayBlindedTlvCodec: Codec[RelayBlindedTlv] = blindedTlvCodec.narrow({
-    case tlvs if tlvs.get[NextNodeId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-    case tlvs if tlvs.get[PathId].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(14)))
+  val relayBlindedTlvCodec: Codec[RelayBlindedTlv] = encryptedRecipientDataCodec.narrow({
+    case tlvs if tlvs.get[EncryptedRecipientDataTlv.OutgoingNodeId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
+    case tlvs if tlvs.get[EncryptedRecipientDataTlv.RecipientSecret].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(6)))
     case tlvs => Attempt.successful(RelayBlindedTlv(tlvs))
   }, {
     case RelayBlindedTlv(tlvs) => tlvs
   })
 
-  val finalBlindedTlvCodec: Codec[FinalBlindedTlv] = blindedTlvCodec.narrow(
+  val finalBlindedTlvCodec: Codec[FinalBlindedTlv] = encryptedRecipientDataCodec.narrow(
     tlvs => Attempt.successful(FinalBlindedTlv(tlvs))
     , {
       case FinalBlindedTlv(tlvs) => tlvs

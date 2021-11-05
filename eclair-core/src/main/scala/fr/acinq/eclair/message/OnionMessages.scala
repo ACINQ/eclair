@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.MessageOnion.{finalBlindedTlvCodec, messageOnionPerHopPayloadCodec, messageRelayPayloadCodec, relayBlindedTlvCodec}
 import fr.acinq.eclair.wire.protocol.MessageTlv._
-import fr.acinq.eclair.wire.protocol.{BadOnion, OnionMessage, OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.wire.protocol.{BadOnion, EncryptedRecipientDataTlv, OnionMessage, OnionMessagePayloadTlv, TlvStream}
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
@@ -14,27 +14,27 @@ object OnionMessages {
 
   case class IntermediateNode(nodeId: PublicKey, padding: Option[ByteVector] = None)
 
-  case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None)
+  case class Recipient(nodeId: PublicKey, secret: Option[ByteVector], padding: Option[ByteVector] = None)
 
   def buildRoute(blindingSecret: PrivateKey,
                  intermediateNodes: Seq[IntermediateNode],
                  destination: Either[Recipient, Sphinx.RouteBlinding.BlindedRoute]): Sphinx.RouteBlinding.BlindedRoute = {
     val last = destination match {
-      case Left(Recipient(nodeId, _, _)) => NextNodeId(nodeId) :: Nil
-      case Right(Sphinx.RouteBlinding.BlindedRoute(nodeId, blindingKey, _)) => NextNodeId(nodeId) :: BlindingPoint(blindingKey) :: Nil
+      case Left(Recipient(nodeId, _, _)) => EncryptedRecipientDataTlv.OutgoingNodeId(nodeId) :: Nil
+      case Right(Sphinx.RouteBlinding.BlindedRoute(nodeId, blindingKey, _)) => EncryptedRecipientDataTlv.OutgoingNodeId(nodeId) :: EncryptedRecipientDataTlv.NextBlinding(blindingKey) :: Nil
     }
     val intermediatePayloads =
       if (intermediateNodes.isEmpty) {
         Nil
       } else {
-        (intermediateNodes.tail.map(node => NextNodeId(node.nodeId) :: Nil) :+ last)
-          .zip(intermediateNodes).map { case (tlvs, hop) => hop.padding.map(Padding(_) :: Nil).getOrElse(Nil) ++ tlvs }
+        (intermediateNodes.tail.map(node => EncryptedRecipientDataTlv.OutgoingNodeId(node.nodeId) :: Nil) :+ last)
+          .zip(intermediateNodes).map { case (tlvs, hop) => hop.padding.map(EncryptedRecipientDataTlv.Padding(_) :: Nil).getOrElse(Nil) ++ tlvs }
           .map(tlvs => RelayBlindedTlv(TlvStream(tlvs)))
           .map(relayBlindedTlvCodec.encode(_).require.bytes)
       }
     destination match {
-      case Left(Recipient(nodeId, pathId, padding)) =>
-        val tlvs = padding.map(Padding(_) :: Nil).getOrElse(Nil) ++ pathId.map(PathId(_) :: Nil).getOrElse(Nil)
+      case Left(Recipient(nodeId, recipientSecret, padding)) =>
+        val tlvs = padding.map(EncryptedRecipientDataTlv.Padding(_) :: Nil).getOrElse(Nil) ++ recipientSecret.map(EncryptedRecipientDataTlv.RecipientSecret(_) :: Nil).getOrElse(Nil)
         val lastPayload = finalBlindedTlvCodec.encode(FinalBlindedTlv(TlvStream(tlvs))).require.bytes
         Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload)
       case Right(route) =>
@@ -95,7 +95,7 @@ object OnionMessages {
               case Success((decrypted, _)) =>
                 finalBlindedTlvCodec.decode(decrypted.bits) match {
                   case Attempt.Successful(DecodeResult(messageToSelf, _)) =>
-                    ReceiveMessage(finalPayload, messageToSelf.pathId)
+                    ReceiveMessage(finalPayload, messageToSelf.recipientSecret)
                   case Attempt.Failure(_) => DropMessage("Can't decode blinded TLV")
                 }
               case Failure(_) => DropMessage("Can't decrypt blinded TLV")

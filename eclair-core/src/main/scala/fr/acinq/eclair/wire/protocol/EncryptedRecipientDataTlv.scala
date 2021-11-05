@@ -42,6 +42,9 @@ object EncryptedRecipientDataTlv {
    */
   case class RecipientSecret(data: ByteVector) extends EncryptedRecipientDataTlv
 
+  /** Blinding override for the rest of the route. */
+  case class NextBlinding(blinding: PublicKey) extends EncryptedRecipientDataTlv
+
 }
 
 object EncryptedRecipientDataCodecs {
@@ -55,12 +58,14 @@ object EncryptedRecipientDataCodecs {
   private val outgoingChannelId: Codec[OutgoingChannelId] = variableSizeBytesLong(varintoverflow, "short_channel_id" | shortchannelid).as[OutgoingChannelId]
   private val outgoingNodeId: Codec[OutgoingNodeId] = variableSizeBytesLong(varintoverflow, "node_id" | publicKey).as[OutgoingNodeId]
   private val recipientSecret: Codec[RecipientSecret] = variableSizeBytesLong(varintoverflow, "recipient_secret" | bytes).as[RecipientSecret]
+  private val nextBlinding: Codec[NextBlinding] = variableSizeBytesLong(varintoverflow, "blinding" | publicKey).as[NextBlinding]
 
   private val encryptedRecipientDataTlvCodec = discriminated[EncryptedRecipientDataTlv].by(varint)
     .typecase(UInt64(1), padding)
     .typecase(UInt64(2), outgoingChannelId)
     .typecase(UInt64(4), outgoingNodeId)
     .typecase(UInt64(6), recipientSecret)
+    .typecase(UInt64(12), nextBlinding)
 
   val encryptedRecipientDataCodec: Codec[TlvStream[EncryptedRecipientDataTlv]] = TlvCodecs.tlvStream[EncryptedRecipientDataTlv](encryptedRecipientDataTlvCodec).complete
 
