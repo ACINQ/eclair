@@ -26,7 +26,7 @@ import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, UInt64, randomKey}
 import scodec.bits.ByteVector
-import scodec.{Attempt, DecodeResult}
+import scodec.{Attempt, Codec, DecodeResult}
 
 import java.util.UUID
 
@@ -55,24 +55,11 @@ object IncomingPaymentPacket {
 
   case class DecodedOnionPacket[T <: PaymentOnion.PacketType](payload: T, next: OnionRoutingPacket)
 
-  private[payment] def decryptPaymentOnion(paymentHash: ByteVector32, privateKey: PrivateKey, packet: OnionRoutingPacket)(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[PaymentOnion.PaymentPacket]] =
+  private[payment] def decryptOnion[T <: PaymentOnion.PacketType](paymentHash: ByteVector32, privateKey: PrivateKey, packet: OnionRoutingPacket, perHopPayloadCodec: Boolean => Codec[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
     Sphinx.peel(privateKey, paymentHash, packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
-        PaymentOnionCodecs.paymentOnionPerHopPayloadCodec(p.isLastPacket).decode(payload.bits) match {
-          case Attempt.Successful(DecodeResult(perHopPayload: PaymentOnion.PaymentPacket, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
-          case Attempt.Failure(e: OnionRoutingCodecs.MissingRequiredTlv) => Left(e.failureMessage)
-          // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
-          // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
-          case Attempt.Failure(_) => Left(InvalidOnionPayload(UInt64(0), 0))
-        }
-      case Left(badOnion) => Left(badOnion)
-    }
-
-  private[payment] def decryptTrampolineOnion(paymentHash: ByteVector32, privateKey: PrivateKey, packet: OnionRoutingPacket)(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[PaymentOnion.TrampolinePacket]] =
-    Sphinx.peel(privateKey, paymentHash, packet) match {
-      case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
-        PaymentOnionCodecs.trampolineOnionPerHopPayloadCodec(p.isLastPacket).decode(payload.bits) match {
-          case Attempt.Successful(DecodeResult(perHopPayload: PaymentOnion.TrampolinePacket, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
+        perHopPayloadCodec(p.isLastPacket).decode(payload.bits) match {
+          case Attempt.Successful(DecodeResult(perHopPayload, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
           case Attempt.Failure(e: OnionRoutingCodecs.MissingRequiredTlv) => Left(e.failureMessage)
           // Onion is correctly encrypted but the content of the per-hop payload couldn't be parsed.
           // It's hard to provide tag and offset information from scodec failures, so we currently don't do it.
@@ -93,12 +80,12 @@ object IncomingPaymentPacket {
    * @return whether the payment is to be relayed or if our node is the final recipient (or an error).
    */
   def decrypt(add: UpdateAddHtlc, privateKey: PrivateKey)(implicit log: LoggingAdapter): Either[FailureMessage, IncomingPaymentPacket] = {
-    decryptPaymentOnion(add.paymentHash, privateKey, add.onionRoutingPacket) match {
+    decryptOnion(add.paymentHash, privateKey, add.onionRoutingPacket, PaymentOnionCodecs.paymentOnionPerHopPayloadCodec) match {
       case Left(failure) => Left(failure)
       // NB: we don't validate the ChannelRelayPacket here because its fees and cltv depend on what channel we'll choose to use.
       case Right(DecodedOnionPacket(payload: PaymentOnion.ChannelRelayPayload, next)) => Right(ChannelRelayPacket(add, payload, next))
       case Right(DecodedOnionPacket(payload: PaymentOnion.FinalTlvPayload, _)) => payload.records.get[OnionPaymentPayloadTlv.TrampolineOnion] match {
-        case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) => decryptTrampolineOnion(add.paymentHash, privateKey, trampolinePacket) match {
+        case Some(OnionPaymentPayloadTlv.TrampolineOnion(trampolinePacket)) => decryptOnion(add.paymentHash, privateKey, trampolinePacket, PaymentOnionCodecs.trampolineOnionPerHopPayloadCodec) match {
           case Left(failure) => Left(failure)
           case Right(DecodedOnionPacket(innerPayload: PaymentOnion.NodeRelayPayload, next)) => validateNodeRelay(add, payload, innerPayload, next)
           case Right(DecodedOnionPacket(innerPayload: PaymentOnion.FinalPayload, _)) => validateFinal(add, payload, innerPayload)
