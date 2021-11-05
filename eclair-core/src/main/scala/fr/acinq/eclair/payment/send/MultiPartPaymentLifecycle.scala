@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.{HtlcOverriddenByLocalCommit, HtlcsTimedoutDownstream, HtlcsWillTimeoutUpstream}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
@@ -320,7 +320,7 @@ object MultiPartPaymentLifecycle {
                                   maxAttempts: Int,
                                   assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                   routeParams: RouteParams,
-                                  additionalTlvs: Seq[OnionTlv] = Nil,
+                                  additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
                                   userCustomTlvs: Seq[GenericTlv] = Nil) {
     require(totalAmount > 0.msat, s"total amount must be > 0")
   }
@@ -400,7 +400,7 @@ object MultiPartPaymentLifecycle {
       Some(cfg.paymentContext))
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
-    val finalPayload = Onion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs, request.userCustomTlvs)
+    val finalPayload = PaymentOnion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs, request.userCustomTlvs)
     SendPaymentToRoute(replyTo, Right(route), finalPayload)
   }
 

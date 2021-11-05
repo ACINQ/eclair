@@ -71,13 +71,13 @@ class SphinxSpec extends AnyFunSuite {
 
   test("generate filler with fixed-size payloads (reference test vector)") {
     val (_, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    val filler = PaymentPacket.generateFiller("rho", sharedsecrets.dropRight(1), referenceFixedSizePayloads.dropRight(1))
+    val filler = PaymentPacket.generateFiller("rho", sharedsecrets.dropRight(1), referenceFixedSizePaymentPayloads.dropRight(1))
     assert(filler == hex"c6b008cf6414ed6e4c42c291eb505e9f22f5fe7d0ecdd15a833f4d016ac974d33adc6ea3293e20859e87ebfb937ba406abd025d14af692b12e9c9c2adbe307a679779259676211c071e614fdb386d1ff02db223a5b2fae03df68d321c7b29f7c7240edd3fa1b7cb6903f89dc01abf41b2eb0b49b6b8d73bb0774b58204c0d0e96d3cce45ad75406be0bc009e327b3e712a4bd178609c00b41da2daf8a4b0e1319f07a492ab4efb056f0f599f75e6dc7e0d10ce1cf59088ab6e873de377343880f7a24f0e36731a0b72092f8d5bc8cd346762e93b2bf203d00264e4bc136fc142de8f7b69154deb05854ea88e2d7506222c95ba1aab065c8a851391377d3406a35a9af3ac")
   }
 
   test("generate filler with variable-size payloads") {
     val (_, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    val filler = PaymentPacket.generateFiller("rho", sharedsecrets.dropRight(1), referenceVariableSizePayloads.dropRight(1))
+    val filler = PaymentPacket.generateFiller("rho", sharedsecrets.dropRight(1), referenceVariableSizePaymentPayloads.dropRight(1))
     assert(filler == hex"b77d99c935d3f32469844f7e09340a91ded147557bdd0456c369f7e449587c0f5666faab58040146db49024db88553729bce12b860391c29c1779f022ae48a9cb314ca35d73fc91addc92632bcf7ba6fd9f38e6fd30fabcedbd5407b6648073c38331ee7ab0332f41f550c180e1601f8c25809ed75b3a1e78635a2ef1b828e92c9658e76e49f995d72cf9781eec0c838901d0bdde3ac21c13b4979ac9e738a1c4d0b9741d58e777ad1aed01263ad1390d36a18a6b92f4f799dcf75edbb43b7515e8d72cb4f827a9af0e7b9338d07b1a24e0305b5535f5b851b1144bad6238b9d9482b5ba6413f1aafac3cdde5067966ed8b78f7c1c5f916a05f874d5f17a2b7d0ae75d66a5f1bb6ff932570dc5a0cf3ce04eb5d26bc55c2057af1f8326e20a7d6f0ae644f09d00fac80de60f20aceee85be41a074d3e1dda017db79d0070b99f54736396f206ee3777abd4c00a4bb95c871750409261e3b01e59a3793a9c20159aae4988c68397a1443be6370fd9614e46108291e615691729faea58537209fa668a172d066d0efff9bc77c2bd34bd77870ad79effd80140990e36731a0b72092f8d5bc8cd346762e93b2bf203d00264e4bc136fc142de8f7b69154deb05854ea88e2d7506222c95ba1aab065c8a")
   }
 
@@ -132,8 +132,8 @@ class SphinxSpec extends AnyFunSuite {
     }
   }
 
-  test("create packet with fixed-size payloads (reference test vector)") {
-    val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(sessionKey, publicKeys, referenceFixedSizePayloads, associatedData)
+  test("create payment packet with fixed-size payloads (reference test vector)") {
+    val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(sessionKey, publicKeys, referenceFixedSizePaymentPayloads, associatedData)
     assert(serializePaymentOnion(onion) == hex"0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619e5f14350c2a76fc232b5e46d421e9615471ab9e0bc887beff8c95fdb878f7b3a71e87f9aab8f6378c6ff744c1f34b393ad28d065b535c1a8668d85d3b34a1b3befd10f7d61ab590531cf08000178a333a347f8b4072e216400406bdf3bf038659793a1f9e7abc789266cc861cabd95818c0fc8efbdfdc14e3f7c2bc7eb8d6a79ef75ce721caad69320c3a469a202f3e468c67eaf7a7cda226d0fd32f7b48084dca885d014698cf05d742557763d9cb743faeae65dcc79dddaecf27fe5942be5380d15e9a1ec866abe044a9ad635778ba61fc0776dc832b39451bd5d35072d2269cf9b040a2a2fba158a0d8085926dc2e44f0c88bf487da56e13ef2d5e676a8589881b4869ed4c7f0218ff8c6c7dd7221d189c65b3b9aaa71a01484b122846c7c7b57e02e679ea8469b70e14fe4f70fee4d87b910cf144be6fe48eef24da475c0b0bcc6565a9f99728426ce2380a9580e2a9442481ceae7679906c30b1a0e21a10f26150e0645ab6edfdab1ce8f8bea7b1dee511c5fd38ac0e702c1c15bb86b52bca1b71e15b96982d262a442024c33ceb7dd8f949063c2e5e613e873250e2f8708bd4e1924abd45f65c2fa5617bfb10ee9e4a42d6b5811acc8029c16274f937dac9e8817c7e579fdb767ffe277f26d413ced06b620ede8362081da21cf67c2ca9d6f15fe5bc05f82f5bb93f8916bad3d63338ca824f3bbc11b57ce94a5fa1bc239533679903d6fec92a8c792fd86e2960188c14f21e399cfd72a50c620e10aefc6249360b463df9a89bf6836f4f26359207b765578e5ed76ae9f31b1cc48324be576e3d8e44d217445dba466f9b6293fdf05448584eb64f61e02903f834518622b7d4732471c6e0e22e22d1f45e31f0509eab39cdea5980a492a1da2aaac55a98a01216cd4bfe7abaa682af0fbff2dfed030ba28f1285df750e4d3477190dd193f8643b61d8ac1c427d590badb1f61a05d480908fbdc7c6f0502dd0c4abb51d725e92f95da2a8facb79881a844e2026911adcc659d1fb20a2fce63787c8bb0d9f6789c4b231c76da81c3f0718eb7156565a081d2be6b4170c0e0bcebddd459f53db2590c974bca0d705c055dee8c629bf854a5d58edc85228499ec6dde80cce4c8910b81b1e9e8b0f43bd39c8d69c3a80672729b7dc952dd9448688b6bd06afc2d2819cda80b66c57b52ccf7ac1a86601410d18d0c732f69de792e0894a9541684ef174de766fd4ce55efea8f53812867be6a391ac865802dbc26d93959df327ec2667c7256aa5a1d3c45a69a6158f285d6c97c3b8eedb09527848500517995a9eae4cd911df531544c77f5a9a2f22313e3eb72ca7a07dba243476bc926992e0d1e58b4a2fc8c7b01e0cad726237933ea319bad7537d39f3ed635d1e6c1d29e97b3d2160a09e30ee2b65ac5bce00996a73c008bcf351cecb97b6833b6d121dcf4644260b2946ea204732ac9954b228f0beaa15071930fd9583dfc466d12b5f0eeeba6dcf23d5ce8ae62ee5796359d97a4a15955c778d868d0ef9991d9f2833b5bb66119c5f8b396fd108baed7906cbb3cc376d13551caed97fece6f42a4c908ee279f1127fda1dd3ee77d8de0a6f3c135fa3f1cffe38591b6738dc97b55f0acc52be9753ce53e64d7e497bb00ca6123758df3b68fad99e35c04389f7514a8e36039f541598a417275e77869989782325a15b5342ac5011ff07af698584b476b35d941a4981eac590a07a092bb50342da5d3341f901aa07964a8d02b623c7b106dd0ae50bfa007a22d46c8772fa55558176602946cb1d11ea5460db7586fb89c6d3bcd3ab6dd20df4a4db63d2e7d52380800ad812b8640887e027e946df96488b47fbc4a4fadaa8beda4abe446fafea5403fae2ef")
 
     val Right(DecryptedPacket(payload0, nextPacket0, sharedSecret0)) = PaymentPacket.peel(privKeys(0), associatedData, onion)
@@ -141,7 +141,7 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload2, nextPacket2, sharedSecret2)) = PaymentPacket.peel(privKeys(2), associatedData, nextPacket1)
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = PaymentPacket.peel(privKeys(3), associatedData, nextPacket2)
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = PaymentPacket.peel(privKeys(4), associatedData, nextPacket3)
-    assert(Seq(payload0, payload1, payload2, payload3, payload4) == referenceFixedSizePayloads)
+    assert(Seq(payload0, payload1, payload2, payload3, payload4) == referenceFixedSizePaymentPayloads)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
@@ -153,8 +153,8 @@ class SphinxSpec extends AnyFunSuite {
     assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
-  test("create packet with variable-size payloads (reference test vector)") {
-    val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(sessionKey, publicKeys, referenceVariableSizePayloads, associatedData)
+  test("create payment packet with variable-size payloads (reference test vector)") {
+    val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(sessionKey, publicKeys, referenceVariableSizePaymentPayloads, associatedData)
     assert(serializePaymentOnion(onion) == hex"0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619e5f14350c2a76fc232b5e46d421e9615471ab9e0bc887beff8c95fdb878f7b3a710f8eaf9ccc768f66bb5dec1f7827f33c43fe2ddd05614c8283aa78e9e7573f87c50f7d61ab590531cf08000178a333a347f8b4072e1cea42da7552402b10765adae3f581408f35ff0a71a34b78b1d8ecae77df96c6404bae9a8e8d7178977d7094a1ae549f89338c0777551f874159eb42d3a59fb9285ad4e24883f27de23942ec966611e99bee1cee503455be9e8e642cef6cef7b9864130f692283f8a973d47a8f1c1726b6e59969385975c766e35737c8d76388b64f748ee7943ffb0e2ee45c57a1abc40762ae598723d21bd184e2b338f68ebff47219357bd19cd7e01e2337b806ef4d717888e129e59cd3dc31e6201ccb2fd6d7499836f37a993262468bcb3a4dcd03a22818aca49c6b7b9b8e9e870045631d8e039b066ff86e0d1b7291f71cefa7264c70404a8e538b566c17ccc5feab231401e6c08a01bd5edfc1aa8e3e533b96e82d1f91118d508924b923531929aea889fcdf057f5995d9731c4bf796fb0e41c885d488dcbc68eb742e27f44310b276edc6f652658149e7e9ced4edde5d38c9b8f92e16f6b4ab13d710ee5c193921909bdd75db331cd9d7581a39fca50814ed8d9d402b86e7f8f6ac2f3bca8e6fe47eb45fbdd3be21a8a8d200797eae3c9a0497132f92410d804977408494dff49dd3d8bce248e0b74fd9e6f0f7102c25ddfa02bd9ad9f746abbfa3379834bc2380d58e9d23237821475a1874484783a15d68f47d3dc339f38d9bf925655d5c946778680fd6d1f062f84128895aff09d35d6c92cca63d3f95a9ee8f2a84f383b4d6a087533e65de12fc8dcaf85777736a2088ff4b22462265028695b37e70963c10df8ef2458756c73007dc3e544340927f9e9f5ea4816a9fd9832c311d122e9512739a6b4714bba590e31caa143ce83cb84b36c738c60c3190ff70cd9ac286a9fd2ab619399b68f1f7447be376ce884b5913c8496d01cbf7a44a60b6e6747513f69dc538f340bc1388e0fde5d0c1db50a4dcb9cc0576e0e2474e4853af9623212578d502757ffb2e0e749695ed70f61c116560d0d4154b64dcf3cbf3c91d89fb6dd004dc19588e3479fcc63c394a4f9e8a3b8b961fce8a532304f1337f1a697a1bb14b94d2953f39b73b6a3125d24f27fcd4f60437881185370bde68a5454d816e7a70d4cea582effab9a4f1b730437e35f7a5c4b769c7b72f0346887c1e63576b2f1e2b3706142586883f8cf3a23595cc8e35a52ad290afd8d2f8bcd5b4c1b891583a4159af7110ecde092079209c6ec46d2bda60b04c519bb8bc6dffb5c87f310814ef2f3003671b3c90ddf5d0173a70504c2280d31f17c061f4bb12a978122c8a2a618bb7d1edcf14f84bf0fa181798b826a254fca8b6d7c81e0beb01bd77f6461be3c8647301d02b04753b0771105986aa0cbc13f7718d64e1b3437e8eef1d319359914a7932548c91570ef3ea741083ca5be5ff43c6d9444d29df06f76ec3dc936e3d180f4b6d0fbc495487c7d44d7c8fe4a70d5ff1461d0d9593f3f898c919c363fa18341ce9dae54f898ccf3fe792136682272941563387263c51b2a2f32363b804672cc158c9230472b554090a661aa81525d11876eefdcc45442249e61e07284592f1606491de5c0324d3af4be035d7ede75b957e879e9770cdde2e1bbc1ef75d45fe555f1ff6ac296a2f648eeee59c7c08260226ea333c285bcf37a9bbfa57ba2ab8083c4be6fc2ebe279537d22da96a07392908cf22b233337a74fe5c603b51712b43c3ee55010ee3d44dd9ba82bba3145ec358f863e04bbfa53799a7a9216718fd5859da2f0deb77b8e315ad6868fdec9400f45a48e6dc8ddbaeb3")
 
     val Right(DecryptedPacket(payload0, nextPacket0, sharedSecret0)) = PaymentPacket.peel(privKeys(0), associatedData, onion)
@@ -162,7 +162,7 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload2, nextPacket2, sharedSecret2)) = PaymentPacket.peel(privKeys(2), associatedData, nextPacket1)
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = PaymentPacket.peel(privKeys(3), associatedData, nextPacket2)
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = PaymentPacket.peel(privKeys(4), associatedData, nextPacket3)
-    assert(Seq(payload0, payload1, payload2, payload3, payload4) == referenceVariableSizePayloads)
+    assert(Seq(payload0, payload1, payload2, payload3, payload4) == referenceVariableSizePaymentPayloads)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
@@ -173,8 +173,8 @@ class SphinxSpec extends AnyFunSuite {
     assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
-  test("create packet with variable-size payloads filling the onion") {
-    val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(sessionKey, publicKeys, variableSizePayloadsFull, associatedData)
+  test("create payment packet with variable-size payloads filling the onion") {
+    val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(sessionKey, publicKeys, variableSizePaymentPayloadsFull, associatedData)
     assert(serializePaymentOnion(onion) == hex"0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866196ef84350c2a76fc232b5d46d421e9615471ab9e0bc887beff8c95fdb878f7b3a7141453e5f8d22b6101810ae541ce499a09b4a9d9f80d1845c8960c85fc6d1a87bf74b2ce49922898e9353fa268086c00ae8b7f718405b72ad3829dbb38c85e02a00427eb4bdbda8fcd42b44708a9efde49cf776b75ebb389bf84d0bfbf58590e510e034572a01e409c309396778760423a8d8754c52e9a01a8f0e271cba5068bab5ee5bd0b5cd98276b0e04d60ba6a0f6bafd75ff41903ab352a1f47586eae3c6c8e437d4308766f71052b46ba2efbd87c0a781e8b3f456300fc7efbefc78ab515338666aed2070e674143c30b520b9cc1782ba8b46454db0d4ce72589cfc2eafb2db452ec98573ad08496483741de5376bfc7357fc6ea629e31236ba6ba7703014959129141a1719788ec83884f2e9151a680e2a96d2bcc67a8a2935aa11acee1f9d04812045b4ae5491220313756b5b9a0a6f867f2a95be1fab14870f04eeab694d9594620632b14ec4b424b495914f3dc587f75cd4582c113bb61e34a0fa7f79f97463be4e3c6fb99516889ed020acee419bb173d38e5ba18a00065e11fd733cf9ae46505dbb4ef70ef2f502601f4f6ee1fdb9d17435e15080e962f24760843f35bac1ac079b694ff7c347c1ed6a87f02b0758fbf00917764716c68ed7d6e6c0e75ccdb6dc7fa59554784b3ad906127ea77a6cdd814662ee7d57a939e28d77b3da47efc072436a3fd7f9c40515af8c4903764301e62b57153a5ca03ff5bb49c7dc8d3b2858100fb4aa5df7a94a271b73a76129445a3ea180d84d19029c003c164db926ed6983e5219028721a294f145e3fcc20915b8a2147efc8b5d508339f64970feee3e2da9b9c9348c1a0a4df7527d0ae3f8ae507a5beb5c73c2016ecf387a3cd8b79df80a8e9412e707cb9c761a0809a84c606a779567f9f0edf685b38c98877e90d02aedd096ed841e50abf2114ce01efbff04788fb280f870eca20c7ec353d5c381903e7d08fc57695fd79c27d43e7bd603a876068d3f1c7f45af99003e5eec7e8d8c91e395320f1fc421ef3552ea033129429383304b760c8f93de342417c3223c2112a623c3514480cdfae8ec15a99abfca71b03a8396f19edc3d5000bcfb77b5544813476b1b521345f4da396db09e783870b97bc2034bd11611db30ed2514438b046f1eb7093eceddfb1e73880786cd7b540a3896eaadd0a0692e4b19439815b5f2ec855ec8ececce889442a64037e956452a3f7b86cb3780b3e316c8dde464bc74a60a85b613f849eb0b29daf81892877bd4be9ba5997fc35544d3c2a00e5e1f45dc925607d952c6a89721bd0b6f6aec03314d667166a5b8b18471403be7018b2479aaef6c7c6c554a50a98b717dff06d50be39fb36dc03e678e0a52fc615be46b223e3bee83fa0c7c47a1f29fb94f1e9eebf6c9ecf8fc79ae847df2effb60d07aba301fc536546ec4899eedb4fec9a9bed79e3a83c4b32757745778e977e485c67c0f12bbc82c0b3bb0f4df0bd13d046fed4446f54cd85bfce55ef781a80e5f63d289d08de001237928c2a4e0c8694d0c1e68cc23f2409f30009019085e831a928e7bc5b00a1f29d25482f7fd0b6dad30e6ef8edc68ddf7db404ea7d11540fc2cee74863d64af4c945457e04b7bea0a5fb8636edadb1e1d6f2630d61062b781c1821f46eddadf269ea1fada829547590081b16bc116e074cae0224a375f2d9ce16e836687c89cd285e3b40f1e59ce2caa3d1d8cf37ee4d5e3abe7ef0afd6ffeb4fd6905677b950894863c828ab8d93519566f69fa3c2129da763bf58d9c4d2837d4d9e13821258f7e7098b34f695a589bd9eb568ba51ee3014b2d3ba1d4cf9ebaed0231ed57ecea7bd918216")
 
     val Right(DecryptedPacket(payload0, nextPacket0, sharedSecret0)) = PaymentPacket.peel(privKeys(0), associatedData, onion)
@@ -182,7 +182,7 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload2, nextPacket2, sharedSecret2)) = PaymentPacket.peel(privKeys(2), associatedData, nextPacket1)
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = PaymentPacket.peel(privKeys(3), associatedData, nextPacket2)
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = PaymentPacket.peel(privKeys(4), associatedData, nextPacket3)
-    assert(Seq(payload0, payload1, payload2, payload3, payload4) == variableSizePayloadsFull)
+    assert(Seq(payload0, payload1, payload2, payload3, payload4) == variableSizePaymentPayloadsFull)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
 
     val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
@@ -193,17 +193,17 @@ class SphinxSpec extends AnyFunSuite {
     assert(packets(4).hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
-  test("create packet with single variable-size payload filling the onion") {
-    val PacketAndSecrets(onion, _) = PaymentPacket.create(sessionKey, publicKeys.take(1), variableSizeOneHopPayload, associatedData)
+  test("create payment packet with single variable-size payload filling the onion") {
+    val PacketAndSecrets(onion, _) = PaymentPacket.create(sessionKey, publicKeys.take(1), variableSizeOneHopPaymentPayload, associatedData)
     assert(serializePaymentOnion(onion) == hex"0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f28368661918f5b235c2a76fc232b5e46d421e9615471ab9e0bc887beff8c95fdb878f7b3a7141453e5f8d22b6351810ae541ce499a09b4a9d9f80d1845c8960c85fc6d1a87bd24b2cc49922898e9353fa268086c00ae8b7f718405b72ad380cdbb38c85e02a00427eb4bdbda8fcd42b44708a9efde49cf753b75ebb389bf84d0bfbf58590e510e034572a01e409c30939e2e4a090ecc89c371820af54e06e4ad5495d4e58718385cca5414552e078fedf284fdc2cc5c070cba21a6a8d4b77525ddbc9a9fca9b2f29aac5783ee8badd709f81c73ff60556cf2ee623af073b5a84799acc1ca46b764f74b97068c7826cc0579794a540d7a55e49eac26a6930340132e946a983240b0cd1b732e305c1042f580c4b26f140fc1cab3ee6f620958e0979f85eddf586c410ce42e93a4d7c803ead45fc47cf4396d284632314d789e73cf3f534126c63fe244069d9e8a7c4f98e7e530fc588e648ef4e641364981b5377542d5e7a4aaab6d35f6df7d3a9d7ca715213599ee02c4dbea4dc78860febe1d29259c64b59b3333ffdaebbaff4e7b31c27a3791f6bf848a58df7c69bb2b1852d2ad357b9919ffdae570b27dc709fba087273d3a4de9e6a6be66db647fb6a8d1a503b3f481befb96745abf5cc4a6bba0f780d5c7759b9e303a2a6b17eb05b6e660f4c474959db183e1cae060e1639227ee0bca03978a238dc4352ed764da7d4f3ed5337f6d0376dff72615beeeeaaeef79ab93e4bcbf18cd8424eb2b6ad7f33d2b4ffd5ea08372e6ed1d984152df17e04c6f73540988d7dd979e020424a163c271151a255966be7edef42167b8facca633649739bab97572b485658cde409e5d4a0f653f1a5911141634e3d2b6079b19347df66f9820755fd517092dae62fb278b0bafcc7ad682f7921b3a455e0c6369988779e26f0458b31bffd7e4e5bfb31944e80f100b2553c3b616e75be18328dc430f6618d55cd7d0962bb916d26ed4b117c46fa29e0a112c02c36020b34a96762db628fa3490828ec2079962ad816ef20ea0bca78fb2b7f7aedd4c47e375e64294d151ff03083730336dea64934003a27730cc1c7dec5049ddba8188123dd191aa71390d43a49fb792a3da7082efa6cced73f00eccea18145fbc84925349f7b552314ab8ed4c491e392aed3b1f03eb79474c294b42e2eba1528da26450aa592cba7ea22e965c54dff0fd6fdfd6b52b9a0f5f762e27fb0e6c3cd326a1ca1c5973de9be881439f702830affeb0c034c18ac8d5c2f135c964bf69de50d6e99bde88e90321ba843d9753c8f83666105d25fafb1a11ea22d62ef6f1fc34ca4e60c35d69773a104d9a44728c08c20b6314327301a2c400a71e1424c12628cf9f4a67990ade8a2203b0edb96c6082d4673b7309cd52c4b32b02951db2f66c6c72bd6c7eac2b50b83830c75cdfc3d6e9c2b592c45ed5fa5f6ec0da85710b7e1562aea363e28665835791dc574d9a70b2e5e2b9973ab590d45b94d244fc4256926c5a55b01cd0aca21fe5f9c907691fb026d0c56788b03ca3f08db0abb9f901098dde2ec4003568bc3ca27475ff86a7cb0aabd9e5136c5de064d16774584b252024109bb02004dba1fabf9e8277de097a0ab0dc8f6e26fcd4a28fb9d27cd4a2f6b13e276ed259a39e1c7e60f3c32c5cc4c4f96bd981edcb5e2c76a517cdc285aa2ca571d1e3d463ecd7614ae227df17af7445305bd7c661cf7dba658b0adcf36b0084b74a5fa408e272f703770ac5351334709112c5d4e4fe987e0c27b670412696f52b33245c229775da550729938268ee4e7a282e4a60b25dbb28ea8877a5069f819e5d1d31d9140bbc627ff3df267d22e5f0e151db066577845d71b7cd4484089f3f59194963c8f02bd7a637")
 
     val Right(DecryptedPacket(payload, nextPacket, _)) = PaymentPacket.peel(privKeys(0), associatedData, onion)
-    assert(payload == variableSizeOneHopPayload.head)
+    assert(payload == variableSizeOneHopPaymentPayload.head)
     assert(nextPacket.hmac == ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
-  test("create trampoline packet") {
-    val PacketAndSecrets(onion, sharedSecrets) = TrampolinePacket.create(sessionKey, publicKeys, trampolinePayloads, associatedData)
+  test("create trampoline payment packet") {
+    val PacketAndSecrets(onion, sharedSecrets) = TrampolinePacket.create(sessionKey, publicKeys, trampolinePaymentPayloads, associatedData)
     assert(serializeTrampolineOnion(onion) == hex"0002eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619cff34152f3a36e52ca94e74927203a560392b9cc7ce3c45809c6be52166c24a595716880f95f178bf5b30ca5f01f7d8f9e2d26348fa73a0cf0e01efaeb4a6ff69f0e8ca2cb7f180d97b5becc99e303f3706509aa43ba7c8a88cba175fccf9a8f5016ef06d3b935dbb15196d7ce16dc1a7157845566901d7b2197e52cab4ce487019d8f59df4c61e85b3c678636701ea8bb55b8bdbd8724d8d39ee47087a648501329db7c5f7eafaa166578c720619561dd14b3277db557ec7dcdb793771aef0f2f667cfdbe148be176e089e1ae07192472031bcdaf47ab6334b98e5b6fcd26b3b47982842019517d7e2ea8c5391cf17d0fe30c80913ed887234ccb48808f7ef9425bcd815c3b9604b5119fbc40ae57b5921bb333f5dd9de0b2638d44bc5e1a863715f96589f3e77eecb277229b4b682322371c0a1dbfcd723a991993df8cc1f2696b84b055b40a1792a29f710295a18fbd351b0f3ff34cd13941131b8278ba79303c89117120eea69173fd2cf5e044e97bcd4060d1ab6da116bdb4136f4d37eb832845b64366dfcbe8729df1dda5708c1c89cd880b0f7c82318bcfe8a27f9e857b1dc453eb555c428c412a1056005319")
 
     val Right(DecryptedPacket(payload0, nextPacket0, sharedSecret0)) = TrampolinePacket.peel(privKeys(0), associatedData, onion)
@@ -211,7 +211,7 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload2, nextPacket2, sharedSecret2)) = TrampolinePacket.peel(privKeys(2), associatedData, nextPacket1)
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = TrampolinePacket.peel(privKeys(3), associatedData, nextPacket2)
     val Right(DecryptedPacket(payload4, _, sharedSecret4)) = TrampolinePacket.peel(privKeys(4), associatedData, nextPacket3)
-    assert(Seq(payload0, payload1, payload2, payload3, payload4) == trampolinePayloads)
+    assert(Seq(payload0, payload1, payload2, payload3, payload4) == trampolinePaymentPayloads)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))
   }
 
@@ -272,10 +272,10 @@ class SphinxSpec extends AnyFunSuite {
 
   test("last node replies with a failure message (reference test vector)") {
     for ((payloads, packetType) <- Seq(
-      (referenceFixedSizePayloads, PaymentPacket),
-      (referenceVariableSizePayloads, PaymentPacket),
-      (variableSizePayloadsFull, PaymentPacket),
-      (trampolinePayloads, TrampolinePacket))) {
+      (referenceFixedSizePaymentPayloads, PaymentPacket),
+      (referenceVariableSizePaymentPayloads, PaymentPacket),
+      (variableSizePaymentPayloadsFull, PaymentPacket),
+      (trampolinePaymentPayloads, TrampolinePacket))) {
       // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
 
       // origin build the onion packet
@@ -333,10 +333,10 @@ class SphinxSpec extends AnyFunSuite {
 
   test("intermediate node replies with a failure message (reference test vector)") {
     for ((payloads, packetType) <- Seq(
-      (referenceFixedSizePayloads, PaymentPacket),
-      (referenceVariableSizePayloads, PaymentPacket),
-      (variableSizePayloadsFull, PaymentPacket),
-      (trampolinePayloads, TrampolinePacket))) {
+      (referenceFixedSizePaymentPayloads, PaymentPacket),
+      (referenceVariableSizePaymentPayloads, PaymentPacket),
+      (variableSizePaymentPayloadsFull, PaymentPacket),
+      (trampolinePaymentPayloads, TrampolinePacket))) {
       // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
 
       // origin build the onion packet
@@ -432,7 +432,7 @@ class SphinxSpec extends AnyFunSuite {
     assert(RouteBlinding.decryptPayload(privKeys(0), ephKey0, encryptedPayloads(1)).isFailure)
   }
 
-  test("create packet to blinded route (reference test vector)") {
+  test("create payment packet to blinded route (reference test vector)") {
     // The recipient creates a blinded route containing 3 hops.
     val (blindedRoute, blindingEphemeralKey0) = {
       val recipientSessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
@@ -448,14 +448,14 @@ class SphinxSpec extends AnyFunSuite {
     ))
     val payloads = Seq(
       // The sender sends normal onion payloads to the first two hops.
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(500)), OnionTlv.OutgoingCltv(CltvExpiry(1000)), OnionTlv.OutgoingChannelId(ShortChannelId(10))),
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(450)), OnionTlv.OutgoingCltv(CltvExpiry(900)), OnionTlv.OutgoingChannelId(ShortChannelId(15))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(500)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(1000)), OnionPaymentPayloadTlv.OutgoingChannelId(ShortChannelId(10))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(450)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(900)), OnionPaymentPayloadTlv.OutgoingChannelId(ShortChannelId(15))),
       // The sender includes the blinding key and the first encrypted recipient data in the introduction node's payload.
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(400)), OnionTlv.OutgoingCltv(CltvExpiry(860)), OnionTlv.BlindingPoint(blindingEphemeralKey0), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(0))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(400)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(860)), OnionPaymentPayloadTlv.BlindingPoint(blindingEphemeralKey0), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(0))),
       // The sender includes the correct encrypted recipient data in each blinded node's payload.
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
-      TlvStream[OnionTlv](OnionTlv.AmountToForward(MilliSatoshi(250)), OnionTlv.OutgoingCltv(CltvExpiry(750)), OnionTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
-    ).map(tlvs => OnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes)
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(250)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(750)), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(1))),
+      TlvStream[OnionPaymentPayloadTlv](OnionPaymentPayloadTlv.AmountToForward(MilliSatoshi(250)), OnionPaymentPayloadTlv.OutgoingCltv(CltvExpiry(750)), OnionPaymentPayloadTlv.EncryptedRecipientData(blindedRoute.encryptedPayloads(2))),
+    ).map(tlvs => PaymentOnionCodecs.tlvPerHopPayloadCodec.encode(tlvs).require.bytes)
 
     val senderSessionKey = PrivateKey(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val PacketAndSecrets(onion, sharedSecrets) = PaymentPacket.create(senderSessionKey, nodeIds, payloads, associatedData)
@@ -469,10 +469,10 @@ class SphinxSpec extends AnyFunSuite {
     // It can decrypt the onion as usual, but the payload doesn't contain a shortChannelId or a nodeId to forward to.
     // However it contains a blinding point and encrypted data, which it can decrypt to discover the next node.
     val Right(DecryptedPacket(payload2, nextPacket2, sharedSecret2)) = PaymentPacket.peel(privKeys(2), associatedData, nextPacket1)
-    val tlvs2 = OnionCodecs.tlvPerHopPayloadCodec.decode(payload2.bits).require.value
-    assert(tlvs2.get[OnionTlv.BlindingPoint].map(_.publicKey) === Some(blindingEphemeralKey0))
-    assert(tlvs2.get[OnionTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs2, blindingEphemeralKey1)) = EncryptedRecipientDataCodecs.decode(privKeys(2), blindingEphemeralKey0, tlvs2.get[OnionTlv.EncryptedRecipientData].get.data)
+    val tlvs2 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload2.bits).require.value
+    assert(tlvs2.get[OnionPaymentPayloadTlv.BlindingPoint].map(_.publicKey) === Some(blindingEphemeralKey0))
+    assert(tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
+    val Success((recipientTlvs2, blindingEphemeralKey1)) = EncryptedRecipientDataCodecs.decode(privKeys(2), blindingEphemeralKey0, tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
     assert(recipientTlvs2.get[EncryptedRecipientDataTlv.OutgoingChannelId].map(_.shortChannelId) === Some(ShortChannelId(1105)))
     assert(recipientTlvs2.get[EncryptedRecipientDataTlv.OutgoingNodeId].map(_.nodeId) === Some(publicKeys(3)))
 
@@ -482,9 +482,9 @@ class SphinxSpec extends AnyFunSuite {
     // The payload doesn't contain a shortChannelId or a nodeId to forward to, but the encrypted data does.
     val blindedPrivKey3 = RouteBlinding.derivePrivateKey(privKeys(3), blindingEphemeralKey1)
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = PaymentPacket.peel(blindedPrivKey3, associatedData, nextPacket2)
-    val tlvs3 = OnionCodecs.tlvPerHopPayloadCodec.decode(payload3.bits).require.value
-    assert(tlvs3.get[OnionTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs3, blindingEphemeralKey2)) = EncryptedRecipientDataCodecs.decode(privKeys(3), blindingEphemeralKey1, tlvs3.get[OnionTlv.EncryptedRecipientData].get.data)
+    val tlvs3 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload3.bits).require.value
+    assert(tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
+    val Success((recipientTlvs3, blindingEphemeralKey2)) = EncryptedRecipientDataCodecs.decode(privKeys(3), blindingEphemeralKey1, tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
     assert(recipientTlvs3.get[EncryptedRecipientDataTlv.OutgoingNodeId].map(_.nodeId) === Some(publicKeys(4)))
 
     // The fifth hop is the blinded recipient.
@@ -492,9 +492,9 @@ class SphinxSpec extends AnyFunSuite {
     // derive the private key corresponding to its blinded node ID and decrypt the onion.
     val blindedPrivKey4 = RouteBlinding.derivePrivateKey(privKeys(4), blindingEphemeralKey2)
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = PaymentPacket.peel(blindedPrivKey4, associatedData, nextPacket3)
-    val tlvs4 = OnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
-    assert(tlvs4.get[OnionTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs4, _)) = EncryptedRecipientDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionTlv.EncryptedRecipientData].get.data)
+    val tlvs4 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
+    assert(tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
+    val Success((recipientTlvs4, _)) = EncryptedRecipientDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
     assert(recipientTlvs4.get[EncryptedRecipientDataTlv.RecipientSecret].map(_.data) === Some(associatedData.bytes))
 
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
@@ -513,10 +513,10 @@ class SphinxSpec extends AnyFunSuite {
 object SphinxSpec {
 
   def serializePaymentOnion(onion: OnionRoutingPacket): ByteVector =
-    OnionCodecs.paymentOnionPacketCodec.encode(onion).require.toByteVector
+    PaymentOnionCodecs.paymentOnionPacketCodec.encode(onion).require.toByteVector
 
   def serializeTrampolineOnion(onion: OnionRoutingPacket): ByteVector =
-    OnionCodecs.trampolineOnionPacketCodec.encode(onion).require.toByteVector
+    PaymentOnionCodecs.trampolineOnionPacketCodec.encode(onion).require.toByteVector
 
   val privKeys = Seq(
     PrivateKey(hex"4141414141414141414141414141414141414141414141414141414141414141"),
@@ -538,7 +538,7 @@ object SphinxSpec {
 
   // This test vector uses payloads with a fixed size.
   // origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
-  val referenceFixedSizePayloads = Seq(
+  val referenceFixedSizePaymentPayloads = Seq(
     hex"000000000000000000000000000000000000000000000000000000000000000000",
     hex"000101010101010101000000000000000100000001000000000000000000000000",
     hex"000202020202020202000000000000000200000002000000000000000000000000",
@@ -548,7 +548,7 @@ object SphinxSpec {
 
   // This test vector uses variable-size payloads intertwined with fixed-size payloads.
   // origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
-  val referenceVariableSizePayloads = Seq(
+  val referenceVariableSizePaymentPayloads = Seq(
     hex"000000000000000000000000000000000000000000000000000000000000000000",
     hex"140101010101010101000000000000000100000001",
     hex"fd0100000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
@@ -558,7 +558,7 @@ object SphinxSpec {
 
   // This test vector uses variable-sized payloads and fills the whole onion packet.
   // origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
-  val variableSizePayloadsFull = Seq(
+  val variableSizePaymentPayloadsFull = Seq(
     hex"8b09000000000000000030000000000000000000000000000000000000000000000000000000000025000000000000000000000000000000000000000000000000250000000000000000000000000000000000000000000000002500000000000000000000000000000000000000000000000025000000000000000000000000000000000000000000000000",
     hex"fd012a08000000000000009000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000200000000000000000000000000000000000000020000000000000000000000000000000000000002000000000000000000000000000000000000000200000000000000000000000000000000000000020000000000000000000000000000000000000002000000000000000000000000000000000000000200000000000000000000000000000000000000020000000000000000000000000000000000000002000000000000000000000000000000000000000",
     hex"620800000000000000900000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -568,12 +568,12 @@ object SphinxSpec {
 
   // This test vector uses a single variable-sized payload filling the whole onion payload.
   // origin -> recipient
-  val variableSizeOneHopPayload = Seq(
+  val variableSizeOneHopPaymentPayload = Seq(
     hex"fd04f16500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
   )
 
   // This test vector uses trampoline variable-size payloads.
-  val trampolinePayloads = Seq(
+  val trampolinePaymentPayloads = Seq(
     hex"2a 02020231 040190 f8210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c",
     hex"35 fa 33 010000000000000000000000040000000000000000000000000ff0000000000000000000000000000000000000000000000000",
     hex"23 f8 21 032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991",

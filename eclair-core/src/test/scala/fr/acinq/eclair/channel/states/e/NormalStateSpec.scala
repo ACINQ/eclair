@@ -33,7 +33,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
@@ -1682,7 +1682,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure))
-    val Right(fail) = OutgoingPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
+    val Right(fail) = OutgoingPaymentPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
     assert(fail.id === htlc.id)
     bob ! cmd
     bob2alice.expectMsg(fail)

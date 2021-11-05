@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
-import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -489,7 +489,7 @@ object Commitments {
         Left(UnknownHtlcId(commitments.channelId, cmd.id))
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        OutgoingPacket.buildHtlcFailure(nodeSecret, cmd, htlc).map(fail => (addLocalProposal(commitments, fail), fail))
+        OutgoingPaymentPacket.buildHtlcFailure(nodeSecret, cmd, htlc).map(fail => (addLocalProposal(commitments, fail), fail))
       case None => Left(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 
