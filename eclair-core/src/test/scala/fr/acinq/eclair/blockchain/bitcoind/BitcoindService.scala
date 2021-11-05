@@ -21,11 +21,11 @@ import akka.pattern.pipe
 import akka.testkit.{TestKitBase, TestProbe}
 import com.softwaremill.sttp.okhttp.OkHttpFutureBackend
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{Base58, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.TestUtils
+import fr.acinq.bitcoin.{Block, Btc, BtcAmount, ByteVector32, MilliBtc, OutPoint, Satoshi, Transaction, computeP2WpkhAddress}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.{SafeCookie, UserPassword}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCAuthMethod, BitcoinJsonRPCClient}
 import fr.acinq.eclair.integration.IntegrationSpec
+import fr.acinq.eclair.{TestUtils, randomKey}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST._
 
@@ -173,12 +173,10 @@ trait BitcoindService extends Logging {
     address
   }
 
-  /** Dump the private key associated with the given address. */
-  def dumpPrivateKey(address: String, sender: TestProbe = TestProbe(), rpcClient: BitcoinJsonRPCClient = bitcoinrpcclient): PrivateKey = {
-    rpcClient.invoke("dumpprivkey", address).pipeTo(sender.ref)
-    val JString(wif) = sender.expectMsgType[JValue]
-    val (priv, _) = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
-    priv
+  def createExternalAddress(): (PrivateKey, String) = {
+    val priv = randomKey()
+    val address = computeP2WpkhAddress(priv.publicKey, Block.RegtestGenesisBlock.hash)
+    (priv, address)
   }
 
   /** Send to a given address, without generating blocks to confirm. */
