@@ -5,7 +5,7 @@ api_url='http://localhost:8080'
 # uncomment the line below if you don't want to provide a password each time you call eclair-cli
 # api_password='your_api_password'
 # uncomment the line below if you want to use cookie authentication when you call eclair-cli
-# cookie_file="${HOME}/.eclair/.cookie"
+# api_cookie="${HOME}/.eclair/.cookie"
 # for some commands the json output can be shortened for better readability
 short=false
 
@@ -25,6 +25,7 @@ Usage
 where OPTIONS can be:
   -p <password>         API's password
   -a <address>          Override the API URL with <address>
+  -f <cookie-file>      API cookie file
   -h                    Show this help
   -s                    Some commands can print a trimmed JSON
 
@@ -103,10 +104,11 @@ command -v jq >/dev/null 2>&1 || { echo -e "This tool requires jq.\nFor installa
 command -v curl >/dev/null 2>&1 || { echo -e "This tool requires curl.\n\nAborting..."; exit 1; }
 
 # extract script options
-while getopts ':cu:su:p:a:hu:' flag; do
+while getopts ':cu:su:p:a:f:hu:' flag; do
   case "${flag}" in
     p) api_password="${OPTARG}" ;;
     a) api_url="${OPTARG}" ;;
+    f) api_cookie="${OPTARG}" ;;
     h) usage ;;
     s) short=true ;;
     *) ;;
@@ -149,9 +151,9 @@ fi
 
 jq_filter="$jq_filter end";
 
-# if cookie_file is set and exist, use cookie authentication
-if [ ! -z $cookie_file ] && [ -f $cookie_file ]; then
-  auth=$(<$cookie_file)
+# if api_cookie is set and exist, use cookie authentication
+if [ ! -z $api_cookie ] && [ -f $api_cookie ]; then
+  auth=$(<$api_cookie)
 fi
 
 # if no password is provided, auth should only contain user login so that curl prompts for the api password

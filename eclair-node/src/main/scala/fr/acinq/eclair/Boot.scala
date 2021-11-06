@@ -81,7 +81,7 @@ object Boot extends App with Logging {
         None
       }
       if (apiPassword.isEmpty && apiCookiePassword.isEmpty) {
-        throw new RuntimeException("neither password nor cookie is enabled")
+        throw new RuntimeException("json-rpc api requires that either password or cookie is enabled")
       }
       val service: Service = new Service {
         override val actorSystem: ActorSystem = system
