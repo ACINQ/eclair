@@ -261,9 +261,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       case Event(msg: OnionMessage, _: ConnectedData) =>
         if (nodeParams.features.hasFeature(Features.OnionMessages)) {
           OnionMessages.process(nodeParams.privateKey, msg) match {
-            case OnionMessages.DropMessage(_) => () // We ignore bad messages
+            case OnionMessages.DropMessage(reason) => log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
             case OnionMessages.RelayMessage(nextNodeId, dataToRelay) => context.parent ! Peer.SendOnionMessage(nextNodeId, dataToRelay)
-            case OnionMessages.ReceiveMessage(_, _) => () // We only relay messages
+            case msg: OnionMessages.ReceiveMessage => log.info(s"received message from ${remoteNodeId.value.toHex}: $msg")
           }
         }
         stay()

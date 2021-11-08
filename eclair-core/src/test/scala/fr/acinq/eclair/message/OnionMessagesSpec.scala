@@ -125,7 +125,7 @@ class OnionMessagesSpec extends AnyFunSuite {
               case OnionMessages.RelayMessage(nextNodeId, onionForDave) =>
                 assert(nextNodeId == dave.publicKey)
                 OnionMessages.process(dave, onionForDave) match {
-                  case OnionMessages.ReceiveMessage(_, _) => ()
+                  case OnionMessages.ReceiveMessage(_, path_id) => assert(path_id contains hex"01234567")
                   case x => fail(x.toString)
                 }
               case x => fail(x.toString)

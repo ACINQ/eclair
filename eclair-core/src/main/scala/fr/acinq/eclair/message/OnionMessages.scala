@@ -59,6 +59,15 @@ object OnionMessages {
     }
   }
 
+  /**
+   * Builds an encrypted onion containing a message that should be relayed to the destination.
+   * @param sessionKey A random key to encrypt the onion
+   * @param blindingSecret A random key to encrypt the onion
+   * @param intermediateNodes List of intermediate nodes between us and the destination, can be empty if we want to contact the destination directly
+   * @param destination The destination of this message, can be a node id or a blinded route
+   * @param content List of TLVs to send to the recipient of the message
+   * @return The node id to send the onion to and the onion containing the message
+   */
   def buildMessage(sessionKey: PrivateKey,
                    blindingSecret: PrivateKey,
                    intermediateNodes: Seq[IntermediateNode],
