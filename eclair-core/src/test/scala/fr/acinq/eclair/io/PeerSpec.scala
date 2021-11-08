@@ -472,15 +472,11 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     peer ! PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, protocol.Init(peer.underlyingActor.nodeParams.features), protocol.Init(Bob.nodeParams.features))
 
-    peer ! ConnectionResult.AlreadyConnected
-
     val msgSent0 = peerConnection.expectMsgType[OnionMessage]
     assert(msgSent0 === msg1)
 
     peer.tell(Peer.Connect(remoteNodeId, None), peer)
     peer ! SendOnionMessage(remoteNodeId, msg2)
-
-    peer ! ConnectionResult.AlreadyConnected
 
     val msgSent1 = peerConnection.expectMsgType[OnionMessage]
     assert(msgSent1 === msg2)
