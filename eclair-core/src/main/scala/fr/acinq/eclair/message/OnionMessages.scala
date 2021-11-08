@@ -20,6 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.MessageOnion.{BlindedFinalPayload, BlindedRelayPayload, FinalPayload, RelayPayload}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
+import fr.acinq.eclair.wire.protocol.RouteBlinding.EncryptedDataTlv._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
@@ -36,21 +37,21 @@ object OnionMessages {
                  intermediateNodes: Seq[IntermediateNode],
                  destination: Either[Recipient, Sphinx.RouteBlinding.BlindedRoute]): Sphinx.RouteBlinding.BlindedRoute = {
     val last = destination match {
-      case Left(Recipient(nodeId, _, _)) => EncryptedRecipientDataTlv.OutgoingNodeId(nodeId) :: Nil
-      case Right(Sphinx.RouteBlinding.BlindedRoute(nodeId, blindingKey, _)) => EncryptedRecipientDataTlv.OutgoingNodeId(nodeId) :: EncryptedRecipientDataTlv.NextBlinding(blindingKey) :: Nil
+      case Left(Recipient(nodeId, _, _)) => OutgoingNodeId(nodeId) :: Nil
+      case Right(Sphinx.RouteBlinding.BlindedRoute(nodeId, blindingKey, _)) => OutgoingNodeId(nodeId) :: NextBlinding(blindingKey) :: Nil
     }
     val intermediatePayloads =
       if (intermediateNodes.isEmpty) {
         Nil
       } else {
-        (intermediateNodes.tail.map(node => EncryptedRecipientDataTlv.OutgoingNodeId(node.nodeId) :: Nil) :+ last)
-          .zip(intermediateNodes).map { case (tlvs, hop) => hop.padding.map(EncryptedRecipientDataTlv.Padding(_) :: Nil).getOrElse(Nil) ++ tlvs }
+        (intermediateNodes.tail.map(node => OutgoingNodeId(node.nodeId) :: Nil) :+ last)
+          .zip(intermediateNodes).map { case (tlvs, hop) => hop.padding.map(Padding(_) :: Nil).getOrElse(Nil) ++ tlvs }
           .map(tlvs => BlindedRelayPayload(TlvStream(tlvs)))
           .map(MessageOnionCodecs.blindedRelayPayloadCodec.encode(_).require.bytes)
       }
     destination match {
       case Left(Recipient(nodeId, pathId, padding)) =>
-        val tlvs = padding.map(EncryptedRecipientDataTlv.Padding(_) :: Nil).getOrElse(Nil) ++ pathId.map(EncryptedRecipientDataTlv.PathId(_) :: Nil).getOrElse(Nil)
+        val tlvs = padding.map(Padding(_) :: Nil).getOrElse(Nil) ++ pathId.map(PathId(_) :: Nil).getOrElse(Nil)
         val lastPayload = MessageOnionCodecs.blindedFinalPayloadCodec.encode(BlindedFinalPayload(TlvStream(tlvs))).require.bytes
         Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload)
       case Right(route) =>
@@ -61,11 +62,12 @@ object OnionMessages {
 
   /**
    * Builds an encrypted onion containing a message that should be relayed to the destination.
-   * @param sessionKey A random key to encrypt the onion
-   * @param blindingSecret A random key to encrypt the onion
+   *
+   * @param sessionKey        A random key to encrypt the onion
+   * @param blindingSecret    A random key to encrypt the onion
    * @param intermediateNodes List of intermediate nodes between us and the destination, can be empty if we want to contact the destination directly
-   * @param destination The destination of this message, can be a node id or a blinded route
-   * @param content List of TLVs to send to the recipient of the message
+   * @param destination       The destination of this message, can be a node id or a blinded route
+   * @param content           List of TLVs to send to the recipient of the message
    * @return The node id to send the onion to and the onion containing the message
    */
   def buildMessage(sessionKey: PrivateKey,

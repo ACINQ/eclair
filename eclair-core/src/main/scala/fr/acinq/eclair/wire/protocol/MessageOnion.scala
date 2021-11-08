@@ -53,9 +53,9 @@ object MessageOnion {
   }
 
   /** Content of the encrypted data of an intermediate node's per-hop payload. */
-  case class BlindedRelayPayload(records: TlvStream[EncryptedRecipientDataTlv]) {
-    val nextNodeId: PublicKey = records.get[EncryptedRecipientDataTlv.OutgoingNodeId].get.nodeId
-    val nextBlindingOverride: Option[PublicKey] = records.get[EncryptedRecipientDataTlv.NextBlinding].map(_.blinding)
+  case class BlindedRelayPayload(records: TlvStream[RouteBlinding.EncryptedDataTlv]) {
+    val nextNodeId: PublicKey = records.get[RouteBlinding.EncryptedDataTlv.OutgoingNodeId].get.nodeId
+    val nextBlindingOverride: Option[PublicKey] = records.get[RouteBlinding.EncryptedDataTlv.NextBlinding].map(_.blinding)
   }
 
   /** Per-hop payload for a final node. */
@@ -65,8 +65,8 @@ object MessageOnion {
   }
 
   /** Content of the encrypted data of a final node's per-hop payload. */
-  case class BlindedFinalPayload(records: TlvStream[EncryptedRecipientDataTlv]) {
-    val pathId: Option[ByteVector] = records.get[EncryptedRecipientDataTlv.PathId].map(_.data)
+  case class BlindedFinalPayload(records: TlvStream[RouteBlinding.EncryptedDataTlv]) {
+    val pathId: Option[ByteVector] = records.get[RouteBlinding.EncryptedDataTlv.PathId].map(_.data)
   }
 
 }
@@ -106,15 +106,15 @@ object MessageOnionCodecs {
     case FinalPayload(tlvs) => tlvs
   })
 
-  val blindedRelayPayloadCodec: Codec[BlindedRelayPayload] = EncryptedRecipientDataCodecs.encryptedRecipientDataCodec.narrow({
-    case tlvs if tlvs.get[EncryptedRecipientDataTlv.OutgoingNodeId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
-    case tlvs if tlvs.get[EncryptedRecipientDataTlv.PathId].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(6)))
+  val blindedRelayPayloadCodec: Codec[BlindedRelayPayload] = RouteBlinding.EncryptedDataCodecs.encryptedDataCodec.narrow({
+    case tlvs if tlvs.get[RouteBlinding.EncryptedDataTlv.OutgoingNodeId].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
+    case tlvs if tlvs.get[RouteBlinding.EncryptedDataTlv.PathId].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(6)))
     case tlvs => Attempt.successful(BlindedRelayPayload(tlvs))
   }, {
     case BlindedRelayPayload(tlvs) => tlvs
   })
 
-  val blindedFinalPayloadCodec: Codec[BlindedFinalPayload] = EncryptedRecipientDataCodecs.encryptedRecipientDataCodec.narrow(
+  val blindedFinalPayloadCodec: Codec[BlindedFinalPayload] = RouteBlinding.EncryptedDataCodecs.encryptedDataCodec.narrow(
     tlvs => Attempt.successful(BlindedFinalPayload(tlvs)),
     {
       case BlindedFinalPayload(tlvs) => tlvs
@@ -128,4 +128,5 @@ object MessageOnionCodecs {
         ("publicKey" | bytes(33)),
       ("onionPayload" | bytes)) ~
       ("hmac" | bytes32) flattenLeftPairs).as[OnionRoutingPacket]
+
 }
