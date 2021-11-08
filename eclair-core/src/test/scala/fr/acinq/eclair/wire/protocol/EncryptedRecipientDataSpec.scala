@@ -13,7 +13,7 @@ class EncryptedRecipientDataSpec extends AnyFunSuiteLike {
 
   test("decode encrypted recipient data") {
     val sessionKey = randomKey()
-    val nodePrivKeys = Seq(randomKey(), randomKey(), randomKey(), randomKey())
+    val nodePrivKeys = Seq(randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
     val payloads = Seq(
       (TlvStream[EncryptedRecipientDataTlv](Padding(hex"000000"), OutgoingChannelId(ShortChannelId(561))), hex"0103000000 02080000000000000231"),
       (TlvStream[EncryptedRecipientDataTlv](OutgoingNodeId(PublicKey(hex"025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))), hex"0421025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"),
@@ -27,8 +27,9 @@ class EncryptedRecipientDataSpec extends AnyFunSuiteLike {
     val Success((decryptedPayload0, blinding1)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(0), blinding0, blindedRoute.encryptedPayloads(0))
     val Success((decryptedPayload1, blinding2)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(1), blinding1, blindedRoute.encryptedPayloads(1))
     val Success((decryptedPayload2, blinding3)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(2), blinding2, blindedRoute.encryptedPayloads(2))
-    val Success((decryptedPayload3, _)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(3), blinding3, blindedRoute.encryptedPayloads(3))
-    assert(Seq(decryptedPayload0, decryptedPayload1, decryptedPayload2, decryptedPayload3) === payloads.map(_._1))
+    val Success((decryptedPayload3, blinding4)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(3), blinding3, blindedRoute.encryptedPayloads(3))
+    val Success((decryptedPayload4, _)) = EncryptedRecipientDataCodecs.decode(nodePrivKeys(4), blinding4, blindedRoute.encryptedPayloads(4))
+    assert(Seq(decryptedPayload0, decryptedPayload1, decryptedPayload2, decryptedPayload3, decryptedPayload4) === payloads.map(_._1))
   }
 
   test("decode invalid encrypted recipient data") {
