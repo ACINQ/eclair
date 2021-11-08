@@ -68,7 +68,7 @@ object EncryptedRecipientDataCodecs {
     .typecase(UInt64(2), outgoingChannelId)
     .typecase(UInt64(4), outgoingNodeId)
     .typecase(UInt64(6), pathId)
-    .typecase(UInt64(12), nextBlinding)
+    .typecase(UInt64(8), nextBlinding)
 
   val encryptedRecipientDataCodec: Codec[TlvStream[EncryptedRecipientDataTlv]] = TlvCodecs.tlvStream[EncryptedRecipientDataTlv](encryptedRecipientDataTlvCodec).complete
 

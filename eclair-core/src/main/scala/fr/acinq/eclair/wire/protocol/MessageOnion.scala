@@ -87,7 +87,7 @@ object MessageOnionCodecs {
 
   private val onionTlvCodec = discriminated[OnionMessagePayloadTlv].by(varint)
     .typecase(UInt64(2), replyPathCodec)
-    .typecase(UInt64(10), encryptedDataCodec)
+    .typecase(UInt64(4), encryptedDataCodec)
 
   val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 
