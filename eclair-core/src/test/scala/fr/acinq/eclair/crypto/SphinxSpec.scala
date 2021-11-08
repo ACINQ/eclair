@@ -368,11 +368,12 @@ class SphinxSpec extends AnyFunSuite {
     val sessionKey = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val blindedRoute = RouteBlinding.create(sessionKey, publicKeys, routeBlindingPayloads)
     assert(blindedRoute.introductionNode.publicKey === publicKeys(0))
+    assert(blindedRoute.introductionNodeId === publicKeys(0))
     assert(blindedRoute.introductionNode.blindedPublicKey === PublicKey(hex"02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"))
     assert(blindedRoute.introductionNode.blindingEphemeralKey === PublicKey(hex"031b84c5567b126440995d3ed5aaba0565d71e1834604819ff9c17f5e9d5dd078f"))
     assert(blindedRoute.introductionNode.encryptedPayload === hex"af4fbf67bd52520bdfab6a88cd4e7f22ffad08d8b153b17ff303f93fdb4712")
-    assert(blindedRoute.nodeIds === Seq(
-      publicKeys(0),
+    assert(blindedRoute.blindedNodeIds === Seq(
+      PublicKey(hex"02ec68ed555f5d18b12fe0e2208563c3566032967cf11dc29b20c345449f9a50a2"),
       PublicKey(hex"022b09d77fb3374ee3ed9d2153e15e9962944ad1690327cbb0a9acb7d90f168763"),
       PublicKey(hex"03d9f889364dc5a173460a2a6cc565b4ca78931792115dd6ef82c0e18ced837372"),
       PublicKey(hex"03bfddd2253b42fe12edd37f9071a3883830ed61a4bc347eeac63421629cf032b5"),
@@ -398,25 +399,25 @@ class SphinxSpec extends AnyFunSuite {
     assert(ephKey1 === PublicKey(hex"035cb4c003d58e16cc9207270b3596c2be3309eca64c36b208c946bbb599bfcad0"))
 
     // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
-    assert(RouteBlinding.derivePrivateKey(privKeys(1), ephKey1).publicKey === blindedRoute.nodeIds(1))
+    assert(RouteBlinding.derivePrivateKey(privKeys(1), ephKey1).publicKey === blindedRoute.blindedNodeIds(1))
     val Success((payload1, ephKey2)) = RouteBlinding.decryptPayload(privKeys(1), ephKey1, blindedRoute.encryptedPayloads(1))
     assert(payload1 === routeBlindingPayloads(1))
     assert(ephKey2 === PublicKey(hex"02e105bc01a7af07074a1b0b1d9a112a1d89c6cd87cc4e2b6ba3a824731d9508bd"))
 
     // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
-    assert(RouteBlinding.derivePrivateKey(privKeys(2), ephKey2).publicKey === blindedRoute.nodeIds(2))
+    assert(RouteBlinding.derivePrivateKey(privKeys(2), ephKey2).publicKey === blindedRoute.blindedNodeIds(2))
     val Success((payload2, ephKey3)) = RouteBlinding.decryptPayload(privKeys(2), ephKey2, blindedRoute.encryptedPayloads(2))
     assert(payload2 === routeBlindingPayloads(2))
     assert(ephKey3 === PublicKey(hex"0349164db5398925ef234002e62d2834da115b8eafc73436fab98ed12266e797cc"))
 
     // The next node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
-    assert(RouteBlinding.derivePrivateKey(privKeys(3), ephKey3).publicKey === blindedRoute.nodeIds(3))
+    assert(RouteBlinding.derivePrivateKey(privKeys(3), ephKey3).publicKey === blindedRoute.blindedNodeIds(3))
     val Success((payload3, ephKey4)) = RouteBlinding.decryptPayload(privKeys(3), ephKey3, blindedRoute.encryptedPayloads(3))
     assert(payload3 === routeBlindingPayloads(3))
     assert(ephKey4 === PublicKey(hex"020a6d1951916adcac22125063f62c35b3686f36e5db2f77073f3d35b19c7a118a"))
 
     // The last node can derive the private key used to unwrap the onion and decrypt its encrypted payload.
-    assert(RouteBlinding.derivePrivateKey(privKeys(4), ephKey4).publicKey === blindedRoute.nodeIds(4))
+    assert(RouteBlinding.derivePrivateKey(privKeys(4), ephKey4).publicKey === blindedRoute.blindedNodeIds(4))
     val Success((payload4, _)) = RouteBlinding.decryptPayload(privKeys(4), ephKey4, blindedRoute.encryptedPayloads(4))
     assert(payload4 === routeBlindingPayloads(4))
   }
@@ -440,7 +441,7 @@ class SphinxSpec extends AnyFunSuite {
     }
 
     // The sender obtains this information (e.g. from a Bolt11 invoice) and prepends two normal hops to reach the introduction node.
-    val nodeIds = publicKeys.take(2) ++ blindedRoute.nodeIds
+    val nodeIds = publicKeys.take(2) ++ Seq(blindedRoute.introductionNodeId) ++ blindedRoute.subsequentNodes.map(_.blindedPublicKey)
     assert(blindedRoute.encryptedPayloads === Seq(
       hex"36285ee1c0b289eeedf05c9ab66a7b669d92bd3729082c1c42e443d2775b3be7de74b1c64e0cebd0e3a8cddeff2e9acb1ddb62cbb73166723cae905938",
       hex"14cd98e3f4f29cc7af8624250c5bd14fb5a69be8235748909e754ef43b09b1b424b1bba062d801f8648f28fb1101b9a56dcb1f69d5e1ba7fe584f6a6be",
@@ -495,7 +496,7 @@ class SphinxSpec extends AnyFunSuite {
     val tlvs4 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
     assert(tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
     val Success((recipientTlvs4, _)) = EncryptedRecipientDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs4.get[EncryptedRecipientDataTlv.RecipientSecret].map(_.data) === associatedData.map(_.bytes))
+    assert(recipientTlvs4.get[EncryptedRecipientDataTlv.PathId].map(_.data) === associatedData.map(_.bytes))
 
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))

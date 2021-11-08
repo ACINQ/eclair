@@ -49,11 +49,10 @@ object OnionRoutingCodecs {
     // @formatter:on
   }
 
-  def onionRoutingPacketCodec(payloadLength: Codec[Int]): Codec[OnionRoutingPacket] = (
-    variableSizePrefixedBytes(payloadLength,
-      ("version" | uint8) ~
-        ("publicKey" | bytes(33)),
-      ("onionPayload" | bytes)) ~
-      ("hmac" | bytes32) flattenLeftPairs).as[OnionRoutingPacket]
+  def onionRoutingPacketCodec(payloadLength: Int): Codec[OnionRoutingPacket] = (
+    ("version" | uint8) ::
+      ("publicKey" | bytes(33)) ::
+      ("onionPayload" | bytes(payloadLength)) ::
+      ("hmac" | bytes32)).as[OnionRoutingPacket]
 
 }

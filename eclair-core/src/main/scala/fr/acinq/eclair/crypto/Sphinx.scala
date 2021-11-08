@@ -23,7 +23,6 @@ import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.Attempt
 import scodec.bits.ByteVector
-import scodec.codecs.provide
 
 import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
@@ -268,7 +267,7 @@ object Sphinx extends Logging {
    * When an invalid onion is received, its hash should be included in the failure message.
    */
   def hash(onion: OnionRoutingPacket): ByteVector32 =
-    Crypto.sha256(OnionRoutingCodecs.onionRoutingPacketCodec(provide(onion.payload.length.toInt)).encode(onion).require.toByteVector)
+    Crypto.sha256(OnionRoutingCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).require.toByteVector)
 
   /**
    * A properly decrypted failure from a node in the route.
@@ -375,19 +374,17 @@ object Sphinx extends Logging {
     case class BlindedNode(blindedPublicKey: PublicKey, encryptedPayload: ByteVector)
 
     /**
-     * @param introductionNodeId the first node, not be blinded so that the sender can locate it.
+     * @param introductionNodeId the first node, not blinded so that the sender can locate it.
      * @param blindingKey        blinding tweak that can be used by the introduction node to derive the private key that
      *                           matches the blinded public key.
      * @param blindedNodes       blinded nodes (including the introduction node).
      */
     case class BlindedRoute(introductionNodeId: PublicKey, blindingKey: PublicKey, blindedNodes: Seq[BlindedNode]) {
+      require(blindedNodes.nonEmpty, "blinded route must not be empty")
       val introductionNode: IntroductionNode = IntroductionNode(introductionNodeId, blindedNodes.head.blindedPublicKey, blindingKey, blindedNodes.head.encryptedPayload)
       val subsequentNodes: Seq[BlindedNode] = blindedNodes.tail
-
       val blindedNodeIds: Seq[PublicKey] = blindedNodes.map(_.blindedPublicKey)
       val encryptedPayloads: Seq[ByteVector] = blindedNodes.map(_.encryptedPayload)
-
-      val nodeIds: Seq[PublicKey] = introductionNodeId +: blindedNodeIds.tail
     }
 
     /**

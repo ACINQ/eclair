@@ -308,13 +308,14 @@ object PaymentOnionCodecs {
 
   import OnionPaymentPayloadTlv._
   import PaymentOnion._
+  import scodec.bits.HexStringSyntax
   import scodec.codecs._
   import scodec.{Attempt, Codec, DecodeResult, Decoder}
 
   val paymentOnionPayloadLength = 1300
   val trampolineOnionPayloadLength = 400
-  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(provide(paymentOnionPayloadLength))
-  val trampolineOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(provide(trampolineOnionPayloadLength))
+  val paymentOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(paymentOnionPayloadLength)
+  val trampolineOnionPacketCodec: Codec[OnionRoutingPacket] = OnionRoutingCodecs.onionRoutingPacketCodec(trampolineOnionPayloadLength)
 
   /**
    * The 1.1 BOLT spec changed the payment onion frame format to use variable-length per-hop payloads.
@@ -335,9 +336,9 @@ object PaymentOnionCodecs {
 
   private val encryptedRecipientData: Codec[EncryptedRecipientData] = variableSizeBytesLong(varintoverflow, "encrypted_data" | bytes).as[EncryptedRecipientData]
 
-  private val blindingPoint: Codec[BlindingPoint] = variableSizeBytesLong(varintoverflow, "blinding_key" | publicKey).as[BlindingPoint]
+  private val blindingPoint: Codec[BlindingPoint] = (("length" | constant(hex"21")) :: ("blinding" | publicKey)).as[BlindingPoint]
 
-  private val outgoingNodeId: Codec[OutgoingNodeId] = variableSizeBytesLong(varintoverflow, "node_id" | publicKey).as[OutgoingNodeId]
+  private val outgoingNodeId: Codec[OutgoingNodeId] = (("length" | constant(hex"21")) :: ("node_id" | publicKey)).as[OutgoingNodeId]
 
   private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
 

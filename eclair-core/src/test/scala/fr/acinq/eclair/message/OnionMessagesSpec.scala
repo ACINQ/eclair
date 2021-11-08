@@ -74,7 +74,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     val messageForCarol = RelayBlindedTlv(TlvStream(EncryptedRecipientDataTlv.Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), EncryptedRecipientDataTlv.OutgoingNodeId(dave.publicKey)))
     val encodedForCarol = relayBlindedTlvCodec.encode(messageForCarol).require.bytes
     assert(encodedForCarol == hex"012300000000000000000000000000000000000000000000000000000000000000000000000421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")
-    val messageForDave = FinalBlindedTlv(TlvStream(EncryptedRecipientDataTlv.RecipientSecret(hex"01234567")))
+    val messageForDave = FinalBlindedTlv(TlvStream(EncryptedRecipientDataTlv.PathId(hex"01234567")))
     val encodedForDave = finalBlindedTlvCodec.encode(messageForDave).require.bytes
     assert(encodedForDave == hex"060401234567")
 
