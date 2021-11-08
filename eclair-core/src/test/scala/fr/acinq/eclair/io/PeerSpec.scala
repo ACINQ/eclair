@@ -457,31 +457,6 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     assert(peerInfo2.channels === 2)
   }
 
-  test("relay message with new peer") { f =>
-    import f._
-    val msg0 = OnionMessage(PublicKey(hex"02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619"), OnionRoutingPacket(1, hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991", hex"baba", ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000")))
-    val msg1 = OnionMessage(PublicKey(hex"0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c"), OnionRoutingPacket(1, hex"0362c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7", hex"fefe", ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000")))
-    val msg2 = OnionMessage(PublicKey(hex"027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007"), OnionRoutingPacket(1, hex"02989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f", hex"c0c0", ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000")))
-    peer ! Peer.Init(Set.empty)
-
-    peer.tell(Peer.Connect(remoteNodeId, None), peer)
-    peer ! SendOnionMessage(remoteNodeId, msg0)
-
-    peer.tell(Peer.Connect(remoteNodeId, None), peer)
-    peer ! SendOnionMessage(remoteNodeId, msg1)
-
-    peer ! PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, protocol.Init(peer.underlyingActor.nodeParams.features), protocol.Init(Bob.nodeParams.features))
-
-    val msgSent0 = peerConnection.expectMsgType[OnionMessage]
-    assert(msgSent0 === msg1)
-
-    peer.tell(Peer.Connect(remoteNodeId, None), peer)
-    peer ! SendOnionMessage(remoteNodeId, msg2)
-
-    val msgSent1 = peerConnection.expectMsgType[OnionMessage]
-    assert(msgSent1 === msg2)
-  }
-
 }
 
 object PeerSpec {

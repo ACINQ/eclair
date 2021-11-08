@@ -71,11 +71,6 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
         case None => sender() ! Status.Failure(new RuntimeException("peer not found"))
       }
 
-    case s@Peer.SendOnionMessage(nodeId, _) =>
-      val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty)
-      peer.tell(Peer.Connect(nodeId, None), peer)
-      peer forward s
-
     case o: Peer.OpenChannel =>
       getPeer(o.remoteNodeId) match {
         case Some(peer) => peer forward o

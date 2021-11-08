@@ -33,10 +33,9 @@ import fr.acinq.eclair.blockchain.{OnChainAddressGenerator, OnChainChannelFunder
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
-import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
+import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -66,7 +65,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         FinalChannelId(state.channelId) -> channel
       }.toMap
 
-      goto(DISCONNECTED) using DisconnectedData(channels, None) // when we restart, we will attempt to reconnect right away, but then we'll wait
+      goto(DISCONNECTED) using DisconnectedData(channels) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
   when(DISCONNECTED) {
@@ -75,7 +74,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       stay()
 
     case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
-      d.messageToRelay.foreach(msg => self ! Peer.SendOnionMessage(remoteNodeId, msg))
       gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) })
 
     case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
@@ -96,19 +94,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       stay() using d.copy(channels = d.channels + (FinalChannelId(channelId) -> channel))
 
     case Event(_: LightningMessage, _) => stay() // we probably just got disconnected and that's the last messages we received
-
-    case Event(Peer.SendOnionMessage(toNodeId, msg), d: DisconnectedData) if toNodeId == remoteNodeId =>
-      // We may drop a previous messageToRelay but that's fine. If we receive several messages to relay while trying to connect, we're probably getting spammed.
-      stay() using d.copy(messageToRelay = Some(msg))
-
-    case Event(_ : PeerConnection.ConnectionResult.Failure, d: DisconnectedData) =>
-      if (d.channels.isEmpty) {
-        // we don't have any channel with this peer and we can't connect to it so we just drop it
-        stopPeer()
-      } else {
-        stay() using d.copy(messageToRelay = None)
-      }
-
   }
 
   when(CONNECTED) {
@@ -238,7 +223,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           stopPeer()
         } else {
           d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
-          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) }, None)
+          goto(DISCONNECTED) using DisconnectedData(d.channels.collect { case (k: FinalChannelId, v) => (k, v) })
         }
 
       case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
@@ -257,20 +242,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
-
-      case Event(msg: OnionMessage, _: ConnectedData) =>
-        if (nodeParams.features.hasFeature(Features.OnionMessages)) {
-          OnionMessages.process(nodeParams.privateKey, msg) match {
-            case OnionMessages.DropMessage(reason) => log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
-            case OnionMessages.RelayMessage(nextNodeId, dataToRelay) => context.parent ! Peer.SendOnionMessage(nextNodeId, dataToRelay)
-            case msg: OnionMessages.ReceiveMessage => log.info(s"received message from ${remoteNodeId.value.toHex}: $msg")
-          }
-        }
-        stay()
-
-      case Event(Peer.SendOnionMessage(toNodeId, msg), d: ConnectedData) if toNodeId == remoteNodeId =>
-        d.peerConnection ! msg
-        stay()
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
@@ -436,14 +407,10 @@ object Peer {
     def channels: Map[_ <: ChannelId, ActorRef] // will be overridden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
   case object Nothing extends Data { override def channels = Map.empty }
-
-  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef], messageToRelay: Option[OnionMessage]) extends Data
-
+  case class DisconnectedData(channels: Map[FinalChannelId, ActorRef]) extends Data
   case class ConnectedData(address: InetSocketAddress, peerConnection: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, channels: Map[ChannelId, ActorRef]) extends Data {
     val connectionInfo: ConnectionInfo = ConnectionInfo(address, peerConnection, localInit, remoteInit)
-
     def localFeatures: Features = localInit.features
-
     def remoteFeatures: Features = remoteInit.features
   }
 
@@ -459,8 +426,6 @@ object Peer {
   object Connect {
     def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
   }
-
-  case class SendOnionMessage(nodeId: PublicKey, message: OnionMessage) extends PossiblyHarmful
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelType_opt: Option[SupportedChannelType], fundingTxFeeratePerKw_opt: Option[FeeratePerKw], channelFlags: Option[Byte], timeout_opt: Option[Timeout]) extends PossiblyHarmful {
