@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.{FundTransactio
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewTransaction}
-import fr.acinq.eclair.{ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32}
+import fr.acinq.eclair.{ShortChannelId, TestConstants, TestKitBaseClass, randomBytes32, randomKey}
 import grizzled.slf4j.Logging
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -204,8 +204,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
     withWatcher(f => {
       import f._
 
-      val address = getNewAddress(probe)
-      val priv = dumpPrivateKey(address, probe)
+      val (priv, address) = createExternalAddress()
       val tx = sendToAddress(address, Btc(1), probe)
       val outputIndex = tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey)))
       val (tx1, tx2) = createUnspentTxChain(tx, priv)
@@ -280,7 +279,7 @@ class ZmqWatcherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitcoind
       import f._
 
       // create a chain of transactions that we don't broadcast yet
-      val priv = dumpPrivateKey(getNewAddress(probe), probe)
+      val priv = randomKey()
       val tx1 = {
         bitcoinClient.fundTransaction(Transaction(2, Nil, TxOut(150000 sat, Script.pay2wpkh(priv.publicKey)) :: Nil, 0), FundTransactionOptions(FeeratePerKw(250 sat), lockUtxos = true)).pipeTo(probe.ref)
         val funded = probe.expectMsgType[FundTransactionResponse].tx
