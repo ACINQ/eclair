@@ -51,18 +51,38 @@ class MessageOnionCodecsSpec extends AnyFunSuiteLike {
     assert(finalPerHopPayloadCodec.decode(serialized.bits).require.value === payload)
   }
 
-  test("onion packet can be any size"){
+  test("onion packet can be any size") {
     { // small onion
-      val onion = OnionRoutingPacket(1, hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991", hex"012345679abcdef", ByteVector32(hex"0000111122223333444455556666777788889999aaaabbbbccccddddeeee0000"))
-      val serialized = hex"004a01032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e6686809910012345679abcdef0000111122223333444455556666777788889999aaaabbbbccccddddeeee0000"
+      val onion = OnionRoutingPacket(1, hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991", hex"0012345679abcdef", ByteVector32(hex"0000111122223333444455556666777788889999aaaabbbbccccddddeeee0000"))
+      val serialized = hex"004a 01 032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991 0012345679abcdef 0000111122223333444455556666777788889999aaaabbbbccccddddeeee0000"
       assert(messageOnionPacketCodec.encode(onion).require.bytes === serialized)
       assert(messageOnionPacketCodec.decode(serialized.bits).require.value === onion)
     }
     { // larger onion
-      val onion = OnionRoutingPacket(2, hex"027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007", hex"012345679abcdef012345679abcdef012345679abcdef012345679abcdef012345679abcdef", ByteVector32(hex"eeee0000111122223333444455556666777788889999aaaabbbbccccddddeeee"))
-      val serialized = hex"006802027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa20070012345679abcdef012345679abcdef012345679abcdef012345679abcdef012345679abcdefeeee0000111122223333444455556666777788889999aaaabbbbccccddddeeee"
+      val onion = OnionRoutingPacket(2, hex"027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007", hex"0012345679abcdef012345679abcdef012345679abcdef012345679abcdef012345679abcdef", ByteVector32(hex"eeee0000111122223333444455556666777788889999aaaabbbbccccddddeeee"))
+      val serialized = hex"0068 02 027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007 0012345679abcdef012345679abcdef012345679abcdef012345679abcdef012345679abcdef eeee0000111122223333444455556666777788889999aaaabbbbccccddddeeee"
       assert(messageOnionPacketCodec.encode(onion).require.bytes === serialized)
       assert(messageOnionPacketCodec.decode(serialized.bits).require.value === onion)
+    }
+    { // onion with trailing additional bytes
+      val onion = OnionRoutingPacket(0, hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991", hex"ffffffff", ByteVector32.Zeroes)
+      val serialized = hex"0046 00 032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991 ffffffff 0000000000000000000000000000000000000000000000000000000000000000 0a01020000030400000000"
+      assert(messageOnionPacketCodec.encode(onion).require.bytes === serialized.dropRight(11))
+      assert(messageOnionPacketCodec.decode(serialized.bits).require.value === onion)
+    }
+    { // onion with empty payload
+      val onion = OnionRoutingPacket(0, hex"032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991", hex"", ByteVector32.Zeroes)
+      val serialized = hex"0042 00 032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991 0000000000000000000000000000000000000000000000000000000000000000"
+      assert(messageOnionPacketCodec.encode(onion).require.bytes === serialized)
+      assert(messageOnionPacketCodec.decode(serialized.bits).require.value === onion)
+    }
+    { // onion length too big
+      val serialized = hex"0048 00 032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991 ffffffff 0000000000000000000000000000000000000000000000000000000000000000"
+      assert(messageOnionPacketCodec.decode(serialized.bits).isFailure)
+    }
+    { // onion length way too big
+      val serialized = hex"00ff 00 032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991 ffffffff 0000000000000000000000000000000000000000000000000000000000000000"
+      assert(messageOnionPacketCodec.decode(serialized.bits).isFailure)
     }
   }
 
