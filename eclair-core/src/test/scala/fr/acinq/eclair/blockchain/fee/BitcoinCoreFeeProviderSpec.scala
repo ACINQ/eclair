@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.blockchain.fee
 
-import akka.actor.Status.Failure
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin._
@@ -67,12 +66,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
   }
 
   test("get fee rates") {
-    // the regtest client doesn't have enough data to estimate fees yet, so it's supposed to fail
-    val regtestProvider = new BitcoinCoreFeeProvider(bitcoinrpcclient, FeeratesPerKB(FeeratePerKB(1 sat), FeeratePerKB(1 sat), FeeratePerKB(2 sat), FeeratePerKB(3 sat), FeeratePerKB(4 sat), FeeratePerKB(5 sat), FeeratePerKB(6 sat), FeeratePerKB(7 sat), FeeratePerKB(8 sat)))
     val sender = TestProbe()
-    regtestProvider.getFeerates.pipeTo(sender.ref)
-    assert(sender.expectMsgType[Failure].cause.asInstanceOf[RuntimeException].getMessage.contains("Insufficient data or no feerate found"))
-
     val fees = Map(
       1 -> FeeratePerKB(1500 sat),
       2 -> FeeratePerKB(1400 sat),
@@ -93,7 +87,8 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       blocks_36 = fees(36),
       blocks_72 = fees(72),
       blocks_144 = fees(144),
-      blocks_1008 = fees(1008))
+      blocks_1008 = fees(1008)
+    )
 
     val mockBitcoinClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = UserPassword("", ""), host = "localhost", port = 0) {
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
