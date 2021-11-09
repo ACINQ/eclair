@@ -18,6 +18,10 @@ Node operators should watch this file very regularly.
 An event is also sent to the event stream for every such notification.
 This lets plugins notify the node operator via external systems (push notifications, email, etc).
 
+### Initial support for onion messages
+
+Eclair now supports the feature `option_onion_messages`. If this feature is enabled, eclair will relay onion messages, initiating or receiving onion messages is not supported yet. 
+
 ### API changes
 
 #### Timestamps

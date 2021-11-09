@@ -35,7 +35,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.io.{NodeURI, Peer, PeerConnection}
+import fr.acinq.eclair.io.{MessageRelay, NodeURI, Peer, PeerConnection}
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, RelayFees, UsableBalance}
@@ -52,7 +53,6 @@ import java.util.UUID
 import scala.collection.immutable.SortedMap
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
-import scala.reflect.ClassTag
 
 case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, color: String, features: Features, chainHash: ByteVector32, network: String, blockHeight: Int, publicAddresses: Seq[NodeAddress], onionAddress: Option[NodeAddress], instanceId: String)
 
@@ -150,6 +150,8 @@ trait Eclair {
   def signMessage(message: ByteVector): SignedMessage
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
+
+  def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: PublicKey): String
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -501,5 +503,20 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         }
       }
     }
+  }
+
+  override def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: PublicKey): String = {
+    val sessionKey = randomKey()
+    val blindingSecret = randomKey()
+    val (nextNodeId, message) =
+      OnionMessages.buildMessage(
+        sessionKey,
+        blindingSecret,
+        intermediateNodes.map(OnionMessages.IntermediateNode(_)),
+        Left(OnionMessages.Recipient(destination, None)),
+        Nil)
+    println("Sending message")
+    MessageRelay.relay(appKit.system, appKit.switchboard, nextNodeId, message)
+    "sent"
   }
 }

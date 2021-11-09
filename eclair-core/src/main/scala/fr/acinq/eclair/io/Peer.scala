@@ -33,9 +33,10 @@ import fr.acinq.eclair.blockchain.{OnChainAddressGenerator, OnChainChannelFunder
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, RoutingMessage, UnknownMessage, Warning}
+import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -98,8 +99,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   when(CONNECTED) {
     dropStaleMessages {
-      case Event(_: Peer.Connect, _) =>
-        sender() ! PeerConnection.ConnectionResult.AlreadyConnected
+      case Event(_: Peer.Connect, d: ConnectedData) =>
+        sender().tell(PeerConnection.ConnectionResult.AlreadyConnected, d.peerConnection)
         stay()
 
       case Event(Peer.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
@@ -242,6 +243,19 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
+
+      case Event(msg: OnionMessage, _: ConnectedData) =>
+        if (nodeParams.features.hasFeature(Features.OnionMessages)) {
+          OnionMessages.process(nodeParams.privateKey, msg) match {
+            case OnionMessages.DropMessage(reason) =>
+              log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
+            case OnionMessages.RelayMessage(nextNodeId, dataToRelay) =>
+              MessageRelay.relay(context, context.parent, nextNodeId, dataToRelay)
+            case msg: OnionMessages.ReceiveMessage =>
+              log.info(s"received message from ${remoteNodeId.value.toHex}: $msg")
+          }
+        }
+        stay()
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
