@@ -308,6 +308,11 @@ object LightningMessageCodecs {
       ("timestampRange" | uint32) ::
       ("tlvStream" | GossipTimestampFilterTlv.gossipTimestampFilterTlvCodec)).as[GossipTimestampFilter]
 
+  val onionMessageCodec: Codec[OnionMessage] = (
+    ("blindingKey" | publicKey) ::
+      ("onionPacket" | MessageOnionCodecs.messageOnionPacketCodec) ::
+      ("tlvStream" | OnionMessageTlv.onionMessageTlvCodec)).as[OnionMessage]
+
   // NB: blank lines to minimize merge conflicts
 
   //
@@ -361,6 +366,7 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
+    .typecase(513, onionMessageCodec)
   // NB: blank lines to minimize merge conflicts
 
   //

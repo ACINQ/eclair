@@ -56,7 +56,7 @@ object IncomingPaymentPacket {
   case class DecodedOnionPacket[T <: PaymentOnion.PacketType](payload: T, next: OnionRoutingPacket)
 
   private[payment] def decryptOnion[T <: PaymentOnion.PacketType](paymentHash: ByteVector32, privateKey: PrivateKey, packet: OnionRoutingPacket, perHopPayloadCodec: Boolean => Codec[T])(implicit log: LoggingAdapter): Either[FailureMessage, DecodedOnionPacket[T]] =
-    Sphinx.peel(privateKey, paymentHash, packet) match {
+    Sphinx.peel(privateKey, Some(paymentHash), packet) match {
       case Right(p@Sphinx.DecryptedPacket(payload, nextPacket, _)) =>
         perHopPayloadCodec(p.isLastPacket).decode(payload.bits) match {
           case Attempt.Successful(DecodeResult(perHopPayload, _)) => Right(DecodedOnionPacket(perHopPayload, nextPacket))
@@ -152,7 +152,7 @@ object OutgoingPaymentPacket {
         case Attempt.Successful(bitVector) => bitVector.bytes
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
       }
-    Sphinx.create(sessionKey, packetPayloadLength, nodes, payloadsBin, associatedData)
+    Sphinx.create(sessionKey, packetPayloadLength, nodes, payloadsBin, Some(associatedData))
   }
 
   /**
@@ -250,7 +250,7 @@ object OutgoingPaymentPacket {
   }
 
   def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {
-    Sphinx.peel(nodeSecret, add.paymentHash, add.onionRoutingPacket) match {
+    Sphinx.peel(nodeSecret, Some(add.paymentHash), add.onionRoutingPacket) match {
       case Right(Sphinx.DecryptedPacket(_, _, sharedSecret)) =>
         val encryptedReason = reason match {
           case Left(forwarded) => Sphinx.FailurePacket.wrap(forwarded, sharedSecret)
