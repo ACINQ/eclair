@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.protocol.MessageOnion.{BlindedFinalPayload, BlindedRelayPayload, FinalPayload, RelayPayload}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
-import fr.acinq.eclair.wire.protocol.RouteBlinding.EncryptedDataTlv._
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
 import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}

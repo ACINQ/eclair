@@ -20,7 +20,6 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.RouteBlinding.{EncryptedDataCodecs, EncryptedDataTlv}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, ShortChannelId, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
@@ -548,9 +547,9 @@ class SphinxSpec extends AnyFunSuite {
     val tlvs2 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload2.bits).require.value
     assert(tlvs2.get[OnionPaymentPayloadTlv.BlindingPoint].map(_.publicKey) === Some(blindingEphemeralKey0))
     assert(tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs2, blindingEphemeralKey1)) = EncryptedDataCodecs.decode(privKeys(2), blindingEphemeralKey0, tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs2.get[EncryptedDataTlv.OutgoingChannelId].map(_.shortChannelId) === Some(ShortChannelId(1105)))
-    assert(recipientTlvs2.get[EncryptedDataTlv.OutgoingNodeId].map(_.nodeId) === Some(publicKeys(3)))
+    val Success((recipientTlvs2, blindingEphemeralKey1)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(2), blindingEphemeralKey0, tlvs2.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
+    assert(recipientTlvs2.get[RouteBlindingEncryptedDataTlv.OutgoingChannelId].map(_.shortChannelId) === Some(ShortChannelId(1105)))
+    assert(recipientTlvs2.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].map(_.nodeId) === Some(publicKeys(3)))
 
     // The fourth hop is a blinded hop.
     // It receives the blinding key from the previous node (e.g. in a tlv field in update_add_htlc) which it can use to
@@ -560,8 +559,8 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload3, nextPacket3, sharedSecret3)) = peel(blindedPrivKey3, associatedData, nextPacket2)
     val tlvs3 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload3.bits).require.value
     assert(tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs3, blindingEphemeralKey2)) = EncryptedDataCodecs.decode(privKeys(3), blindingEphemeralKey1, tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs3.get[EncryptedDataTlv.OutgoingNodeId].map(_.nodeId) === Some(publicKeys(4)))
+    val Success((recipientTlvs3, blindingEphemeralKey2)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(3), blindingEphemeralKey1, tlvs3.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
+    assert(recipientTlvs3.get[RouteBlindingEncryptedDataTlv.OutgoingNodeId].map(_.nodeId) === Some(publicKeys(4)))
 
     // The fifth hop is the blinded recipient.
     // It receives the blinding key from the previous node (e.g. in a tlv field in update_add_htlc) which it can use to
@@ -570,8 +569,8 @@ class SphinxSpec extends AnyFunSuite {
     val Right(DecryptedPacket(payload4, nextPacket4, sharedSecret4)) = peel(blindedPrivKey4, associatedData, nextPacket3)
     val tlvs4 = PaymentOnionCodecs.tlvPerHopPayloadCodec.decode(payload4.bits).require.value
     assert(tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].nonEmpty)
-    val Success((recipientTlvs4, _)) = EncryptedDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
-    assert(recipientTlvs4.get[EncryptedDataTlv.PathId].map(_.data) === associatedData.map(_.bytes))
+    val Success((recipientTlvs4, _)) = RouteBlindingEncryptedDataCodecs.decode(privKeys(4), blindingEphemeralKey2, tlvs4.get[OnionPaymentPayloadTlv.EncryptedRecipientData].get.data)
+    assert(recipientTlvs4.get[RouteBlindingEncryptedDataTlv.PathId].map(_.data) === associatedData.map(_.bytes))
 
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
     assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedSecrets.map(_._1))

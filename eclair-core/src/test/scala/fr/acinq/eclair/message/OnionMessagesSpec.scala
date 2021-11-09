@@ -25,7 +25,7 @@ import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.protocol.MessageOnion.{BlindedFinalPayload, BlindedRelayPayload, RelayPayload}
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.{blindedFinalPayloadCodec, blindedRelayPayloadCodec, relayPerHopPayloadCodec}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
-import fr.acinq.eclair.wire.protocol.RouteBlinding.EncryptedDataTlv._
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
 import fr.acinq.eclair.wire.protocol.{OnionMessage, TlvStream}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
