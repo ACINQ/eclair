@@ -122,11 +122,10 @@ object MessageOnionCodecs {
 
   def messageOnionPerHopPayloadCodec(isLastPacket: Boolean): Codec[PerHopPayload] = if (isLastPacket) finalPerHopPayloadCodec.upcast[PerHopPayload] else relayPerHopPayloadCodec.upcast[PerHopPayload]
 
-  val messageOnionPacketCodec: Codec[OnionRoutingPacket] =
-    (variableSizePrefixedBytes(uint16.xmap(_ - 66, _ + 66),
-      ("version" | uint8) ~
-        ("publicKey" | bytes(33)),
-      ("onionPayload" | bytes)) ~
-      ("hmac" | bytes32) flattenLeftPairs).as[OnionRoutingPacket]
+  val messageOnionPacketCodec: Codec[OnionRoutingPacket] = variableSizeBytes(uint16, bytes).exmap[OnionRoutingPacket](
+    // The Sphinx packet header contains a version (1 byte), a public key (33 bytes) and a mac (32 bytes) -> total 66 bytes
+    bytes => OnionRoutingCodecs.onionRoutingPacketCodec(bytes.length.toInt - 66).decode(bytes.bits).map(_.value),
+    onion => OnionRoutingCodecs.onionRoutingPacketCodec(onion.payload.length.toInt).encode(onion).map(_.bytes)
+  )
 
 }
