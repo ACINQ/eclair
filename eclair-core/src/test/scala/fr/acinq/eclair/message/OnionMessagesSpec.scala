@@ -22,10 +22,11 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.randomKey
-import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.{blindedRelayPayloadCodec, blindedFinalPayloadCodec, relayPerHopPayloadCodec}
 import fr.acinq.eclair.wire.protocol.MessageOnion.{BlindedFinalPayload, BlindedRelayPayload, RelayPayload}
+import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.{blindedFinalPayloadCodec, blindedRelayPayloadCodec, relayPerHopPayloadCodec}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
-import fr.acinq.eclair.wire.protocol.{EncryptedRecipientDataTlv, OnionMessage, TlvStream}
+import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
+import fr.acinq.eclair.wire.protocol.{OnionMessage, TlvStream}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.{ByteVector, HexStringSyntax}
 
@@ -66,16 +67,16 @@ class OnionMessagesSpec extends AnyFunSuite {
     /*
     *  Building the onion manually
     */
-    val messageForAlice = BlindedRelayPayload(TlvStream(EncryptedRecipientDataTlv.OutgoingNodeId(bob.publicKey)))
+    val messageForAlice = BlindedRelayPayload(TlvStream(OutgoingNodeId(bob.publicKey)))
     val encodedForAlice = blindedRelayPayloadCodec.encode(messageForAlice).require.bytes
     assert(encodedForAlice == hex"04210324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")
-    val messageForBob = BlindedRelayPayload(TlvStream(EncryptedRecipientDataTlv.OutgoingNodeId(carol.publicKey), EncryptedRecipientDataTlv.NextBlinding(blindingOverride.publicKey)))
+    val messageForBob = BlindedRelayPayload(TlvStream(OutgoingNodeId(carol.publicKey), NextBlinding(blindingOverride.publicKey)))
     val encodedForBob = blindedRelayPayloadCodec.encode(messageForBob).require.bytes
     assert(encodedForBob == hex"0421027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007082102989c0b76cb563971fdc9bef31ec06c3560f3249d6ee9e5d83c57625596e05f6f")
-    val messageForCarol = BlindedRelayPayload(TlvStream(EncryptedRecipientDataTlv.Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), EncryptedRecipientDataTlv.OutgoingNodeId(dave.publicKey)))
+    val messageForCarol = BlindedRelayPayload(TlvStream(Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), OutgoingNodeId(dave.publicKey)))
     val encodedForCarol = blindedRelayPayloadCodec.encode(messageForCarol).require.bytes
     assert(encodedForCarol == hex"012300000000000000000000000000000000000000000000000000000000000000000000000421032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")
-    val messageForDave = BlindedFinalPayload(TlvStream(EncryptedRecipientDataTlv.PathId(hex"01234567")))
+    val messageForDave = BlindedFinalPayload(TlvStream(PathId(hex"01234567")))
     val encodedForDave = blindedFinalPayloadCodec.encode(messageForDave).require.bytes
     assert(encodedForDave == hex"060401234567")
 
@@ -96,7 +97,7 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     val sessionKey = PrivateKey(hex"090909090909090909090909090909090909090909090909090909090909090901")
 
-    val PacketAndSecrets(packet, _) = Sphinx.create(sessionKey,1300, publicKeys, payloads, None)
+    val PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, 1300, publicKeys, payloads, None)
     assert(packet.hmac == ByteVector32(hex"d84e7135092450c8cc98bb969aa6d9127dd07da53a3c46b2e9339d111f5f301d"))
     assert(packet.publicKey == PublicKey(hex"0256b328b30c8bf5839e24058747879408bdb36241dc9c2e7c619faa12b2920967").value)
     assert(packet.payload ==
@@ -155,7 +156,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     assert(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes) == ByteVector32(hex"bae3d9ea2b06efd1b7b9b49b6cdcaad0e789474a6939ffa54ff5ec9224d5b76c"))
     val enctlv = hex"6970e870b473ddbc27e3098bfa45bb1aa54f1f637f803d957e6271d8ffeba89da2665d62123763d9b634e30714144a1c165ac9"
     assert(blindedNodes.head.encryptedPayload == enctlv)
-    val message = BlindedRelayPayload(TlvStream(EncryptedRecipientDataTlv.OutgoingNodeId(nextNodeId)))
+    val message = BlindedRelayPayload(TlvStream(OutgoingNodeId(nextNodeId)))
     assert(blindedRelayPayloadCodec.encode(message).require.bytes == encmsg)
     val relayNext = blindedRelayPayloadCodec.decode(encmsg.bits).require.value
     assert(relayNext.nextNodeId == nextNodeId)
@@ -182,7 +183,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     assert(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes) == ByteVector32(hex"9afb8b2ebc174dcf9e270be24771da7796542398d29d4ff6a4e7b6b4b9205cfe"))
     val enctlv = hex"1630da85e8759b8f3b94d74a539c6f0d870a87cf03d4986175865a2985553c997b560c32613bd9184c1a6d41a37027aabdab5433009d8409a1b638eb90373778a05716af2c2140b3196dca23997cdad4cfa7a7adc8d4"
     assert(blindedHops.head.encryptedPayload == enctlv)
-    val message = BlindedRelayPayload(TlvStream(EncryptedRecipientDataTlv.OutgoingNodeId(nextNodeId), EncryptedRecipientDataTlv.NextBlinding(PrivateKey(hex"070707070707070707070707070707070707070707070707070707070707070701").publicKey)))
+    val message = BlindedRelayPayload(TlvStream(OutgoingNodeId(nextNodeId), NextBlinding(PrivateKey(hex"070707070707070707070707070707070707070707070707070707070707070701").publicKey)))
     assert(blindedRelayPayloadCodec.encode(message).require.bytes == encmsg)
     val relayNext = blindedRelayPayloadCodec.decode(encmsg.bits).require.value
     assert(relayNext.nextNodeId == nextNodeId)
@@ -209,7 +210,7 @@ class OnionMessagesSpec extends AnyFunSuite {
     assert(Crypto.sha256(blindingKey.value ++ sharedSecret.bytes) == ByteVector32(hex"cc3b918cda6b1b049bdbe469c4dd952935e7c1518dd9c7ed0cd2cd5bc2742b82"))
     val enctlv = hex"8285acbceb37dfb38b877a888900539be656233cd74a55c55344fb068f9d8da365340d21db96fb41b76123207daeafdfb1f571e3fea07a22e10da35f03109a0380b3c69fcbed9c698086671809658761cf65ecbc3c07a2e5"
     assert(blindedHops.head.encryptedPayload == enctlv)
-    val message = BlindedRelayPayload(TlvStream(EncryptedRecipientDataTlv.Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), EncryptedRecipientDataTlv.OutgoingNodeId(nextNodeId)))
+    val message = BlindedRelayPayload(TlvStream(Padding(hex"0000000000000000000000000000000000000000000000000000000000000000000000"), OutgoingNodeId(nextNodeId)))
     assert(blindedRelayPayloadCodec.encode(message).require.bytes == encmsg)
     val relayNext = blindedRelayPayloadCodec.decode(encmsg.bits).require.value
     assert(relayNext.nextNodeId == nextNodeId)
