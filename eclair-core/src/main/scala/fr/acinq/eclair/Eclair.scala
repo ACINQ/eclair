@@ -521,7 +521,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           Left(OnionMessages.Recipient(destination, None)),
           Nil,
           userCustomTlvs)
-        MessageRelay(appKit.switchboard, nextNodeId, message)
+        appKit.system.spawnAnonymous(MessageRelay(appKit.switchboard, nextNodeId, message))
         "sent"
       case Attempt.Failure(cause) => cause.message
     }
