@@ -74,9 +74,10 @@ object OnionMessages {
                    blindingSecret: PrivateKey,
                    intermediateNodes: Seq[IntermediateNode],
                    destination: Either[Recipient, Sphinx.RouteBlinding.BlindedRoute],
-                   content: List[OnionMessagePayloadTlv]): (PublicKey, OnionMessage) = {
+                   content: Seq[OnionMessagePayloadTlv],
+                   userCustomTlvs: Seq[GenericTlv] = Nil): (PublicKey, OnionMessage) = {
     val route = buildRoute(blindingSecret, intermediateNodes, destination)
-    val lastPayload = MessageOnionCodecs.finalPerHopPayloadCodec.encode(FinalPayload(TlvStream(EncryptedData(route.encryptedPayloads.last) :: content))).require.bytes
+    val lastPayload = MessageOnionCodecs.finalPerHopPayloadCodec.encode(FinalPayload(TlvStream(EncryptedData(route.encryptedPayloads.last) +: content, userCustomTlvs))).require.bytes
     val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.relayPerHopPayloadCodec.encode(RelayPayload(TlvStream(EncryptedData(encTlv)))).require.bytes) :+ lastPayload
     val payloadSize = payloads.map(_.length + Sphinx.MacLength).sum
     val packetSize = if (payloadSize <= 1300) {

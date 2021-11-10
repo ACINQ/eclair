@@ -47,6 +47,7 @@ import fr.acinq.eclair.router.{NetworkStats, Router}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
+import scodec.{Attempt, DecodeResult, codecs}
 
 import java.nio.charset.StandardCharsets
 import java.util.UUID
@@ -151,7 +152,7 @@ trait Eclair {
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 
-  def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: PublicKey): String
+  def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: PublicKey, userCustomContent: ByteVector): String
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -505,18 +506,23 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: PublicKey): String = {
+  override def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: PublicKey, userCustomContent: ByteVector): String = {
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
-    val (nextNodeId, message) =
-      OnionMessages.buildMessage(
-        sessionKey,
-        blindingSecret,
-        intermediateNodes.map(OnionMessages.IntermediateNode(_)),
-        Left(OnionMessages.Recipient(destination, None)),
-        Nil)
-    println("Sending message")
-    MessageRelay(appKit.switchboard, nextNodeId, message)
-    "sent"
+    codecs.list(TlvCodecs.genericTlv).decode(userCustomContent.bits) match {
+      case Attempt.Successful(DecodeResult(userCustomTlvs, _)) =>
+        val (nextNodeId, message) =
+        OnionMessages.buildMessage(
+          sessionKey,
+          blindingSecret,
+          intermediateNodes.map(OnionMessages.IntermediateNode(_)),
+          Left(OnionMessages.Recipient(destination, None)),
+          Nil,
+          userCustomTlvs)
+        MessageRelay(appKit.switchboard, nextNodeId, message)
+        "sent"
+      case Attempt.Failure(cause) => cause.message
+    }
+
   }
 }

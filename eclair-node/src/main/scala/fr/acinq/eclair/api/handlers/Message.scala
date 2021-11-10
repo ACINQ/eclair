@@ -41,8 +41,8 @@ trait Message {
   }
 
   val sendOnionMessage: Route = postRequest("sendonionmessage") { implicit t =>
-    formFields("intermediateNodes".as[List[PublicKey]](pubkeyListUnmarshaller), "destination".as[PublicKey](publicKeyUnmarshaller)) { (intermediateNodes, destination) =>
-      complete(eclairApi.sendOnionMessage(intermediateNodes, destination))
+    formFields("intermediateNodes".as[List[PublicKey]](pubkeyListUnmarshaller), "destination".as[PublicKey](publicKeyUnmarshaller), "content".as[ByteVector](binaryDataUnmarshaller)) { (intermediateNodes, destination, userCustomContent) =>
+      complete(eclairApi.sendOnionMessage(intermediateNodes, destination, userCustomContent))
     }
   }
 
