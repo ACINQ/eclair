@@ -17,6 +17,7 @@
 package fr.acinq.eclair.integration
 
 import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.pattern.pipe
 import akka.testkit.TestProbe
 import com.google.common.net.HostAndPort
@@ -530,7 +531,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       // reconnection
       sender.send(fundee.switchboard, Peer.Connect(
         nodeId = funder.nodeParams.nodeId,
-        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort))
+        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort)),
+        sender.ref.toTyped
       ))
       sender.expectMsgAnyOf(30 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
 

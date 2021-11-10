@@ -29,7 +29,7 @@ import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol.{NodeAddress, OnionMessage}
 import fr.acinq.eclair.{Features, NodeParams, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
-import org.scalatest.funsuite.{AnyFunSuiteLike, FixtureAnyFunSuiteLike}
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
 case class FakeChannelFactory(channel: TestProbe) extends ChannelFactory {
   override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
@@ -51,7 +51,7 @@ class MessageRelaySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val switchboard = TestProbe()
     val channel = TestProbe()
     val peerConnection = TestProbe()
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel)), switchboard.ref)
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref))
     switchboard.send(peer, Peer.Init(Set.empty))
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features)
     val remoteInit = protocol.Init(Bob.nodeParams.features)
@@ -72,8 +72,7 @@ class MessageRelaySpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === remoteNodeId)
-    val relay = switchboard.lastSender
-    peerConnection.send(relay, PeerConnection.ConnectionResult.Connected)
+    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.Connected(peerConnection.ref)
     peerConnection.expectMsgType[OnionMessage]
   }
 }

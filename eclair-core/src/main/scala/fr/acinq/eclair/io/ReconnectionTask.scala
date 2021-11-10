@@ -16,8 +16,8 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
-import akka.actor.{ActorRef, Props}
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
+import akka.actor.{ActorRef, Props, typed}
 import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator.Send
@@ -27,8 +27,9 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.db.{NetworkDb, PeersDb}
 import fr.acinq.eclair.io.Monitoring.Metrics
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams, TimestampMilli}
 
+import java.net.InetSocketAddress
 import scala.concurrent.duration.{FiniteDuration, _}
 import scala.util.Random
 
@@ -67,7 +68,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       // we query the db every time because it may have been updated in the meantime (e.g. with network announcements)
       getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId) match {
         case Some(address) =>
-          connect(address, origin = self)
+          connect(address, origin = self.toTyped)
           goto(CONNECTING) using ConnectingData(address, d.nextReconnectionDelay)
         case None =>
           // we don't have an address for that peer, nothing to do
@@ -130,15 +131,15 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
     case Event(TickReconnect, _) => stay()
 
-    case Event(Peer.Connect(_, hostAndPort_opt), _) =>
+    case Event(Peer.Connect(_, hostAndPort_opt, replyTo), _) =>
       // manual connection requests happen completely independently of the automated reconnection process;
       // we initiate a connection but don't modify our state.
       // if we are already connecting/connected, the peer will kill any duplicate connections
       hostAndPort_opt
         .map(hostAndPort2InetSocketAddress)
         .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
-        case Some(address) => connect(address, origin = sender())
-        case None => sender() ! PeerConnection.ConnectionResult.NoAddressFound
+        case Some(address) => connect(address, origin = replyTo)
+        case None => replyTo ! PeerConnection.ConnectionResult.NoAddressFound
       }
       stay()
   }
@@ -148,7 +149,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   // activate the extension only on demand, so that tests pass
   lazy val mediator = DistributedPubSub(context.system).mediator
 
-  private def connect(address: InetSocketAddress, origin: ActorRef): Unit = {
+  private def connect(address: InetSocketAddress, origin: typed.ActorRef[PeerConnection.ConnectionResult]): Unit = {
     log.info(s"connecting to $address")
     val req = ClientSpawner.ConnectionRequest(address, remoteNodeId, origin)
     if (context.system.hasExtension(Cluster) && !address.getHostName.endsWith("onion")) {

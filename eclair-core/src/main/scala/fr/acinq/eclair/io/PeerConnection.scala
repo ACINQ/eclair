@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -135,7 +135,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         } else {
           Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
-          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected)
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected(self))
 
           if (d.doSync) {
             self ! DoSync(replacePrevious = true)
@@ -506,7 +506,7 @@ object PeerConnection {
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
+  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[typed.ActorRef[PeerConnection.ConnectionResult]], transport_opt: Option[ActorRef] = None) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey) extends RemoteTypes
@@ -517,13 +517,16 @@ object PeerConnection {
   object ConnectionResult {
     sealed trait Success extends ConnectionResult
     sealed trait Failure extends ConnectionResult
+    sealed trait HasConnection extends ConnectionResult {
+      val peerConnection: ActorRef
+    }
 
     case object NoAddressFound extends ConnectionResult.Failure { override def toString: String = "no address found" }
     case class ConnectionFailed(address: InetSocketAddress) extends ConnectionResult.Failure { override def toString: String = s"connection failed to $address" }
     case class AuthenticationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
     case class InitializationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
-    case object AlreadyConnected extends ConnectionResult.Failure { override def toString: String = "already connected" }
-    case object Connected extends ConnectionResult.Success { override def toString: String = "connected" }
+    case class AlreadyConnected(peerConnection: ActorRef) extends ConnectionResult.Failure with HasConnection { override def toString: String = "already connected" }
+    case class Connected(peerConnection: ActorRef) extends ConnectionResult.Success with HasConnection { override def toString: String = "connected" }
   }
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)

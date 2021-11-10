@@ -16,30 +16,23 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.{Actor, ActorRef, ActorRefFactory, Props}
+import akka.actor.ActorRef
+import akka.actor.typed.Behavior
+import akka.actor.typed.scaladsl.Behaviors
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.protocol.OnionMessage
 
 object MessageRelay {
-  case object Relay
-
-  def relay(actorFactory: ActorRefFactory, switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage): Unit = {
-    val actor = actorFactory.actorOf(Props(new MessageRelay(switchboard, nextNodeId, msg)))
-    actor ! Relay
-  }
-}
-
-class MessageRelay private(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage) extends Actor {
-
-  import MessageRelay._
-
-  override def receive: Receive = {
-    case Relay =>
-      switchboard ! Peer.Connect(nextNodeId, None)
-    case PeerConnection.ConnectionResult.Connected | PeerConnection.ConnectionResult.AlreadyConnected =>
-      sender() ! msg
-      context.stop(self)
-    case _: PeerConnection.ConnectionResult.Failure =>
-      context.stop(self)
+  def apply(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage): Behavior[PeerConnection.ConnectionResult] = {
+    Behaviors.setup { context =>
+      switchboard ! Peer.Connect(nextNodeId, None, context.self)
+      Behaviors.receiveMessage {
+        case r: PeerConnection.ConnectionResult.HasConnection =>
+          r.peerConnection ! msg
+          Behaviors.stopped
+        case _: PeerConnection.ConnectionResult.Failure =>
+          Behaviors.stopped
+      }
+    }
   }
 }

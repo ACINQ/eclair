@@ -16,7 +16,8 @@
 
 package fr.acinq.eclair.remote
 
-import akka.actor.{ActorRef, ExtendedActorSystem}
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, TypedActorRefOps}
+import akka.actor.{ActorRef, ExtendedActorSystem, typed}
 import akka.serialization.Serialization
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.TransportHandler
@@ -129,6 +130,8 @@ object EclairInternalsSerializer {
     (path: String) => system.provider.resolveActorRef(path),
     (actor: ActorRef) => Serialization.serializedActorPath(actor))
 
+  def typedActorRefCodec[T](system: ExtendedActorSystem):Codec[typed.ActorRef[T]] = actorRefCodec(system).xmap(_.toTyped, _.toClassic)
+
   val inetAddressCodec: Codec[InetAddress] = discriminated[InetAddress].by(uint8)
     .typecase(0, ipv4address)
     .typecase(1, ipv6address)
@@ -138,7 +141,7 @@ object EclairInternalsSerializer {
   def connectionRequestCodec(system: ExtendedActorSystem): Codec[ClientSpawner.ConnectionRequest] = (
     ("address" | inetSocketAddressCodec) ::
       ("remoteNodeId" | publicKey) ::
-      ("origin" | actorRefCodec(system))).as[ClientSpawner.ConnectionRequest]
+      ("origin" | typedActorRefCodec[PeerConnection.ConnectionResult](system))).as[ClientSpawner.ConnectionRequest]
 
   def initializeConnectionCodec(system: ExtendedActorSystem): Codec[PeerConnection.InitializeConnection] = (
     ("peer" | actorRefCodec(system)) ::
@@ -184,8 +187,8 @@ object EclairInternalsSerializer {
     .typecase(14, inetSocketAddressCodec.as[PeerConnection.ConnectionResult.ConnectionFailed])
     .typecase(15, variableSizeBytes(uint16, utf8).as[PeerConnection.ConnectionResult.AuthenticationFailed])
     .typecase(16, variableSizeBytes(uint16, utf8).as[PeerConnection.ConnectionResult.InitializationFailed])
-    .typecase(17, provide(PeerConnection.ConnectionResult.AlreadyConnected))
-    .typecase(18, provide(PeerConnection.ConnectionResult.Connected))
+    .typecase(17, actorRefCodec(system).as[PeerConnection.ConnectionResult.AlreadyConnected])
+    .typecase(18, actorRefCodec(system).as[PeerConnection.ConnectionResult.Connected])
     .typecase(19, actorRefCodec(system).as[Peer.ConnectionDown])
     .typecase(20, provide(Router.GetRoutingStateStreaming))
     .typecase(21, provide(Router.RoutingStateStreamingUpToDate))

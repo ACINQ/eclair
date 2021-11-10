@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
@@ -52,7 +53,7 @@ import scala.concurrent.ExecutionContext
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory, switchboard: ActorRef) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -99,8 +100,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   when(CONNECTED) {
     dropStaleMessages {
-      case Event(_: Peer.Connect, d: ConnectedData) =>
-        sender().tell(PeerConnection.ConnectionResult.AlreadyConnected, d.peerConnection)
+      case Event(c: Peer.Connect, d: ConnectedData) =>
+        c.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(d.peerConnection)
         stay()
 
       case Event(Peer.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
@@ -250,7 +251,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
             case OnionMessages.DropMessage(reason) =>
               log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
             case OnionMessages.RelayMessage(nextNodeId, dataToRelay) =>
-              MessageRelay.relay(context, context.parent, nextNodeId, dataToRelay)
+              context.spawnAnonymous(MessageRelay(switchboard, nextNodeId, dataToRelay))
             case msg: OnionMessages.ReceiveMessage =>
               log.info(s"received message from ${remoteNodeId.value.toHex}: $msg")
           }
@@ -406,7 +407,7 @@ object Peer {
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory, origin_opt))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory, switchboard: ActorRef): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard))
 
   // @formatter:off
 
@@ -434,11 +435,11 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(storedChannels: Set[HasCommitments])
-  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
+  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: typed.ActorRef[PeerConnection.ConnectionResult]) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }
   object Connect {
-    def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
+    def apply(uri: NodeURI, replyTo: typed.ActorRef[PeerConnection.ConnectionResult]): Connect = new Connect(uri.nodeId, Some(uri.address), replyTo)
   }
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful

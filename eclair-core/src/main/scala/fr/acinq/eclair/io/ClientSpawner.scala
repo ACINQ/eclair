@@ -17,8 +17,7 @@
 package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
-
-import akka.actor.{Actor, ActorLogging, ActorRef, DeadLetter, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, DeadLetter, Props, typed}
 import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator.Put
@@ -67,5 +66,5 @@ object ClientSpawner {
 
   case class ConnectionRequest(address: InetSocketAddress,
                                remoteNodeId: PublicKey,
-                               origin: ActorRef) extends RemoteTypes
+                               origin: typed.ActorRef[PeerConnection.ConnectionResult]) extends RemoteTypes
 }

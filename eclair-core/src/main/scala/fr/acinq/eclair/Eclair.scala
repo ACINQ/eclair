@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, typed}
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
 import akka.pattern._
@@ -162,8 +162,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   private val externalIdMaxLength = 66
 
   override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
-    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri)).mapTo[PeerConnection.ConnectionResult].map(_.toString)
-    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None)).mapTo[PeerConnection.ConnectionResult].map(_.toString)
+    case Left(uri) => appKit.switchboard.ask((ref: typed.ActorRef[PeerConnection.ConnectionResult]) => Peer.Connect(uri, ref)).map (_.toString)
+    case Right(pubKey) => appKit.switchboard.ask((ref: typed.ActorRef[PeerConnection.ConnectionResult]) => Peer.Connect(pubKey, None, ref)).map(_.toString)
   }
 
   override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String] = {
@@ -516,7 +516,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         Left(OnionMessages.Recipient(destination, None)),
         Nil)
     println("Sending message")
-    MessageRelay.relay(appKit.system, appKit.switchboard, nextNodeId, message)
+    MessageRelay(appKit.switchboard, nextNodeId, message)
     "sent"
   }
 }
