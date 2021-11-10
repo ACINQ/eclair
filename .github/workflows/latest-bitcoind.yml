@@ -1,11 +1,6 @@
 name: Latest Bitcoin Core
 
 on:
-  # TODO: remove, keep only the bi-weekly trigger
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
   schedule:
     # Run at midnight on Sunday and Wednesday.
     - cron: '0 0 * * 0,3'
