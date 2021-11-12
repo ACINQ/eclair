@@ -211,6 +211,25 @@ class FeaturesSpec extends AnyFunSuite {
     }
   }
 
+  test("filter features based on their usage") {
+    val features = Features(
+      Map[Feature, FeatureSupport](OptionDataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
+      Set(UnknownFeature(753), UnknownFeature(852))
+    )
+    assert(features.initFeatures() === Features(
+      Map[Feature, FeatureSupport](OptionDataLossProtect -> Optional, InitialRoutingSync -> Optional, VariableLengthOnion -> Mandatory),
+      Set(UnknownFeature(753), UnknownFeature(852))
+    ))
+    assert(features.nodeAnnouncementFeatures() === Features(
+      Map[Feature, FeatureSupport](OptionDataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
+      Set(UnknownFeature(753), UnknownFeature(852))
+    ))
+    assert(features.invoiceFeatures() === Features(
+      Map[Feature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
+      Set(UnknownFeature(753), UnknownFeature(852))
+    ))
+  }
+
   test("features to bytes") {
     val testCases = Map(
       hex"" -> Features.empty,

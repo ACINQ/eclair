@@ -223,14 +223,12 @@ object MultiPartHandler {
               val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
               val paymentHash = Crypto.sha256(paymentPreimage)
               val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
-              val features = {
-                val f1 = Seq(Features.PaymentSecret.mandatory, Features.VariableLengthOnion.mandatory)
-                val allowMultiPart = nodeParams.features.hasFeature(Features.BasicMultiPartPayment)
-                val f2 = if (allowMultiPart) Seq(Features.BasicMultiPartPayment.optional) else Nil
-                val f3 = if (nodeParams.enableTrampolinePayment) Seq(Features.TrampolinePayment.optional) else Nil
-                PaymentRequest.PaymentRequestFeatures(f1 ++ f2 ++ f3: _*)
+              val invoiceFeatures = {
+                val activatedInvoiceFeatures = nodeParams.features.invoiceFeatures().activated.map { case (f, s) => f.supportBit(s) }.toSet
+                val allInvoiceFeatures = if (nodeParams.enableTrampolinePayment) activatedInvoiceFeatures + Features.TrampolinePayment.optional else activatedInvoiceFeatures
+                allInvoiceFeatures.toSeq
               }
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, description, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = features)
+              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, description, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = PaymentRequestFeatures(invoiceFeatures: _*))
               context.log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
               nodeParams.db.payments.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
               paymentRequest
