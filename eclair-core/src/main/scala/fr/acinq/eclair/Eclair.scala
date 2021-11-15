@@ -152,7 +152,7 @@ trait Eclair {
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 
-  def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: PublicKey, userCustomContent: ByteVector): String
+  def sendOnionMessage(route: Seq[PublicKey], userCustomContent: ByteVector, pathId: Option[ByteVector]): String
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -508,7 +508,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: PublicKey, userCustomContent: ByteVector): String = {
+  override def sendOnionMessage(route: Seq[PublicKey], userCustomContent: ByteVector, pathId: Option[ByteVector]): String = {
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     codecs.list(TlvCodecs.genericTlv).decode(userCustomContent.bits) match {
@@ -517,8 +517,8 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
         OnionMessages.buildMessage(
           sessionKey,
           blindingSecret,
-          intermediateNodes.map(OnionMessages.IntermediateNode(_)),
-          Left(OnionMessages.Recipient(destination, None)),
+          route.dropRight(1).map(OnionMessages.IntermediateNode(_)),
+          Left(OnionMessages.Recipient(route.last, pathId)),
           Nil,
           userCustomTlvs)
         appKit.system.spawnAnonymous(MessageRelay(appKit.switchboard, nextNodeId, message))
