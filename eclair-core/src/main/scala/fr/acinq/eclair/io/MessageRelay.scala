@@ -16,23 +16,42 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.ActorRef
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.protocol.OnionMessage
 
 object MessageRelay {
-  def apply(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage): Behavior[PeerConnection.ConnectionResult] = {
-    Behaviors.setup { context =>
-      switchboard ! Peer.Connect(nextNodeId, None, context.self)
-      Behaviors.receiveMessage {
-        case r: PeerConnection.ConnectionResult.HasConnection =>
-          r.peerConnection ! msg
-          Behaviors.stopped
-        case _: PeerConnection.ConnectionResult.Failure =>
-          Behaviors.stopped
-      }
+  sealed trait Status
+
+  case object Success extends Status
+
+  case class Failure(failure: PeerConnection.ConnectionResult.Failure) extends Status
+
+  sealed trait Command
+
+  case class RelayMessage(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, replyTo: typed.ActorRef[Status]) extends Command
+
+  case class WrappedConnectionResult(result: PeerConnection.ConnectionResult) extends Command
+
+  def apply(): Behavior[Command] = {
+    Behaviors.receivePartial {
+      case (context, RelayMessage(switchboard, nextNodeId, msg, replyTo)) =>
+        switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult))
+        waitForConnection(msg, replyTo)
+    }
+  }
+
+  def waitForConnection(msg: OnionMessage, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
+    Behaviors.receiveMessagePartial {
+      case WrappedConnectionResult(r: PeerConnection.ConnectionResult.HasConnection) =>
+        r.peerConnection ! msg
+        replyTo ! Success
+        Behaviors.stopped
+      case WrappedConnectionResult(f: PeerConnection.ConnectionResult.Failure) =>
+        replyTo ! Failure(f)
+        Behaviors.stopped
     }
   }
 }

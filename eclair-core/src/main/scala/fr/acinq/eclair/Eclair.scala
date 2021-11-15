@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair
 
-import akka.actor.{ActorRef, typed}
 import akka.actor.typed.scaladsl.AskPattern.{Askable, schedulerFromActorSystem}
 import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps, ClassicSchedulerOps}
+import akka.actor.{ActorRef, typed}
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -62,6 +62,8 @@ case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived],
 case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector)
 
 case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
+
+case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String])
 
 object SignedMessage {
   def signedBytes(message: ByteVector): ByteVector32 =
@@ -152,7 +154,7 @@ trait Eclair {
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 
-  def sendOnionMessage(route: Seq[PublicKey], userCustomContent: ByteVector, pathId: Option[ByteVector]): String
+  def sendOnionMessage(route: Seq[PublicKey], userCustomContent: ByteVector, pathId: Option[ByteVector])(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -508,22 +510,26 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendOnionMessage(route: Seq[PublicKey], userCustomContent: ByteVector, pathId: Option[ByteVector]): String = {
+  override def sendOnionMessage(route: Seq[PublicKey], userCustomContent: ByteVector, pathId: Option[ByteVector])(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     codecs.list(TlvCodecs.genericTlv).decode(userCustomContent.bits) match {
       case Attempt.Successful(DecodeResult(userCustomTlvs, _)) =>
         val (nextNodeId, message) =
-        OnionMessages.buildMessage(
-          sessionKey,
-          blindingSecret,
-          route.dropRight(1).map(OnionMessages.IntermediateNode(_)),
-          Left(OnionMessages.Recipient(route.last, pathId)),
-          Nil,
-          userCustomTlvs)
-        appKit.system.spawnAnonymous(MessageRelay(appKit.switchboard, nextNodeId, message))
-        "sent"
-      case Attempt.Failure(cause) => cause.message
+          OnionMessages.buildMessage(
+            sessionKey,
+            blindingSecret,
+            route.dropRight(1).map(OnionMessages.IntermediateNode(_)),
+            Left(OnionMessages.Recipient(route.last, pathId)),
+            Nil,
+            userCustomTlvs)
+        val relay = appKit.system.spawnAnonymous(MessageRelay())
+        relay.ask((ref: typed.ActorRef[MessageRelay.Status]) => MessageRelay.RelayMessage(appKit.switchboard, nextNodeId, message, ref))
+          .map {
+            case MessageRelay.Success => SendOnionMessageResponse(sent = true, None)
+            case MessageRelay.Failure(f) => SendOnionMessageResponse(sent = false, Some(f.toString))
+          }
+      case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, Some(cause.message)))
     }
 
   }
