@@ -596,8 +596,8 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
   test("recv CMD_UPDATE_RELAY_FEE ") { f =>
     import f._
     val sender = TestProbe()
-    val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
-    val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
+    val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicFunderFees.feeBase * 2
+    val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicFunderFees.feeProportionalMillionths * 2
     alice ! CMD_UPDATE_RELAY_FEE(sender.ref, newFeeBaseMsat, newFeeProportionalMillionth, cltvExpiryDelta_opt = None)
     sender.expectMsgType[RES_FAILURE[CMD_UPDATE_RELAY_FEE, _]]
     relayerA.expectNoMessage(1 seconds)

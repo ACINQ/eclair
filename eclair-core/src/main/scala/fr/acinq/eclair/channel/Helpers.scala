@@ -267,7 +267,7 @@ object Helpers {
   }
 
   def getRelayFees(nodeParams: NodeParams, remoteNodeId: PublicKey, commitments: Commitments): RelayFees = {
-    val defaultFees = nodeParams.relayParams.defaultFees(commitments.announceChannel)
+    val defaultFees = nodeParams.relayParams.defaultFees(commitments.announceChannel, commitments.localParams.isFunder)
     nodeParams.db.peers.getRelayFees(remoteNodeId).getOrElse(defaultFees)
   }
 

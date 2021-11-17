@@ -2295,8 +2295,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
   test("recv CMD_UPDATE_RELAY_FEE ") { f =>
     import f._
     val sender = TestProbe()
-    val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeBase * 2
-    val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicChannelFees.feeProportionalMillionths * 2
+    val newFeeBaseMsat = TestConstants.Alice.nodeParams.relayParams.publicFunderFees.feeBase * 2
+    val newFeeProportionalMillionth = TestConstants.Alice.nodeParams.relayParams.publicFunderFees.feeProportionalMillionths * 2
     val newCltvExpiryDelta = CltvExpiryDelta(145)
     sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth, cltvExpiryDelta_opt = Some(newCltvExpiryDelta)))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]

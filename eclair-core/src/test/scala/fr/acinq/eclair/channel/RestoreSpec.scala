@@ -206,13 +206,13 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
     // we restart Alice with different configurations
     Seq(
       Alice.nodeParams
-        .modify(_.relayParams.privateChannelFees.feeBase).setTo(765 msat),
+        .modify(_.relayParams.privateFunderFees.feeBase).setTo(765 msat),
       Alice.nodeParams
-        .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345),
+        .modify(_.relayParams.privateFunderFees.feeProportionalMillionths).setTo(2345),
       Alice.nodeParams
         .modify(_.expiryDelta).setTo(CltvExpiryDelta(147)),
       Alice.nodeParams
-        .modify(_.relayParams.privateChannelFees.feeProportionalMillionths).setTo(2345)
+        .modify(_.relayParams.privateFunderFees.feeProportionalMillionths).setTo(2345)
         .modify(_.expiryDelta).setTo(CltvExpiryDelta(147)),
     ) foreach { newConfig =>
 
@@ -221,8 +221,8 @@ class RestoreSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Chan
 
       val u1 = channelUpdateListener.expectMsgType[ChannelUpdateParametersChanged]
       assert(!Announcements.areSameIgnoreFlags(u1.channelUpdate, oldStateData.channelUpdate))
-      assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.privateChannelFees.feeBase)
-      assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.privateChannelFees.feeProportionalMillionths)
+      assert(u1.channelUpdate.feeBaseMsat === newConfig.relayParams.privateFunderFees.feeBase)
+      assert(u1.channelUpdate.feeProportionalMillionths === newConfig.relayParams.privateFunderFees.feeProportionalMillionths)
       assert(u1.channelUpdate.cltvExpiryDelta === newConfig.expiryDelta)
 
       newAlice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)

@@ -117,14 +117,17 @@ object Relayer extends Logging {
     require(feeProportionalMillionths >= 0.0, "feeProportionalMillionths must be nonnegative")
   }
 
-  case class RelayParams(publicChannelFees: RelayFees,
-                         privateChannelFees: RelayFees,
+  case class RelayParams(publicFunderFees: RelayFees,
+                         publicFundeeFees: RelayFees,
+                         privateFunderFees: RelayFees,
+                         privateFundeeFees: RelayFees,
                          minTrampolineFees: RelayFees) {
-    def defaultFees(announceChannel: Boolean): RelayFees = {
-      if (announceChannel) {
-        publicChannelFees
-      } else {
-        privateChannelFees
+    def defaultFees(announceChannel: Boolean, isFunder: Boolean): RelayFees = {
+      (announceChannel, isFunder) match {
+        case (true, true) => publicFunderFees
+        case (true, false) => publicFundeeFees
+        case (false, true) => privateFunderFees
+        case (false, false) => privateFundeeFees
       }
     }
   }
