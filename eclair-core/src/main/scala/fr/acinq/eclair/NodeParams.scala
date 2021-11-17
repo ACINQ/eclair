@@ -217,6 +217,9 @@ object NodeParams extends Logging {
       "router.path-finding.ratio-channel-capacity" -> "router.path-finding.default.ratios.channel-capacity",
       "router.path-finding.hop-cost-base-msat" -> "router.path-finding.default.hop-cost.fee-base-msat",
       "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost.fee-proportional-millionths",
+      // v0.6.3
+      "relay.fees.public-channels" -> "relay.fees.public-funder and relay.fees.public-fundee",
+      "relay.fees.private-channels" -> "relay.fees.private-funder and relay.fees.private-fundee",
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")

@@ -18,6 +18,27 @@ Node operators should watch this file very regularly.
 An event is also sent to the event stream for every such notification.
 This lets plugins notify the node operator via external systems (push notifications, email, etc).
 
+### Configuration changes
+
+#### Default relay fees
+
+We now have four different default relay fees for channels depending on if they are announced or not and is we are the funder or not.
+
+```
+relay {
+  // Default relay fees that can be overridden on a per node basis
+  fees {
+    // Fees for public channels that we have funded
+    public-funder { ... }
+    // Fees for public channels that our peer has funded
+    public-fundee { ... }
+    // Fees for private channels that we have funded
+    private-funder { ... }
+    // Fees for private channels that our peer has funded
+    private-fundee { ... }
+    ...
+```
+
 ### API changes
 
 #### Timestamps
