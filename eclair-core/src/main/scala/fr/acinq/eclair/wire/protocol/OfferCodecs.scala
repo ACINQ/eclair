@@ -53,7 +53,7 @@ object OfferCodecs {
 
   private val quantityMax: Codec[QuantityMax] = variableSizeBytesLong(varintoverflow, tu64overflow).as[QuantityMax]
 
-  private val nodeId: Codec[NodeId] = variableSizeBytesLong(varintoverflow, bytes32).as[NodeId]
+  private val nodeId: Codec[NodeIdXOnly] = variableSizeBytesLong(varintoverflow, bytes32).as[NodeIdXOnly]
 
   private val sendInvoice: Codec[SendInvoice] = variableSizeBytesLong(varintoverflow, provide(SendInvoice()))
 
@@ -81,7 +81,7 @@ object OfferCodecs {
     if (tlvs.get[Description].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(10)))
     }
-    if (tlvs.get[NodeId].isEmpty) {
+    if (tlvs.get[NodeIdXOnly].isEmpty && tlvs.get[Paths].forall(_.paths.isEmpty)) {
       Attempt.failure(MissingRequiredTlv(UInt64(30)))
     }
     Attempt.successful(Offer(tlvs))
@@ -189,7 +189,7 @@ object OfferCodecs {
       Attempt.failure(MissingRequiredTlv(UInt64(8)))
     } else if (tlvs.get[Description].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(10)))
-    } else if (tlvs.get[NodeId].isEmpty) {
+    } else if (tlvs.get[NodeIdXOnly].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(30)))
     } else if (tlvs.get[CreatedAt].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(40)))

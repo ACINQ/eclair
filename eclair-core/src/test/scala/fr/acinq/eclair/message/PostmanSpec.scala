@@ -68,7 +68,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
 
-    messageRecipient.expectMessage(Response(payload))
+    messageRecipient.expectMessage(Response(payload, pathId))
     messageRecipient.expectNoMessage()
   }
 

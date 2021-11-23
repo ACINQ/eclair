@@ -22,6 +22,7 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.OfferCodecs.{invoiceCodec, invoiceErrorCodec, invoiceRequestCodec}
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
+import fr.acinq.eclair.wire.protocol.TlvCodecs.tlvStream
 import scodec.bits.ByteVector
 
 /** Tlv types used inside the onion of an [[OnionMessage]]. */
@@ -118,9 +119,11 @@ object MessageOnionCodecs {
     .typecase(UInt64(68), variableSizeBytesLong(varintoverflow, invoiceErrorCodec.as[InvoiceError]))
 
 
-  val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.lengthPrefixedTlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
+  val perHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = TlvCodecs.tlvStream[OnionMessagePayloadTlv](onionTlvCodec).complete
 
-  val relayPerHopPayloadCodec: Codec[RelayPayload] = perHopPayloadCodec.narrow({
+  val prefixedPerHopPayloadCodec: Codec[TlvStream[OnionMessagePayloadTlv]] = variableSizeBytesLong(CommonCodecs.varintoverflow, perHopPayloadCodec)
+
+  val relayPerHopPayloadCodec: Codec[RelayPayload] = prefixedPerHopPayloadCodec.narrow({
     case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
     case tlvs if tlvs.get[ReplyPath].nonEmpty => Attempt.failure(ForbiddenTlv(UInt64(2)))
     case tlvs => Attempt.successful(RelayPayload(tlvs))
@@ -128,7 +131,7 @@ object MessageOnionCodecs {
     case RelayPayload(tlvs) => tlvs
   })
 
-  val finalPerHopPayloadCodec: Codec[FinalPayload] = perHopPayloadCodec.narrow({
+  val finalPerHopPayloadCodec: Codec[FinalPayload] = prefixedPerHopPayloadCodec.narrow({
     case tlvs if tlvs.get[EncryptedData].isEmpty => Attempt.failure(MissingRequiredTlv(UInt64(4)))
     case tlvs => Attempt.successful(FinalPayload(tlvs))
   }, {

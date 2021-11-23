@@ -27,6 +27,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.Bolt11Invoice
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
+import fr.acinq.eclair.wire.protocol.Offers.Offer
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
@@ -73,6 +74,8 @@ object FormParamExtractors {
   val blindedRouteUnmarshaller: Unmarshaller[String, Sphinx.RouteBlinding.BlindedRoute] = Unmarshaller.strict { str =>
     blindedRouteCodec.decode(ByteVector.fromValidHex(str).bits).require.value
   }
+
+  val offerUnmarshaller: Unmarshaller[String, Offer] = Unmarshaller.strict { Offer.decode(_).get }
 
   private def listUnmarshaller[T](unmarshal: String => T): Unmarshaller[String, List[T]] = Unmarshaller.strict { str =>
     Try(serialization.read[List[String]](str).map(unmarshal))

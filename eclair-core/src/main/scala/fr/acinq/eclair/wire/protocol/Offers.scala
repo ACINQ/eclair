@@ -20,7 +20,6 @@ import fr.acinq.bitcoin.Bech32
 import fr.acinq.bitcoin.scalacompat.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.scalacompat.{Block, ByteVector32, ByteVector64, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
-import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.wire.protocol.OfferCodecs._
 import fr.acinq.eclair.wire.protocol.TlvCodecs.genericTlv
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, Features, InvoiceFeature, MilliSatoshi, TimestampSecond}
@@ -65,6 +64,7 @@ object Offers {
   case class PaymentPathsInfo(paymentInfo: Seq[PaymentInfo]) extends InvoiceTlv
 
   case class PaymentConstraints(maxCltvExpiry: CltvExpiry, minHtlc: MilliSatoshi, allowedFeatures: Features[Feature])
+
   case class PaymentPathsConstraints(paymentConstraints: Seq[PaymentConstraints]) extends InvoiceTlv
 
   case class Issuer(issuer: String) extends OfferTlv with InvoiceTlv
@@ -73,13 +73,13 @@ object Offers {
 
   case class QuantityMax(max: Long) extends OfferTlv
 
-  case class NodeId(xonly: ByteVector32) extends OfferTlv with InvoiceTlv {
-    val nodeId1: PublicKey = PublicKey(2 +: xonly)
-    val nodeId2: PublicKey = PublicKey(3 +: xonly)
+  case class NodeIdXOnly(xOnly: ByteVector32) extends OfferTlv with InvoiceTlv {
+    val nodeId1: PublicKey = PublicKey(2 +: xOnly)
+    val nodeId2: PublicKey = PublicKey(3 +: xOnly)
   }
 
-  object NodeId {
-    def apply(publicKey: PublicKey): NodeId = NodeId(xOnlyPublicKey(publicKey))
+  object NodeIdXOnly {
+    def apply(publicKey: PublicKey): NodeIdXOnly = NodeIdXOnly(xOnlyPublicKey(publicKey))
   }
 
   case class SendInvoice() extends OfferTlv with InvoiceTlv
@@ -128,7 +128,7 @@ object Offers {
 
   case class Offer(records: TlvStream[OfferTlv]) {
 
-    require(records.get[NodeId].nonEmpty, "bolt 12 offers must provide a node id")
+    require(records.get[NodeIdXOnly].nonEmpty || records.get[Paths].exists(_.paths.nonEmpty), "bolt 12 offers must provide a node id or a blinded path")
     require(records.get[Description].nonEmpty, "bolt 12 offers must provide a description")
 
     val offerId: ByteVector32 = rootHash(removeSignature(records), offerTlvCodec)
@@ -153,7 +153,8 @@ object Offers {
     val quantityMin: Option[Long] = records.get[QuantityMin].map(_.min)
     val quantityMax: Option[Long] = records.get[QuantityMax].map(_.max)
 
-    val nodeIdXOnly: ByteVector32 = records.get[NodeId].get.xonly
+    val nodeIdXOnly: NodeIdXOnly =
+      records.get[NodeIdXOnly].getOrElse(NodeIdXOnly(records.get[Paths].get.paths.head.blindedNodes.last.blindedPublicKey))
 
     val sendInvoice: Boolean = records.get[SendInvoice].nonEmpty
 
@@ -161,9 +162,8 @@ object Offers {
 
     val signature: Option[ByteVector64] = records.get[Signature].map(_.signature)
 
-    val contact: Seq[OnionMessages.Destination] =
-      records.get[Paths].flatMap(_.paths.headOption).map(OnionMessages.BlindedPath).map(Seq(_))
-        .getOrElse(Seq(PublicKey(2.toByte +: nodeIdXOnly), PublicKey(3.toByte +: nodeIdXOnly)).map(nodeId => OnionMessages.Recipient(nodeId, None, None)))
+    val contact: Either[Seq[BlindedRoute], NodeIdXOnly] =
+      records.get[Paths].map(_.paths).map(Left(_)).getOrElse(Right(records.get[NodeIdXOnly].get))
 
     def sign(key: PrivateKey): Offer = {
       val sig = signSchnorr(Offer.signatureTag, rootHash(records, offerTlvCodec), key)
@@ -172,7 +172,7 @@ object Offers {
 
     def checkSignature(): Boolean = {
       signature match {
-        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), offerTlvCodec), sig, nodeIdXOnly)
+        case Some(sig) => verifySchnorr(Offer.signatureTag, rootHash(removeSignature(records), offerTlvCodec), sig, nodeIdXOnly.xOnly)
         case None => false
       }
     }
@@ -201,7 +201,7 @@ object Offers {
         if (chain != Block.LivenetGenesisBlock.hash) Some(Chains(Seq(chain))) else None,
         amount_opt.map(Amount),
         Some(Description(description)),
-        Some(NodeId(nodeId)),
+        Some(NodeIdXOnly(xOnlyPublicKey(nodeId))),
         if (!features.isEmpty) Some(FeaturesTlv(features.unscoped())) else None,
       ).flatten
       Offer(TlvStream(tlvs))

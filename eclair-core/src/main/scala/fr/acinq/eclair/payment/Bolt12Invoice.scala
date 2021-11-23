@@ -39,7 +39,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
   import Bolt12Invoice._
 
   require(records.get[Amount].nonEmpty, "bolt 12 invoices must provide an amount")
-  require(records.get[NodeId].nonEmpty, "bolt 12 invoices must provide a node id")
+  require(records.get[NodeIdXOnly].nonEmpty, "bolt 12 invoices must provide a node id")
   require(records.get[PaymentHash].nonEmpty, "bolt 12 invoices must provide a payment hash")
   require(records.get[Description].nonEmpty, "bolt 12 invoices must provide a description")
   require(records.get[CreatedAt].nonEmpty, "bolt 12 invoices must provide a creation timestamp")
@@ -49,7 +49,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   override val amount_opt: Option[MilliSatoshi] = Some(amount)
 
-  override val nodeId: Crypto.PublicKey = nodeId_opt.getOrElse(records.get[NodeId].get.nodeId1)
+  override val nodeId: Crypto.PublicKey = nodeId_opt.getOrElse(records.get[NodeIdXOnly].get.nodeId1)
 
   override val paymentHash: ByteVector32 = records.get[PaymentHash].get.hash
 
@@ -102,7 +102,7 @@ case class Bolt12Invoice(records: TlvStream[InvoiceTlv], nodeId_opt: Option[Publ
 
   // It is assumed that the request is valid for this offer.
   def isValidFor(offer: Offer, request: InvoiceRequest): Boolean = {
-    Offers.xOnlyPublicKey(nodeId) == offer.nodeIdXOnly &&
+    Offers.xOnlyPublicKey(nodeId) == offer.nodeIdXOnly.xOnly &&
       checkSignature() &&
       offerId.contains(request.offerId) &&
       request.chain == chain &&
@@ -146,14 +146,14 @@ object Bolt12Invoice {
    * @param nodeKey  the key that was used to generate the offer, may be different from our public nodeId if we're hiding behind a blinded route
    * @param features invoice features
    */
-  def apply(offer: Offer, request: InvoiceRequest, preimage: ByteVector32, nodeKey: PrivateKey, features: Features[InvoiceFeature]): Bolt12Invoice = {
+  def apply(offer: Offer, request: InvoiceRequest, preimage: ByteVector32, nodeKey: PrivateKey, minFinalCltvExpiryDelta: CltvExpiryDelta, features: Features[InvoiceFeature]): Bolt12Invoice = {
     require(request.amount.nonEmpty || offer.amount.nonEmpty)
     val tlvs: Seq[InvoiceTlv] = Seq(
       Some(Chain(request.chain)),
       Some(CreatedAt(TimestampSecond.now())),
       Some(PaymentHash(Crypto.sha256(preimage))),
       Some(OfferId(offer.offerId)),
-      Some(NodeId(nodeKey.publicKey)),
+      Some(NodeIdXOnly(xOnlyPublicKey(nodeKey.publicKey))),
       Some(Amount(request.amount.orElse(offer.amount.map(_ * request.quantity)).get)),
       Some(Description(offer.description)),
       request.quantity_opt.map(Quantity),
@@ -162,7 +162,8 @@ object Bolt12Invoice {
       request.payerNote.map(PayerNote),
       request.replaceInvoice.map(ReplaceInvoice),
       offer.issuer.map(Issuer),
-      Some(FeaturesTlv(features.unscoped()))
+      Some(Cltv(minFinalCltvExpiryDelta)),
+      Some(FeaturesTlv(features.unscoped())),
     ).flatten
     val signature = signSchnorr(signatureTag("signature"), rootHash(TlvStream(tlvs), invoiceTlvCodec), nodeKey)
     Bolt12Invoice(TlvStream(tlvs :+ Signature(signature)), Some(nodeKey.publicKey))

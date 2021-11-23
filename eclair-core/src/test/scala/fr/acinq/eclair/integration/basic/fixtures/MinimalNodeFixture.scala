@@ -284,7 +284,7 @@ object MinimalNodeFixture extends Assertions with EitherValues {
     val invoice = sender.expectMsgType[Bolt11Invoice]
 
     val routeParams = node1.nodeParams.routerConf.pathFindingExperimentConf.experiments.values.head.getDefaultRouteParams
-    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = routeParams, extraEdges = hints.flatMap(Bolt11Invoice.toExtraEdges(_, node2.nodeParams.nodeId)), blockUntilComplete = true))
+    sender.send(node1.paymentInitiator, PaymentInitiator.SendPaymentToNode(sender.ref, amount, invoice, maxAttempts = 1, routeParams = routeParams, extraEdges = hints.flatMap(Bolt11Invoice.toExtraEdges(_, node2.nodeParams.nodeId)), blockUntilComplete = true))
     sender.expectMsgType[PaymentEvent] match {
       case e: PaymentSent => Right(e)
       case e: PaymentFailed => Left(e)

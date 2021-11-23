@@ -27,6 +27,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.wire.protocol.Offers.Offer
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
 
 import scala.concurrent.Future
@@ -50,6 +51,7 @@ trait ExtraDirectives extends Directives {
   val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
   val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
+  val offerFormParam: NameUnmarshallerReceptacle[Offer] = "offer".as[Offer](offerUnmarshaller)
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {

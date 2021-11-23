@@ -46,27 +46,28 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
 
   def main(pending: Map[UUID, PendingPayment]): Receive = {
     case r: SendPaymentToNode =>
+      val replyTo = if (r.replyTo == ActorRef.noSender) sender() else r.replyTo
       val paymentId = UUID.randomUUID()
       if (!r.blockUntilComplete) {
         // Immediately return the paymentId
-        sender() ! paymentId
+        replyTo ! paymentId
       }
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.invoice.paymentSecret match {
         case _ if !nodeParams.features.invoiceFeatures().areSupported(r.invoice.features) =>
-          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil)
+          replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.invoice.features)) :: Nil)
         case None =>
-          sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, PaymentSecretMissing) :: Nil)
+          replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, PaymentSecretMissing) :: Nil)
         case Some(paymentSecret) if r.invoice.features.hasFeature(Features.BasicMultiPartPayment) && nodeParams.features.hasFeature(BasicMultiPartPayment) =>
           val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
           fsm ! SendMultiPartPayment(self, paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.invoice.paymentMetadata, r.extraEdges, r.routeParams, userCustomTlvs = r.userCustomTlvs)
-          context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
+          context become main(pending + (paymentId -> PendingPaymentToNode(replyTo, r)))
         case Some(paymentSecret) =>
           val finalPayload = PaymentOnion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.invoice.paymentMetadata, r.userCustomTlvs)
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
           fsm ! PaymentLifecycle.SendPaymentToNode(self, r.recipientNodeId, finalPayload, r.maxAttempts, r.extraEdges, r.routeParams)
-          context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
+          context become main(pending + (paymentId -> PendingPaymentToNode(replyTo, r)))
       }
 
     case r: SendSpontaneousPayment =>
@@ -310,7 +311,8 @@ object PaymentInitiator {
    * @param userCustomTlvs           (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
    * @param blockUntilComplete       (optional) if true, wait until the payment completes before returning a result.
    */
-  case class SendPaymentToNode(recipientAmount: MilliSatoshi,
+  case class SendPaymentToNode(replyTo: ActorRef,
+                               recipientAmount: MilliSatoshi,
                                invoice: Invoice,
                                maxAttempts: Int,
                                externalId: Option[String] = None,

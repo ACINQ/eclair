@@ -65,7 +65,7 @@ class Autoprobe(nodeParams: NodeParams, router: ActorRef, paymentInitiator: Acto
             ByteVector.empty)
           log.info(s"sending payment probe to node=$targetNodeId payment_hash=${fakeInvoice.paymentHash}")
           val routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams
-          paymentInitiator ! PaymentInitiator.SendPaymentToNode(PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1, routeParams = routeParams)
+          paymentInitiator ! PaymentInitiator.SendPaymentToNode(self, PAYMENT_AMOUNT_MSAT, fakeInvoice, maxAttempts = 1, routeParams = routeParams)
         case None =>
           log.info(s"could not find a destination, re-scheduling")
           scheduleProbe()

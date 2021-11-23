@@ -34,7 +34,8 @@ import scala.util.{Failure, Success}
 object OnionMessages {
 
   case class OnionMessageConfig(relayPolicy: RelayPolicy,
-                                timeout: FiniteDuration)
+                                timeout: FiniteDuration,
+                                maxAttempts: Int)
 
   case class IntermediateNode(nodeId: PublicKey, padding: Option[ByteVector] = None)
 
@@ -88,9 +89,9 @@ object OnionMessages {
                    intermediateNodes: Seq[IntermediateNode],
                    destination: Destination,
                    content: Seq[OnionMessagePayloadTlv],
-                   userCustomTlvs: Seq[GenericTlv] = Nil): (PublicKey, OnionMessage) = {
+                   userCustomTlvs: TlvStream[OnionMessagePayloadTlv] = TlvStream.empty): (PublicKey, OnionMessage) = {
     val route = buildRoute(blindingSecret, intermediateNodes, destination)
-    val lastPayload = MessageOnionCodecs.finalPerHopPayloadCodec.encode(FinalPayload(TlvStream(EncryptedData(route.encryptedPayloads.last) +: content, userCustomTlvs))).require.bytes
+    val lastPayload = MessageOnionCodecs.finalPerHopPayloadCodec.encode(FinalPayload(TlvStream[OnionMessagePayloadTlv](EncryptedData(route.encryptedPayloads.last) +: (content ++ userCustomTlvs.records), userCustomTlvs.unknown))).require.bytes
     val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.relayPerHopPayloadCodec.encode(RelayPayload(TlvStream(EncryptedData(encTlv)))).require.bytes) :+ lastPayload
     val payloadSize = payloads.map(_.length + Sphinx.MacLength).sum
     val packetSize = if (payloadSize <= 1300) {
