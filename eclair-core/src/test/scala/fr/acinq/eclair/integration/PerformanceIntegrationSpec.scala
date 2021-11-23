@@ -86,7 +86,7 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
     sender.send(nodes("B").paymentHandler, ReceiveStandardPayment(Some(amountMsat), Left("1 coffee")))
     val pr = sender.expectMsgType[Invoice]
     // then we make the actual payment
-    sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPaymentToNode(amountMsat, pr, routeParams = integrationTestRouteParams, maxAttempts = 1))
+    sender.send(nodes("A").paymentInitiator, PaymentInitiator.SendPaymentToNode(sender.ref, amountMsat, pr, routeParams = integrationTestRouteParams, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID]
     sender.expectMsgType[PreimageReceived]
     val ps = sender.expectMsgType[PaymentSent]

@@ -44,10 +44,11 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
 
   def main(pending: Map[UUID, PendingPayment]): Receive = {
     case r: SendPaymentToNode =>
+      val replyTo = if (r.replyTo == ActorRef.noSender) sender() else r.replyTo
       val paymentId = UUID.randomUUID()
       if (!r.blockUntilComplete) {
         // Immediately return the paymentId
-        sender() ! paymentId
+        replyTo ! paymentId
       }
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.invoice.nodeId, Upstream.Local(paymentId), Some(r.invoice), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true)
       val finalExpiry = r.finalExpiry(nodeParams)
@@ -56,15 +57,15 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
         case invoice: Bolt12Invoice => BlindedRecipient(invoice, r.recipientAmount, finalExpiry, r.userCustomTlvs)
       }
       if (!nodeParams.features.invoiceFeatures().areSupported(recipient.features)) {
-        sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil)
+        replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(recipient.features)) :: Nil)
       } else if (Features.canUseFeature(nodeParams.features.invoiceFeatures(), recipient.features, Features.BasicMultiPartPayment)) {
         val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg, publishPreimage = !r.blockUntilComplete)
         fsm ! MultiPartPaymentLifecycle.SendMultiPartPayment(self, recipient, r.maxAttempts, r.routeParams)
-        context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
+        context become main(pending + (paymentId -> PendingPaymentToNode(replyTo, r)))
       } else {
         val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
         fsm ! PaymentLifecycle.SendPaymentToNode(self, recipient, r.maxAttempts, r.routeParams)
-        context become main(pending + (paymentId -> PendingPaymentToNode(sender(), r)))
+        context become main(pending + (paymentId -> PendingPaymentToNode(replyTo, r)))
       }
 
     case r: SendSpontaneousPayment =>
@@ -293,14 +294,15 @@ object PaymentInitiator {
 
   /**
    * @param recipientAmount    amount that should be received by the final recipient (usually from a Bolt 11 invoice).
-   * @param invoice            Bolt 11 invoice.
+   * @param invoice            invoice.
    * @param maxAttempts        maximum number of retries.
    * @param externalId         (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
    * @param routeParams        (optional) parameters to fine-tune the routing algorithm.
    * @param userCustomTlvs     (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
    * @param blockUntilComplete (optional) if true, wait until the payment completes before returning a result.
    */
-  case class SendPaymentToNode(recipientAmount: MilliSatoshi,
+  case class SendPaymentToNode(replyTo: ActorRef,
+                               recipientAmount: MilliSatoshi,
                                invoice: Invoice,
                                maxAttempts: Int,
                                externalId: Option[String] = None,

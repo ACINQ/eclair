@@ -92,6 +92,21 @@ trait Payment {
     }
   }
 
-  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo
+  val payOffer: Route = postRequest("payoffer") { implicit t =>
+    formFields(offerFormParam, amountMsatFormParam, "quantity".as[Long].?, "maxAttempts".as[Int].?, "maxFeeFlatSat".as[Satoshi].?, "maxFeePct".as[Double].?, "externalId".?, "pathFindingExperimentName".?) {
+      case (offer, amountMsat, quantity_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, externalId_opt, pathFindingExperimentName_opt) =>
+        complete(eclairApi.payOffer(offer, amountMsat, quantity_opt.getOrElse(1), externalId_opt, maxAttempts_opt, maxFeeFlat_opt, maxFeePct_opt, pathFindingExperimentName_opt))
+    }
+  }
+
+  val payOfferStatus: Route = postRequest("payofferstatus") { implicit t =>
+    formFields("id".as[UUID]) { id =>
+      complete(eclairApi.payOfferStatus(Left(id)))
+    } ~ formFields(offerFormParam) { offer =>
+      complete(eclairApi.payOfferStatus(Right(offer)))
+    }
+  }
+
+  val paymentRoutes: Route = usableBalances ~ payInvoice ~ sendToNode ~ sendToRoute ~ getSentInfo ~ getReceivedInfo ~ payOffer ~ payOfferStatus
 
 }

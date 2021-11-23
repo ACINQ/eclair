@@ -10,7 +10,8 @@ import fr.acinq.eclair.db.DualDatabases.runAsync
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement}
+import fr.acinq.eclair.wire.protocol.OfferTypes.InvoiceRequest
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, NodeAddress, NodeAnnouncement, OfferTypes}
 import fr.acinq.eclair.{CltvExpiry, MilliSatoshi, Paginated, RealShortChannelId, ShortChannelId, TimestampMilli}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -40,6 +41,8 @@ case class DualDatabases(primary: Databases, secondary: Databases) extends Datab
   override val payments: PaymentsDb = DualPaymentsDb(primary.payments, secondary.payments)
 
   override val pendingCommands: PendingCommandsDb = DualPendingCommandsDb(primary.pendingCommands, secondary.pendingCommands)
+
+  override val offers: OffersDb = DualOffersDb(primary.offers, secondary.offers)
 
   /** if one of the database supports file backup, we use it */
   override def backup(backupFile: File): Unit = (primary, secondary) match {
@@ -384,5 +387,30 @@ case class DualPendingCommandsDb(primary: PendingCommandsDb, secondary: PendingC
   override def listSettlementCommands(): Seq[(ByteVector32, HtlcSettlementCommand)] = {
     runAsync(secondary.listSettlementCommands())
     primary.listSettlementCommands()
+  }
+}
+
+case class DualOffersDb(primary: OffersDb, secondary: OffersDb) extends OffersDb {
+
+  private implicit val ec: ExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor(new ThreadFactoryBuilder().setNameFormat("db-offers").build()))
+
+  override def addAttemptToPayOffer(offer: OfferTypes.Offer, request: InvoiceRequest, payerKey: Crypto.PrivateKey, attemptId: UUID): Unit = {
+    runAsync(secondary.addAttemptToPayOffer(offer, request, payerKey, attemptId))
+    primary.addAttemptToPayOffer(offer, request, payerKey, attemptId)
+  }
+
+  override def getAttemptToPayOffer(attemptId: UUID): Option[AttemptToPayOffer] = {
+    runAsync(secondary.getAttemptToPayOffer(attemptId))
+    primary.getAttemptToPayOffer(attemptId)
+  }
+
+  override def getAttemptsToPayOffer(offer: OfferTypes.Offer): Seq[AttemptToPayOffer] = {
+    runAsync(secondary.getAttemptsToPayOffer(offer))
+    primary.getAttemptsToPayOffer(offer)
+  }
+
+  override def addOfferInvoice(attemptId: UUID, invoice: Option[Bolt12Invoice], paymentId_opt: Option[UUID]): Unit = {
+    runAsync(secondary.addOfferInvoice(attemptId, invoice, paymentId_opt))
+    primary.addOfferInvoice(attemptId, invoice, paymentId_opt)
   }
 }

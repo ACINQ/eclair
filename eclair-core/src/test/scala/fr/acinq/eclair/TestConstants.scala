@@ -206,7 +206,8 @@ object TestConstants {
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
-        timeout = 1 minute
+        timeout = 1 minute,
+        maxAttempts = 2,
       ),
       purgeInvoicesInterval = None
     )
@@ -355,7 +356,8 @@ object TestConstants {
       blockchainWatchdogSources = blockchainWatchdogSources,
       onionMessageConfig = OnionMessageConfig(
         relayPolicy = RelayAll,
-        timeout = 1 minute
+        timeout = 1 minute,
+        maxAttempts = 2,
       ),
       purgeInvoicesInterval = None
     )

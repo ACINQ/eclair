@@ -112,7 +112,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
 
     val sender = TestProbe("sender")
     val invoice = createInvoice(carol, amount, routes, sender)
-    sender.send(payer.paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = payer.routeParams, blockUntilComplete = true))
+    sender.send(payer.paymentInitiator, SendPaymentToNode(sender.ref, amount, invoice, maxAttempts = 1, routeParams = payer.routeParams, blockUntilComplete = true))
     (invoice, sender.expectMsgType[PaymentEvent])
   }
 
@@ -181,7 +181,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val amount = 75_000_000 msat
     val routes = Seq(ReceivingRoute(Seq(bob.nodeId), maxFinalExpiryDelta))
     val invoice = createInvoice(bob, amount, routes, sender)
-    sender.send(alice.paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
+    sender.send(alice.paymentInitiator, SendPaymentToNode(sender.ref, amount, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
     val payment = sender.expectMsgType[PaymentSent]
     assert(payment.recipientAmount == invoice.amount)
     assert(payment.recipientNodeId == invoice.nodeId)
@@ -195,7 +195,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val amount = 250_000_000 msat
     val routes = Seq(ReceivingRoute(Seq(bob.nodeId), maxFinalExpiryDelta, Seq(DummyBlindedHop(10 msat, 25, CltvExpiryDelta(24)), DummyBlindedHop(5 msat, 10, CltvExpiryDelta(36)))))
     val invoice = createInvoice(bob, amount, routes, sender)
-    sender.send(alice.paymentInitiator, SendPaymentToNode(amount, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
+    sender.send(alice.paymentInitiator, SendPaymentToNode(sender.ref, amount, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
     val payment = sender.expectMsgType[PaymentSent]
     assert(payment.recipientAmount == invoice.amount)
     assert(payment.recipientNodeId == invoice.nodeId)
@@ -242,7 +242,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
       sender.expectMsgType[PaymentSent]
     })
     // Bob now doesn't have enough funds to relay the payment.
-    sender.send(alice.paymentInitiator, SendPaymentToNode(invoice.amount, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
+    sender.send(alice.paymentInitiator, SendPaymentToNode(sender.ref, invoice.amount, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
     val payment = sender.expectMsgType[PaymentFailed]
     verifyBlindedFailure(payment, bob.nodeId)
   }
@@ -253,7 +253,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val sender = TestProbe("sender")
     val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), CltvExpiryDelta(-500)))
     val invoice = createInvoice(carol, 25_000_000 msat, routes, sender)
-    sender.send(alice.paymentInitiator, SendPaymentToNode(invoice.amount, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
+    sender.send(alice.paymentInitiator, SendPaymentToNode(sender.ref, invoice.amount, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
     val payment = sender.expectMsgType[PaymentFailed]
     verifyBlindedFailure(payment, bob.nodeId)
   }
@@ -265,7 +265,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
     val invoice = createInvoice(carol, 25_000_000 msat, routes, sender)
     // The amount is below what Carol expects.
-    sender.send(alice.paymentInitiator, SendPaymentToNode(20_000_000 msat, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
+    sender.send(alice.paymentInitiator, SendPaymentToNode(sender.ref, 20_000_000 msat, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
     val payment = sender.expectMsgType[PaymentFailed]
     verifyBlindedFailure(payment, bob.nodeId)
   }
@@ -278,7 +278,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val invoice = createInvoice(bob, 50_000_000 msat, routes, sender)
     // The amount is below what Bob expects: since he is both the introduction node and the final recipient, he sends
     // back a normal error.
-    sender.send(alice.paymentInitiator, SendPaymentToNode(25_000_000 msat, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
+    sender.send(alice.paymentInitiator, SendPaymentToNode(sender.ref, 25_000_000 msat, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
     val payment = sender.expectMsgType[PaymentFailed]
     assert(payment.failures.head.isInstanceOf[RemoteFailure])
     val failure = payment.failures.head.asInstanceOf[RemoteFailure]
@@ -295,7 +295,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val invoice = createInvoice(bob, 50_000_000 msat, routes, sender)
     // The amount is below what Bob expects: since he is both the introduction node and the final recipient, he sends
     // back a normal error.
-    sender.send(alice.paymentInitiator, SendPaymentToNode(25_000_000 msat, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
+    sender.send(alice.paymentInitiator, SendPaymentToNode(sender.ref, 25_000_000 msat, invoice, maxAttempts = 1, routeParams = alice.routeParams, blockUntilComplete = true))
     val payment = sender.expectMsgType[PaymentFailed]
     assert(payment.failures.head.isInstanceOf[RemoteFailure])
     val failure = payment.failures.head.asInstanceOf[RemoteFailure]
@@ -311,7 +311,7 @@ class BlindedPaymentSpec extends FixtureSpec with IntegrationPatience {
     val routes = Seq(ReceivingRoute(Seq(bob.nodeId, carol.nodeId), maxFinalExpiryDelta))
     val invoice = createInvoice(carol, 50_000_000 msat, routes, sender)
     // The amount is below what Carol expects.
-    sender.send(bob.paymentInitiator, SendPaymentToNode(45_000_000 msat, invoice, maxAttempts = 1, routeParams = bob.routeParams, blockUntilComplete = true))
+    sender.send(bob.paymentInitiator, SendPaymentToNode(sender.ref, 45_000_000 msat, invoice, maxAttempts = 1, routeParams = bob.routeParams, blockUntilComplete = true))
     val payment = sender.expectMsgType[PaymentFailed]
     assert(payment.failures.head.isInstanceOf[LocalFailure])
     val failure = payment.failures.head.asInstanceOf[LocalFailure]
