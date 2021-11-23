@@ -234,7 +234,7 @@ object PaymentOnion {
   sealed trait FinalPayload extends PerHopPayload with TrampolinePacket with PaymentPacket {
     val amount: MilliSatoshi
     val expiry: CltvExpiry
-    val paymentSecret: ByteVector32
+    val paymentSecret: Option[ByteVector32]
     val totalAmount: MilliSatoshi
     val paymentPreimage: Option[ByteVector32]
     val paymentMetadata: Option[ByteVector]
@@ -271,7 +271,7 @@ object PaymentOnion {
   case class FinalTlvPayload(records: TlvStream[OnionPaymentPayloadTlv]) extends FinalPayload {
     override val amount = records.get[AmountToForward].get.amount
     override val expiry = records.get[OutgoingCltv].get.cltv
-    override val paymentSecret = records.get[PaymentData].get.secret
+    override val paymentSecret = records.get[PaymentData].map(_.secret)
     override val totalAmount = records.get[PaymentData].map(_.totalAmount match {
       case MilliSatoshi(0) => amount
       case totalAmount => totalAmount
@@ -298,21 +298,21 @@ object PaymentOnion {
     NodeRelayPayload(TlvStream(tlvs))
   }
 
-  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = {
+  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32], paymentMetadata: Option[ByteVector], userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = {
     val tlvs = Seq(
       Some(AmountToForward(amount)),
       Some(OutgoingCltv(expiry)),
-      Some(PaymentData(paymentSecret, amount)),
+      paymentSecret.map(PaymentData(_, amount)),
       paymentMetadata.map(m => PaymentMetadata(m))
     ).flatten
     FinalTlvPayload(TlvStream(tlvs, userCustomTlvs))
   }
 
-  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = {
+  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: Option[ByteVector32], paymentMetadata: Option[ByteVector], additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = {
     val tlvs = Seq(
       Some(AmountToForward(amount)),
       Some(OutgoingCltv(expiry)),
-      Some(PaymentData(paymentSecret, totalAmount)),
+      paymentSecret.map(PaymentData(_, totalAmount)),
       paymentMetadata.map(m => PaymentMetadata(m))
     ).flatten
     FinalTlvPayload(TlvStream(tlvs ++ additionalTlvs, userCustomTlvs))

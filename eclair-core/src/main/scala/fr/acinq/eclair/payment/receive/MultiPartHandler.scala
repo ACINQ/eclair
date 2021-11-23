@@ -25,13 +25,12 @@ import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 import fr.acinq.bitcoin.scalacompat.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentMetadataReceived, PaymentReceived, Invoice}
-import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, randomBytes32}
-import scodec.bits.HexStringSyntax
 import fr.acinq.eclair.payment.Bolt11Invoice.ExtraHop
-import fr.acinq.eclair.payment.Bolt11Invoice
+import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.payment.{Bolt11Invoice, DummyInvoice, IncomingPaymentPacket, Invoice, PaymentMetadataReceived, PaymentReceived}
+import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, TimestampSecond, randomBytes32}
+import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Success, Try}
 
@@ -90,16 +89,15 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
           }
           case None => p.payload.paymentPreimage match {
             case Some(paymentPreimage) if nodeParams.features.hasFeature(Features.KeySend) =>
-              val amount = Some(p.payload.totalAmount)
+              val amount = p.payload.totalAmount
               val paymentHash = Crypto.sha256(paymentPreimage)
-              val desc = Left("Donation")
               val features = if (nodeParams.features.hasFeature(Features.BasicMultiPartPayment)) {
                 Features[InvoiceFeature](Features.BasicMultiPartPayment -> FeatureSupport.Optional, Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               } else {
                 Features[InvoiceFeature](Features.PaymentSecret -> FeatureSupport.Mandatory, Features.VariableLengthOnion -> FeatureSupport.Mandatory)
               }
               // Insert a fake invoice and then restart the incoming payment handler
-              val invoice = Bolt11Invoice(nodeParams.chainHash, amount, paymentHash, nodeParams.privateKey, desc, nodeParams.channelConf.minFinalExpiryDelta, paymentSecret = p.payload.paymentSecret, features = features)
+              val invoice = DummyInvoice(amount, TimestampSecond.now(), nodeParams.privateKey.publicKey, paymentHash, p.payload.paymentSecret, nodeParams.channelConf.minFinalExpiryDelta, features)
               log.debug("generated fake invoice={} from amount={} (KeySend)", invoice.toString, amount)
               db.addIncomingPayment(invoice, paymentPreimage, paymentType = PaymentType.KeySend)
               ctx.self ! p
@@ -319,10 +317,10 @@ object MultiPartHandler {
     if (payment.payload.amount < payment.payload.totalAmount && !invoice.features.hasFeature(Features.BasicMultiPartPayment)) {
       log.warning("received multi-part payment but invoice doesn't support it for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
-    } else if (payment.payload.amount < payment.payload.totalAmount && !invoice.paymentSecret.contains(payment.payload.paymentSecret)) {
+    } else if (payment.payload.amount < payment.payload.totalAmount && invoice.paymentSecret != payment.payload.paymentSecret) {
       log.warning("received multi-part payment with invalid secret={} for amount={} totalAmount={}", payment.payload.paymentSecret, payment.add.amountMsat, payment.payload.totalAmount)
       false
-    } else if (!invoice.paymentSecret.contains(payment.payload.paymentSecret)) {
+    } else if (invoice.paymentSecret != payment.payload.paymentSecret) {
       log.warning("received payment with invalid secret={} for amount={} totalAmount={}", payment.payload.paymentSecret, payment.add.amountMsat, payment.payload.totalAmount)
       false
     } else {

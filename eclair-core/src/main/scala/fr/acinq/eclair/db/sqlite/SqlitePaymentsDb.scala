@@ -231,13 +231,13 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def addIncomingPayment(invoice: Bolt11Invoice, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Sqlite) {
+  override def addIncomingPayment(invoice: Invoice, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Sqlite) {
     using(sqlite.prepareStatement("INSERT INTO received_payments (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, invoice.paymentHash.toArray)
       statement.setBytes(2, preimage.toArray)
       statement.setString(3, paymentType)
       statement.setString(4, invoice.toString)
-      statement.setLong(5, invoice.createdAt.toTimestampMilli.toLong) // BOLT11 timestamp is in seconds
+      statement.setLong(5, invoice.createdAt.toTimestampMilli.toLong)
       statement.setLong(6, (invoice.createdAt + invoice.relativeExpiry).toLong.seconds.toMillis)
       statement.executeUpdate()
     }
@@ -254,19 +254,19 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
   }
 
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
-    val invoice = rs.getString("payment_request")
+    val invoice = Invoice.fromString(rs.getString("payment_request")).get
     IncomingPayment(
-      Bolt11Invoice.fromString(invoice).get,
+      invoice,
       rs.getByteVector32("payment_preimage"),
       rs.getString("payment_type"),
       TimestampMilli(rs.getLong("created_at")),
       buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(invoice), rs.getLongNullable("received_at").map(TimestampMilli(_))))
   }
 
-  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedInvoice_opt: Option[String], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
+  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], invoice_opt: Option[Invoice], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
     amount_opt match {
       case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0 unixms))
-      case None if serializedInvoice_opt.exists(Bolt11Invoice.fastHasExpired) => IncomingPaymentStatus.Expired
+      case None if invoice_opt.exists(_.isExpired()) => IncomingPaymentStatus.Expired
       case None => IncomingPaymentStatus.Pending
     }
   }
@@ -385,7 +385,7 @@ class SqlitePaymentsDb(val sqlite: Connection) extends PaymentsDb with Logging {
           val expireAt_opt = rs.getLongNullable("expire_at").map(TimestampMilli(_))
 
           if (rs.getString("type") == "received") {
-            val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, invoice_opt, completedAt_opt)
+            val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, invoice_opt.map(Invoice.fromString(_).get), completedAt_opt)
             PlainIncomingPayment(paymentHash, paymentType, amount_opt, invoice_opt, status, createdAt, completedAt_opt, expireAt_opt)
           } else {
             val preimage_opt = rs.getByteVector32Nullable("payment_preimage")

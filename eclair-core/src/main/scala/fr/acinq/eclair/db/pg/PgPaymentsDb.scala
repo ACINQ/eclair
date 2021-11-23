@@ -23,7 +23,7 @@ import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
 import fr.acinq.eclair.db.PaymentsDb.{decodeFailures, decodeRoute, encodeFailures, encodeRoute}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
-import fr.acinq.eclair.payment.{Bolt11Invoice, Invoice, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.payment.{Invoice, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
 import scodec.bits.BitVector
@@ -219,7 +219,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     }
   }
 
-  override def addIncomingPayment(invoice: Bolt11Invoice, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Postgres) {
+  override def addIncomingPayment(invoice: Invoice, preimage: ByteVector32, paymentType: String): Unit = withMetrics("payments/add-incoming", DbBackends.Postgres) {
     withLock { pg =>
       using(pg.prepareStatement("INSERT INTO payments.received (payment_hash, payment_preimage, payment_type, payment_request, created_at, expire_at) VALUES (?, ?, ?, ?, ?, ?)")) { statement =>
         statement.setString(1, invoice.paymentHash.toHex)
@@ -246,19 +246,19 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   }
 
   private def parseIncomingPayment(rs: ResultSet): IncomingPayment = {
-    val invoice = rs.getString("payment_request")
+    val invoice = Invoice.fromString(rs.getString("payment_request")).get
     IncomingPayment(
-      Bolt11Invoice.fromString(invoice).get,
+      invoice,
       rs.getByteVector32FromHex("payment_preimage"),
       rs.getString("payment_type"),
       TimestampMilli.fromSqlTimestamp(rs.getTimestamp("created_at")),
       buildIncomingPaymentStatus(rs.getMilliSatoshiNullable("received_msat"), Some(invoice), rs.getTimestampNullable("received_at").map(TimestampMilli.fromSqlTimestamp)))
   }
 
-  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], serializedInvoice_opt: Option[String], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
+  private def buildIncomingPaymentStatus(amount_opt: Option[MilliSatoshi], invoice_opt: Option[Invoice], receivedAt_opt: Option[TimestampMilli]): IncomingPaymentStatus = {
     amount_opt match {
       case Some(amount) => IncomingPaymentStatus.Received(amount, receivedAt_opt.getOrElse(0 unixms))
-      case None if serializedInvoice_opt.exists(Bolt11Invoice.fastHasExpired) => IncomingPaymentStatus.Expired
+      case None if invoice_opt.exists(_.isExpired()) => IncomingPaymentStatus.Expired
       case None => IncomingPaymentStatus.Pending
     }
   }
@@ -394,7 +394,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
             val expireAt_opt = rs.getTimestampNullable("expire_at").map(TimestampMilli.fromSqlTimestamp)
 
             if (rs.getString("type") == "received") {
-              val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, invoice_opt, completedAt_opt)
+              val status: IncomingPaymentStatus = buildIncomingPaymentStatus(amount_opt, invoice_opt.map(Invoice.fromString(_).get), completedAt_opt)
               PlainIncomingPayment(paymentHash, paymentType, amount_opt, invoice_opt, status, createdAt, completedAt_opt, expireAt_opt)
             } else {
               val preimage_opt = rs.getByteVector32Nullable("payment_preimage")

@@ -294,7 +294,7 @@ case class DualPaymentsDb(primary: PaymentsDb, secondary: PaymentsDb) extends Pa
     primary.listPaymentsOverview(limit)
   }
 
-  override def addIncomingPayment(pr: Bolt11Invoice, preimage: ByteVector32, paymentType: String): Unit = {
+  override def addIncomingPayment(pr: Invoice, preimage: ByteVector32, paymentType: String): Unit = {
     runAsync(secondary.addIncomingPayment(pr, preimage, paymentType))
     primary.addIncomingPayment(pr, preimage, paymentType)
   }
