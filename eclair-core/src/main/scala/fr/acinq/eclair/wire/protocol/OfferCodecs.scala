@@ -17,14 +17,13 @@
 package fr.acinq.eclair.wire.protocol
 
 import fr.acinq.bitcoin.scalacompat.ByteVector32
-import fr.acinq.bitcoin.scalacompat.Crypto.PublicKey
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
 import fr.acinq.eclair.payment.Bolt12Invoice
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
-import fr.acinq.eclair.wire.protocol.Offers._
+import fr.acinq.eclair.wire.protocol.OfferTypes._
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.MissingRequiredTlv
 import fr.acinq.eclair.wire.protocol.TlvCodecs.{tmillisatoshi, tu32, tu64overflow}
-import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, TimestampSecond, UInt64}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, Features, MilliSatoshi, TimestampSecond, UInt64}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
 
@@ -53,7 +52,7 @@ object OfferCodecs {
 
   private val quantityMax: Codec[QuantityMax] = variableSizeBytesLong(varintoverflow, tu64overflow).as[QuantityMax]
 
-  private val nodeId: Codec[NodeId] = variableSizeBytesLong(varintoverflow, bytes32).as[NodeId]
+  private val nodeId: Codec[NodeId] = variableSizeBytesLong(varintoverflow, publicKey).as[NodeId]
 
   private val sendInvoice: Codec[SendInvoice] = variableSizeBytesLong(varintoverflow, provide(SendInvoice()))
 
@@ -81,7 +80,7 @@ object OfferCodecs {
     if (tlvs.get[Description].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(10)))
     }
-    if (tlvs.get[NodeId].isEmpty) {
+    if (tlvs.get[NodeId].isEmpty && tlvs.get[Paths].forall(_.paths.isEmpty)) {
       Attempt.failure(MissingRequiredTlv(UInt64(30)))
     }
     Attempt.successful(Offer(tlvs))
@@ -130,16 +129,15 @@ object OfferCodecs {
   })
 
   private val paymentInfo: Codec[PaymentInfo] = (("fee_base_msat" | millisatoshi32) ::
-    ("fee_proportional_millionths" | tu32) ::
-    ("cltv_expiry_delta" | cltvExpiryDelta)).as[PaymentInfo]
+    ("fee_proportional_millionths" | uint32) ::
+    ("cltv_expiry_delta" | cltvExpiryDelta) ::
+    ("htlc_minimum_msat" | millisatoshi) ::
+    ("htlc_maximum_msat" | millisatoshi) ::
+    ("features" | variableSizeBytesLong(uint32, bytes).xmap[Features[Feature]](Features(_), _.toByteVector))).as[PaymentInfo]
 
   private val paymentPathsInfo: Codec[PaymentPathsInfo] = variableSizeBytesLong(varintoverflow, list(paymentInfo)).xmap[Seq[PaymentInfo]](_.toSeq, _.toList).as[PaymentPathsInfo]
 
-  private val paymentConstraints: Codec[PaymentConstraints] = (("max_cltv_expiry" | cltvExpiry) ::
-    ("htlc_minimum_msat" | millisatoshi) ::
-    ("allowed_features" | bytes.xmap[Features[Feature]](Features(_), _.toByteVector))).as[PaymentConstraints]
-
-  private val paymentPathsConstraints: Codec[PaymentPathsConstraints] = variableSizeBytesLong(varintoverflow, list(paymentConstraints)).xmap[Seq[PaymentConstraints]](_.toSeq, _.toList).as[PaymentPathsConstraints]
+  private val paymentPathsCapacities: Codec[PaymentPathsCapacities] = variableSizeBytesLong(varintoverflow, list(millisatoshi)).xmap[Seq[MilliSatoshi]](_.toSeq, _.toList).as[PaymentPathsCapacities]
 
   private val createdAt: Codec[CreatedAt] = variableSizeBytesLong(varintoverflow, tu64overflow).as[TimestampSecond].as[CreatedAt]
 
@@ -166,7 +164,7 @@ object OfferCodecs {
     // TODO: the spec for payment paths is not final, adjust codecs if changes are made to he spec.
     .typecase(UInt64(16), paths)
     .typecase(UInt64(18), paymentPathsInfo)
-    .typecase(UInt64(19), paymentPathsConstraints)
+    .typecase(UInt64(19), paymentPathsCapacities)
     .typecase(UInt64(20), issuer)
     .typecase(UInt64(30), nodeId)
     .typecase(UInt64(32), quantity)
@@ -189,6 +187,8 @@ object OfferCodecs {
       Attempt.failure(MissingRequiredTlv(UInt64(8)))
     } else if (tlvs.get[Description].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(10)))
+    } else if (tlvs.get[Paths].isEmpty) {
+      Attempt.failure(MissingRequiredTlv(UInt64(16)))
     } else if (tlvs.get[NodeId].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(30)))
     } else if (tlvs.get[CreatedAt].isEmpty) {
@@ -198,10 +198,10 @@ object OfferCodecs {
     } else if (tlvs.get[Signature].isEmpty) {
       Attempt.failure(MissingRequiredTlv(UInt64(240)))
     } else {
-      Attempt.successful(Bolt12Invoice(tlvs, None))
+      Attempt.successful(Bolt12Invoice(tlvs))
     }
   }, {
-    case Bolt12Invoice(tlvs, _) => tlvs
+    case Bolt12Invoice(tlvs) => tlvs
   })
 
   val invoiceErrorTlvCodec: Codec[TlvStream[InvoiceErrorTlv]] = TlvCodecs.tlvStream[InvoiceErrorTlv](discriminated[InvoiceErrorTlv].by(varint)

@@ -393,6 +393,23 @@ object InvoiceSerializer extends MinimalSerializer({
       routingInfo
 
     JObject(fieldList)
+  case invoice: Invoice =>
+    val features = JField("features", Extraction.decompose(invoice.features)(
+      DefaultFormats +
+        FeatureKeySerializer +
+        FeatureSupportSerializer +
+        UnknownFeatureSerializer
+    ))
+    JObject(
+      JField("serialized", JString(invoice.toString)),
+      JField("amount", JLong(invoice.amount_opt.get.toLong)),
+      JField("nodeId", JString(invoice.nodeId.toString())),
+      invoice.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
+      JField("paymentHash", JString(invoice.paymentHash.toString())),
+      JField("timestamp", JLong(invoice.createdAt.toLong)),
+      JField("relativeExpiry", JLong(invoice.relativeExpiry.toSeconds)),
+      JField("minFinalCltvExpiry", JInt(invoice.minFinalCltvExpiryDelta.toInt)),
+      features)
 })
 
 object JavaUUIDSerializer extends MinimalSerializer({

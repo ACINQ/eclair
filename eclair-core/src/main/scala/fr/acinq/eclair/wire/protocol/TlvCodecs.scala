@@ -123,7 +123,7 @@ object TlvCodecs {
 
   val genericTlv: Codec[GenericTlv] = (("tag" | varint) :: variableSizeBytesLong(varintoverflow, bytes)).as[GenericTlv]
 
-  private val unknownTlv = genericTlv.exmap(validateUnknownTlv, validateUnknownTlv)
+  private val unknownTlv = genericTlv.exmap[GenericTlv](validateUnknownTlv, validateUnknownTlv)
 
   private def tag[T <: Tlv](codec: DiscriminatorCodec[T, UInt64], record: Either[GenericTlv, T]): UInt64 = record match {
     case Left(generic) => generic.tag
