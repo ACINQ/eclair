@@ -56,8 +56,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
     val monitor = system.spawnAnonymous(MempoolTxMonitor(TestConstants.Alice.nodeParams, bitcoinClient, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
 
-    val address = getNewAddress(probe)
-    val priv = dumpPrivateKey(address, probe)
+    val (priv, address) = createExternalAddress()
     val parentTx = sendToAddress(address, 125_000 sat, probe)
     Fixture(priv, address, parentTx, monitor, bitcoinClient, probe)
   }

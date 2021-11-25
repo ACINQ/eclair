@@ -60,13 +60,13 @@ class Relayer(nodeParams: NodeParams, router: ActorRef, register: ActorRef, paym
   def receive: Receive = {
     case RelayForward(add) =>
       log.debug(s"received forwarding request for htlc #${add.id} from channelId=${add.channelId}")
-      IncomingPacket.decrypt(add, nodeParams.privateKey) match {
-        case Right(p: IncomingPacket.FinalPacket) =>
+      IncomingPaymentPacket.decrypt(add, nodeParams.privateKey) match {
+        case Right(p: IncomingPaymentPacket.FinalPacket) =>
           log.debug(s"forwarding htlc #${add.id} to payment-handler")
           paymentHandler forward p
-        case Right(r: IncomingPacket.ChannelRelayPacket) =>
+        case Right(r: IncomingPaymentPacket.ChannelRelayPacket) =>
           channelRelayer ! ChannelRelayer.Relay(r)
-        case Right(r: IncomingPacket.NodeRelayPacket) =>
+        case Right(r: IncomingPaymentPacket.NodeRelayPacket) =>
           if (!nodeParams.enableTrampolinePayment) {
             log.warning(s"rejecting htlc #${add.id} from channelId=${add.channelId} to nodeId=${r.innerPayload.outgoingNodeId} reason=trampoline disabled")
             PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, add.channelId, CMD_FAIL_HTLC(add.id, Right(RequiredNodeFeatureMissing), commit = true))

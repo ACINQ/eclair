@@ -454,7 +454,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
-    val priv = dumpPrivateKey(getNewAddress(sender), sender)
+    val priv = randomKey()
     val noInputTx = Transaction(2, Nil, TxOut(6.btc.toSatoshi, Script.pay2wpkh(priv.publicKey)) :: Nil, 0)
     bitcoinClient.fundTransaction(noInputTx, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
     val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
@@ -479,9 +479,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val address = getNewAddress(sender)
       val pos = if (changePos == 0) 1 else 0
       bitcoinrpcclient.invoke("createrawtransaction", Array(Map("txid" -> tx.txid.toHex, "vout" -> pos)), Map(address -> 5.999)).pipeTo(sender.ref)
-      val JString(unsignedTx) = sender.expectMsgType[JValue]
-      bitcoinClient.signTransaction(Transaction.read(unsignedTx), Nil).pipeTo(sender.ref)
-      sender.expectMsgType[SignTransactionResponse].tx
+      val JString(unsignedTxStr) = sender.expectMsgType[JValue]
+      val unsignedTx = Transaction.read(unsignedTxStr)
+      val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(priv.publicKey), SIGHASH_ALL, 6.btc.toSatoshi, SIGVERSION_WITNESS_V0, priv)
+      unsignedTx.updateWitness(0, Script.witnessPay2wpkh(priv.publicKey, sig))
     }
     bitcoinClient.publishTransaction(spendingTx).pipeTo(sender.ref)
     sender.expectMsg(spendingTx.txid)

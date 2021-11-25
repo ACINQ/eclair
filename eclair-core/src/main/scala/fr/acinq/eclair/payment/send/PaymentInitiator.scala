@@ -22,7 +22,7 @@ import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.Features.BasicMultiPartPayment
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.{PreimageReceived, SendMultiPartPayment}
@@ -61,7 +61,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
           fsm ! SendMultiPartPayment(sender(), paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams, userCustomTlvs = r.userCustomTlvs)
         case Some(paymentSecret) =>
-          val finalPayload = Onion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.userCustomTlvs)
+          val finalPayload = PaymentOnion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.userCustomTlvs)
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
           fsm ! PaymentLifecycle.SendPaymentToNode(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
       }
@@ -71,7 +71,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       sender() ! paymentId
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), None, storeInDb = true, publishEvent = true, recordPathFindingMetrics = r.recordPathFindingMetrics, Nil)
       val finalExpiry = Channel.MIN_CLTV_EXPIRY_DELTA.toCltvExpiry(nodeParams.currentBlockHeight + 1)
-      val finalPayload = Onion.FinalTlvPayload(TlvStream(Seq(OnionTlv.AmountToForward(r.recipientAmount), OnionTlv.OutgoingCltv(finalExpiry), OnionTlv.PaymentData(randomBytes32(), r.recipientAmount), OnionTlv.KeySend(r.paymentPreimage)), r.userCustomTlvs))
+      val finalPayload = PaymentOnion.FinalTlvPayload(TlvStream(Seq(OnionPaymentPayloadTlv.AmountToForward(r.recipientAmount), OnionPaymentPayloadTlv.OutgoingCltv(finalExpiry), OnionPaymentPayloadTlv.PaymentData(randomBytes32(), r.recipientAmount), OnionPaymentPayloadTlv.KeySend(r.paymentPreimage)), r.userCustomTlvs))
       val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
       fsm ! PaymentLifecycle.SendPaymentToNode(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, routeParams = r.routeParams)
 
@@ -140,11 +140,11 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
           val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, trampoline, r.trampolineFees, r.trampolineExpiryDelta)
-          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), Onion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, Seq(OnionTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
+          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
         case Nil =>
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), Onion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, r.paymentRequest.paymentSecret.get), r.paymentRequest.routingInfo)
+          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, r.paymentRequest.paymentSecret.get), r.paymentRequest.routingInfo)
         case _ =>
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineMultiNodeNotSupported) :: Nil)
       }
@@ -156,15 +156,15 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       NodeHop(trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
     )
     val finalPayload = if (r.paymentRequest.features.allowMultiPart) {
-      Onion.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
+      PaymentOnion.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
     } else {
-      Onion.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
+      PaymentOnion.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
     }
     // We assume that the trampoline node supports multi-part payments (it should).
     val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (r.paymentRequest.features.allowTrampoline) {
-      OutgoingPacket.buildPacket(Sphinx.TrampolinePacket)(r.paymentHash, trampolineRoute, finalPayload)
+      OutgoingPaymentPacket.buildTrampolinePacket(r.paymentHash, trampolineRoute, finalPayload)
     } else {
-      OutgoingPacket.buildTrampolineToLegacyPacket(r.paymentRequest, trampolineRoute, finalPayload)
+      OutgoingPaymentPacket.buildTrampolineToLegacyPacket(r.paymentRequest, trampolineRoute, finalPayload)
     }
     (trampolineAmount, trampolineExpiry, trampolineOnion.packet)
   }
@@ -175,7 +175,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     val trampolineSecret = randomBytes32()
     val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, r.trampolineNodeId, trampolineFees, trampolineExpiryDelta)
     val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
-    fsm ! SendMultiPartPayment(self, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, nodeParams.maxPaymentAttempts, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionTlv.TrampolineOnion(trampolineOnion)))
+    fsm ! SendMultiPartPayment(self, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, nodeParams.maxPaymentAttempts, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
   }
 
 }
@@ -260,13 +260,13 @@ object PaymentInitiator {
                                blockUntilComplete: Boolean = false) extends SendRequestedPayment
 
   /**
-   * @param recipientAmount amount that should be received by the final recipient.
-   * @param recipientNodeId id of the final recipient.
-   * @param paymentPreimage payment preimage.
-   * @param maxAttempts     maximum number of retries.
-   * @param externalId      (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
-   * @param routeParams     (optional) parameters to fine-tune the routing algorithm.
-   * @param userCustomTlvs  (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
+   * @param recipientAmount          amount that should be received by the final recipient.
+   * @param recipientNodeId          id of the final recipient.
+   * @param paymentPreimage          payment preimage.
+   * @param maxAttempts              maximum number of retries.
+   * @param externalId               (optional) externally-controlled identifier (to reconcile between application DB and eclair DB).
+   * @param routeParams              (optional) parameters to fine-tune the routing algorithm.
+   * @param userCustomTlvs           (optional) user-defined custom tlvs that will be added to the onion sent to the target node.
    * @param recordPathFindingMetrics will be used to build [[SendPaymentConfig]].
    */
   case class SendSpontaneousPayment(recipientAmount: MilliSatoshi,
@@ -339,22 +339,22 @@ object PaymentInitiator {
   /**
    * Configuration for an instance of a payment state machine.
    *
-   * @param id              id of the outgoing payment (mapped to a single outgoing HTLC).
-   * @param parentId        id of the whole payment (if using multi-part, there will be N associated child payments,
-   *                        each with a different id).
-   * @param externalId      externally-controlled identifier (to reconcile between application DB and eclair DB).
-   * @param paymentHash     payment hash.
-   * @param recipientAmount amount that should be received by the final recipient (usually from a Bolt 11 invoice).
-   * @param recipientNodeId id of the final recipient.
-   * @param upstream        information about the payment origin (to link upstream to downstream when relaying a payment).
-   * @param paymentRequest  Bolt 11 invoice.
-   * @param storeInDb       whether to store data in the payments DB (e.g. when we're relaying a trampoline payment, we
-   *                        don't want to store in the DB).
-   * @param publishEvent    whether to publish a [[fr.acinq.eclair.payment.PaymentEvent]] on success/failure (e.g. for
-   *                        multi-part child payments, we don't want to emit events for each child, only for the whole payment).
-   * @param recordPathFindingMetrics   We don't record metrics for payments that don't use path finding or that are a part of a bigger payment.
-   * @param additionalHops  additional hops that the payment state machine isn't aware of (e.g. when using trampoline, hops
-   *                        that occur after the first trampoline node).
+   * @param id                       id of the outgoing payment (mapped to a single outgoing HTLC).
+   * @param parentId                 id of the whole payment (if using multi-part, there will be N associated child payments,
+   *                                 each with a different id).
+   * @param externalId               externally-controlled identifier (to reconcile between application DB and eclair DB).
+   * @param paymentHash              payment hash.
+   * @param recipientAmount          amount that should be received by the final recipient (usually from a Bolt 11 invoice).
+   * @param recipientNodeId          id of the final recipient.
+   * @param upstream                 information about the payment origin (to link upstream to downstream when relaying a payment).
+   * @param paymentRequest           Bolt 11 invoice.
+   * @param storeInDb                whether to store data in the payments DB (e.g. when we're relaying a trampoline payment, we
+   *                                 don't want to store in the DB).
+   * @param publishEvent             whether to publish a [[fr.acinq.eclair.payment.PaymentEvent]] on success/failure (e.g. for
+   *                                 multi-part child payments, we don't want to emit events for each child, only for the whole payment).
+   * @param recordPathFindingMetrics We don't record metrics for payments that don't use path finding or that are a part of a bigger payment.
+   * @param additionalHops           additional hops that the payment state machine isn't aware of (e.g. when using trampoline, hops
+   *                                 that occur after the first trampoline node).
    */
   case class SendPaymentConfig(id: UUID,
                                parentId: UUID,

@@ -21,7 +21,7 @@ import akka.actor.{ActorContext, ActorRef, FSM}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, Btc, SatoshiLong, Script}
+import fr.acinq.bitcoin.{Block, Btc, ByteVector32, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{AnchorOutputs, AnchorOutputsZeroFeeHtlcTx, StaticRemoteKey, Wumbo}
 import fr.acinq.eclair.TestConstants._
@@ -31,12 +31,13 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer._
+import fr.acinq.eclair.io.PeerConnection.ConnectionResult
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution, Tag}
-import scodec.bits.ByteVector
+import scodec.bits.{ByteVector, HexStringSyntax}
 
 import java.net.InetSocketAddress
 import java.nio.channels.ServerSocketChannel

@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.WatchTxConfirmedTriggered
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
-import fr.acinq.eclair.payment.OutgoingPacket.{Upstream, buildCommand}
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.{Upstream, buildCommand}
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.relay.{PostRestartHtlcCleaner, Relayer}
 import fr.acinq.eclair.router.Router.ChannelHop
@@ -673,7 +673,7 @@ object PostRestartHtlcCleanerSpec {
   val (paymentHash1, paymentHash2, paymentHash3) = (Crypto.sha256(preimage1), Crypto.sha256(preimage2), Crypto.sha256(preimage3))
 
   def buildHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): UpdateAddHtlc = {
-    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, Onion.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32()))
+    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, hops, PaymentOnion.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32()))
     UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion)
   }
 
@@ -682,7 +682,7 @@ object PostRestartHtlcCleanerSpec {
   def buildHtlcOut(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = OutgoingHtlc(buildHtlc(htlcId, channelId, paymentHash))
 
   def buildFinalHtlc(htlcId: Long, channelId: ByteVector32, paymentHash: ByteVector32): DirectedHtlc = {
-    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, TestConstants.Bob.nodeParams.nodeId, channelUpdate_ab) :: Nil, Onion.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32()))
+    val (cmd, _) = buildCommand(ActorRef.noSender, Upstream.Local(UUID.randomUUID()), paymentHash, ChannelHop(a, TestConstants.Bob.nodeParams.nodeId, channelUpdate_ab) :: Nil, PaymentOnion.createSinglePartPayload(finalAmount, finalExpiry, randomBytes32()))
     IncomingHtlc(UpdateAddHtlc(channelId, htlcId, cmd.amount, cmd.paymentHash, cmd.cltvExpiry, cmd.onion))
   }
 

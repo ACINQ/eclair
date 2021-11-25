@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.Tags
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.transactions.DirectedHtlc.outgoing
 import fr.acinq.eclair.wire.protocol.{FailureMessage, TemporaryNodeFailure, UpdateAddHtlc}
 import fr.acinq.eclair.{CustomCommitmentsPlugin, MilliSatoshiLong, NodeParams, TimestampMilli}
@@ -309,18 +309,18 @@ object PostRestartHtlcCleaner {
    * succeeded or not (which may have triggered external downstream components to treat the payment as received and
    * ship some physical goods to a customer).
    */
-  private def shouldFulfill(finalPacket: IncomingPacket.FinalPacket, paymentsDb: IncomingPaymentsDb): Option[ByteVector32] =
+  private def shouldFulfill(finalPacket: IncomingPaymentPacket.FinalPacket, paymentsDb: IncomingPaymentsDb): Option[ByteVector32] =
     paymentsDb.getIncomingPayment(finalPacket.add.paymentHash) match {
       case Some(IncomingPayment(_, preimage, _, _, IncomingPaymentStatus.Received(_, _))) => Some(preimage)
       case _ => None
     }
 
-  def decryptedIncomingHtlcs(paymentsDb: IncomingPaymentsDb): PartialFunction[Either[FailureMessage, IncomingPacket], IncomingHtlc] = {
+  def decryptedIncomingHtlcs(paymentsDb: IncomingPaymentsDb): PartialFunction[Either[FailureMessage, IncomingPaymentPacket], IncomingHtlc] = {
     // When we're not the final recipient, we'll only consider HTLCs that aren't relayed downstream, so no need to look for a preimage.
-    case Right(IncomingPacket.ChannelRelayPacket(add, _, _)) => IncomingHtlc(add, None)
-    case Right(IncomingPacket.NodeRelayPacket(add, _, _, _)) => IncomingHtlc(add, None)
+    case Right(IncomingPaymentPacket.ChannelRelayPacket(add, _, _)) => IncomingHtlc(add, None)
+    case Right(IncomingPaymentPacket.NodeRelayPacket(add, _, _, _)) => IncomingHtlc(add, None)
     // When we're the final recipient, we want to know if we want to fulfill or fail.
-    case Right(p@IncomingPacket.FinalPacket(add, _)) => IncomingHtlc(add, shouldFulfill(p, paymentsDb))
+    case Right(p@IncomingPaymentPacket.FinalPacket(add, _)) => IncomingHtlc(add, shouldFulfill(p, paymentsDb))
   }
 
   /** @return incoming HTLCs that have been *cross-signed* (that potentially have been relayed). */
@@ -331,7 +331,7 @@ object PostRestartHtlcCleaner {
     channels
       .flatMap(_.commitments.remoteCommit.spec.htlcs)
       .collect(outgoing)
-      .map(IncomingPacket.decrypt(_, privateKey))
+      .map(IncomingPaymentPacket.decrypt(_, privateKey))
       .collect(decryptedIncomingHtlcs(paymentsDb))
   }
 

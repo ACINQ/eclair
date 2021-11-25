@@ -33,7 +33,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.relay.Relayer._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.DirectedHtlc.{incoming, outgoing}
@@ -1420,7 +1420,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     import f._
     val (_, htlc) = addHtlc(150000000 msat, alice, bob, alice2bob, bob2alice)
     crossSign(alice, bob, alice2bob, bob2alice)
-    bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.PaymentPacket.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
+    bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     bob2alice.forward(alice)
     bob ! CMD_SIGN()
@@ -1682,7 +1682,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val cmd = CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure))
-    val Right(fail) = OutgoingPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
+    val Right(fail) = OutgoingPaymentPacket.buildHtlcFailure(Bob.nodeParams.privateKey, cmd, htlc)
     assert(fail.id === htlc.id)
     bob ! cmd
     bob2alice.expectMsg(fail)
@@ -1755,7 +1755,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-    bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.PaymentPacket.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
+    bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     awaitCond(bob.stateData == initialState.copy(
       commitments = initialState.commitments.copy(
@@ -1834,7 +1834,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     crossSign(alice, bob, alice2bob, bob2alice)
     // Bob fails the HTLC because he cannot parse it
     val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-    bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.PaymentPacket.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
+    bob ! CMD_FAIL_MALFORMED_HTLC(htlc.id, Sphinx.hash(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION)
     val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
     bob2alice.forward(alice)
 
@@ -1860,7 +1860,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
 
     // actual test begins
     val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, htlc.id, Sphinx.PaymentPacket.hash(htlc.onionRoutingPacket), 42)
+    val fail = UpdateFailMalformedHtlc(ByteVector32.Zeroes, htlc.id, Sphinx.hash(htlc.onionRoutingPacket), 42)
     alice ! fail
     val error = alice2bob.expectMsgType[Error]
     assert(new String(error.data.toArray) === InvalidFailureCode(ByteVector32.Zeroes).getMessage)
