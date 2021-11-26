@@ -16,15 +16,12 @@
 
 package fr.acinq.eclair.integration
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.TestProbe
 import akka.util.Timeout
 import com.google.common.net.HostAndPort
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Satoshi
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
-import fr.acinq.eclair.channel.{ChannelStateChanged, NORMAL}
+import fr.acinq.eclair.channel.ChannelStateChanged
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.router.Router

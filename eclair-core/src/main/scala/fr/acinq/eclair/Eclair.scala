@@ -16,9 +16,9 @@
 
 package fr.acinq.eclair
 
-import akka.actor.typed.scaladsl.AskPattern.{Askable, schedulerFromActorSystem}
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps, ClassicSchedulerOps}
-import akka.actor.{ActorRef, typed}
+import akka.actor.ActorRef
+import akka.actor.typed.scaladsl.AskPattern.Askable
+import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -164,13 +164,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   // We constrain external identifiers. This allows uuid, long and pubkey to be used.
   private val externalIdMaxLength = 66
 
-  override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = {
-    implicit val typedScheduler: typed.Scheduler = appKit.system.scheduler.toTyped
-    appKit.switchboard.toTyped[Peer.Connect]
-      .ask[PeerConnection.ConnectionResult](ref => target.fold(
-        uri => Peer.Connect(uri, ref),
-        nodeId => Peer.Connect(nodeId, None, ref))
-      ).map(_.toString)
+  override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
+    case Left(uri) => (appKit.switchboard ? Peer.Connect(uri, ActorRef.noSender)).mapTo[PeerConnection.ConnectionResult].map(_.toString)
+    case Right(pubKey) => (appKit.switchboard ? Peer.Connect(pubKey, None, ActorRef.noSender)).mapTo[PeerConnection.ConnectionResult].map(_.toString)
   }
 
   override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String] = {

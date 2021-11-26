@@ -18,6 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
+import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.protocol.OnionMessage
@@ -36,7 +37,7 @@ object MessageRelay {
   def apply(): Behavior[Command] = {
     Behaviors.receivePartial {
       case (context, RelayMessage(switchboard, nextNodeId, msg, replyTo)) =>
-        switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult))
+        switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic)
         waitForConnection(msg, replyTo)
     }
   }

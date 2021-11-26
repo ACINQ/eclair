@@ -62,9 +62,14 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case Peer.Connect(publicKey, _, _) if publicKey == nodeParams.nodeId =>
       sender() ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
-    case c: Peer.Connect =>
+    case Peer.Connect(nodeId, address_opt, replyTo) =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(c.nodeId, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty)
+      val c = if (replyTo == ActorRef.noSender){
+        Peer.Connect(nodeId, address_opt, sender())
+      }else{
+        Peer.Connect(nodeId, address_opt, replyTo)
+      }
       peer forward c
 
     case d: Peer.Disconnect =>

@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
-import akka.actor.{ActorRef, Props, typed}
+import akka.actor.{ActorRef, Props}
 import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator.Send
@@ -68,7 +67,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       // we query the db every time because it may have been updated in the meantime (e.g. with network announcements)
       getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId) match {
         case Some(address) =>
-          connect(address, origin = self.toTyped)
+          connect(address, origin = self)
           goto(CONNECTING) using ConnectingData(address, d.nextReconnectionDelay)
         case None =>
           // we don't have an address for that peer, nothing to do
@@ -149,7 +148,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   // activate the extension only on demand, so that tests pass
   lazy val mediator = DistributedPubSub(context.system).mediator
 
-  private def connect(address: InetSocketAddress, origin: typed.ActorRef[PeerConnection.ConnectionResult]): Unit = {
+  private def connect(address: InetSocketAddress, origin: ActorRef): Unit = {
     log.info(s"connecting to $address")
     val req = ClientSpawner.ConnectionRequest(address, remoteNodeId, origin)
     if (context.system.hasExtension(Cluster) && !address.getHostName.endsWith("onion")) {

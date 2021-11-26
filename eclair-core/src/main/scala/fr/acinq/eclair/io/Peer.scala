@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
@@ -436,11 +435,11 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(storedChannels: Set[HasCommitments])
-  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: typed.ActorRef[PeerConnection.ConnectionResult]) {
+  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: ActorRef) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }
   object Connect {
-    def apply(uri: NodeURI, replyTo: typed.ActorRef[PeerConnection.ConnectionResult]): Connect = new Connect(uri.nodeId, Some(uri.address), replyTo)
+    def apply(uri: NodeURI, replyTo: ActorRef): Connect = new Connect(uri.nodeId, Some(uri.address), replyTo)
   }
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful

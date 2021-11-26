@@ -17,7 +17,6 @@
 package fr.acinq.eclair.integration
 
 import akka.actor.ActorSystem
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.testkit.{TestKit, TestProbe}
 import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
@@ -156,7 +155,7 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     sender.send(node1.switchboard, Peer.Connect(
       nodeId = node2.nodeParams.nodeId,
       address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort)),
-      sender.ref.toTyped
+      sender.ref
     ))
     sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](10 seconds)
     sender.send(node1.switchboard, Peer.OpenChannel(

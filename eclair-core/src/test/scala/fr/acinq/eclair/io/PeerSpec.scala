@@ -17,7 +17,6 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
-import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{ActorContext, ActorRef, FSM}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
@@ -106,7 +105,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
-    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None, probe.ref.toTyped))
+    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None, probe.ref))
     probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
@@ -123,7 +122,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
     // we have auto-reconnect=false so we need to manually tell the peer to reconnect
-    probe.send(peer, Peer.Connect(remoteNodeId, Some(mockAddress), probe.ref.toTyped))
+    probe.send(peer, Peer.Connect(remoteNodeId, Some(mockAddress), probe.ref))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
@@ -158,7 +157,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
-    probe.send(peer, Peer.Connect(remoteNodeId, None, probe.ref.toTyped))
+    probe.send(peer, Peer.Connect(remoteNodeId, None, probe.ref))
     probe.expectMsgType[PeerConnection.ConnectionResult.AlreadyConnected]
   }
 

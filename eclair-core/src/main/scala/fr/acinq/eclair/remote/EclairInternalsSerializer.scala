@@ -16,8 +16,7 @@
 
 package fr.acinq.eclair.remote
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, TypedActorRefOps}
-import akka.actor.{ActorRef, ExtendedActorSystem, typed}
+import akka.actor.{ActorRef, ExtendedActorSystem}
 import akka.serialization.Serialization
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.crypto.TransportHandler
@@ -130,9 +129,6 @@ object EclairInternalsSerializer {
     (path: String) => system.provider.resolveActorRef(path),
     (actor: ActorRef) => Serialization.serializedActorPath(actor))
 
-  def typedActorRefCodec[T](system: typed.ActorSystem[Nothing]): Codec[typed.ActorRef[T]] = variableSizeBytes(uint16, utf8).xmap(
-    (path: String) => ActorRefResolver.get(system).resolveActorRef(path),
-    (actor: typed.ActorRef[T]) => ActorRefResolver.get(system).toSerializationFormat(actor))
   val inetAddressCodec: Codec[InetAddress] = discriminated[InetAddress].by(uint8)
     .typecase(0, ipv4address)
     .typecase(1, ipv6address)
@@ -142,7 +138,7 @@ object EclairInternalsSerializer {
   def connectionRequestCodec(system: ExtendedActorSystem): Codec[ClientSpawner.ConnectionRequest] = (
     ("address" | inetSocketAddressCodec) ::
       ("remoteNodeId" | publicKey) ::
-      ("origin" | typedActorRefCodec[PeerConnection.ConnectionResult](system))).as[ClientSpawner.ConnectionRequest]
+      ("origin" | actorRefCodec(system))).as[ClientSpawner.ConnectionRequest]
 
   def initializeConnectionCodec(system: ExtendedActorSystem): Codec[PeerConnection.InitializeConnection] = (
     ("peer" | actorRefCodec(system)) ::
