@@ -117,13 +117,13 @@ class OnionMessagesSpec extends AnyFunSuite {
     *  Checking that the onion is relayed properly
     */
     OnionMessages.process(alice, onionForAlice) match {
-      case OnionMessages.RelayMessage(nextNodeId, onionForBob) =>
+      case OnionMessages.SendMessage(nextNodeId, onionForBob) =>
         assert(nextNodeId == bob.publicKey)
         OnionMessages.process(bob, onionForBob) match {
-          case OnionMessages.RelayMessage(nextNodeId, onionForCarol) =>
+          case OnionMessages.SendMessage(nextNodeId, onionForCarol) =>
             assert(nextNodeId == carol.publicKey)
             OnionMessages.process(carol, onionForCarol) match {
-              case OnionMessages.RelayMessage(nextNodeId, onionForDave) =>
+              case OnionMessages.SendMessage(nextNodeId, onionForDave) =>
                 assert(nextNodeId == dave.publicKey)
                 OnionMessages.process(dave, onionForDave) match {
                   case OnionMessages.ReceiveMessage(_, path_id) => assert(path_id contains hex"01234567")

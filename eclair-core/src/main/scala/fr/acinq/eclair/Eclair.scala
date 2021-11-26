@@ -523,9 +523,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
             Left(OnionMessages.Recipient(route.last, pathId)),
             Nil,
             userCustomTlvs)
-        val relay = appKit.system.spawnAnonymous(MessageRelay())
-        relay.ask((ref: typed.ActorRef[MessageRelay.Status]) => MessageRelay.RelayMessage(appKit.switchboard, nextNodeId, message, ref))
-          .map {
+        (appKit.switchboard ? OnionMessages.SendMessage(nextNodeId, message)).mapTo[MessageRelay.Status].map {
             case MessageRelay.Success => SendOnionMessageResponse(sent = true, None)
             case MessageRelay.Failure(f) => SendOnionMessageResponse(sent = false, Some(f.toString))
           }

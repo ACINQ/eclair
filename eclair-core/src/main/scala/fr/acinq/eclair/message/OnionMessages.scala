@@ -94,7 +94,7 @@ object OnionMessages {
   // @formatter:off
   sealed trait Action
   case class DropMessage(reason: DropReason) extends Action
-  case class RelayMessage(nextNodeId: PublicKey, dataToRelay: OnionMessage) extends Action
+  case class SendMessage(nextNodeId: PublicKey, message: OnionMessage) extends Action
   case class ReceiveMessage(finalPayload: FinalPayload, pathId: Option[ByteVector]) extends Action
 
   sealed trait DropReason
@@ -119,7 +119,7 @@ object OnionMessages {
                 MessageOnionCodecs.blindedRelayPayloadCodec.decode(decrypted.bits) match {
                   case Attempt.Successful(DecodeResult(relayNext, _)) =>
                     val toRelay = OnionMessage(relayNext.nextBlindingOverride.getOrElse(nextBlindingKey), nextPacket)
-                    RelayMessage(relayNext.nextNodeId, toRelay)
+                    SendMessage(relayNext.nextNodeId, toRelay)
                   case Attempt.Failure(err) => DropMessage(CannotDecodeBlindedPayload(err.message))
                 }
               case Failure(err) => DropMessage(CannotDecryptBlindedPayload(err.getMessage))

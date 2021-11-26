@@ -250,9 +250,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
           OnionMessages.process(nodeParams.privateKey, msg) match {
             case OnionMessages.DropMessage(reason) =>
               log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
-            case OnionMessages.RelayMessage(nextNodeId, dataToRelay) =>
-              val relay = context.spawnAnonymous(MessageRelay())
-              relay ! MessageRelay.RelayMessage(switchboard, nextNodeId, dataToRelay, ActorRef.noSender.toTyped)
+            case send: OnionMessages.SendMessage =>
+              switchboard ! send
             case received: OnionMessages.ReceiveMessage =>
               log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
               context.system.eventStream.publish(received)
