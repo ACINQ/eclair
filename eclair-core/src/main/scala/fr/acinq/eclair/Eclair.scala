@@ -161,14 +161,16 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
 
   implicit val ec: ExecutionContext = appKit.system.dispatcher
 
-  implicit val typedSystem: typed.ActorSystem[Nothing] = appKit.system.toTyped
-
   // We constrain external identifiers. This allows uuid, long and pubkey to be used.
   private val externalIdMaxLength = 66
 
-  override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = target match {
-    case Left(uri) => appKit.switchboard.toTyped.ask((ref: typed.ActorRef[PeerConnection.ConnectionResult]) => Peer.Connect(uri, ref)).map(_.toString)
-    case Right(pubKey) => appKit.switchboard.toTyped.ask((ref: typed.ActorRef[PeerConnection.ConnectionResult]) => Peer.Connect(pubKey, None, ref)).map(_.toString)
+  override def connect(target: Either[NodeURI, PublicKey])(implicit timeout: Timeout): Future[String] = {
+    implicit val typedScheduler: typed.Scheduler = appKit.system.scheduler.toTyped
+    appKit.switchboard.toTyped[Peer.Connect]
+      .ask[PeerConnection.ConnectionResult](ref => target.fold(
+        uri => Peer.Connect(uri, ref),
+        nodeId => Peer.Connect(nodeId, None, ref))
+      ).map(_.toString)
   }
 
   override def disconnect(nodeId: PublicKey)(implicit timeout: Timeout): Future[String] = {

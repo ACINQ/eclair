@@ -130,8 +130,9 @@ object EclairInternalsSerializer {
     (path: String) => system.provider.resolveActorRef(path),
     (actor: ActorRef) => Serialization.serializedActorPath(actor))
 
-  def typedActorRefCodec[T](system: ExtendedActorSystem):Codec[typed.ActorRef[T]] = actorRefCodec(system).xmap(_.toTyped, _.toClassic)
-
+  def typedActorRefCodec[T](system: typed.ActorSystem[Nothing]): Codec[typed.ActorRef[T]] = variableSizeBytes(uint16, utf8).xmap(
+    (path: String) => ActorRefResolver.get(system).resolveActorRef(path),
+    (actor: typed.ActorRef[T]) => ActorRefResolver.get(system).toSerializationFormat(actor))
   val inetAddressCodec: Codec[InetAddress] = discriminated[InetAddress].by(uint8)
     .typecase(0, ipv4address)
     .typecase(1, ipv6address)

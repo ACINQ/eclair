@@ -23,17 +23,15 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.wire.protocol.OnionMessage
 
 object MessageRelay {
-  sealed trait Status
-
-  case object Success extends Status
-
-  case class Failure(failure: PeerConnection.ConnectionResult.Failure) extends Status
-
+  // @formatter:off
   sealed trait Command
-
   case class RelayMessage(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, replyTo: typed.ActorRef[Status]) extends Command
-
   case class WrappedConnectionResult(result: PeerConnection.ConnectionResult) extends Command
+
+  sealed trait Status
+  case object Success extends Status
+  case class Failure(failure: PeerConnection.ConnectionResult.Failure) extends Status
+  // @formatter:on
 
   def apply(): Behavior[Command] = {
     Behaviors.receivePartial {
