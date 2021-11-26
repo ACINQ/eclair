@@ -16,78 +16,72 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicActorSystemOps}
-import akka.actor.{ActorContext, ActorRef}
-import akka.testkit.TestProbe
+import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
+import akka.actor.typed.ActorRef
+import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.io.Peer.ChannelFactory
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
+import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.protocol.OnionMessage
-import fr.acinq.eclair.{TestKitBaseClass, randomKey}
-import org.scalatest.funsuite.AnyFunSuiteLike
+import org.scalatest.Outcome
+import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
-case class FakeChannelFactory(channel: TestProbe) extends ChannelFactory {
-  override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
-    channel.ref
-  }
-}
-
-class MessageRelaySpec extends TestKitBaseClass with AnyFunSuiteLike {
+class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
   val aliceId: PublicKey = Alice.nodeParams.nodeId
   val bobId: PublicKey = Bob.nodeParams.nodeId
 
-  test("relay with new connection") {
-    val switchboard = TestProbe()
-    val peerConnection = TestProbe()
+  case class FixtureParam(relay: ActorRef[MessageRelay.Command], switchboard: TestProbe[Peer.Connect], peerConnection: TestProbe[OnionMessage], probe: TestProbe[MessageRelay.Status])
 
-    val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
-
-    val probe = TestProbe()
-
-    val relay = system.spawnAnonymous(MessageRelay())
-    relay ! MessageRelay.RelayMessage(switchboard.ref, bobId, message, probe.ref.toTyped)
-
-    val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
-    assert(connectToNextPeer.nodeId === bobId)
-    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.Connected(peerConnection.ref)
-    peerConnection.expectMsgType[OnionMessage]
-    probe.expectMsg(MessageRelay.Success)
+  override def withFixture(test: OneArgTest): Outcome = {
+    val switchboard = TestProbe[Peer.Connect]("switchboard")
+    val peerConnection = TestProbe[OnionMessage]("peerConnection")
+    val probe = TestProbe[MessageRelay.Status]("probe")
+    val relay = testKit.spawn(MessageRelay())
+    try {
+      withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, peerConnection, probe)))
+    } finally {
+      testKit.stop(relay)
+    }
   }
 
-  test("relay with existing connection") {
-    val switchboard = TestProbe()
-    val peerConnection = TestProbe()
+  test("relay with new connection") { f =>
+    import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    relay ! MessageRelay.RelayMessage(switchboard.ref.toClassic, bobId, message, probe.ref)
 
-    val probe = TestProbe()
-
-    val relay = system.spawnAnonymous(MessageRelay())
-    relay ! MessageRelay.RelayMessage(switchboard.ref, bobId, message, probe.ref.toTyped)
-
-    val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
+    val connectToNextPeer = switchboard.expectMessageType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
-    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref)
-    peerConnection.expectMsgType[OnionMessage]
-    probe.expectMsg(MessageRelay.Success)
+    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.Connected(peerConnection.ref.toClassic)
+    peerConnection.expectMessage(message)
+    probe.expectMessage(MessageRelay.Success)
   }
 
-  test("can't open new connection") {
-    val switchboard = TestProbe()
-    val peerConnection = TestProbe()
+  test("relay with existing connection") { f =>
+    import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    relay ! MessageRelay.RelayMessage(switchboard.ref.toClassic, bobId, message, probe.ref)
 
-    val probe = TestProbe()
+    val connectToNextPeer = switchboard.expectMessageType[Peer.Connect]
+    assert(connectToNextPeer.nodeId === bobId)
+    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic)
+    peerConnection.expectMessage(message)
+    probe.expectMessage(MessageRelay.Success)
+  }
 
-    val relay = system.spawnAnonymous(MessageRelay())
-    relay ! MessageRelay.RelayMessage(switchboard.ref, bobId, message, probe.ref.toTyped)
+  test("can't open new connection") { f =>
+    import f._
 
-    val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
+    val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    relay ! MessageRelay.RelayMessage(switchboard.ref.toClassic, bobId, message, probe.ref)
+
+    val connectToNextPeer = switchboard.expectMessageType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
     connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.NoAddressFound
-    probe.expectMsg(MessageRelay.Failure(PeerConnection.ConnectionResult.NoAddressFound))
+    probe.expectMessage(MessageRelay.Failure(PeerConnection.ConnectionResult.NoAddressFound))
   }
 }
