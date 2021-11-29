@@ -16,7 +16,6 @@
 
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
 import akka.actor.{ActorRef, Props}
 import akka.cluster.Cluster
 import akka.cluster.pubsub.DistributedPubSub
@@ -27,8 +26,9 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
 import fr.acinq.eclair.db.{NetworkDb, PeersDb}
 import fr.acinq.eclair.io.Monitoring.Metrics
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams, TimestampMilli}
 
+import java.net.InetSocketAddress
 import scala.concurrent.duration.{FiniteDuration, _}
 import scala.util.Random
 
@@ -130,15 +130,15 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
     case Event(TickReconnect, _) => stay()
 
-    case Event(Peer.Connect(_, hostAndPort_opt), _) =>
+    case Event(Peer.Connect(_, hostAndPort_opt, replyTo), _) =>
       // manual connection requests happen completely independently of the automated reconnection process;
       // we initiate a connection but don't modify our state.
       // if we are already connecting/connected, the peer will kill any duplicate connections
       hostAndPort_opt
         .map(hostAndPort2InetSocketAddress)
         .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
-        case Some(address) => connect(address, origin = sender())
-        case None => sender() ! PeerConnection.ConnectionResult.NoAddressFound
+        case Some(address) => connect(address, origin = replyTo)
+        case None => replyTo ! PeerConnection.ConnectionResult.NoAddressFound
       }
       stay()
   }

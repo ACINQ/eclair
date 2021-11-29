@@ -18,6 +18,12 @@ Node operators should watch this file very regularly.
 An event is also sent to the event stream for every such notification.
 This lets plugins notify the node operator via external systems (push notifications, email, etc).
 
+### Initial support for onion messages
+
+Eclair now supports the feature `option_onion_messages`. If this feature is enabled, eclair will relay onion messages.
+It can also send onion messages with the `sendonionmessage` API.
+Messages sent to Eclair will be ignored.
+
 ### API changes
 
 #### Timestamps
@@ -59,6 +65,14 @@ Examples:
     }
   }
   ```
+  
+#### Sending onion messages
+
+You can now send onion messages with `sendonionmessage`.
+It expects `--route` a list of `nodeId` to send the message through, the last one being the recipient, and `--content` the content of the message as an encoded TLV stream in hexadecimal.
+It also accepts `--pathId` as an encoded TLV stream in hexadecimal.
+Sending to a blinded route (as a reply to a previous message) is not supported.
+
 
 This release contains many other API updates:
 

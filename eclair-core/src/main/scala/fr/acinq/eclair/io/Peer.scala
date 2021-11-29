@@ -33,9 +33,10 @@ import fr.acinq.eclair.blockchain.{OnChainAddressGenerator, OnChainChannelFunder
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, RoutingMessage, UnknownMessage, Warning}
+import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -51,7 +52,7 @@ import scala.concurrent.ExecutionContext
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory, switchboard: ActorRef) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -98,8 +99,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   when(CONNECTED) {
     dropStaleMessages {
-      case Event(_: Peer.Connect, _) =>
-        sender() ! PeerConnection.ConnectionResult.AlreadyConnected
+      case Event(c: Peer.Connect, d: ConnectedData) =>
+        c.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(d.peerConnection)
         stay()
 
       case Event(Peer.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
@@ -242,6 +243,20 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
+
+      case Event(msg: OnionMessage, _: ConnectedData) =>
+        if (nodeParams.features.hasFeature(Features.OnionMessages)) {
+          OnionMessages.process(nodeParams.privateKey, msg) match {
+            case OnionMessages.DropMessage(reason) =>
+              log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
+            case send: OnionMessages.SendMessage =>
+              switchboard ! send
+            case received: OnionMessages.ReceiveMessage =>
+              log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
+              context.system.eventStream.publish(received)
+          }
+        }
+        stay()
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
@@ -392,7 +407,7 @@ object Peer {
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory, origin_opt))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory, switchboard: ActorRef): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard))
 
   // @formatter:off
 
@@ -420,11 +435,11 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(storedChannels: Set[HasCommitments])
-  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
+  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: ActorRef) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }
   object Connect {
-    def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
+    def apply(uri: NodeURI, replyTo: ActorRef): Connect = new Connect(uri.nodeId, Some(uri.address), replyTo)
   }
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful

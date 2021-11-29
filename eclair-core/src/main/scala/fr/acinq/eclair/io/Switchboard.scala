@@ -16,12 +16,14 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
 
@@ -57,12 +59,17 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
   def normal(peersWithChannels: Set[PublicKey]): Receive = {
 
-    case Peer.Connect(publicKey, _) if publicKey == nodeParams.nodeId =>
+    case Peer.Connect(publicKey, _, _) if publicKey == nodeParams.nodeId =>
       sender() ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
-    case c: Peer.Connect =>
+    case Peer.Connect(nodeId, address_opt, replyTo) =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(c.nodeId, offlineChannels = Set.empty)
+      val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty)
+      val c = if (replyTo == ActorRef.noSender){
+        Peer.Connect(nodeId, address_opt, sender())
+      }else{
+        Peer.Connect(nodeId, address_opt, replyTo)
+      }
       peer forward c
 
     case d: Peer.Disconnect =>
@@ -92,6 +99,10 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case Symbol("peers") => sender() ! context.children
 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
+
+    case OnionMessages.SendMessage(nextNodeId, dataToRelay) =>
+      val relay = context.spawnAnonymous(MessageRelay())
+      relay ! MessageRelay.RelayMessage(self, nextNodeId, dataToRelay, sender().toTyped)
   }
 
   /**
@@ -131,7 +142,7 @@ object Switchboard {
 
   case class SimplePeerFactory(nodeParams: NodeParams, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory) extends PeerFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef =
-      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory), name = peerActorName(remoteNodeId))
+      context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self), name = peerActorName(remoteNodeId))
   }
 
   def props(nodeParams: NodeParams, peerFactory: PeerFactory) = Props(new Switchboard(nodeParams, peerFactory))

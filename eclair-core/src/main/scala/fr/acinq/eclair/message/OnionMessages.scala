@@ -74,9 +74,10 @@ object OnionMessages {
                    blindingSecret: PrivateKey,
                    intermediateNodes: Seq[IntermediateNode],
                    destination: Either[Recipient, Sphinx.RouteBlinding.BlindedRoute],
-                   content: List[OnionMessagePayloadTlv]): (PublicKey, OnionMessage) = {
+                   content: Seq[OnionMessagePayloadTlv],
+                   userCustomTlvs: Seq[GenericTlv] = Nil): (PublicKey, OnionMessage) = {
     val route = buildRoute(blindingSecret, intermediateNodes, destination)
-    val lastPayload = MessageOnionCodecs.finalPerHopPayloadCodec.encode(FinalPayload(TlvStream(EncryptedData(route.encryptedPayloads.last) :: content))).require.bytes
+    val lastPayload = MessageOnionCodecs.finalPerHopPayloadCodec.encode(FinalPayload(TlvStream(EncryptedData(route.encryptedPayloads.last) +: content, userCustomTlvs))).require.bytes
     val payloads = route.encryptedPayloads.dropRight(1).map(encTlv => MessageOnionCodecs.relayPerHopPayloadCodec.encode(RelayPayload(TlvStream(EncryptedData(encTlv)))).require.bytes) :+ lastPayload
     val payloadSize = payloads.map(_.length + Sphinx.MacLength).sum
     val packetSize = if (payloadSize <= 1300) {
@@ -93,7 +94,7 @@ object OnionMessages {
   // @formatter:off
   sealed trait Action
   case class DropMessage(reason: DropReason) extends Action
-  case class RelayMessage(nextNodeId: PublicKey, dataToRelay: OnionMessage) extends Action
+  case class SendMessage(nextNodeId: PublicKey, message: OnionMessage) extends Action
   case class ReceiveMessage(finalPayload: FinalPayload, pathId: Option[ByteVector]) extends Action
 
   sealed trait DropReason
@@ -118,7 +119,7 @@ object OnionMessages {
                 MessageOnionCodecs.blindedRelayPayloadCodec.decode(decrypted.bits) match {
                   case Attempt.Successful(DecodeResult(relayNext, _)) =>
                     val toRelay = OnionMessage(relayNext.nextBlindingOverride.getOrElse(nextBlindingKey), nextPacket)
-                    RelayMessage(relayNext.nextNodeId, toRelay)
+                    SendMessage(relayNext.nextNodeId, toRelay)
                   case Attempt.Failure(err) => DropMessage(CannotDecodeBlindedPayload(err.message))
                 }
               case Failure(err) => DropMessage(CannotDecryptBlindedPayload(err.getMessage))

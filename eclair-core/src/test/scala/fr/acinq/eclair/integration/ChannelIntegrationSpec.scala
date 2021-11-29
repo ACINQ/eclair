@@ -530,9 +530,10 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       // reconnection
       sender.send(fundee.switchboard, Peer.Connect(
         nodeId = funder.nodeParams.nodeId,
-        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort))
+        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort)),
+        sender.ref
       ))
-      sender.expectMsgAnyOf(30 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
+      sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](30 seconds)
 
       fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE(ActorRef.noSender))
       val fundeeState = sender.expectMsgType[RES_GETSTATE[ChannelState]].state
