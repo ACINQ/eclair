@@ -82,7 +82,7 @@ This release contains many other API updates:
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--ignoreShortChannelIds` to specify channels you want to be ignored in path-finding (#1969)
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--maxFeeMsat` to specify an upper bound of fees (#1969)
 - `getsentinfo` output includes `failedNode` field for all failed routes
-- for `payinvoice` and `sendtonode`, `--feeThresholdSat` has been renamed to `--maxFeeFlat`
+- for `payinvoice` and `sendtonode`, `--feeThresholdSat` has been renamed to `--maxFeeFlatSat`
 
 Have a look at our [API documentation](https://acinq.github.io/eclair) for more details.
 
