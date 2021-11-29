@@ -28,6 +28,7 @@ import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentPacketSpec._
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.SendMultiPartPayment
+import fr.acinq.eclair.payment.send.PaymentError.UnsupportedFeatures
 import fr.acinq.eclair.payment.send.PaymentInitiator._
 import fr.acinq.eclair.payment.send.{PaymentError, PaymentInitiator, PaymentLifecycle}
 import fr.acinq.eclair.router.RouteNotFound
@@ -122,6 +123,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val fail = sender.expectMsgType[PaymentFailed]
     assert(fail.id === id)
     assert(fail.failures.head.isInstanceOf[LocalFailure])
+    assert(fail.failures.head.asInstanceOf[LocalFailure].t === UnsupportedFeatures(pr.features.features))
   }
 
   test("forward payment with pre-defined route") { f =>

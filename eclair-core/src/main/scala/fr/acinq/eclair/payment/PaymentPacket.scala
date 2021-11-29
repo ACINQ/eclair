@@ -213,7 +213,10 @@ object OutgoingPaymentPacket {
    *         - the trampoline onion to include in final payload of a normal onion
    */
   def buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: Seq[NodeHop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
-    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PaymentOnion.PerHopPayload](finalPayload))) {
+    // NB: the final payload will never reach the recipient, since the next-to-last trampoline hop will convert that to a legacy payment
+    // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
+    val dummyFinalPayload = PaymentOnion.createSinglePartPayload(finalPayload.amount, finalPayload.expiry, finalPayload.paymentSecret, None)
+    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PaymentOnion.PerHopPayload](dummyFinalPayload))) {
       case ((amount, expiry, payloads), hop) =>
         // The next-to-last trampoline hop must include invoice data to indicate the conversion to a legacy payment.
         val payload = if (payloads.length == 1) {

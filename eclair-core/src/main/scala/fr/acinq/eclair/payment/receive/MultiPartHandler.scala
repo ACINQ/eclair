@@ -22,7 +22,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.{ByteVector32, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
@@ -71,7 +71,13 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, Tags.FailureType(cmdFail)).increment()
               PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.add.channelId, cmdFail)
             case None =>
-              log.info("received payment for amount={} totalAmount={}", p.add.amountMsat, p.payload.totalAmount)
+              // We log whether the sender included the payment metadata field.
+              // We always set it in our invoices to test whether senders support it.
+              // Once all incoming payments correctly set that field, we can make it mandatory.
+              p.payload.paymentMetadata match {
+                case Some(paymentMetadata) => log.info("received payment for amount={} totalAmount={} paymentMetadata={}", p.add.amountMsat, p.payload.totalAmount, paymentMetadata.toHex)
+                case None => log.info("received payment for amount={} totalAmount={} without payment metadata", p.add.amountMsat, p.payload.totalAmount)
+              }
               pendingPayments.get(p.add.paymentHash) match {
                 case Some((_, handler)) =>
                   handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)
@@ -223,12 +229,25 @@ object MultiPartHandler {
               val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
               val paymentHash = Crypto.sha256(paymentPreimage)
               val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
+              val paymentMetadata = Some(ByteVector64.Zeroes.bytes)
               val invoiceFeatures = {
                 val activatedInvoiceFeatures = nodeParams.features.invoiceFeatures().activated.map { case (f, s) => f.supportBit(s) }.toSet
                 val allInvoiceFeatures = if (nodeParams.enableTrampolinePayment) activatedInvoiceFeatures + Features.TrampolinePayment.optional else activatedInvoiceFeatures
                 allInvoiceFeatures.toSeq
               }
-              val paymentRequest = PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, description, nodeParams.minFinalExpiryDelta, fallbackAddress_opt, expirySeconds = Some(expirySeconds), extraHops = extraHops, features = PaymentRequestFeatures(invoiceFeatures: _*))
+              val paymentRequest = PaymentRequest(
+                nodeParams.chainHash,
+                amount_opt,
+                paymentHash,
+                nodeParams.privateKey,
+                description,
+                nodeParams.minFinalExpiryDelta,
+                fallbackAddress_opt,
+                expirySeconds = Some(expirySeconds),
+                extraHops = extraHops,
+                paymentMetadata = paymentMetadata,
+                features = PaymentRequestFeatures(invoiceFeatures: _*)
+              )
               context.log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
               nodeParams.db.payments.addIncomingPayment(paymentRequest, paymentPreimage, paymentType)
               paymentRequest
