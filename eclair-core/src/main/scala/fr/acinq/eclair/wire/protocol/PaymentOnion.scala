@@ -156,6 +156,12 @@ object OnionPaymentPayloadTlv {
   case class OutgoingNodeId(nodeId: PublicKey) extends OnionPaymentPayloadTlv
 
   /**
+   * When payment metadata is included in a Bolt 9 invoice, we should send it as-is to the recipient.
+   * This lets recipients generate invoices without having to store anything on their side until the invoice is paid.
+   */
+  case class PaymentMetadata(data: ByteVector) extends OnionPaymentPayloadTlv
+
+  /**
    * Invoice feature bits. Only included for intermediate trampoline nodes when they should convert to a legacy payment
    * because the final recipient doesn't support trampoline.
    */
@@ -242,6 +248,7 @@ object PaymentOnion {
     val paymentSecret: ByteVector32
     val totalAmount: MilliSatoshi
     val paymentPreimage: Option[ByteVector32]
+    val paymentMetadata: Option[ByteVector]
   }
 
   case class RelayLegacyPayload(outgoingChannelId: ShortChannelId, amountToForward: MilliSatoshi, outgoingCltv: CltvExpiry) extends ChannelRelayPayload with LegacyFormat
@@ -267,6 +274,7 @@ object PaymentOnion {
       case totalAmount => totalAmount
     }).getOrElse(amountToForward)
     val paymentSecret = records.get[PaymentData].map(_.secret)
+    val paymentMetadata = records.get[PaymentMetadata].map(_.data)
     val invoiceFeatures = records.get[InvoiceFeatures].map(_.features)
     val invoiceRoutingInfo = records.get[InvoiceRoutingInfo].map(_.extraHops)
   }
@@ -280,6 +288,7 @@ object PaymentOnion {
       case totalAmount => totalAmount
     }).getOrElse(amount)
     override val paymentPreimage = records.get[KeySend].map(_.paymentPreimage)
+    override val paymentMetadata = records.get[PaymentMetadata].map(_.data)
   }
 
   def createNodeRelayPayload(amount: MilliSatoshi, expiry: CltvExpiry, nextNodeId: PublicKey): NodeRelayPayload =
@@ -289,14 +298,21 @@ object PaymentOnion {
   def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload = {
     val tlvs = Seq[OnionPaymentPayloadTlv](AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(targetNodeId), InvoiceFeatures(invoice.features.toByteVector), InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
     val tlvs2 = invoice.paymentSecret.map(s => tlvs :+ PaymentData(s, totalAmount)).getOrElse(tlvs)
-    NodeRelayPayload(TlvStream(tlvs2))
+    val tlvs3 = invoice.paymentMetadata.map(m => tlvs2 :+ PaymentMetadata(m)).getOrElse(tlvs2)
+    NodeRelayPayload(TlvStream(tlvs3))
   }
 
-  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload =
-    FinalTlvPayload(TlvStream(Seq(AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount)), userCustomTlvs))
+  def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = {
+    val tlvs = Seq[OnionPaymentPayloadTlv](AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount))
+    val tlvs2 = paymentMetadata.map(m => tlvs :+ PaymentMetadata(m)).getOrElse(tlvs)
+    FinalTlvPayload(TlvStream(tlvs2, userCustomTlvs))
+  }
 
-  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload =
-    FinalTlvPayload(TlvStream(AmountToForward(amount) +: OutgoingCltv(expiry) +: PaymentData(paymentSecret, totalAmount) +: additionalTlvs, userCustomTlvs))
+  def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = {
+    val tlvs = Seq[OnionPaymentPayloadTlv](AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount))
+    val tlvs2 = paymentMetadata.map(m => tlvs :+ PaymentMetadata(m)).getOrElse(tlvs)
+    FinalTlvPayload(TlvStream(tlvs2 ++ additionalTlvs, userCustomTlvs))
+  }
 
   /** Create a trampoline outer payload. */
   def createTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, trampolinePacket: OnionRoutingPacket): FinalPayload = {
@@ -340,6 +356,8 @@ object PaymentOnionCodecs {
 
   private val outgoingNodeId: Codec[OutgoingNodeId] = (("length" | constant(hex"21")) :: ("node_id" | publicKey)).as[OutgoingNodeId]
 
+  private val paymentMetadata: Codec[PaymentMetadata] = variableSizeBytesLong(varintoverflow, "payment_metadata" | bytes).as[PaymentMetadata]
+
   private val invoiceFeatures: Codec[InvoiceFeatures] = variableSizeBytesLong(varintoverflow, bytes).as[InvoiceFeatures]
 
   private val invoiceRoutingInfo: Codec[InvoiceRoutingInfo] = variableSizeBytesLong(varintoverflow, list(listOfN(uint8, PaymentRequest.Codecs.extraHopCodec))).as[InvoiceRoutingInfo]
@@ -355,6 +373,7 @@ object PaymentOnionCodecs {
     .typecase(UInt64(8), paymentData)
     .typecase(UInt64(10), encryptedRecipientData)
     .typecase(UInt64(12), blindingPoint)
+    .typecase(UInt64(16), paymentMetadata)
     // Types below aren't specified - use cautiously when deploying (be careful with backwards-compatibility).
     .typecase(UInt64(66097), invoiceFeatures)
     .typecase(UInt64(66098), outgoingNodeId)

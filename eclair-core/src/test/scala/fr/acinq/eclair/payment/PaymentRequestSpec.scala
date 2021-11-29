@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.Mandatory
-import fr.acinq.eclair.Features.{PaymentSecret, _}
+import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
 import fr.acinq.eclair.payment.PaymentRequest._
 import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
 import org.scalatest.funsuite.AnyFunSuite
@@ -309,6 +309,22 @@ class PaymentRequestSpec extends AnyFunSuite {
     assert(pr.minFinalCltvExpiryDelta === Some(CltvExpiryDelta(10)))
     assert(pr.routingInfo === Seq(Seq(ExtraHop(PublicKey(hex"03d06758583bb5154774a6eb221b1276c9e82d65bbaceca806d90e20c108f4b1c7"), ShortChannelId("589390x3312x1"), 1000 msat, 2500, CltvExpiryDelta(40)))))
     assert(PaymentRequest.write(pr.sign(priv)) === ref)
+  }
+
+  test("On mainnet, please send 0.01 BTC with payment metadata 0x01fafaf0") {
+    val ref = "lnbc10m1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqdp9wpshjmt9de6zqmt9w3skgct5vysxjmnnd9jx2mq8q8a04uqsp5zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zygs9q2gqqqqqqsgq7hf8he7ecf7n4ffphs6awl9t6676rrclv9ckg3d3ncn7fct63p6s365duk5wrk202cfy3aj5xnnp5gs3vrdvruverwwq7yzhkf5a3xqpd05wjc"
+    val pr = PaymentRequest.read(ref)
+    assert(pr.prefix == "lnbc")
+    assert(pr.amount === Some(1000000000 msat))
+    assert(pr.paymentHash.bytes == hex"0001020304050607080900010203040506070809000102030405060708090102")
+    assert(pr.features.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, PaymentMetadata -> Mandatory))
+    assert(pr.timestamp == TimestampSecond(1496314658L))
+    assert(pr.nodeId == PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
+    assert(pr.paymentSecret === Some(ByteVector32(hex"1111111111111111111111111111111111111111111111111111111111111111")))
+    assert(pr.description == Left("payment metadata inside"))
+    assert(pr.paymentMetadata === Some(hex"01fafaf0"))
+    assert(pr.tags.size == 5)
+    assert(PaymentRequest.write(pr.sign(priv)) == ref)
   }
 
   test("reject invalid invoices") {

@@ -134,7 +134,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, SendPaymentToRoute(finalAmount, finalAmount, pr, ignoredFinalExpiryDelta, route, None, None, None, 0 msat, CltvExpiryDelta(0), Nil))
     val payment = sender.expectMsgType[SendPaymentToRouteResponse]
     payFsm.expectMsg(SendPaymentConfig(payment.paymentId, payment.parentId, None, paymentHash, finalAmount, c, Upstream.Local(payment.paymentId), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = false, Nil))
-    payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.createSinglePartPayload(finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1), pr.paymentSecret.get)))
+    payFsm.expectMsg(PaymentLifecycle.SendPaymentToRoute(sender.ref, Left(route), PaymentOnion.createSinglePartPayload(finalAmount, finalExpiryDelta.toCltvExpiry(nodeParams.currentBlockHeight + 1), pr.paymentSecret.get, pr.paymentMetadata)))
   }
 
   test("forward single-part payment when multi-part deactivated", Tag("mpp_disabled")) { f =>
@@ -156,7 +156,7 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     sender.send(initiator, req)
     val id = sender.expectMsgType[UUID]
     multiPartPayFsm.expectMsg(SendPaymentConfig(id, id, None, paymentHash, finalAmount + 100.msat, c, Upstream.Local(id), Some(pr), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil))
-    multiPartPayFsm.expectMsg(SendMultiPartPayment(sender.ref, pr.paymentSecret.get, c, finalAmount + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight), 1, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
+    multiPartPayFsm.expectMsg(SendMultiPartPayment(sender.ref, pr.paymentSecret.get, c, finalAmount + 100.msat, req.finalExpiry(nodeParams.currentBlockHeight), 1, pr.paymentMetadata, routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams))
   }
 
   test("forward multi-part payment with pre-defined route") { f =>

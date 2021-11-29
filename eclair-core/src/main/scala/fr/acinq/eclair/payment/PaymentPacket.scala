@@ -117,7 +117,7 @@ object IncomingPaymentPacket {
     } else {
       // We merge contents from the outer and inner payloads.
       // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-      Right(FinalPacket(add, PaymentOnion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret)))
+      Right(FinalPacket(add, PaymentOnion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata)))
     }
   }
 

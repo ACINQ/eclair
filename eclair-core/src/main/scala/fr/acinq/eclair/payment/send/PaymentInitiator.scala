@@ -59,9 +59,9 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, PaymentSecretMissing) :: Nil)
         case Some(paymentSecret) if r.paymentRequest.features.allowMultiPart && nodeParams.features.hasFeature(BasicMultiPartPayment) =>
           val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
-          fsm ! SendMultiPartPayment(sender(), paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.assistedRoutes, r.routeParams, userCustomTlvs = r.userCustomTlvs)
+          fsm ! SendMultiPartPayment(sender(), paymentSecret, r.recipientNodeId, r.recipientAmount, finalExpiry, r.maxAttempts, r.paymentRequest.paymentMetadata, r.assistedRoutes, r.routeParams, userCustomTlvs = r.userCustomTlvs)
         case Some(paymentSecret) =>
-          val finalPayload = PaymentOnion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.userCustomTlvs)
+          val finalPayload = PaymentOnion.createSinglePartPayload(r.recipientAmount, finalExpiry, paymentSecret, r.paymentRequest.paymentMetadata, r.userCustomTlvs)
           val fsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
           fsm ! PaymentLifecycle.SendPaymentToNode(sender(), r.recipientNodeId, finalPayload, r.maxAttempts, r.assistedRoutes, r.routeParams)
       }
@@ -140,11 +140,11 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
           val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, trampoline, r.trampolineFees, r.trampolineExpiryDelta)
-          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
+          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, r.paymentRequest.paymentMetadata, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
         case Nil =>
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, r.paymentRequest.paymentSecret.get), r.paymentRequest.routingInfo)
+          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, r.recipientAmount, finalExpiry, r.paymentRequest.paymentSecret.get, r.paymentRequest.paymentMetadata), r.paymentRequest.routingInfo)
         case _ =>
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineMultiNodeNotSupported) :: Nil)
       }
@@ -156,9 +156,9 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       NodeHop(trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
     )
     val finalPayload = if (r.paymentRequest.features.allowMultiPart) {
-      PaymentOnion.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
+      PaymentOnion.createMultiPartPayload(r.recipientAmount, r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get, r.paymentRequest.paymentMetadata)
     } else {
-      PaymentOnion.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get)
+      PaymentOnion.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get, r.paymentRequest.paymentMetadata)
     }
     // We assume that the trampoline node supports multi-part payments (it should).
     val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (r.paymentRequest.features.allowTrampoline) {
@@ -175,7 +175,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
     val trampolineSecret = randomBytes32()
     val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, r.trampolineNodeId, trampolineFees, trampolineExpiryDelta)
     val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
-    fsm ! SendMultiPartPayment(self, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, nodeParams.maxPaymentAttempts, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
+    fsm ! SendMultiPartPayment(self, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, nodeParams.maxPaymentAttempts, r.paymentRequest.paymentMetadata, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
   }
 
 }
