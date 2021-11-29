@@ -525,7 +525,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
             case MessageRelay.Success => SendOnionMessageResponse(sent = true, None)
             case MessageRelay.Failure(f) => SendOnionMessageResponse(sent = false, Some(f.toString))
           }
-      case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, Some(cause.message)))
+      case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}")))
     }
 
   }
