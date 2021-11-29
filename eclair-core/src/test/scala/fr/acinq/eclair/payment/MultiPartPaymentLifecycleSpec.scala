@@ -440,7 +440,7 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
 
     val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(cfg.id)
     assert(outgoing.status.isInstanceOf[OutgoingPaymentStatus.Failed])
-    assert(outgoing.status.asInstanceOf[OutgoingPaymentStatus.Failed].failures === Seq(FailureSummary(FailureType.LOCAL, RouteNotFound.getMessage, Nil)))
+    assert(outgoing.status.asInstanceOf[OutgoingPaymentStatus.Failed].failures === Seq(FailureSummary(FailureType.LOCAL, RouteNotFound.getMessage, Nil, None)))
 
     sender.expectTerminated(payFsm)
     sender.expectNoMessage(100 millis)

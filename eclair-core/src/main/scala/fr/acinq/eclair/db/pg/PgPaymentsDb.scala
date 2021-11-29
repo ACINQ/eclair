@@ -20,15 +20,13 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.db.Monitoring.Metrics.withMetrics
 import fr.acinq.eclair.db.Monitoring.Tags.DbBackends
+import fr.acinq.eclair.db.PaymentsDb.{decodeFailures, decodeRoute, encodeFailures, encodeRoute}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.pg.PgUtils.PgLock
 import fr.acinq.eclair.payment.{PaymentFailed, PaymentRequest, PaymentSent}
-import fr.acinq.eclair.wire.protocol.CommonCodecs
 import fr.acinq.eclair.{MilliSatoshi, TimestampMilli, TimestampMilliLong}
 import grizzled.slf4j.Logging
-import scodec.Attempt
 import scodec.bits.BitVector
-import scodec.codecs._
 
 import java.sql.{Connection, ResultSet, Statement, Timestamp}
 import java.time.Instant
@@ -48,13 +46,6 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
   import PgUtils.ExtendedResultSet._
   import PgUtils._
   import lock._
-
-  private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
-  private val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)
-    .typecase(0x01, listOfN(uint8, hopSummaryCodec))
-  private val failureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec).as[FailureSummary]
-  private val paymentFailuresCodec = discriminated[List[FailureSummary]].by(byte)
-    .typecase(0x01, listOfN(uint8, failureSummaryCodec))
 
   inTransaction { pg =>
     using(pg.createStatement()) { statement =>
@@ -128,7 +119,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
           statement.setTimestamp(1, p.timestamp.toSqlTimestamp)
           statement.setString(2, paymentResult.paymentPreimage.toHex)
           statement.setLong(3, p.feesPaid.toLong)
-          statement.setBytes(4, paymentRouteCodec.encode(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList).require.toByteArray)
+          statement.setBytes(4, encodeRoute(p.route.getOrElse(Nil).map(h => HopSummary(h)).toList))
           statement.setString(5, p.id.toString)
           statement.addBatch()
         })
@@ -141,7 +132,7 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     withLock { pg =>
       using(pg.prepareStatement("UPDATE payments.sent SET (completed_at, failures) = (?, ?) WHERE id = ? AND completed_at IS NULL")) { statement =>
         statement.setTimestamp(1, paymentResult.timestamp.toSqlTimestamp)
-        statement.setBytes(2, paymentFailuresCodec.encode(paymentResult.failures.map(f => FailureSummary(f)).toList).require.toByteArray)
+        statement.setBytes(2, encodeFailures(paymentResult.failures.map(f => FailureSummary(f)).toList))
         statement.setString(3, paymentResult.id.toString)
         if (statement.executeUpdate() == 0) throw new IllegalArgumentException(s"Tried to mark an outgoing payment as failed but already in final status (id=${paymentResult.id})")
       }
@@ -175,19 +166,13 @@ class PgPaymentsDb(implicit ds: DataSource, lock: PgLock) extends PaymentsDb wit
     preimage_opt match {
       // If we have a pre-image, the payment succeeded.
       case Some(preimage) => OutgoingPaymentStatus.Succeeded(
-        preimage, fees_opt.getOrElse(MilliSatoshi(0)), paymentRoute_opt.map(b => paymentRouteCodec.decode(b) match {
-          case Attempt.Successful(route) => route.value
-          case Attempt.Failure(_) => Nil
-        }).getOrElse(Nil),
+        preimage, fees_opt.getOrElse(MilliSatoshi(0)), paymentRoute_opt.map(decodeRoute).getOrElse(Nil),
         completedAt_opt.getOrElse(0 unixms)
       )
       case None => completedAt_opt match {
         // Otherwise if the payment was marked completed, it's a failure.
         case Some(completedAt) => OutgoingPaymentStatus.Failed(
-          failures.map(b => paymentFailuresCodec.decode(b) match {
-            case Attempt.Successful(f) => f.value
-            case Attempt.Failure(_) => Nil
-          }).getOrElse(Nil),
+          failures.map(decodeFailures).getOrElse(Nil),
           completedAt
         )
         // Else it's still pending.
