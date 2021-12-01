@@ -49,24 +49,30 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   def publicKey(fill: Byte) = PrivateKey(ByteVector.fill(32)(fill)).publicKey
 
   test("encode/decode init message") {
-    case class TestCase(encoded: ByteVector, rawFeatures: ByteVector, networks: List[ByteVector32], valid: Boolean, reEncoded: Option[ByteVector] = None)
+    case class TestCase(encoded: ByteVector, rawFeatures: ByteVector, networks: List[ByteVector32], compressionAlgorithms: Set[CompressionAlgorithm], valid: Boolean, reEncoded: Option[ByteVector] = None)
     val chainHash1 = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val chainHash2 = ByteVector32(hex"0202020202020202020202020202020202020202020202020202020202020202")
     val testCases = Seq(
-      TestCase(hex"0000 0000", hex"", Nil, valid = true), // no features
-      TestCase(hex"0000 0002088a", hex"088a", Nil, valid = true), // no global features
-      TestCase(hex"00020200 0000", hex"0200", Nil, valid = true, Some(hex"0000 00020200")), // no local features
-      TestCase(hex"00020200 0002088a", hex"0a8a", Nil, valid = true, Some(hex"0000 00020a8a")), // local and global - no conflict - same size
-      TestCase(hex"00020200 0003020002", hex"020202", Nil, valid = true, Some(hex"0000 0003020202")), // local and global - no conflict - different sizes
-      TestCase(hex"00020a02 0002088a", hex"0a8a", Nil, valid = true, Some(hex"0000 00020a8a")), // local and global - conflict - same size
-      TestCase(hex"00022200 000302aaa2", hex"02aaa2", Nil, valid = true, Some(hex"0000 000302aaa2")), // local and global - conflict - different sizes
-      TestCase(hex"0000 0002088a 03012a05022aa2", hex"088a", Nil, valid = true), // unknown odd records
-      TestCase(hex"0000 0002088a 03012a04022aa2", hex"088a", Nil, valid = false), // unknown even records
-      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", hex"088a", Nil, valid = false), // invalid tlv stream
-      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", hex"088a", List(chainHash1), valid = true), // single network
-      TestCase(hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), valid = true), // multiple networks
-      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010103012a", hex"088a", List(chainHash1), valid = true), // network and unknown odd records
-      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010102012a", hex"088a", Nil, valid = false) // network and unknown even records
+      TestCase(hex"0000 0000", hex"", Nil, CompressionAlgorithm.defaultSupported, valid = true), // no features
+      TestCase(hex"0000 0002088a", hex"088a", Nil, CompressionAlgorithm.defaultSupported, valid = true), // no global features
+      TestCase(hex"00020200 0000", hex"0200", Nil, CompressionAlgorithm.defaultSupported, valid = true, Some(hex"0000 00020200")), // no local features
+      TestCase(hex"00020200 0002088a", hex"0a8a", Nil, CompressionAlgorithm.defaultSupported, valid = true, Some(hex"0000 00020a8a")), // local and global - no conflict - same size
+      TestCase(hex"00020200 0003020002", hex"020202", Nil, CompressionAlgorithm.defaultSupported, valid = true, Some(hex"0000 0003020202")), // local and global - no conflict - different sizes
+      TestCase(hex"00020a02 0002088a", hex"0a8a", Nil, CompressionAlgorithm.defaultSupported, valid = true, Some(hex"0000 00020a8a")), // local and global - conflict - same size
+      TestCase(hex"00022200 000302aaa2", hex"02aaa2", Nil, CompressionAlgorithm.defaultSupported, valid = true, Some(hex"0000 000302aaa2")), // local and global - conflict - different sizes
+      TestCase(hex"0000 0002088a 05022aa207012a", hex"088a", Nil, CompressionAlgorithm.defaultSupported, valid = true), // unknown odd records
+      TestCase(hex"0000 0002088a 04022aa207012a", hex"088a", Nil, CompressionAlgorithm.defaultSupported, valid = false), // unknown even records
+      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101", hex"088a", Nil, CompressionAlgorithm.defaultSupported, valid = false), // invalid tlv stream
+      TestCase(hex"0000 0002088a 01200101010101010101010101010101010101010101010101010101010101010101", hex"088a", List(chainHash1), CompressionAlgorithm.defaultSupported, valid = true), // single network
+      TestCase(hex"0000 0002088a 014001010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202", hex"088a", List(chainHash1, chainHash2), CompressionAlgorithm.defaultSupported, valid = true), // multiple networks
+      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010107012a", hex"088a", List(chainHash1), CompressionAlgorithm.defaultSupported, valid = true), // network and unknown odd records
+      TestCase(hex"0000 0002088a 0300", hex"088a", Nil, Set.empty, valid = true), // no compression support
+      TestCase(hex"0000 0002088a 030100", hex"088a", Nil, Set.empty, valid = true, reEncoded = Some(hex"0000 0002088a 0300")), // no compression support
+      TestCase(hex"0000 0002088a 030101", hex"088a", Nil, Set(CompressionAlgorithm.Uncompressed), valid = true), // no zlib compression support
+      TestCase(hex"0000 0002088a 030102", hex"088a", Nil, Set(CompressionAlgorithm.ZlibDeflate), valid = true), // only zlib compression support
+      TestCase(hex"0000 0002088a 030103", hex"088a", Nil, Set(CompressionAlgorithm.Uncompressed, CompressionAlgorithm.ZlibDeflate), valid = true), // zlib compression and uncompressed support
+      TestCase(hex"0000 0002088a 0302ff0a", hex"088a", Nil, Set(CompressionAlgorithm.ZlibDeflate), valid = true, reEncoded = Some(hex"0000 0002088a 030102")), // zlib and unknown compression support
+      TestCase(hex"0000 0002088a 0120010101010101010101010101010101010101010101010101010101010101010102012a", hex"088a", Nil, CompressionAlgorithm.defaultSupported, valid = false) // network and unknown even records
     )
 
     for (testCase <- testCases) {
@@ -74,6 +80,7 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
         val init = initCodec.decode(testCase.encoded.bits).require.value
         assert(init.features.toByteVector === testCase.rawFeatures)
         assert(init.networks === testCase.networks)
+        assert(init.compressionAlgorithms === testCase.compressionAlgorithms)
         val encoded = initCodec.encode(init).require
         assert(encoded.bytes === testCase.reEncoded.getOrElse(testCase.encoded))
         assert(initCodec.decode(encoded).require.value === init)
@@ -268,16 +275,16 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
     val channel_update = ChannelUpdate(randomBytes64(), Block.RegtestGenesisBlock.hash, ShortChannelId(1), 2 unixsec, ChannelUpdate.ChannelFlags.DUMMY, CltvExpiryDelta(3), 4 msat, 5 msat, 6, None)
     val announcement_signatures = AnnouncementSignatures(randomBytes32(), ShortChannelId(42), randomBytes64(), randomBytes64())
     val gossip_timestamp_filter = GossipTimestampFilter(Block.RegtestGenesisBlock.blockId, 100000 unixsec, 1500)
-    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty)
+    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty)
     val unknownTlv = GenericTlv(UInt64(5), ByteVector.fromValidHex("deadbeef"))
     val query_channel_range = QueryChannelRange(Block.RegtestGenesisBlock.blockId,
       100000,
       1500,
       TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL) :: Nil, unknownTlv :: Nil))
     val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 100000, 1500, 1,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
+      EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))),
       TlvStream(
-        EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))) :: EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3))) :: Nil,
+        EncodedTimestamps(CompressionAlgorithm.Uncompressed, List(Timestamps(1 unixsec, 1 unixsec), Timestamps(2 unixsec, 2 unixsec), Timestamps(3 unixsec, 3 unixsec))) :: EncodedChecksums(List(Checksums(1, 1), Checksums(2, 2), Checksums(3, 3))) :: Nil,
         unknownTlv :: Nil)
     )
     val ping = Ping(100, bin(10, 1))
@@ -314,13 +321,13 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
   test("non-reg encoding type") {
     val refs = Map(
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001601789c636000833e08659309a65c971d0100126e02e3"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.ZlibDeflate, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001900000000000000008e0000000000003c69000000000045a6c4010400010204"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.UNCOMPRESSED, List(1, 2, 4)))),
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(CompressionAlgorithm.Uncompressed, List(1, 2, 4)))),
       hex"01050f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206001601789c636000833e08659309a65c971d0100126e02e3010c01789c6364620100000e0008"
-        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
+        -> QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.ZlibDeflate, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(CompressionAlgorithm.ZlibDeflate, List(1, 2, 4))))
     )
 
     refs.forall {
@@ -338,21 +345,21 @@ class LightningMessageCodecsSpec extends AnyFunSuite {
       100,
       TlvStream(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)))
     val reply_channel_range = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 756230, 1500, 1,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None, None)
+      EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), None, None)
     val reply_channel_range_zlib = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 1600, 110, 1,
-      EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(265462))), None, None)
+      EncodedShortChannelIds(CompressionAlgorithm.ZlibDeflate, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(265462))), None, None)
     val reply_channel_range_timestamps_checksums = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 122334, 1500, 1,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12355), ShortChannelId(489686), ShortChannelId(4645313))),
-      Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
+      EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(12355), ShortChannelId(489686), ShortChannelId(4645313))),
+      Some(EncodedTimestamps(CompressionAlgorithm.Uncompressed, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
       Some(EncodedChecksums(List(Checksums(1111, 2222), Checksums(3333, 4444), Checksums(5555, 6666)))))
     val reply_channel_range_timestamps_checksums_zlib = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 122334, 1500, 1,
-      EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(12355), ShortChannelId(489686), ShortChannelId(4645313))),
-      Some(EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
+      EncodedShortChannelIds(CompressionAlgorithm.ZlibDeflate, List(ShortChannelId(12355), ShortChannelId(489686), ShortChannelId(4645313))),
+      Some(EncodedTimestamps(CompressionAlgorithm.ZlibDeflate, List(Timestamps(164545 unixsec, 948165 unixsec), Timestamps(489645 unixsec, 4786864 unixsec), Timestamps(46456 unixsec, 9788415 unixsec)))),
       Some(EncodedChecksums(List(Checksums(1111, 2222), Checksums(3333, 4444), Checksums(5555, 6666)))))
-    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty)
-    val query_short_channel_id_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(4564), ShortChannelId(178622), ShortChannelId(4564676))), TlvStream.empty)
-    val query_short_channel_id_flags = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(12232), ShortChannelId(15556), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
-    val query_short_channel_id_flags_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, List(ShortChannelId(14200), ShortChannelId(46645), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, List(1, 2, 4))))
+    val query_short_channel_id = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(142), ShortChannelId(15465), ShortChannelId(4564676))), TlvStream.empty)
+    val query_short_channel_id_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.ZlibDeflate, List(ShortChannelId(4564), ShortChannelId(178622), ShortChannelId(4564676))), TlvStream.empty)
+    val query_short_channel_id_flags = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(12232), ShortChannelId(15556), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(CompressionAlgorithm.ZlibDeflate, List(1, 2, 4))))
+    val query_short_channel_id_flags_zlib = QueryShortChannelIds(Block.RegtestGenesisBlock.blockId, EncodedShortChannelIds(CompressionAlgorithm.ZlibDeflate, List(ShortChannelId(14200), ShortChannelId(46645), ShortChannelId(4564676))), TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(CompressionAlgorithm.ZlibDeflate, List(1, 2, 4))))
 
     val refs = Map(
       query_channel_range -> hex"01070f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206000186a0000005dc",

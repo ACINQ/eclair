@@ -49,6 +49,7 @@ sealed trait HtlcSettlementMessage extends UpdateMessage { def id: Long } // <- 
 
 case class Init(features: Features, tlvStream: TlvStream[InitTlv] = TlvStream.empty) extends SetupMessage {
   val networks = tlvStream.get[InitTlv.Networks].map(_.chainHashes).getOrElse(Nil)
+  val compressionAlgorithms = tlvStream.get[InitTlv.CompressionAlgorithms].map(_.supported).getOrElse(CompressionAlgorithm.defaultSupported)
 }
 
 case class Warning(channelId: ByteVector32, data: ByteVector, tlvStream: TlvStream[WarningTlv] = TlvStream.empty) extends SetupMessage with HasChannelId {
@@ -276,15 +277,31 @@ object ChannelUpdate {
   }
 }
 
-// @formatter:off
-sealed trait EncodingType
-object EncodingType {
-  case object UNCOMPRESSED extends EncodingType
-  case object COMPRESSED_ZLIB extends EncodingType
+sealed trait CompressionAlgorithm {
+  def bitPosition: Int
 }
-// @formatter:on
 
-case class EncodedShortChannelIds(encoding: EncodingType, array: List[ShortChannelId]) {
+object CompressionAlgorithm {
+  // @formatter:off
+  case object Uncompressed extends CompressionAlgorithm { override val bitPosition: Int = 0 }
+  case object ZlibDeflate extends CompressionAlgorithm { override val bitPosition: Int = 1 }
+  // @formatter:on
+
+  // When not provided, we assume support for uncompressed and zlib (which was the case before option_compression was introduced).
+  val defaultSupported: Set[CompressionAlgorithm] = Set(Uncompressed, ZlibDeflate)
+
+  def select(localSupport: Set[CompressionAlgorithm], remoteSupport: Set[CompressionAlgorithm]): Option[CompressionAlgorithm] = {
+    localSupport.intersect(remoteSupport).headOption
+  }
+
+  def select(preferred: CompressionAlgorithm, localSupport: Set[CompressionAlgorithm], remoteSupport: Set[CompressionAlgorithm]): Option[CompressionAlgorithm] = {
+    val candidates = localSupport.intersect(remoteSupport)
+    if (candidates.contains(preferred)) Some(preferred) else candidates.headOption
+  }
+
+}
+
+case class EncodedShortChannelIds(encoding: CompressionAlgorithm, array: List[ShortChannelId]) {
   /** custom toString because it can get huge in logs */
   override def toString: String = s"EncodedShortChannelIds($encoding,${array.headOption.getOrElse("")}->${array.lastOption.getOrElse("")} size=${array.size})"
 }

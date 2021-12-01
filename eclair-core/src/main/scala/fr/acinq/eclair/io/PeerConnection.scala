@@ -101,7 +101,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       d.transport ! TransportHandler.Listener(self)
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initializing).increment()
       log.info(s"using features=$localFeatures")
-      val localInit = protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
+      val localInit = protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil), InitTlv.CompressionAlgorithms(Set(CompressionAlgorithm.Uncompressed, CompressionAlgorithm.ZlibDeflate))))
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
       goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync)
@@ -113,7 +113,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         cancelTimer(INIT_TIMER)
         d.transport ! TransportHandler.ReadAck(remoteInit)
 
-        log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")}")
+        log.info(s"peer is using features=${remoteInit.features}, networks=${remoteInit.networks.mkString(",")} compression=${remoteInit.compressionAlgorithms.mkString(",")}")
 
         val featureGraphErr_opt = Features.validateFeatureGraph(remoteInit.features)
         if (remoteInit.networks.nonEmpty && remoteInit.networks.intersect(d.localInit.networks).isEmpty) {
@@ -234,7 +234,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
       case Event(DelayedRebroadcast(rebroadcast), d: ConnectedData) =>
 
-        val thisRemote = RemoteGossip(self, d.remoteNodeId)
+        val thisRemote = RemoteGossip(self, d.remoteNodeId, d.remoteInit)
 
         /**
          * Send and count in a single iteration
@@ -285,7 +285,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             d.transport ! TransportHandler.ReadAck(msg)
           case _ =>
             // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
-            router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, msg)
+            router ! Peer.PeerRoutingMessage(self, d.remoteNodeId, d.remoteInit, msg)
         }
         stay()
 
@@ -347,7 +347,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       case Event(DoSync(replacePrevious), d: ConnectedData) =>
         val canUseChannelRangeQueries = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueries)
         val canUseChannelRangeQueriesEx = Features.canUseFeature(d.localInit.features, d.remoteInit.features, Features.ChannelRangeQueriesExtended)
-        if (canUseChannelRangeQueries || canUseChannelRangeQueriesEx) {
+        val hasCompatibleCompression = CompressionAlgorithm.select(d.localInit.compressionAlgorithms, d.remoteInit.compressionAlgorithms).nonEmpty
+        if ((canUseChannelRangeQueries || canUseChannelRangeQueriesEx) && hasCompatibleCompression) {
           val flags_opt = if (canUseChannelRangeQueriesEx) Some(QueryChannelRangeTlv.QueryFlags(QueryChannelRangeTlv.QueryFlags.WANT_ALL)) else None
           log.info(s"sending sync channel range query with flags_opt=$flags_opt replacePrevious=$replacePrevious")
           router ! SendChannelQuery(d.chainHash, d.remoteNodeId, self, replacePrevious, flags_opt)

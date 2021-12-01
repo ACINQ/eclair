@@ -74,17 +74,22 @@ object Sync {
     ctx.sender() ! TransportHandler.ReadAck(q)
     Metrics.QueryChannelRange.Blocks.withoutTags().record(q.numberOfBlocks)
     log.info("received query_channel_range with firstBlockNum={} numberOfBlocks={} extendedQueryFlags_opt={}", q.firstBlockNum, q.numberOfBlocks, q.tlvStream)
-    // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-    val shortChannelIds: SortedSet[ShortChannelId] = channels.keySet.filter(keep(q.firstBlockNum, q.numberOfBlocks, _))
-    log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlockNum, q.numberOfBlocks)
-    val chunks = split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
-    Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
-    chunks.zipWithIndex.foreach { case (chunk, i) =>
-      val syncComplete = i == chunks.size - 1
-      val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, routerConf.encodingType, q.queryFlags_opt, channels)
-      origin.peerConnection ! reply
-      Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
-      Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
+    CompressionAlgorithm.select(routerConf.preferredCompression, CompressionAlgorithm.defaultSupported, origin.remoteInit.compressionAlgorithms) match {
+      case Some(preferredCompression) =>
+        // keep channel ids that are in [firstBlockNum, firstBlockNum + numberOfBlocks]
+        val shortChannelIds: SortedSet[ShortChannelId] = channels.keySet.filter(keep(q.firstBlockNum, q.numberOfBlocks, _))
+        log.info("replying with {} items for range=({}, {})", shortChannelIds.size, q.firstBlockNum, q.numberOfBlocks)
+        val chunks = split(shortChannelIds, q.firstBlockNum, q.numberOfBlocks, routerConf.channelRangeChunkSize)
+        Metrics.QueryChannelRange.Replies.withoutTags().record(chunks.size)
+        chunks.zipWithIndex.foreach { case (chunk, i) =>
+          val syncComplete = i == chunks.size - 1
+          val reply = buildReplyChannelRange(chunk, syncComplete, q.chainHash, preferredCompression, q.queryFlags_opt, channels)
+          origin.peerConnection ! reply
+          Metrics.ReplyChannelRange.Blocks.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.numberOfBlocks)
+          Metrics.ReplyChannelRange.ShortChannelIds.withTag(Tags.Direction, Tags.Directions.Outgoing).record(reply.shortChannelIds.array.size)
+        }
+      case None =>
+        log.info("peer doesn't support any of our compression algorithms, ignoring query_channel_range")
     }
   }
 
@@ -133,7 +138,7 @@ object Sync {
 
         def buildQuery(chunk: List[ShortChannelIdAndFlag]): QueryShortChannelIds = {
           // always encode empty lists as UNCOMPRESSED
-          val encoding = if (chunk.isEmpty) EncodingType.UNCOMPRESSED else r.shortChannelIds.encoding
+          val encoding = if (chunk.isEmpty) CompressionAlgorithm.Uncompressed else r.shortChannelIds.encoding
           val flags: TlvStream[QueryShortChannelIdsTlv] = if (r.timestamps_opt.isDefined || r.checksums_opt.isDefined) {
             TlvStream(QueryShortChannelIdsTlv.EncodedQueryFlags(encoding, chunk.map(_.flag)))
           } else {
@@ -481,8 +486,8 @@ object Sync {
    * @param channels        channels map
    * @return a ReplyChannelRange object
    */
-  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: ByteVector32, defaultEncoding: EncodingType, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
-    val encoding = if (chunk.shortChannelIds.isEmpty) EncodingType.UNCOMPRESSED else defaultEncoding
+  def buildReplyChannelRange(chunk: ShortChannelIdsChunk, syncComplete: Boolean, chainHash: ByteVector32, defaultEncoding: CompressionAlgorithm, queryFlags_opt: Option[QueryChannelRangeTlv.QueryFlags], channels: SortedMap[ShortChannelId, PublicChannel]): ReplyChannelRange = {
+    val encoding = if (chunk.shortChannelIds.isEmpty) CompressionAlgorithm.Uncompressed else defaultEncoding
     val (timestamps, checksums) = queryFlags_opt match {
       case Some(extension) if extension.wantChecksums | extension.wantTimestamps =>
         // we always compute timestamps and checksums even if we don't need both, overhead is negligible

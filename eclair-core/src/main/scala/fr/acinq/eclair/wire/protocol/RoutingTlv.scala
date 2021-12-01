@@ -104,7 +104,7 @@ object ReplyChannelRangeTlv {
    *
    * @param encoding same convention as for short channel ids
    */
-  case class EncodedTimestamps(encoding: EncodingType, timestamps: List[Timestamps]) extends ReplyChannelRangeTlv {
+  case class EncodedTimestamps(encoding: CompressionAlgorithm, timestamps: List[Timestamps]) extends ReplyChannelRangeTlv {
     /** custom toString because it can get huge in logs */
     override def toString: String = s"EncodedTimestamps($encoding, size=${timestamps.size})"
   }
@@ -130,8 +130,8 @@ object ReplyChannelRangeTlv {
 
   val encodedTimestampsCodec: Codec[EncodedTimestamps] = variableSizeBytesLong(varintoverflow,
     discriminated[EncodedTimestamps].by(byte)
-      .\(0) { case a@EncodedTimestamps(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(timestampsCodec)).as[EncodedTimestamps])
-      .\(1) { case a@EncodedTimestamps(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(timestampsCodec))).as[EncodedTimestamps])
+      .\(CompressionAlgorithm.Uncompressed.bitPosition.toByte) { case a@EncodedTimestamps(CompressionAlgorithm.Uncompressed, _) => a }((provide[CompressionAlgorithm](CompressionAlgorithm.Uncompressed) :: list(timestampsCodec)).as[EncodedTimestamps])
+      .\(CompressionAlgorithm.ZlibDeflate.bitPosition.toByte) { case a@EncodedTimestamps(CompressionAlgorithm.ZlibDeflate, _) => a }((provide[CompressionAlgorithm](CompressionAlgorithm.ZlibDeflate) :: zlib(list(timestampsCodec))).as[EncodedTimestamps])
   )
 
   val checksumsCodec: Codec[Checksums] = (
@@ -158,7 +158,7 @@ object QueryShortChannelIdsTlv {
    * @param encoding 0 means uncompressed, 1 means compressed with zlib
    * @param array    array of query flags, each flags specifies the info we want for a given channel
    */
-  case class EncodedQueryFlags(encoding: EncodingType, array: List[Long]) extends QueryShortChannelIdsTlv {
+  case class EncodedQueryFlags(encoding: CompressionAlgorithm, array: List[Long]) extends QueryShortChannelIdsTlv {
     /** custom toString because it can get huge in logs */
     override def toString: String = s"EncodedQueryFlags($encoding, size=${array.size})"
   }
@@ -183,9 +183,8 @@ object QueryShortChannelIdsTlv {
 
   val encodedQueryFlagsCodec: Codec[EncodedQueryFlags] =
     discriminated[EncodedQueryFlags].by(byte)
-      .\(0) { case a@EncodedQueryFlags(EncodingType.UNCOMPRESSED, _) => a }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(varintoverflow)).as[EncodedQueryFlags])
-      .\(1) { case a@EncodedQueryFlags(EncodingType.COMPRESSED_ZLIB, _) => a }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(varintoverflow))).as[EncodedQueryFlags])
-
+      .\(CompressionAlgorithm.Uncompressed.bitPosition.toByte) { case a@EncodedQueryFlags(CompressionAlgorithm.Uncompressed, _) => a }((provide[CompressionAlgorithm](CompressionAlgorithm.Uncompressed) :: list(varintoverflow)).as[EncodedQueryFlags])
+      .\(CompressionAlgorithm.ZlibDeflate.bitPosition.toByte) { case a@EncodedQueryFlags(CompressionAlgorithm.ZlibDeflate, _) => a }((provide[CompressionAlgorithm](CompressionAlgorithm.ZlibDeflate) :: zlib(list(varintoverflow))).as[EncodedQueryFlags])
 
   val codec: Codec[TlvStream[QueryShortChannelIdsTlv]] = TlvCodecs.tlvStream(discriminated.by(varint)
     .typecase(UInt64(1), variableSizeBytesLong(varintoverflow, encodedQueryFlagsCodec))

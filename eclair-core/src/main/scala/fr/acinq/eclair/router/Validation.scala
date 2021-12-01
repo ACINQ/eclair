@@ -35,7 +35,7 @@ import fr.acinq.eclair.{Logs, MilliSatoshiLong, NodeParams, ShortChannelId, TxCo
 object Validation {
 
   private def sendDecision(origins: Set[GossipOrigin], decision: GossipDecision)(implicit sender: ActorRef): Unit = {
-    origins.collect { case RemoteGossip(peerConnection, _) => sendDecision(peerConnection, decision) }
+    origins.collect { case RemoteGossip(peerConnection, _, _) => sendDecision(peerConnection, decision) }
   }
 
   private def sendDecision(peerConnection: ActorRef, decision: GossipDecision)(implicit sender: ActorRef): Unit = {
@@ -198,7 +198,7 @@ object Validation {
     val remoteOrigins = origins flatMap {
       case r: RemoteGossip if wasStashed =>
         Some(r.peerConnection)
-      case RemoteGossip(peerConnection, _) =>
+      case RemoteGossip(peerConnection, _, _) =>
         peerConnection ! TransportHandler.ReadAck(n)
         log.debug("received node announcement for nodeId={}", n.nodeId)
         Some(peerConnection)
@@ -253,7 +253,7 @@ object Validation {
       case Left(lcu) => (lcu.channelUpdate, Set(LocalGossip))
       case Right(rcu) =>
         rcu.origins.collect {
-          case RemoteGossip(peerConnection, _) if !wasStashed => // stashed changes have already been acknowledged
+          case RemoteGossip(peerConnection, _, _) if !wasStashed => // stashed changes have already been acknowledged
             log.debug("received channel update for shortChannelId={}", rcu.channelUpdate.shortChannelId)
             peerConnection ! TransportHandler.ReadAck(rcu.channelUpdate)
         }
@@ -374,18 +374,24 @@ object Validation {
       db.removeFromPruned(u.shortChannelId)
       // peerConnection_opt will contain a valid peerConnection only when we're handling an update that we received from a peer, not
       // when we're sending updates to ourselves
-      origins head match {
-        case RemoteGossip(peerConnection, remoteNodeId) =>
-          val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(routerConf.encodingType, List(u.shortChannelId)), TlvStream.empty)
-          d.sync.get(remoteNodeId) match {
-            case Some(sync) if sync.started =>
-              // we already have a pending request to that node, let's add this channel to the list and we'll get it later
-              // TODO: we only request channels with old style channel_query
-              d.copy(sync = d.sync + (remoteNodeId -> sync.copy(remainingQueries = sync.remainingQueries :+ query, totalQueries = sync.totalQueries + 1)))
-            case _ =>
-              // otherwise we send the query right away
-              peerConnection ! query
-              d.copy(sync = d.sync + (remoteNodeId -> Syncing(remainingQueries = Nil, totalQueries = 1)))
+      origins.head match {
+        case RemoteGossip(peerConnection, remoteNodeId, remoteInit) =>
+          CompressionAlgorithm.select(routerConf.preferredCompression, CompressionAlgorithm.defaultSupported, remoteInit.compressionAlgorithms) match {
+            case Some(preferredCompression) =>
+              val query = QueryShortChannelIds(u.chainHash, EncodedShortChannelIds(preferredCompression, List(u.shortChannelId)), TlvStream.empty)
+              d.sync.get(remoteNodeId) match {
+                case Some(sync) if sync.started =>
+                  // we already have a pending request to that node, let's add this channel to the list and we'll get it later
+                  // TODO: we only request channels with old style channel_query
+                  d.copy(sync = d.sync + (remoteNodeId -> sync.copy(remainingQueries = sync.remainingQueries :+ query, totalQueries = sync.totalQueries + 1)))
+                case _ =>
+                  // otherwise we send the query right away
+                  peerConnection ! query
+                  d.copy(sync = d.sync + (remoteNodeId -> Syncing(remainingQueries = Nil, totalQueries = 1)))
+              }
+            case None =>
+              log.info(s"peer doesn't support any of our compression algorithms, we can't query channel updates for ${u.shortChannelId}")
+              d
           }
         case _ =>
           // we don't know which node this update came from (maybe it was stashed and the channel got pruned in the meantime or some other corner case).

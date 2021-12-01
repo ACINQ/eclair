@@ -22,7 +22,7 @@ import fr.acinq.eclair.router.Sync._
 import fr.acinq.eclair.wire.protocol.QueryChannelRangeTlv.QueryFlags
 import fr.acinq.eclair.wire.protocol.QueryShortChannelIdsTlv.QueryFlagType._
 import fr.acinq.eclair.wire.protocol.ReplyChannelRangeTlv._
-import fr.acinq.eclair.wire.protocol.{EncodedShortChannelIds, EncodingType, ReplyChannelRange}
+import fr.acinq.eclair.wire.protocol.{CompressionAlgorithm, EncodedShortChannelIds, ReplyChannelRange}
 import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId, TimestampSecond, TimestampSecondLong, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits.ByteVector
@@ -358,20 +358,20 @@ class ChannelRangeQueriesSpec extends AnyFunSuite {
 
   test("do not encode empty lists as COMPRESSED_ZLIB") {
     {
-      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = true, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_ALL)), SortedMap())
-      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, Nil)), Some(EncodedChecksums(Nil))))
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = true, Block.RegtestGenesisBlock.hash, CompressionAlgorithm.ZlibDeflate, Some(QueryFlags(QueryFlags.WANT_ALL)), SortedMap())
+      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 1, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, Nil), Some(EncodedTimestamps(CompressionAlgorithm.Uncompressed, Nil)), Some(EncodedChecksums(Nil))))
     }
     {
-      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = false, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_TIMESTAMPS)), SortedMap())
-      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), Some(EncodedTimestamps(EncodingType.UNCOMPRESSED, Nil)), None))
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = false, Block.RegtestGenesisBlock.hash, CompressionAlgorithm.ZlibDeflate, Some(QueryFlags(QueryFlags.WANT_TIMESTAMPS)), SortedMap())
+      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 0, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, Nil), Some(EncodedTimestamps(CompressionAlgorithm.Uncompressed, Nil)), None))
     }
     {
-      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = false, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, Some(QueryFlags(QueryFlags.WANT_CHECKSUMS)), SortedMap())
-      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 0, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, Some(EncodedChecksums(Nil))))
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = false, Block.RegtestGenesisBlock.hash, CompressionAlgorithm.ZlibDeflate, Some(QueryFlags(QueryFlags.WANT_CHECKSUMS)), SortedMap())
+      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 0, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, Nil), None, Some(EncodedChecksums(Nil))))
     }
     {
-      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = true, Block.RegtestGenesisBlock.hash, EncodingType.COMPRESSED_ZLIB, None, SortedMap())
-      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 1, EncodedShortChannelIds(EncodingType.UNCOMPRESSED, Nil), None, None))
+      val reply = buildReplyChannelRange(ShortChannelIdsChunk(0, 42, Nil), syncComplete = true, Block.RegtestGenesisBlock.hash, CompressionAlgorithm.ZlibDeflate, None, SortedMap())
+      assert(reply == ReplyChannelRange(Block.RegtestGenesisBlock.hash, 0, 42L, 1, EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, Nil), None, None))
     }
   }
 }

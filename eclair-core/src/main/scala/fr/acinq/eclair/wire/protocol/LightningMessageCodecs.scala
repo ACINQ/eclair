@@ -270,13 +270,13 @@ object LightningMessageCodecs {
 
   val encodedShortChannelIdsCodec: Codec[EncodedShortChannelIds] =
     discriminated[EncodedShortChannelIds].by(byte)
-      .\(0) {
+      .\(CompressionAlgorithm.Uncompressed.bitPosition.toByte) {
         case a@EncodedShortChannelIds(_, Nil) => a // empty list is always encoded with encoding type 'uncompressed' for compatibility with other implementations
-        case a@EncodedShortChannelIds(EncodingType.UNCOMPRESSED, _) => a
-      }((provide[EncodingType](EncodingType.UNCOMPRESSED) :: list(shortchannelid)).as[EncodedShortChannelIds])
-      .\(1) {
-        case a@EncodedShortChannelIds(EncodingType.COMPRESSED_ZLIB, _) => a
-      }((provide[EncodingType](EncodingType.COMPRESSED_ZLIB) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
+        case a@EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, _) => a
+      }((provide[CompressionAlgorithm](CompressionAlgorithm.Uncompressed) :: list(shortchannelid)).as[EncodedShortChannelIds])
+      .\(CompressionAlgorithm.ZlibDeflate.bitPosition.toByte) {
+        case a@EncodedShortChannelIds(CompressionAlgorithm.ZlibDeflate, _) => a
+      }((provide[CompressionAlgorithm](CompressionAlgorithm.ZlibDeflate) :: zlib(list(shortchannelid))).as[EncodedShortChannelIds])
 
   val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
     ("chainHash" | bytes32) ::

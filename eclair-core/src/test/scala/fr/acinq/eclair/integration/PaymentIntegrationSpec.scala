@@ -42,8 +42,8 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendTra
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.Router.{GossipDecision, PublicChannel}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec, Router}
-import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails, NodeAnnouncement}
-import fr.acinq.eclair.{CltvExpiryDelta, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
+import fr.acinq.eclair.wire.protocol.{ChannelAnnouncement, ChannelUpdate, IncorrectOrUnknownPaymentDetails, Init, NodeAnnouncement}
+import fr.acinq.eclair.{CltvExpiryDelta, Features, Kit, MilliSatoshiLong, ShortChannelId, TimestampMilli, randomBytes32}
 import org.json4s.JsonAST.{JString, JValue}
 import scodec.bits.ByteVector
 
@@ -662,7 +662,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c, bitcoinClient))
     announcements.foreach { ann =>
-      nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, ann)
+      nodes("A").router ! PeerRoutingMessage(sender.ref, remoteNodeId, Init(Features.empty), ann)
       sender.expectMsg(TransportHandler.ReadAck(ann))
       sender.expectMsg(GossipDecision.Accepted(ann))
     }

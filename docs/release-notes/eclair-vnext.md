@@ -24,6 +24,14 @@ Eclair now supports the feature `option_onion_messages`. If this feature is enab
 It can also send onion messages with the `sendonionmessage` API.
 Messages sent to Eclair will be ignored.
 
+### Support for `option_compression`
+
+Eclair now supports the `option_compression` feature as specified in https://github.com/lightning/bolts/pull/825.
+Eclair will announce what compression algorithms it supports for routing sync, and will only use compression algorithms supported by its peers when forwarding gossip.
+
+If you were overriding the default `eclair.router.sync.encoding-type` in your `eclair.conf`, you need to update your configuration.
+This field has been renamed `eclair.router.sync.preferred-compression-algorithm` and defaults to `zlib`.
+
 ### API changes
 
 #### Timestamps

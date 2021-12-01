@@ -35,6 +35,9 @@ object InitTlv {
   /** The chains the node is interested in. */
   case class Networks(chainHashes: List[ByteVector32]) extends InitTlv
 
+  /** Compression algorithms supported by the node. */
+  case class CompressionAlgorithms(supported: Set[CompressionAlgorithm]) extends InitTlv
+
 }
 
 object InitTlvCodecs {
@@ -42,9 +45,20 @@ object InitTlvCodecs {
   import InitTlv._
 
   private val networks: Codec[Networks] = variableSizeBytesLong(varintoverflow, list(bytes32)).as[Networks]
+  private val compressionAlgorithms: Codec[CompressionAlgorithms] = variableSizeBytesLong(varintoverflow, reversedBitVector).xmap(
+    bits => {
+      val supportedAlgorithms = Set(
+        if (bits.get(CompressionAlgorithm.Uncompressed.bitPosition)) Some(CompressionAlgorithm.Uncompressed) else Option.empty[CompressionAlgorithm],
+        if (bits.get(CompressionAlgorithm.ZlibDeflate.bitPosition)) Some(CompressionAlgorithm.ZlibDeflate) else Option.empty[CompressionAlgorithm]
+      ).flatten
+      CompressionAlgorithms(supportedAlgorithms)
+    },
+    algorithms => ReversedBitVector(algorithms.supported.map(_.bitPosition).toSet)
+  )
 
   val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)
+    .typecase(UInt64(3), compressionAlgorithms)
   )
 
 }

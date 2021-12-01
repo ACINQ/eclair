@@ -52,6 +52,19 @@ object CommonCodecs {
   /** byte-aligned boolean codec */
   val bool8: Codec[Boolean] = bool(8)
 
+  /** byte-aligned codec for right to left bit vector */
+  val reversedBitVector: Codec[ReversedBitVector] = bytes.xmap(
+    b => ReversedBitVector(b.bits.toIndexedSeq.reverse.zipWithIndex.collect { case (true, i) => i }.toSet),
+    {
+      case v if v.activated.isEmpty => ByteVector.empty
+      case v =>
+        // When converting from BitVector to ByteVector, scodec pads right instead of left, so we make sure we pad to bytes *before* setting feature bits.
+        var buf = BitVector.fill(v.activated.max + 1)(high = false).bytes.bits
+        v.activated.foreach { i => buf = buf.set(i) }
+        buf.reverse.bytes
+    }
+  )
+
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64overflow: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)

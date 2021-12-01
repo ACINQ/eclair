@@ -30,7 +30,7 @@ import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.router.Announcements.{makeChannelAnnouncement, makeChannelUpdate, makeNodeAnnouncement}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.protocol.Color
+import fr.acinq.eclair.wire.protocol.{Color, Init}
 import org.scalatest.funsuite.AnyFunSuiteLike
 import scodec.bits._
 
@@ -84,22 +84,22 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     system2.eventStream.subscribe(peerConnection2a.ref, classOf[Rebroadcast])
     system3.eventStream.subscribe(peerConnection3a.ref, classOf[Rebroadcast])
 
-    val origin1a = RemoteGossip(peerConnection1a.ref, randomKey().publicKey)
-    val origin1b = RemoteGossip(peerConnection1b.ref, randomKey().publicKey)
-    val origin2a = RemoteGossip(peerConnection2a.ref, randomKey().publicKey)
+    val origin1a = RemoteGossip(peerConnection1a.ref, randomKey().publicKey, remoteInit)
+    val origin1b = RemoteGossip(peerConnection1b.ref, randomKey().publicKey, remoteInit)
+    val origin2a = RemoteGossip(peerConnection2a.ref, randomKey().publicKey, remoteInit)
 
-    peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, chan_ab))
-    pipe1.expectMsg(PeerRoutingMessage(front1, origin1a.nodeId, chan_ab))
-    pipe1.send(router, PeerRoutingMessage(pipe1.ref, origin1a.nodeId, chan_ab))
+    peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, remoteInit, chan_ab))
+    pipe1.expectMsg(PeerRoutingMessage(front1, origin1a.nodeId, remoteInit, chan_ab))
+    pipe1.send(router, PeerRoutingMessage(pipe1.ref, origin1a.nodeId, remoteInit, chan_ab))
 
     assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
 
-    peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, chan_ab))
+    peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, remoteInit, chan_ab))
     pipe1.expectNoMessage()
 
-    peerConnection2a.send(front2, PeerRoutingMessage(peerConnection2a.ref, origin2a.nodeId, chan_ab))
-    pipe2.expectMsg(PeerRoutingMessage(front2, origin2a.nodeId, chan_ab))
-    pipe2.send(router, PeerRoutingMessage(pipe2.ref, origin2a.nodeId, chan_ab))
+    peerConnection2a.send(front2, PeerRoutingMessage(peerConnection2a.ref, origin2a.nodeId, remoteInit, chan_ab))
+    pipe2.expectMsg(PeerRoutingMessage(front2, origin2a.nodeId, remoteInit, chan_ab))
+    pipe2.send(router, PeerRoutingMessage(pipe2.ref, origin2a.nodeId, remoteInit, chan_ab))
     pipe2.expectMsg(TransportHandler.ReadAck(chan_ab))
 
     pipe1.expectNoMessage()
@@ -163,22 +163,22 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     system2.eventStream.subscribe(peerConnection2a.ref, classOf[Rebroadcast])
     system3.eventStream.subscribe(peerConnection3a.ref, classOf[Rebroadcast])
 
-    val origin1a = RemoteGossip(peerConnection1a.ref, randomKey().publicKey)
-    val origin1b = RemoteGossip(peerConnection1b.ref, randomKey().publicKey)
-    val origin2a = RemoteGossip(peerConnection2a.ref, randomKey().publicKey)
-    val origin3a = RemoteGossip(peerConnection3a.ref, randomKey().publicKey)
+    val origin1a = RemoteGossip(peerConnection1a.ref, randomKey().publicKey, remoteInit)
+    val origin1b = RemoteGossip(peerConnection1b.ref, randomKey().publicKey, remoteInit)
+    val origin2a = RemoteGossip(peerConnection2a.ref, randomKey().publicKey, remoteInit)
+    val origin3a = RemoteGossip(peerConnection3a.ref, randomKey().publicKey, remoteInit)
 
-    peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, chan_ab))
+    peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, remoteInit, chan_ab))
     assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
-    peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, chan_ab))
-    peerConnection2a.send(front2, PeerRoutingMessage(peerConnection2a.ref, origin2a.nodeId, chan_ab))
+    peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, remoteInit, chan_ab))
+    peerConnection2a.send(front2, PeerRoutingMessage(peerConnection2a.ref, origin2a.nodeId, remoteInit, chan_ab))
 
-    peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, ann_c))
+    peerConnection1a.send(front1, PeerRoutingMessage(peerConnection1a.ref, origin1a.nodeId, remoteInit, ann_c))
     peerConnection1a.expectMsg(TransportHandler.ReadAck(ann_c))
     peerConnection1a.expectMsg(GossipDecision.NoKnownChannel(ann_c))
-    peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, ann_a))
-    peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, channelUpdate_ba))
-    peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, channelUpdate_bc))
+    peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, remoteInit, ann_a))
+    peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, remoteInit, channelUpdate_ba))
+    peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, remoteInit, channelUpdate_bc))
     peerConnection3a.expectMsg(TransportHandler.ReadAck(channelUpdate_bc))
     peerConnection3a.expectMsg(GossipDecision.NoRelatedChannel(channelUpdate_bc))
 
@@ -199,11 +199,11 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection3a.expectMsg(TransportHandler.ReadAck(ann_a))
     peerConnection3a.expectMsg(GossipDecision.Accepted(ann_a))
 
-    peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, channelUpdate_ab))
+    peerConnection1b.send(front1, PeerRoutingMessage(peerConnection1b.ref, origin1b.nodeId, remoteInit, channelUpdate_ab))
     peerConnection1b.expectMsg(TransportHandler.ReadAck(channelUpdate_ab))
     peerConnection1b.expectMsg(GossipDecision.Accepted(channelUpdate_ab))
 
-    peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, ann_b))
+    peerConnection3a.send(front3, PeerRoutingMessage(peerConnection3a.ref, origin3a.nodeId, remoteInit, ann_b))
     peerConnection3a.expectMsg(TransportHandler.ReadAck(ann_b))
     peerConnection3a.expectMsg(GossipDecision.Accepted(ann_b))
 
@@ -226,10 +226,10 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val peerConnection1 = TestProbe()
     system1.eventStream.subscribe(peerConnection1.ref, classOf[Rebroadcast])
 
-    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey)
+    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey, remoteInit)
 
-    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
-    router.expectMsg(PeerRoutingMessage(front1, origin1.nodeId, chan_ab))
+    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, remoteInit, chan_ab))
+    router.expectMsg(PeerRoutingMessage(front1, origin1.nodeId, remoteInit, chan_ab))
     router.send(front1, TransportHandler.ReadAck(chan_ab))
     peerConnection1.expectNoMessage()
     router.send(front1, GossipDecision.Accepted(chan_ab))
@@ -237,14 +237,14 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     peerConnection1.expectMsg(GossipDecision.Accepted(chan_ab))
     router.send(front1, ChannelsDiscovered(SingleChannelDiscovered(chan_ab, 0.sat, None, None) :: Nil))
 
-    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
+    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, remoteInit, chan_ab))
     router.expectNoMessage() // announcement is pending rebroadcast
     peerConnection1.expectMsg(TransportHandler.ReadAck(chan_ab))
 
     router.send(front1, TickBroadcast)
     peerConnection1.expectMsg(Rebroadcast(channels = Map(chan_ab -> Set(origin1)), updates = Map.empty, nodes = Map.empty))
 
-    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
+    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, remoteInit, chan_ab))
     router.expectNoMessage() // announcement is already known
     peerConnection1.expectMsg(TransportHandler.ReadAck(chan_ab))
   }
@@ -260,14 +260,14 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val peerConnection1 = TestProbe()
     system1.eventStream.subscribe(peerConnection1.ref, classOf[Rebroadcast])
 
-    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey)
+    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey, remoteInit)
 
     // first message arrives and is forwarded to router
-    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
-    router.expectMsg(PeerRoutingMessage(front1, origin1.nodeId, chan_ab))
+    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, remoteInit, chan_ab))
+    router.expectMsg(PeerRoutingMessage(front1, origin1.nodeId, remoteInit, chan_ab))
     peerConnection1.expectNoMessage()
     // duplicate message is immediately acknowledged
-    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, chan_ab))
+    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, remoteInit, chan_ab))
     peerConnection1.expectMsg(TransportHandler.ReadAck(chan_ab))
     // router acknowledges the first message
     router.send(front1, TransportHandler.ReadAck(chan_ab))
@@ -290,11 +290,11 @@ class FrontRouterSpec extends TestKit(ActorSystem("test")) with AnyFunSuiteLike 
     val peerConnection1 = TestProbe()
     system1.eventStream.subscribe(peerConnection1.ref, classOf[Rebroadcast])
 
-    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey)
+    val origin1 = RemoteGossip(peerConnection1.ref, randomKey().publicKey, remoteInit)
 
     // channel_update arrives and is forwarded to router (there is no associated channel, because it is private)
-    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, channelUpdate_ab))
-    router.expectMsg(PeerRoutingMessage(front1, origin1.nodeId, channelUpdate_ab))
+    peerConnection1.send(front1, PeerRoutingMessage(peerConnection1.ref, origin1.nodeId, remoteInit, channelUpdate_ab))
+    router.expectMsg(PeerRoutingMessage(front1, origin1.nodeId, remoteInit, channelUpdate_ab))
     peerConnection1.expectNoMessage()
     // router acknowledges the message
     router.send(front1, TransportHandler.ReadAck(channelUpdate_ab))
@@ -320,6 +320,8 @@ object FrontRouterSpec {
 
   val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey(), randomKey(), randomKey(), randomKey(), randomKey(), randomKey())
   val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
+
+  val remoteInit = Init(Features.empty)
 
   val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil, Features(hex"0200"))
   val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil, Features(hex""))

@@ -32,7 +32,7 @@ import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
 import fr.acinq.eclair.tor.Socks5ProxyParams
-import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress}
+import fr.acinq.eclair.wire.protocol.{Color, CompressionAlgorithm, NodeAddress}
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
 
@@ -217,6 +217,7 @@ object NodeParams extends Logging {
       "router.path-finding.ratio-channel-capacity" -> "router.path-finding.default.ratios.channel-capacity",
       "router.path-finding.hop-cost-base-msat" -> "router.path-finding.default.hop-cost.fee-base-msat",
       "router.path-finding.hop-cost-millionths" -> "router.path-finding.default.hop-cost.fee-proportional-millionths",
+      "router.sync.encoding-type" -> "router.sync.preferred-compression-algorithm"
     )
     deprecatedKeyPaths.foreach {
       case (old, new_) => require(!config.hasPath(old), s"configuration key '$old' has been replaced by '$new_'")
@@ -353,7 +354,6 @@ object NodeParams extends Logging {
       experimentName = name,
       experimentPercentage = config.getInt("percentage"))
 
-
     def getPathFindingExperimentConf(config: Config): PathFindingExperimentConf = {
       val experiments = config.root.asScala.keys.map(name => name -> getPathFindingConf(config.getConfig(name), name))
       PathFindingExperimentConf(experiments.toMap)
@@ -364,9 +364,9 @@ object NodeParams extends Logging {
       case "stop" => UnhandledExceptionStrategy.Stop
     }
 
-    val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
-      case "uncompressed" => EncodingType.UNCOMPRESSED
-      case "zlib" => EncodingType.COMPRESSED_ZLIB
+    val routerSyncPreferredCompression = config.getString("router.sync.preferred-compression-algorithm") match {
+      case "uncompressed" => CompressionAlgorithm.Uncompressed
+      case "zlib" => CompressionAlgorithm.ZlibDeflate
     }
 
     NodeParams(
@@ -456,7 +456,7 @@ object NodeParams extends Logging {
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
         networkStatsRefreshInterval = FiniteDuration(config.getDuration("router.network-stats-interval").getSeconds, TimeUnit.SECONDS),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
-        encodingType = routerSyncEncodingType,
+        preferredCompression = routerSyncPreferredCompression,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
         channelQueryChunkSize = config.getInt("router.sync.channel-query-chunk-size"),
         pathFindingExperimentConf = getPathFindingExperimentConf(config.getConfig("router.path-finding.experiments"))

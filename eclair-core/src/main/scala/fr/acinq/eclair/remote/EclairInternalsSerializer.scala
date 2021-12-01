@@ -83,17 +83,19 @@ object EclairInternalsSerializer {
       ("experimentPercentage" | int32)).as[PathFindingConf]
 
   val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
-    ("experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => (e.experimentName -> e)).toMap, _.values.toList))
+    "experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => e.experimentName -> e).toMap, _.values.toList)
     ).as[PathFindingExperimentConf]
+
+  private val compressionAlgorithmCodec: Codec[CompressionAlgorithm] = discriminated[CompressionAlgorithm].by(uint8)
+    .typecase(CompressionAlgorithm.Uncompressed.bitPosition, provide(CompressionAlgorithm.Uncompressed))
+    .typecase(CompressionAlgorithm.ZlibDeflate.bitPosition, provide(CompressionAlgorithm.ZlibDeflate))
 
   val routerConfCodec: Codec[RouterConf] = (
     ("channelExcludeDuration" | finiteDurationCodec) ::
       ("routerBroadcastInterval" | finiteDurationCodec) ::
       ("networkStatsRefreshInterval" | finiteDurationCodec) ::
       ("requestNodeAnnouncements" | bool(8)) ::
-      ("encodingType" | discriminated[EncodingType].by(uint8)
-        .typecase(0, provide(EncodingType.UNCOMPRESSED))
-        .typecase(1, provide(EncodingType.COMPRESSED_ZLIB))) ::
+      ("preferredCompression" | compressionAlgorithmCodec) ::
       ("channelRangeChunkSize" | int32) ::
       ("channelQueryChunkSize" | int32) ::
       ("pathFindingExperimentConf" | pathFindingExperimentConfCodec)).as[RouterConf]
@@ -166,6 +168,7 @@ object EclairInternalsSerializer {
   def peerRoutingMessageCodec(system: ExtendedActorSystem): Codec[PeerRoutingMessage] = (
     ("peerConnection" | actorRefCodec(system)) ::
       ("remoteNodeId" | publicKey) ::
+      ("remoteInit" | lengthPrefixedInitCodec) ::
       ("msg" | lengthPrefixedLightningMessageCodec.downcast[RoutingMessage])).as[PeerRoutingMessage]
 
   val singleChannelDiscoveredCodec: Codec[SingleChannelDiscovered] = (lengthPrefixedChannelAnnouncementCodec :: satoshi :: optional(bool(8), lengthPrefixedChannelUpdateCodec) :: optional(bool(8), lengthPrefixedChannelUpdateCodec)).as[SingleChannelDiscovered]

@@ -675,9 +675,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val channelUpdate_hb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_h, b, channelId_bh, CltvExpiryDelta(9), htlcMinimumMsat = 0 msat, feeBaseMsat = 10 msat, feeProportionalMillionths = 8, htlcMaximumMsat = 500000000 msat)
     assert(Router.getDesc(channelUpdate_bh, chan_bh) === ChannelDesc(channelId_bh, priv_b.publicKey, priv_h.publicKey))
     val peerConnection = TestProbe()
-    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_bh)
-    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_bh)
-    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, channelUpdate_hb)
+    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, chan_bh)
+    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, channelUpdate_bh)
+    router ! PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, channelUpdate_hb)
     assert(watcher.expectMsgType[ValidateRequest].ann === chan_bh)
     watcher.send(router, ValidateResult(chan_bh, Right((Transaction(version = 0, txIn = Nil, txOut = TxOut(1000000 sat, write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_h)))) :: Nil, lockTime = 0), UtxoStatus.Unspent))))
     watcher.expectMsgType[WatchExternalChannelSpent]

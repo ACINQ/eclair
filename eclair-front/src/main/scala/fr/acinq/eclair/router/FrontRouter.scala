@@ -66,16 +66,16 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
       remoteRouter forward s
       stay()
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryChannelRange), d) =>
-      Sync.handleQueryChannelRange(d.channels, routerConf, RemoteGossip(peerConnection, remoteNodeId), q)
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, remoteInit, q: QueryChannelRange), d) =>
+      Sync.handleQueryChannelRange(d.channels, routerConf, RemoteGossip(peerConnection, remoteNodeId, remoteInit), q)
       stay()
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, q: QueryShortChannelIds), d) =>
-      Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId), q)
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, remoteInit, q: QueryShortChannelIds), d) =>
+      Sync.handleQueryShortChannelIds(d.nodes, d.channels, RemoteGossip(peerConnection, remoteNodeId, remoteInit), q)
       stay()
 
-    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, ann: AnnouncementMessage), d) =>
-      val origin = RemoteGossip(peerConnection, remoteNodeId)
+    case Event(PeerRoutingMessage(peerConnection, remoteNodeId, remoteInit, ann: AnnouncementMessage), d) =>
+      val origin = RemoteGossip(peerConnection, remoteNodeId, remoteInit)
       val d1 = d.processing.get(ann) match {
         case Some(origins) if origins.contains(origin) =>
           log.warning("acking duplicate msg={}", ann)
@@ -129,7 +129,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
                 case _ =>
                   Metrics.gossipForwarded(ann).increment()
                   log.debug("sending announcement class={} to master router", ann.getClass.getSimpleName)
-                  remoteRouter ! PeerRoutingMessage(self, remoteNodeId, ann) // nb: we set ourselves as the origin
+                  remoteRouter ! PeerRoutingMessage(self, remoteNodeId, remoteInit, ann) // nb: we set ourselves as the origin
                   d.copy(processing = d.processing + (ann -> Set(origin)))
               }
           }
@@ -196,7 +196,7 @@ class FrontRouter(routerConf: RouterConf, remoteRouter: ActorRef, initialized: O
   override def mdc(currentMessage: Any): MDC = {
     val category_opt = LogCategory(currentMessage)
     currentMessage match {
-      case PeerRoutingMessage(_, remoteNodeId, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
+      case PeerRoutingMessage(_, remoteNodeId, _, _) => Logs.mdc(category_opt, remoteNodeId_opt = Some(remoteNodeId))
       case _ => Logs.mdc(category_opt)
     }
   }

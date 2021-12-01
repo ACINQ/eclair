@@ -421,9 +421,9 @@ class PaymentRequestSpec extends AnyFunSuite {
       PaymentRequestFeatures(bin"          0000110000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       PaymentRequestFeatures(bin"          0000100000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       PaymentRequestFeatures(bin"          0010000000101000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
+      PaymentRequestFeatures(bin"     000100000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       // those are useful for nonreg testing of the areSupported method (which needs to be updated with every new supported mandatory bit)
       PaymentRequestFeatures(bin"     000001000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
-      PaymentRequestFeatures(bin"     000100000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = true),
       PaymentRequestFeatures(bin"00000010000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false),
       PaymentRequestFeatures(bin"00001000000000000000100000100000000") -> Result(allowMultiPart = false, requirePaymentSecret = true, areSupported = false)
     )

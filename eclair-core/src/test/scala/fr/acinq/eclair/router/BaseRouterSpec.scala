@@ -51,6 +51,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
   case class FixtureParam(nodeParams: NodeParams, router: ActorRef, watcher: TestProbe)
 
   val remoteNodeId = PrivateKey(ByteVector32(ByteVector.fill(32)(1))).publicKey
+  val remoteInit = Init(TestConstants.Bob.nodeParams.features)
   val publicChannelCapacity = 1000000 sat
   val htlcMaximum = 500000000 msat
 
@@ -125,30 +126,30 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
         .modify(_.routerConf.routerBroadcastInterval).setTo(1 day) // "disable" auto rebroadcast
       val router = system.actorOf(Router.props(nodeParams, watcher.ref))
       // we announce channels
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ab))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_bc))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_cd))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_ef))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, chan_gh))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, chan_ab))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, chan_bc))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, chan_cd))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, chan_ef))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, chan_gh))
       // then nodes
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_b))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_c))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_d))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_e))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_f))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_g))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, node_h))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, node_b))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, node_c))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, node_d))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, node_e))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, node_f))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, node_g))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, node_h))
       // then channel updates
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ab))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ba))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_bc))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_cb))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_cd))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_dc))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_ef))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_fe))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_gh))
-      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_hg))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_ab))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_ba))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_bc))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_cb))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_cd))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_dc))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_ef))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_fe))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_gh))
+      peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, remoteInit, update_hg))
       // then private channels
       sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32(), channelId_ag, g, None, update_ag, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests

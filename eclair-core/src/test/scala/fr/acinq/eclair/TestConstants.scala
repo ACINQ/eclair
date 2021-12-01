@@ -28,7 +28,7 @@ import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.PathFindingExperimentConf
 import fr.acinq.eclair.router.Router.{MultiPartParams, PathFindingConf, RouterConf, SearchBoundaries}
-import fr.acinq.eclair.wire.protocol.{Color, EncodingType, NodeAddress, OnionRoutingPacket}
+import fr.acinq.eclair.wire.protocol.{Color, CompressionAlgorithm, NodeAddress, OnionRoutingPacket}
 import org.scalatest.Tag
 import scodec.bits.ByteVector
 
@@ -170,7 +170,7 @@ object TestConstants {
         routerBroadcastInterval = 5 seconds,
         networkStatsRefreshInterval = 1 hour,
         requestNodeAnnouncements = true,
-        encodingType = EncodingType.COMPRESSED_ZLIB,
+        preferredCompression = CompressionAlgorithm.ZlibDeflate,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
         pathFindingExperimentConf = PathFindingExperimentConf(Map("alice-test-experiment" -> PathFindingConf(
@@ -297,7 +297,7 @@ object TestConstants {
         routerBroadcastInterval = 5 seconds,
         networkStatsRefreshInterval = 1 hour,
         requestNodeAnnouncements = true,
-        encodingType = EncodingType.UNCOMPRESSED,
+        preferredCompression = CompressionAlgorithm.Uncompressed,
         channelRangeChunkSize = 20,
         channelQueryChunkSize = 5,
         pathFindingExperimentConf = PathFindingExperimentConf(Map("bob-test-experiment" -> PathFindingConf(

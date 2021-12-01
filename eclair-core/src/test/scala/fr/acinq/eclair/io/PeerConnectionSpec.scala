@@ -76,6 +76,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     transport.expectMsgType[TransportHandler.Listener]
     val localInit = transport.expectMsgType[protocol.Init]
     assert(localInit.networks === List(Block.RegtestGenesisBlock.hash))
+    assert(localInit.compressionAlgorithms === CompressionAlgorithm.defaultSupported)
     transport.send(peerConnection, remoteInit)
     transport.expectMsgType[TransportHandler.ReadAck]
     if (doSync) {
@@ -194,6 +195,25 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, remoteInit, doSync = true)
   }
 
+  test("don't sync when compression algorithms don't match") { f =>
+    import f._
+
+    val probe = TestProbe()
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
+    switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId))
+    probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
+    transport.expectMsgType[TransportHandler.Listener]
+    val localInit = transport.expectMsgType[protocol.Init]
+    val remoteInit = protocol.Init(Bob.nodeParams.features, TlvStream(InitTlv.CompressionAlgorithms(Set.empty)))
+    transport.send(peerConnection, remoteInit)
+    transport.expectMsgType[TransportHandler.ReadAck]
+    // We don't send channel queries because they don't support any type of compression
+    router.expectNoMessage(1 second)
+    peer.expectMsg(PeerConnection.ConnectionReady(peerConnection, remoteNodeId, address, outgoing = true, localInit, remoteInit))
+    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+  }
+
   test("reply to ping") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
@@ -250,7 +270,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("filter gossip message (no filtering)") { f =>
     import f._
     val probe = TestProbe()
-    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey().publicKey))
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey().publicKey, protocol.Init(Bob.nodeParams.features)))
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     probe.send(peerConnection, rebroadcast)
@@ -260,8 +280,8 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("filter gossip message (filtered by origin)") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
-    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey().publicKey))
-    val bobOrigin = RemoteGossip(peerConnection, remoteNodeId)
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey().publicKey, protocol.Init(Bob.nodeParams.features)))
+    val bobOrigin = RemoteGossip(peerConnection, remoteNodeId, protocol.Init(Bob.nodeParams.features))
     val rebroadcast = Rebroadcast(
       channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(bobOrigin)),
       updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + bobOrigin)) + (updates(10) -> Set(bobOrigin)),
@@ -279,7 +299,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("filter gossip message (filtered by timestamp)") { f =>
     import f._
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
-    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey().publicKey))
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey().publicKey, protocol.Init(Bob.nodeParams.features)))
     val rebroadcast = Rebroadcast(channels.map(_ -> gossipOrigin).toMap, updates.map(_ -> gossipOrigin).toMap, nodes.map(_ -> gossipOrigin).toMap)
     val timestamps = updates.map(_.timestamp).sorted.slice(10, 30)
     val filter = protocol.GossipTimestampFilter(Alice.nodeParams.chainHash, timestamps.head, (timestamps.last - timestamps.head).toSeconds)
@@ -297,7 +317,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     val probe = TestProbe()
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
-    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey().publicKey))
+    val gossipOrigin = Set[GossipOrigin](RemoteGossip(TestProbe().ref, randomKey().publicKey, protocol.Init(Bob.nodeParams.features)))
     val rebroadcast = Rebroadcast(
       channels.map(_ -> gossipOrigin).toMap + (channels(5) -> Set(LocalGossip)),
       updates.map(_ -> gossipOrigin).toMap + (updates(6) -> (gossipOrigin + LocalGossip)) + (updates(10) -> Set(LocalGossip)),
@@ -314,17 +334,18 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
   test("react to peer's bad behavior") { f =>
     import f._
     val probe = TestProbe()
+    val remoteInit = protocol.Init(Bob.nodeParams.features)
     connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)
 
     val query = QueryShortChannelIds(
       Alice.nodeParams.chainHash,
-      EncodedShortChannelIds(EncodingType.UNCOMPRESSED, List(ShortChannelId(42000))),
+      EncodedShortChannelIds(CompressionAlgorithm.Uncompressed, List(ShortChannelId(42000))),
       TlvStream.empty)
 
     // make sure that routing messages go through
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
-      router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, ann))
+      router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, remoteInit, ann))
     }
     transport.expectNoMessage(1 second) // peer hasn't acknowledged the messages
 
@@ -345,7 +366,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     router.expectNoMessage(1 second)
     // other routing messages go through
     transport.send(peerConnection, query)
-    router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, query))
+    router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, remoteInit, query))
 
     // after a while the ban is lifted
     probe.send(peerConnection, PeerConnection.ResumeAnnouncements)
@@ -353,7 +374,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     // and announcements are processed again
     for (ann <- channels ++ updates) {
       transport.send(peerConnection, ann)
-      router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, ann))
+      router.expectMsg(Peer.PeerRoutingMessage(peerConnection, remoteNodeId, remoteInit, ann))
     }
     transport.expectNoMessage(1 second) // peer hasn't acknowledged the messages
 

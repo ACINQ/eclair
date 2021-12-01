@@ -25,7 +25,7 @@ import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes32}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
-import scodec.bits.{BitVector, HexStringSyntax}
+import scodec.bits.{BinStringSyntax, BitVector, HexStringSyntax}
 import scodec.codecs.uint32
 
 import java.net.{Inet4Address, Inet6Address, InetAddress}
@@ -134,6 +134,23 @@ class CommonCodecsSpec extends AnyFunSuite {
 
     for (testCase <- testCases) {
       assert(varintoverflow.decode(testCase).isFailure, testCase.toByteVector)
+    }
+  }
+
+  test("encode/decode reversed bit vector") {
+    case class TestCase(encoded: BitVector, decoded: ReversedBitVector, reEncoded: BitVector)
+    val testCases = Seq(
+      TestCase(bin"", ReversedBitVector(Set.empty), bin""),
+      TestCase(bin"00000000", ReversedBitVector(Set.empty), bin""),
+      TestCase(bin"0000000000000000", ReversedBitVector(Set.empty), bin""),
+      TestCase(bin"0000000001010001", ReversedBitVector(Set(0, 4, 6)), bin"01010001"),
+      TestCase(bin"1001000001110001", ReversedBitVector(Set(0, 4, 5, 6, 12, 15)), bin"1001000001110001"),
+      TestCase(bin"0101000000000000", ReversedBitVector(Set(12, 14)), bin"0101000000000000"),
+    )
+
+    for (testCase <- testCases) {
+      assert(reversedBitVector.decode(testCase.encoded).require.value === testCase.decoded)
+      assert(reversedBitVector.encode(testCase.decoded).require === testCase.reEncoded)
     }
   }
 

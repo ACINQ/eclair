@@ -203,6 +203,11 @@ object Features {
     val mandatory = 26
   }
 
+  case object CompressionSupport extends Feature {
+    val rfcName = "option_compression"
+    val mandatory = 32
+  }
+
   case object OnionMessages extends Feature {
     val rfcName = "option_onion_messages"
     val mandatory = 38
@@ -235,6 +240,7 @@ object Features {
     StaticRemoteKey,
     AnchorOutputs,
     AnchorOutputsZeroFeeHtlcTx,
+    CompressionSupport,
     ShutdownAnySegwit,
     OnionMessages,
     KeySend
