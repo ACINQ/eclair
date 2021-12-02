@@ -500,9 +500,9 @@ class RouterSpec extends BaseRouterSpec {
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
-    assert(response.routes.head.hops.map(_.nodeId).toList == preComputedRoute.nodes.dropRight(1).toList)
-    assert(response.routes.head.hops.last.nextNodeId == preComputedRoute.targetNodeId)
-    assert(response.routes.head.hops.map(_.lastUpdate).toList == List(update_ab, update_bc, update_cd))
+    assert(response.routes.head.hops.map(_.nodeId) === preComputedRoute.nodes.dropRight(1))
+    assert(response.routes.head.hops.map(_.nextNodeId) === preComputedRoute.nodes.drop(1))
+    assert(response.routes.head.hops.map(_.lastUpdate) === Seq(update_ab, update_bc, update_cd))
   }
 
   test("given a pre-defined channels route add the proper channel updates") { fixture =>
@@ -514,9 +514,72 @@ class RouterSpec extends BaseRouterSpec {
 
     val response = sender.expectMsgType[RouteResponse]
     // the route hasn't changed (nodes are the same)
-    assert(response.routes.head.hops.map(_.nodeId).toList == Seq(a, b, c))
-    assert(response.routes.head.hops.last.nextNodeId == preComputedRoute.targetNodeId)
-    assert(response.routes.head.hops.map(_.lastUpdate).toList == List(update_ab, update_bc, update_cd))
+    assert(response.routes.head.hops.map(_.nodeId) === Seq(a, b, c))
+    assert(response.routes.head.hops.map(_.nextNodeId) === Seq(b, c, d))
+    assert(response.routes.head.hops.map(_.lastUpdate) === Seq(update_ab, update_bc, update_cd))
+  }
+
+  test("given a pre-defined private channels route add the proper channel updates") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+
+    {
+      val preComputedRoute = PredefinedChannelRoute(g, Seq(channelId_ag))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      val response = sender.expectMsgType[RouteResponse]
+      assert(response.routes.length === 1)
+      val route = response.routes.head
+      assert(route.hops.map(_.lastUpdate) === Seq(update_ag))
+      assert(route.hops.head.nodeId === a)
+      assert(route.hops.head.nextNodeId === g)
+    }
+    {
+      val preComputedRoute = PredefinedChannelRoute(h, Seq(channelId_ag, channelId_gh))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
+      val response = sender.expectMsgType[RouteResponse]
+      assert(response.routes.length === 1)
+      val route = response.routes.head
+      assert(route.hops.map(_.nodeId) === Seq(a, g))
+      assert(route.hops.map(_.nextNodeId) === Seq(g, h))
+      assert(route.hops.map(_.lastUpdate) === Seq(update_ag, update_gh))
+    }
+  }
+
+  test("given a pre-defined channels route with routing hints add the proper channel updates") { fixture =>
+    import fixture._
+    val sender = TestProbe()
+    val targetNodeId = randomKey().publicKey
+
+    {
+      val invoiceRoutingHint = ExtraHop(b, ShortChannelId(420000, 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
+      val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(channelId_ab, invoiceRoutingHint.shortChannelId))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
+      val response = sender.expectMsgType[RouteResponse]
+      assert(response.routes.length === 1)
+      val route = response.routes.head
+      assert(route.hops.map(_.nodeId) === Seq(a, b))
+      assert(route.hops.map(_.nextNodeId) === Seq(b, targetNodeId))
+      assert(route.hops.head.lastUpdate === update_ab)
+      assert(route.hops.last.lastUpdate.shortChannelId === invoiceRoutingHint.shortChannelId)
+      assert(route.hops.last.lastUpdate.feeBaseMsat === invoiceRoutingHint.feeBase)
+      assert(route.hops.last.lastUpdate.feeProportionalMillionths === invoiceRoutingHint.feeProportionalMillionths)
+      assert(route.hops.last.lastUpdate.cltvExpiryDelta === invoiceRoutingHint.cltvExpiryDelta)
+    }
+    {
+      val invoiceRoutingHint = ExtraHop(h, ShortChannelId(420000, 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
+      val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(channelId_ag, channelId_gh, invoiceRoutingHint.shortChannelId))
+      sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
+      val response = sender.expectMsgType[RouteResponse]
+      assert(response.routes.length === 1)
+      val route = response.routes.head
+      assert(route.hops.map(_.nodeId) === Seq(a, g, h))
+      assert(route.hops.map(_.nextNodeId) === Seq(g, h, targetNodeId))
+      assert(route.hops.map(_.lastUpdate).dropRight(1) === Seq(update_ag, update_gh))
+      assert(route.hops.last.lastUpdate.shortChannelId === invoiceRoutingHint.shortChannelId)
+      assert(route.hops.last.lastUpdate.feeBaseMsat === invoiceRoutingHint.feeBase)
+      assert(route.hops.last.lastUpdate.feeProportionalMillionths === invoiceRoutingHint.feeProportionalMillionths)
+      assert(route.hops.last.lastUpdate.cltvExpiryDelta === invoiceRoutingHint.cltvExpiryDelta)
+    }
   }
 
   test("given an invalid pre-defined channels route return an error") { fixture =>

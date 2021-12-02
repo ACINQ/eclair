@@ -34,7 +34,6 @@ import kamon.tag.TagSet
 
 import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.concurrent.duration._
 import scala.util.{Failure, Random, Success, Try}
 
 object RouteCalculation {
@@ -69,11 +68,19 @@ object RouteCalculation {
         case PredefinedChannelRoute(targetNodeId, channels) =>
           val (end, hops) = channels.foldLeft((localNodeId, Seq.empty[ChannelHop])) {
             case ((start, current), shortChannelId) =>
-              d.channels.get(shortChannelId).flatMap(c => start match {
-                case c.ann.nodeId1 => g.getEdge(ChannelDesc(shortChannelId, c.ann.nodeId1, c.ann.nodeId2))
-                case c.ann.nodeId2 => g.getEdge(ChannelDesc(shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
+              val channelDesc_opt = d.channels.get(shortChannelId).flatMap(c => start match {
+                case c.ann.nodeId1 => Some(ChannelDesc(shortChannelId, c.ann.nodeId1, c.ann.nodeId2))
+                case c.ann.nodeId2 => Some(ChannelDesc(shortChannelId, c.ann.nodeId2, c.ann.nodeId1))
                 case _ => None
-              }) match {
+              }).orElse(d.privateChannels.get(shortChannelId).flatMap(c => start match {
+                case c.nodeId1 => Some(ChannelDesc(shortChannelId, c.nodeId1, c.nodeId2))
+                case c.nodeId2 => Some(ChannelDesc(shortChannelId, c.nodeId2, c.nodeId1))
+                case _ => None
+              })).orElse(assistedChannels.get(shortChannelId).flatMap(c => start match {
+                case c.extraHop.nodeId => Some(ChannelDesc(shortChannelId, c.extraHop.nodeId, c.nextNodeId))
+                case _ => None
+              }))
+              channelDesc_opt.flatMap(c => g.getEdge(c)) match {
                 case Some(edge) => (edge.desc.b, current :+ ChannelHop(edge.desc.a, edge.desc.b, edge.update))
                 case None => (start, current)
               }
