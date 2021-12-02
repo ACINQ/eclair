@@ -156,13 +156,16 @@ object Helpers {
    */
   def validateParamsFunder(nodeParams: NodeParams, channelType: SupportedChannelType, localFeatures: Features, remoteFeatures: Features, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
     accept.channelType_opt match {
+      case Some(theirChannelType) if accept.channelType_opt != open.channelType_opt =>
+        // if channel_type is set, and channel_type was set in open_channel, and they are not equal types: MUST reject the channel.
+        return Left(InvalidChannelType(open.temporaryChannelId, channelType, theirChannelType))
+      case None if Features.canUseFeature(localFeatures, remoteFeatures, Features.ChannelType) =>
+        // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
+        return Left(MissingChannelType(open.temporaryChannelId))
       case None if channelType != ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures) =>
         // If we have overridden the default channel type, but they didn't support explicit channel type negotiation,
         // we need to abort because they expect a different channel type than what we offered.
         return Left(InvalidChannelType(open.temporaryChannelId, channelType, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures)))
-      case Some(theirChannelType) if accept.channelType_opt != open.channelType_opt =>
-        // if channel_type is set, and channel_type was set in open_channel, and they are not equal types: MUST reject the channel.
-        return Left(InvalidChannelType(open.temporaryChannelId, channelType, theirChannelType))
       case _ => // we agree on channel type
     }
 
