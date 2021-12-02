@@ -265,6 +265,7 @@ object NodeParams extends Logging {
       require(features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)), s"${Features.VariableLengthOnion.rfcName} must be enabled and mandatory")
       require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), s"${Features.PaymentSecret.rfcName} must be enabled and mandatory")
       require(!features.hasFeature(Features.InitialRoutingSync), s"${Features.InitialRoutingSync.rfcName} is not supported anymore, use ${Features.ChannelRangeQueries.rfcName} instead")
+      require(features.hasFeature(Features.ChannelType), s"${Features.ChannelType.rfcName} must be enabled")
     }
 
     val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
