@@ -387,8 +387,8 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.routes.head.hops.map(_.nodeId).toList === a :: g :: Nil)
     assert(res.routes.head.hops.last.nextNodeId === h)
 
-    val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
-    sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ag, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
+    val channelUpdate_ag1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, g, channelId_ag_private, CltvExpiryDelta(7), 0 msat, 10 msat, 10, htlcMaximum, enable = false)
+    sender.send(router, LocalChannelUpdate(sender.ref, null, channelId_ag_private, g, None, channelUpdate_ag1, CommitmentsSpec.makeCommitments(10000 msat, 15000 msat, a, g, announceChannel = false)))
     sender.send(router, RouteRequest(a, h, DEFAULT_AMOUNT_MSAT, DEFAULT_MAX_FEE, routeParams = DEFAULT_ROUTE_PARAMS))
     sender.expectMsg(Failure(RouteNotFound))
   }
@@ -454,7 +454,7 @@ class RouterSpec extends BaseRouterSpec {
     import fixture._
     // We need a channel update from our private remote peer, otherwise we can't create invoice routing information.
     val peerConnection = TestProbe()
-    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update_ga))
+    peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, g, update_ga_private))
     val sender = TestProbe()
     sender.send(router, GetLocalChannels)
     val localChannels = sender.expectMsgType[Seq[LocalChannel]]
@@ -464,7 +464,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(localChannels.exists(!_.isPrivate)) // a ---> b
     assert(localChannels.flatMap(_.toExtraHop).toSet === Set(
       ExtraHop(b, channelId_ab, update_ba.feeBaseMsat, update_ba.feeProportionalMillionths, update_ba.cltvExpiryDelta),
-      ExtraHop(g, channelId_ag, update_ga.feeBaseMsat, update_ga.feeProportionalMillionths, update_ga.cltvExpiryDelta)
+      ExtraHop(g, channelId_ag_private, update_ga_private.feeBaseMsat, update_ga_private.feeProportionalMillionths, update_ga_private.cltvExpiryDelta)
     ))
   }
 
@@ -524,24 +524,24 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
 
     {
-      val preComputedRoute = PredefinedChannelRoute(g, Seq(channelId_ag))
+      val preComputedRoute = PredefinedChannelRoute(g, Seq(channelId_ag_private))
       sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length === 1)
       val route = response.routes.head
-      assert(route.hops.map(_.lastUpdate) === Seq(update_ag))
+      assert(route.hops.map(_.lastUpdate) === Seq(update_ag_private))
       assert(route.hops.head.nodeId === a)
       assert(route.hops.head.nextNodeId === g)
     }
     {
-      val preComputedRoute = PredefinedChannelRoute(h, Seq(channelId_ag, channelId_gh))
+      val preComputedRoute = PredefinedChannelRoute(h, Seq(channelId_ag_private, channelId_gh))
       sender.send(router, FinalizeRoute(10000 msat, preComputedRoute))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length === 1)
       val route = response.routes.head
       assert(route.hops.map(_.nodeId) === Seq(a, g))
       assert(route.hops.map(_.nextNodeId) === Seq(g, h))
-      assert(route.hops.map(_.lastUpdate) === Seq(update_ag, update_gh))
+      assert(route.hops.map(_.lastUpdate) === Seq(update_ag_private, update_gh))
     }
   }
 
@@ -567,14 +567,14 @@ class RouterSpec extends BaseRouterSpec {
     }
     {
       val invoiceRoutingHint = ExtraHop(h, ShortChannelId(420000, 516, 1105), 10 msat, 150, CltvExpiryDelta(96))
-      val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(channelId_ag, channelId_gh, invoiceRoutingHint.shortChannelId))
+      val preComputedRoute = PredefinedChannelRoute(targetNodeId, Seq(channelId_ag_private, channelId_gh, invoiceRoutingHint.shortChannelId))
       sender.send(router, FinalizeRoute(10000 msat, preComputedRoute, assistedRoutes = Seq(Seq(invoiceRoutingHint))))
       val response = sender.expectMsgType[RouteResponse]
       assert(response.routes.length === 1)
       val route = response.routes.head
       assert(route.hops.map(_.nodeId) === Seq(a, g, h))
       assert(route.hops.map(_.nextNodeId) === Seq(g, h, targetNodeId))
-      assert(route.hops.map(_.lastUpdate).dropRight(1) === Seq(update_ag, update_gh))
+      assert(route.hops.map(_.lastUpdate).dropRight(1) === Seq(update_ag_private, update_gh))
       assert(route.hops.last.lastUpdate.shortChannelId === invoiceRoutingHint.shortChannelId)
       assert(route.hops.last.lastUpdate.feeBaseMsat === invoiceRoutingHint.feeBase)
       assert(route.hops.last.lastUpdate.feeProportionalMillionths === invoiceRoutingHint.feeProportionalMillionths)
@@ -710,13 +710,13 @@ class RouterSpec extends BaseRouterSpec {
       // Private channels should also update the graph when HTLCs are relayed through them.
       val balances = Set(33000000 msat, 5000000 msat)
       val commitments = CommitmentsSpec.makeCommitments(33000000 msat, 5000000 msat, a, g, announceChannel = false)
-      sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ag, commitments))
+      sender.send(router, AvailableBalanceChanged(sender.ref, null, channelId_ag_private, commitments))
       sender.send(router, Router.GetRouterData)
       val data = sender.expectMsgType[Data]
-      val channel_ag = data.privateChannels(channelId_ag)
+      val channel_ag = data.privateChannels(channelId_ag_private)
       assert(Set(channel_ag.meta.balance1, channel_ag.meta.balance2) === balances)
       // And the graph should be updated too.
-      val edge_ag = data.graph.getEdge(ChannelDesc(channelId_ag, a, g)).get
+      val edge_ag = data.graph.getEdge(ChannelDesc(channelId_ag_private, a, g)).get
       assert(edge_ag.capacity == channel_ag.capacity)
       assert(edge_ag.balance_opt === Some(33000000 msat))
     }
