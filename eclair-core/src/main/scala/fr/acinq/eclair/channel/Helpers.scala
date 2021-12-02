@@ -601,18 +601,18 @@ object Helpers {
     }
 
     /** Wraps transaction generation in a Try and filters failures to avoid one transaction negatively impacting a whole commitment. */
-    private def generateTx[T <: TransactionWithInputInfo](desc: String)(attempt: => Either[TxGenerationSkipped, T])(implicit log: LoggingAdapter): Option[T] = {
+    private def withTxGenerationLog[T <: TransactionWithInputInfo](desc: String, logSuccess: Boolean = true, logSkipped: Boolean = true, logFailure: Boolean = true)(generateTx: => Either[TxGenerationSkipped, T])(implicit log: LoggingAdapter): Option[T] = {
       Try {
-        attempt
+        generateTx
       } match {
         case Success(Right(txinfo)) =>
-          log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount).sum} tx=${txinfo.tx}")
+          if (logSuccess) log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount).sum} tx=${txinfo.tx}")
           Some(txinfo)
         case Success(Left(skipped)) =>
-          log.info(s"tx generation skipped: desc=$desc reason: ${skipped.toString}")
+          if (logSkipped) log.info(s"tx generation skipped: desc=$desc reason: ${skipped.toString}")
           None
         case Failure(t) =>
-          log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
+          if (logFailure) log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
           None
       }
     }
@@ -641,7 +641,7 @@ object Helpers {
       val feeratePerKwDelayed = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
       // first we will claim our main output as soon as the delay is over
-      val mainDelayedTx = generateTx("local-main-delayed") {
+      val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
         Transactions.makeClaimLocalDelayedOutputTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
           val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
           Transactions.addSigs(claimDelayed, sig)
@@ -655,7 +655,7 @@ object Helpers {
         case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _), remoteSig) =>
           if (preimages.contains(paymentHash)) {
             // incoming htlc for which we have the preimage: we can spend it immediately
-            txInfo.input.outPoint -> generateTx("htlc-success") {
+            txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
               val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
               Right(Transactions.addSigs(txInfo, localSig, remoteSig, preimages(paymentHash), commitmentFormat))
             }
@@ -666,17 +666,17 @@ object Helpers {
           }
         case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-          txInfo.input.outPoint -> generateTx("htlc-timeout") {
+          txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
             val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
             Right(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
           }
       }.toMap
 
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
-        generateTx("local-anchor") {
+        withTxGenerationLog("local-anchor") {
           Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey)
         },
-        generateTx("remote-anchor") {
+        withTxGenerationLog("remote-anchor") {
           Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
         }
       ).flatten
@@ -704,7 +704,7 @@ object Helpers {
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index.toInt)
         val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
         val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-        val htlcDelayedTx = generateTx("htlc-delayed") {
+        val htlcDelayedTx = withTxGenerationLog("htlc-delayed") {
           Transactions.makeHtlcDelayedTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
             val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
             Transactions.addSigs(claimDelayed, sig)
@@ -748,12 +748,13 @@ object Helpers {
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = remoteCommit.spec.htlcs.collect {
         case OutgoingHtlc(add: UpdateAddHtlc) =>
-          generateTx("claim-htlc-success") {
+          // NB: we first generate the tx skeleton and finalize it below if we have the preimage, so we set logSuccess to false to avoid logging twice
+          withTxGenerationLog("claim-htlc-success", logSuccess = false) {
             Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
           }.map(claimHtlcTx => {
             if (preimages.contains(add.paymentHash)) {
               // incoming htlc for which we have the preimage: we can spend it immediately
-              claimHtlcTx.input.outPoint -> generateTx("claim-htlc-success") {
+              claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-success") {
                 val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
                 Right(Transactions.addSigs(claimHtlcTx, sig, preimages(add.paymentHash)))
               }
@@ -765,10 +766,11 @@ object Helpers {
           })
         case IncomingHtlc(add: UpdateAddHtlc) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-          generateTx("claim-htlc-timeout") {
+          // NB: we first generate the tx skeleton and finalize it below, so we set logSuccess to false to avoid logging twice
+          withTxGenerationLog("claim-htlc-timeout", logSuccess = false) {
             Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
           }.map(claimHtlcTx => {
-            claimHtlcTx.input.outPoint -> generateTx("claim-htlc-timeout") {
+            claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-timeout") {
               val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
               Right(Transactions.addSigs(claimHtlcTx, sig))
             }
@@ -776,10 +778,10 @@ object Helpers {
       }.toSeq.flatten.toMap
 
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
-        generateTx("local-anchor") {
+        withTxGenerationLog("local-anchor") {
           Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey)
         },
-        generateTx("remote-anchor") {
+        withTxGenerationLog("remote-anchor") {
           Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
         }
       ).flatten
@@ -817,13 +819,13 @@ object Helpers {
       val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
       val mainTx = commitments.commitmentFormat match {
-        case DefaultCommitmentFormat => generateTx("remote-main") {
+        case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
           Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit, localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
         }
-        case _: AnchorOutputsCommitmentFormat => generateTx("remote-main-delayed") {
+        case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
           Transactions.makeClaimRemoteDelayedOutputTx(tx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitments.commitmentFormat)
             Transactions.addSigs(claimMain, sig)
@@ -880,13 +882,13 @@ object Helpers {
               log.info(s"channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
               None
             case ct => ct.commitmentFormat match {
-              case DefaultCommitmentFormat => generateTx("claim-p2wpkh-output") {
+              case DefaultCommitmentFormat => withTxGenerationLog("claim-p2wpkh-output") {
                 Transactions.makeClaimP2WPKHOutputTx(commitTx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
                   val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitmentFormat)
                   Transactions.addSigs(claimMain, localPaymentPubkey, sig)
                 })
               }
-              case _: AnchorOutputsCommitmentFormat => generateTx("remote-main-delayed") {
+              case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
                 Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
                   val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
                   Transactions.addSigs(claimMain, sig)
@@ -896,7 +898,7 @@ object Helpers {
           }
 
           // then we punish them by stealing their main output
-          val mainPenaltyTx = generateTx("main-penalty") {
+          val mainPenaltyTx = withTxGenerationLog("main-penalty") {
             Transactions.makeMainPenaltyTx(commitTx, localParams.dustLimit, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).map(txinfo => {
               val sig = keyManager.sign(txinfo, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
               Transactions.addSigs(txinfo, sig)
@@ -916,7 +918,7 @@ object Helpers {
           // and finally we steal the htlc outputs
           val htlcPenaltyTxs = commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
             val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
-            generateTx("htlc-penalty") {
+            withTxGenerationLog("htlc-penalty") {
               Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).map(htlcPenalty => {
                 val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
@@ -973,7 +975,7 @@ object Helpers {
             val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 1)
 
             val penaltyTxs = Transactions.makeClaimHtlcDelayedOutputPenaltyTxs(htlcTx, localParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).flatMap(claimHtlcDelayedOutputPenaltyTx => {
-              generateTx("htlc-delayed-penalty") {
+              withTxGenerationLog("htlc-delayed-penalty") {
                 claimHtlcDelayedOutputPenaltyTx.map(htlcDelayedPenalty => {
                   val sig = keyManager.sign(htlcDelayedPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
                   val signedTx = Transactions.addSigs(htlcDelayedPenalty, sig)
