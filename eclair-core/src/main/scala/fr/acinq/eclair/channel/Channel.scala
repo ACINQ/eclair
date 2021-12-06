@@ -1888,6 +1888,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         case _ => handleCommandError(CommandUnavailableInThisState(d.channelId, "forceclose", stateName), c)
       }
 
+    // In states where we don't explicitly handle this command, we won't broadcast a new channel update immediately,
+    // but we will once we get back to NORMAL, because the updated fees have been saved to our peers DB.
     case Event(c: CMD_UPDATE_RELAY_FEE, d) =>
       val replyTo = if (c.replyTo == ActorRef.noSender) sender() else c.replyTo
       replyTo ! RES_SUCCESS(c, d.channelId)
