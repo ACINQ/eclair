@@ -334,6 +334,7 @@ object PaymentRequestSerializer extends MinimalSerializer({
         FeatureSupportSerializer +
         UnknownFeatureSerializer
     ))
+    val paymentMetadata = p.paymentMetadata.map(m => JField("paymentMetadata", JString(m.toHex))).toSeq
     val routingInfo = JField("routingInfo", Extraction.decompose(p.routingInfo)(
       DefaultFormats +
         ByteVector32Serializer +
@@ -343,12 +344,14 @@ object PaymentRequestSerializer extends MinimalSerializer({
         MilliSatoshiSerializer +
         CltvExpiryDeltaSerializer
     ))
-    val fieldList = List(JField("prefix", JString(p.prefix)),
+    val fieldList = List(
+      JField("prefix", JString(p.prefix)),
       JField("timestamp", JLong(p.timestamp.toLong)),
       JField("nodeId", JString(p.nodeId.toString())),
       JField("serialized", JString(PaymentRequest.write(p))),
       p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
       JField("paymentHash", JString(p.paymentHash.toString()))) ++
+      paymentMetadata ++
       expiry ++
       minFinalCltvExpiry ++
       amount :+
