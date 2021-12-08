@@ -112,7 +112,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
-    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None, probe.ref))
+    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None, probe.ref, isPersistent = true))
     probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
@@ -129,7 +129,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
     // we have auto-reconnect=false so we need to manually tell the peer to reconnect
-    probe.send(peer, Peer.Connect(remoteNodeId, Some(mockAddress), probe.ref))
+    probe.send(peer, Peer.Connect(remoteNodeId, Some(mockAddress), probe.ref, isPersistent = true))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
@@ -164,7 +164,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
-    probe.send(peer, Peer.Connect(remoteNodeId, None, probe.ref))
+    probe.send(peer, Peer.Connect(remoteNodeId, None, probe.ref, isPersistent = true))
     probe.expectMsgType[PeerConnection.ConnectionResult.AlreadyConnected]
   }
 

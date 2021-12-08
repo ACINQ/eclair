@@ -62,7 +62,7 @@ class Server(keyPair: KeyPair, peerConnectionConf: PeerConnection.Conf, switchbo
         switchboard = switchboard,
         router = router
       ))
-      peerConnection ! PeerConnection.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None)
+      peerConnection ! PeerConnection.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None, isPersistent = true)
       listener ! ResumeAccepting(batchSize = 1)
   }
 

@@ -214,7 +214,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
 
     val peer = TestProbe()
     // we have auto-reconnect=false so we need to manually tell the peer to reconnect
-    peer.send(reconnectionTask, Peer.Connect(remoteNodeId, None, peer.ref))
+    peer.send(reconnectionTask, Peer.Connect(remoteNodeId, None, peer.ref, isPersistent = true))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     awaitCond(mockServer.accept() != null, max = 60 seconds, interval = 1 second)

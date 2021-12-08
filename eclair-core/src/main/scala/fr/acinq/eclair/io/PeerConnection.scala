@@ -78,7 +78,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       }
       context.watch(transport)
       startSingleTimer(AUTH_TIMER, AuthTimeout, conf.authTimeout)
-      goto(AUTHENTICATING) using AuthenticatingData(p, transport)
+      goto(AUTHENTICATING) using AuthenticatingData(p, transport, p.isPersistent)
   }
 
   when(AUTHENTICATING) {
@@ -88,7 +88,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
       switchboard ! Authenticated(self, remoteNodeId)
-      goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
+      goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport, d.isPersistent)
 
     case Event(AuthTimeout, d: AuthenticatingData) =>
       log.warning(s"authentication timed out after ${conf.authTimeout}")
@@ -104,7 +104,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       val localInit = protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
-      goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync)
+      goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync, d.isPersistent)
   }
 
   when(INITIALIZING) {
@@ -148,7 +148,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
           context.system.eventStream.subscribe(self, classOf[Rebroadcast])
 
-          goto(CONNECTED) using ConnectedData(d.chainHash, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
+          goto(CONNECTED) using ConnectedData(d.chainHash, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay, isPersistent = d.isPersistent)
         }
 
       case Event(InitTimeout, d: InitializingData) =>
@@ -162,7 +162,15 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
     heartbeat {
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
         d.transport forward msg
-        stay()
+        msg match {
+          case _: OnionMessage if !d.isPersistent =>
+            startSingleTimer(KILL_IDLE_TIMER, KillIdle, conf.killIdleDelay)
+            stay()
+          // If we send any channel management message to this peer, the connection should be persistent.
+          case _: ChannelMessage if !d.isPersistent =>
+            stay() using d.copy(isPersistent = true)
+          case _ => stay()
+        }
 
       case Event(SendPing, d: ConnectedData) =>
         if (d.expectedPong_opt.isEmpty) {
@@ -279,7 +287,6 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             // this is actually for the channel
             d.transport ! TransportHandler.ReadAck(msg)
             d.peer ! msg
-            stay()
           case _: ChannelAnnouncement | _: ChannelUpdate | _: NodeAnnouncement if d.behavior.ignoreNetworkAnnouncement =>
             // this peer is currently under embargo!
             d.transport ! TransportHandler.ReadAck(msg)
@@ -357,6 +364,9 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       case Event(ResumeAnnouncements, d: ConnectedData) =>
         log.info(s"resuming processing of network announcements for peer")
         stay() using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
+
+      case Event(KillIdle, d: ConnectedData) if !d.isPersistent =>
+        stop(FSM.Normal)
     }
   }
 
@@ -461,12 +471,14 @@ object PeerConnection {
   val AUTH_TIMER = "auth"
   val INIT_TIMER = "init"
   val SEND_PING_TIMER = "send_ping"
+  val KILL_IDLE_TIMER = "kill_idle"
   // @formatter:on
 
   // @formatter:off
   case object AuthTimeout
   case object InitTimeout
   case object SendPing
+  case object KillIdle
   case object ResumeAnnouncements
   case class DoSync(replacePrevious: Boolean) extends RemoteTypes
   // @formatter:on
@@ -484,17 +496,18 @@ object PeerConnection {
                   pingInterval: FiniteDuration,
                   pingTimeout: FiniteDuration,
                   pingDisconnect: Boolean,
-                  maxRebroadcastDelay: FiniteDuration)
+                  maxRebroadcastDelay: FiniteDuration,
+                  killIdleDelay: FiniteDuration)
 
   // @formatter:off
 
   sealed trait Data
   sealed trait HasTransport { this: Data => def transport: ActorRef }
   case object Nothing extends Data
-  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
-  case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
-  case class InitializingData(chainHash: ByteVector32, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean) extends Data with HasTransport
-  case class ConnectedData(chainHash: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
+  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef, isPersistent: Boolean) extends Data with HasTransport
+  case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef, isPersistent: Boolean) extends Data with HasTransport
+  case class InitializingData(chainHash: ByteVector32, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean, isPersistent: Boolean) extends Data with HasTransport
+  case class ConnectedData(chainHash: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None, isPersistent: Boolean) extends Data with HasTransport
 
   case class ExpectedPong(ping: Ping, timestamp: TimestampMilli = TimestampMilli.now())
   case class PingTimeout(ping: Ping)
@@ -506,7 +519,7 @@ object PeerConnection {
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
+  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None, isPersistent: Boolean) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey) extends RemoteTypes

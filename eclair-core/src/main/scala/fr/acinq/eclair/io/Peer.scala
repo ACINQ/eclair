@@ -457,11 +457,11 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(storedChannels: Set[HasCommitments])
-  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: ActorRef) {
+  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: ActorRef, isPersistent: Boolean) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }
   object Connect {
-    def apply(uri: NodeURI, replyTo: ActorRef): Connect = new Connect(uri.nodeId, Some(uri.address), replyTo)
+    def apply(uri: NodeURI, replyTo: ActorRef, isPersistent: Boolean): Connect = new Connect(uri.nodeId, Some(uri.address), replyTo, isPersistent)
   }
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful

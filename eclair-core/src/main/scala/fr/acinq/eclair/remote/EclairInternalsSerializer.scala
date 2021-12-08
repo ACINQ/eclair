@@ -105,7 +105,8 @@ object EclairInternalsSerializer {
       ("pingInterval" | finiteDurationCodec) ::
       ("pingTimeout" | finiteDurationCodec) ::
       ("pingDisconnect" | bool(8)) ::
-      ("maxRebroadcastDelay" | finiteDurationCodec)).as[PeerConnection.Conf]
+      ("maxRebroadcastDelay" | finiteDurationCodec) ::
+      ("killIdleDelay" | finiteDurationCodec)).as[PeerConnection.Conf]
 
   val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
 
@@ -137,7 +138,8 @@ object EclairInternalsSerializer {
   def connectionRequestCodec(system: ExtendedActorSystem): Codec[ClientSpawner.ConnectionRequest] = (
     ("address" | inetSocketAddressCodec) ::
       ("remoteNodeId" | publicKey) ::
-      ("origin" | actorRefCodec(system))).as[ClientSpawner.ConnectionRequest]
+      ("origin" | actorRefCodec(system)) ::
+      ("isPersistent" | bool8)).as[ClientSpawner.ConnectionRequest]
 
   def initializeConnectionCodec(system: ExtendedActorSystem): Codec[PeerConnection.InitializeConnection] = (
     ("peer" | actorRefCodec(system)) ::

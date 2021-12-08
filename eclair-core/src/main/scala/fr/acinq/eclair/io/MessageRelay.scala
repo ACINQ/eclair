@@ -62,7 +62,7 @@ object MessageRelay {
             switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), prevNodeId)
             waitForPreviousPeer(switchboard, nextNodeId, msg, replyTo)
           case RelayAll =>
-            switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic)
+            switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic, isPersistent = false)
             waitForConnection(msg, replyTo)
         }
     }

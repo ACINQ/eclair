@@ -164,7 +164,8 @@ object TestConstants {
         pingInterval = 30 seconds,
         pingTimeout = 10 seconds,
         pingDisconnect = true,
-        maxRebroadcastDelay = 5 seconds
+        maxRebroadcastDelay = 5 seconds,
+        killIdleDelay = 10 seconds
       ),
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
@@ -291,7 +292,8 @@ object TestConstants {
         pingInterval = 30 seconds,
         pingTimeout = 10 seconds,
         pingDisconnect = true,
-        maxRebroadcastDelay = 5 seconds
+        maxRebroadcastDelay = 5 seconds,
+        killIdleDelay = 10 seconds
       ),
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
