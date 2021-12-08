@@ -26,6 +26,7 @@ import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
@@ -96,7 +97,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean,
                       balanceCheckInterval: FiniteDuration,
-                      blockchainWatchdogSources: Seq[String]) {
+                      blockchainWatchdogSources: Seq[String],
+                      onionMessageRelayPolicy: RelayPolicy) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -370,6 +372,12 @@ object NodeParams extends Logging {
       case "zlib" => EncodingType.COMPRESSED_ZLIB
     }
 
+    val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
+      case "no-relay" => NoRelay
+      case "channels-only" => RelayChannelsOnly
+      case "relay-all" => RelayAll
+    }
+
     NodeParams(
       nodeKeyManager = nodeKeyManager,
       channelKeyManager = channelKeyManager,
@@ -465,7 +473,8 @@ object NodeParams extends Logging {
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
       balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
-      blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq
+      blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq,
+      onionMessageRelayPolicy = onionMessageRelayPolicy
     )
   }
 }

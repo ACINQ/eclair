@@ -17,15 +17,16 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
-import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.message.OnionMessages
+import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
+import fr.acinq.eclair.wire.protocol.OnionMessage
 
 /**
  * Ties network connections to peers.
@@ -65,9 +66,9 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case Peer.Connect(nodeId, address_opt, replyTo) =>
       // we create a peer if it doesn't exist
       val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty)
-      val c = if (replyTo == ActorRef.noSender){
+      val c = if (replyTo == ActorRef.noSender) {
         Peer.Connect(nodeId, address_opt, sender())
-      }else{
+      } else {
         Peer.Connect(nodeId, address_opt, replyTo)
       }
       peer forward c
@@ -100,9 +101,12 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
 
-    case OnionMessages.SendMessage(nextNodeId, dataToRelay) =>
+    case RelayMessage(nextNodeId, dataToRelay, relayPolicy) =>
       val relay = context.spawnAnonymous(MessageRelay())
-      relay ! MessageRelay.RelayMessage(self, nextNodeId, dataToRelay, sender().toTyped)
+      relay ! MessageRelay.RelayMessage(self, nextNodeId, dataToRelay, relayPolicy, sender().toTyped)
+
+    case GetPeer(remoteNodeId, replyTo) =>
+      replyTo ! getPeer(remoteNodeId)
   }
 
   /**
@@ -153,4 +157,7 @@ object Switchboard {
 
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
 
+  case class RelayMessage(nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy)
+
+  case class GetPeer(nodeId: PublicKey, replyTo: typed.ActorRef[Option[ActorRef]])
 }

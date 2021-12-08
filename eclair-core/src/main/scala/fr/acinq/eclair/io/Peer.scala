@@ -31,8 +31,10 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{OnChainAddressGenerator, OnChainChannelFunder}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.MessageRelay.{RelayPolicy, Status}
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
+import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
@@ -100,7 +102,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
   when(CONNECTED) {
     dropStaleMessages {
       case Event(c: Peer.Connect, d: ConnectedData) =>
-        c.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(d.peerConnection)
+        c.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(d.peerConnection, self)
         stay()
 
       case Event(Peer.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
@@ -246,17 +248,36 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
 
-      case Event(msg: OnionMessage, _: ConnectedData) =>
+      case Event(msg: OnionMessage, d: ConnectedData) =>
         if (nodeParams.features.hasFeature(Features.OnionMessages)) {
           OnionMessages.process(nodeParams.privateKey, msg) match {
             case OnionMessages.DropMessage(reason) =>
               log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
-            case send: OnionMessages.SendMessage =>
-              switchboard ! send
+            case OnionMessages.SendMessage(nextNodeId, message) =>
+              nodeParams.onionMessageRelayPolicy match {
+                case MessageRelay.NoRelay => ()
+                case MessageRelay.RelayChannelsOnly =>
+                  if (d.channels.nonEmpty) {
+                    switchboard ! RelayMessage(nextNodeId, message, nodeParams.onionMessageRelayPolicy)
+                  }
+                case MessageRelay.RelayAll => switchboard ! RelayMessage(nextNodeId, message, nodeParams.onionMessageRelayPolicy)
+              }
             case received: OnionMessages.ReceiveMessage =>
               log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
               context.system.eventStream.publish(received)
           }
+        }
+        stay()
+
+      case Event(RelayOnionMessage(msg, policy, replyTo), d: ConnectedData) =>
+        policy match {
+          case MessageRelay.NoRelay =>
+            replyTo ! MessageRelay.AgainstPolicy(policy)
+          case MessageRelay.RelayChannelsOnly if d.channels.isEmpty =>
+            replyTo ! MessageRelay.AgainstPolicy(policy)
+          case _ =>
+            d.peerConnection ! msg
+            replyTo ! MessageRelay.Success
         }
         stay()
 
@@ -477,6 +498,7 @@ object Peer {
    */
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
 
+  case class RelayOnionMessage(msg: OnionMessage, policy: RelayPolicy, replyTo: typed.ActorRef[Status])
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {

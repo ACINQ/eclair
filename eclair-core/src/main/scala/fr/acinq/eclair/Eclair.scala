@@ -34,7 +34,9 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
+import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
+import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.io.{MessageRelay, NodeURI, Peer, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment._
@@ -515,9 +517,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
             Left(OnionMessages.Recipient(route.last, pathId)),
             Nil,
             userCustomTlvs)
-        (appKit.switchboard ? OnionMessages.SendMessage(nextNodeId, message)).mapTo[MessageRelay.Status].map {
+        (appKit.switchboard ? RelayMessage(nextNodeId, message, RelayAll)).mapTo[MessageRelay.Status].map {
           case MessageRelay.Success => SendOnionMessageResponse(sent = true, None)
-          case MessageRelay.Failure(f) => SendOnionMessageResponse(sent = false, Some(f.toString))
+          case MessageRelay.AgainstPolicy(p) => SendOnionMessageResponse(sent = false, Some("Unreachable"))
+          case MessageRelay.ConnectionFailure(f) => SendOnionMessageResponse(sent = false, Some(f.toString))
         }
       case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}")))
     }

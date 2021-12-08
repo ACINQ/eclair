@@ -21,35 +21,59 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.io.Switchboard.GetPeer
 import fr.acinq.eclair.wire.protocol.OnionMessage
 
 object MessageRelay {
   // @formatter:off
   sealed trait Command
-  case class RelayMessage(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, replyTo: typed.ActorRef[Status]) extends Command
+  case class RelayMessage(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, policy: RelayPolicy, replyTo: typed.ActorRef[Status]) extends Command
+  case class WrappedPeerOption(peer: Option[ActorRef]) extends Command
   case class WrappedConnectionResult(result: PeerConnection.ConnectionResult) extends Command
 
   sealed trait Status
   case object Success extends Status
-  case class Failure(failure: PeerConnection.ConnectionResult.Failure) extends Status
+  case class AgainstPolicy(policy: RelayPolicy) extends Status
+  case class ConnectionFailure(failure: PeerConnection.ConnectionResult.Failure) extends Status
+
+  sealed trait RelayPolicy
+  case object NoRelay extends RelayPolicy
+  case object RelayChannelsOnly extends RelayPolicy
+  case object RelayAll extends RelayPolicy
   // @formatter:on
 
   def apply(): Behavior[Command] = {
     Behaviors.receivePartial {
-      case (context, RelayMessage(switchboard, nextNodeId, msg, replyTo)) =>
-        switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic)
-        waitForConnection(msg, replyTo)
+      case (context, RelayMessage(switchboard, nextNodeId, msg, policy, replyTo)) =>
+        switchboard ! GetPeer(nextNodeId, context.messageAdapter(WrappedPeerOption))
+        waitForPeer(switchboard, nextNodeId, msg, policy, replyTo)
     }
   }
 
-  def waitForConnection(msg: OnionMessage, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
+  def waitForPeer(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, policy: RelayPolicy, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
+    Behaviors.receivePartial {
+      case (context, WrappedPeerOption(None)) =>
+        policy match {
+          case NoRelay | RelayChannelsOnly =>
+            replyTo ! AgainstPolicy(policy)
+            Behaviors.stopped
+          case RelayAll =>
+            switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic)
+            waitForConnection(msg, policy, replyTo)
+        }
+      case (_, WrappedPeerOption(Some(peer))) =>
+        peer ! Peer.RelayOnionMessage(msg, policy, replyTo)
+        Behaviors.stopped
+    }
+  }
+
+  def waitForConnection(msg: OnionMessage, policy: RelayPolicy, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedConnectionResult(r: PeerConnection.ConnectionResult.HasConnection) =>
-        r.peerConnection ! msg
-        replyTo ! Success
+        r.peer ! Peer.RelayOnionMessage(msg, policy, replyTo)
         Behaviors.stopped
       case WrappedConnectionResult(f: PeerConnection.ConnectionResult.Failure) =>
-        replyTo ! Failure(f)
+        replyTo ! ConnectionFailure(f)
         Behaviors.stopped
     }
   }
