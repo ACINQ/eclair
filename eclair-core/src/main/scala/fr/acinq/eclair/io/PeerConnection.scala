@@ -18,6 +18,7 @@ package fr.acinq.eclair.io
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import akka.event.Logging.MDC
+import com.google.common.util.concurrent.RateLimiter
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
@@ -60,6 +61,9 @@ import scala.util.Random
 class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef) extends FSMDiagnosticActorLogging[PeerConnection.State, PeerConnection.Data] {
 
   import PeerConnection._
+
+  val incomingRateLimiter: RateLimiter = RateLimiter.create(conf.maxOnionMessagesPerSecond)
+  val outgoingRateLimiter: RateLimiter = RateLimiter.create(conf.maxOnionMessagesPerSecond)
 
   startWith(BEFORE_AUTH, Nothing)
 
@@ -160,12 +164,31 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
   when(CONNECTED) {
     heartbeat {
+      case Event(msg: OnionMessage, d: ConnectedData) => // we process onion messages separately as we want to rate limit them
+        if (sender() == d.transport) {
+          d.transport ! TransportHandler.ReadAck(msg)
+          if (incomingRateLimiter.tryAcquire()) {
+            d.peer ! msg
+            Metrics.OnionMessagesReceived.withoutTags().increment()
+          } else {
+            Metrics.OnionMessagesThrottled.withoutTags().increment()
+          }
+        } else {
+          if (outgoingRateLimiter.tryAcquire()) {
+            d.transport forward msg
+            Metrics.OnionMessagesSent.withoutTags().increment()
+            if (!d.isPersistent) {
+              startSingleTimer(KILL_IDLE_TIMER, KillIdle, conf.killIdleDelay)
+            }
+          } else {
+            Metrics.OnionMessagesThrottled.withoutTags().increment()
+          }
+        }
+        stay()
+
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
         d.transport forward msg
         msg match {
-          case _: OnionMessage if !d.isPersistent =>
-            startSingleTimer(KILL_IDLE_TIMER, KillIdle, conf.killIdleDelay)
-            stay()
           // If we send any channel management message to this peer, the connection should be persistent.
           case _: ChannelMessage if !d.isPersistent =>
             stay() using d.copy(isPersistent = true)
@@ -494,7 +517,8 @@ object PeerConnection {
   val MAX_FUNDING_TX_ALREADY_SPENT = 10
   // @formatter:on
 
-  def props(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props = Props(new PeerConnection(keyPair, conf, switchboard, router))
+  def props(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: ActorRef, router: ActorRef): Props =
+    Props(new PeerConnection(keyPair, conf, switchboard, router))
 
   case class Conf(authTimeout: FiniteDuration,
                   initTimeout: FiniteDuration,
@@ -502,7 +526,8 @@ object PeerConnection {
                   pingTimeout: FiniteDuration,
                   pingDisconnect: Boolean,
                   maxRebroadcastDelay: FiniteDuration,
-                  killIdleDelay: FiniteDuration)
+                  killIdleDelay: FiniteDuration,
+                  maxOnionMessagesPerSecond: Double)
 
   // @formatter:off
 

@@ -106,7 +106,8 @@ object EclairInternalsSerializer {
       ("pingTimeout" | finiteDurationCodec) ::
       ("pingDisconnect" | bool(8)) ::
       ("maxRebroadcastDelay" | finiteDurationCodec) ::
-      ("killIdleDelay" | finiteDurationCodec)).as[PeerConnection.Conf]
+      ("killIdleDelay" | finiteDurationCodec) ::
+      ("maxOnionMessagesPerSecond" | double)).as[PeerConnection.Conf]
 
   val peerConnectionDoSyncCodec: Codec[PeerConnection.DoSync] = bool(8).as[PeerConnection.DoSync]
 

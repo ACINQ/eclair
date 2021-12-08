@@ -25,7 +25,7 @@ import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, Pay
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildMessage}
+import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.wire.protocol
@@ -380,7 +380,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
     probe.send(peerConnection, message)
     probe watch peerConnection
-    probe.expectTerminated(peerConnection, max = Duration(1500, MILLISECONDS))
+    probe.expectTerminated(peerConnection, max = 1500 millis)
   }
 
   def sleep(duration: FiniteDuration): Unit = {
@@ -420,6 +420,44 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
       case d : PeerConnection.ConnectedData => assert(d.isPersistent)
       case _ => fail()
     }
+  }
+
+  test("incoming rate limiting") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = true)
+    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(nodeParams.nodeId, None)), Nil)
+    for (_ <- 1 to 30) {
+      transport.send(peerConnection, message)
+    }
+    var messagesReceived = 0
+    peer.receiveWhile(100 millis) {
+      case _: OnionMessage =>
+        messagesReceived = messagesReceived + 1
+    }
+    assert(messagesReceived >= 10)
+    assert(messagesReceived < 15)
+    sleep(1000 millis)
+    transport.send(peerConnection, message)
+    peer.expectMsg(message)
+  }
+
+  test("outgoing rate limiting") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = true)
+    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    for (_ <- 1 to 30) {
+      peer.send(peerConnection, message)
+    }
+    var messagesSent = 0
+    transport.receiveWhile(100 millis) {
+      case _: OnionMessage =>
+        messagesSent = messagesSent + 1
+    }
+    assert(messagesSent >= 10)
+    assert(messagesSent < 15)
+    sleep(1000 millis)
+    peer.send(peerConnection, message)
+    transport.expectMsg(message)
   }
 }
 

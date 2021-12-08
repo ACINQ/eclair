@@ -27,6 +27,10 @@ object Monitoring {
     val PeersConnected = Kamon.gauge("peers.connected")
 
     val ReconnectionsAttempts = Kamon.counter("reconnections.attempts")
+
+    val OnionMessagesReceived = Kamon.counter("onionmessages.received")
+    val OnionMessagesSent = Kamon.counter("onionmessages.sent")
+    val OnionMessagesThrottled = Kamon.counter("onionmessages.throttled")
   }
 
   object Tags {
