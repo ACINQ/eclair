@@ -32,7 +32,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
-import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
@@ -405,31 +404,9 @@ object GlobalBalanceSerializer extends MinimalSerializer({
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
 })
 
-object OnionMessageReceivedSerializer extends MinimalSerializer({
-  case m: OnionMessages.ReceiveMessage =>
-    var fields: List[JField] = List(JField("type", JString("message-received")))
-    m.pathId match {
-      case Some(pathId) => fields = fields :+ JField("pathId", JString(pathId.toHex))
-      case None => ()
-    }
-    m.finalPayload.replyPath match {
-      case Some(ReplyPath(BlindedRoute(introductionNodeId, blindingKey, blindedNodes))) => fields = fields :+ JField("replyPath", JObject(
-        JField("introductionNodeId", JString(introductionNodeId.value.toHex)),
-        JField("blindingKey", JString(blindingKey.value.toHex)),
-        JField("blindedNodes", JArray(blindedNodes.map(node => JObject(
-          JField("blindedPublicKey", JString(node.blindedPublicKey.value.toHex)),
-          JField("encryptedPayload", JString(node.encryptedPayload.toHex))
-        )).toList))
-      ))
-      case None => ()
-    }
-    if (m.finalPayload.records.unknown.nonEmpty){
-      fields = fields :+ JField("unknownTlvs", JArray(m.finalPayload.records.unknown.map(tlv => JObject(
-        JField("tag", JInt(tlv.tag.toBigInt)),
-        JField("value", JString(tlv.value.toHex))
-      )).toList))
-    }
-    JObject(fields)
+private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[BlindedRoute], unknownTlvs: Seq[GenericTlv])
+object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage]({ m: OnionMessages.ReceiveMessage =>
+  MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.toSeq)
 })
 
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
@@ -463,7 +440,11 @@ object CustomTypeHints {
     classOf[TrampolinePaymentRelayed] -> "trampoline-payment-relayed",
     classOf[PaymentReceived] -> "payment-received",
     classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
-    classOf[PaymentFailed] -> "payment-failed"
+    classOf[PaymentFailed] -> "payment-failed",
+  ))
+
+  val onionMessageEvent: CustomTypeHints = CustomTypeHints(Map(
+    classOf[MessageReceivedJson] -> "onion-message-received"
   ))
 
   val channelStates: ShortTypeHints = ShortTypeHints(
@@ -492,6 +473,7 @@ object JsonSerializers {
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +
+    CustomTypeHints.onionMessageEvent +
     CustomTypeHints.channelStates +
     ByteVectorSerializer +
     ByteVector32Serializer +
