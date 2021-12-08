@@ -22,14 +22,17 @@ import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Tra
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.ReplyPath
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
@@ -402,6 +405,33 @@ object GlobalBalanceSerializer extends MinimalSerializer({
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
 })
 
+object OnionMessageReceivedSerializer extends MinimalSerializer({
+  case m: OnionMessages.ReceiveMessage =>
+    var fields: List[JField] = List(JField("type", JString("message-received")))
+    m.pathId match {
+      case Some(pathId) => fields = fields :+ JField("pathId", JString(pathId.toHex))
+      case None => ()
+    }
+    m.finalPayload.replyPath match {
+      case Some(ReplyPath(BlindedRoute(introductionNodeId, blindingKey, blindedNodes))) => fields = fields :+ JField("replyPath", JObject(
+        JField("introductionNodeId", JString(introductionNodeId.value.toHex)),
+        JField("blindingKey", JString(blindingKey.value.toHex)),
+        JField("blindedNodes", JArray(blindedNodes.map(node => JObject(
+          JField("blindedPublicKey", JString(node.blindedPublicKey.value.toHex)),
+          JField("encryptedPayload", JString(node.encryptedPayload.toHex))
+        )).toList))
+      ))
+      case None => ()
+    }
+    if (m.finalPayload.records.unknown.nonEmpty){
+      fields = fields :+ JField("unknownTlvs", JArray(m.finalPayload.records.unknown.map(tlv => JObject(
+        JField("tag", JInt(tlv.tag.toBigInt)),
+        JField("value", JString(tlv.value.toHex))
+      )).toList))
+    }
+    JObject(fields)
+})
+
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
@@ -505,6 +535,7 @@ object JsonSerializers {
     JavaUUIDSerializer +
     OriginSerializer +
     GlobalBalanceSerializer +
-    PaymentFailedSummarySerializer
+    PaymentFailedSummarySerializer +
+    OnionMessageReceivedSerializer
 
 }

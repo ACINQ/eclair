@@ -22,7 +22,7 @@ This lets plugins notify the node operator via external systems (push notificati
 
 Eclair now supports the feature `option_onion_messages`. If this feature is enabled, eclair will relay onion messages.
 It can also send onion messages with the `sendonionmessage` API.
-Messages sent to Eclair will be ignored.
+Messages sent to Eclair can be read with the websocket API.
 
 ### API changes
 

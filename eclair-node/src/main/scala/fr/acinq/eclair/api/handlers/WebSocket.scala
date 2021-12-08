@@ -24,6 +24,7 @@ import akka.stream.OverflowStrategy
 import akka.stream.scaladsl.{BroadcastHub, Flow, Keep, Source}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.channel.{ChannelClosed, ChannelCreated, ChannelStateChanged, WAIT_FOR_INIT_INTERNAL}
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentEvent
 
 trait WebSocket {
@@ -53,6 +54,7 @@ trait WebSocket {
         context.system.eventStream.subscribe(self, classOf[ChannelCreated])
         context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
         context.system.eventStream.subscribe(self, classOf[ChannelClosed])
+        context.system.eventStream.subscribe(self, classOf[OnionMessages.ReceiveMessage])
       }
 
       def receive: Receive = {
@@ -63,6 +65,7 @@ trait WebSocket {
             flowInput.offer(serialization.write(message))
           }
         case message: ChannelClosed => flowInput.offer(serialization.write(message))
+        case message: OnionMessages.ReceiveMessage => flowInput.offer(serialization.write(message))
       }
 
     }))
