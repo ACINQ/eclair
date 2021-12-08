@@ -16,16 +16,19 @@
 
 package fr.acinq.eclair.io
 
-import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
+import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe => TypedProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
+import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.io.MessageRelay._
+import fr.acinq.eclair.io.Peer.{PeerInfo, PeerNotFound}
+import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
 import fr.acinq.eclair.randomKey
-import fr.acinq.eclair.wire.protocol.OnionMessage
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -33,15 +36,16 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
   val aliceId: PublicKey = Alice.nodeParams.nodeId
   val bobId: PublicKey = Bob.nodeParams.nodeId
 
-  case class FixtureParam(relay: ActorRef[MessageRelay.Command], switchboard: TestProbe[Peer.Connect], peerConnection: TestProbe[OnionMessage], probe: TestProbe[MessageRelay.Status])
+  case class FixtureParam(relay: ActorRef[Command], switchboard: TestProbe, peerConnection: TypedProbe[Nothing], peer: TypedProbe[Peer.RelayOnionMessage], probe: TypedProbe[Status])
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val switchboard = TestProbe[Peer.Connect]("switchboard")
-    val peerConnection = TestProbe[OnionMessage]("peerConnection")
-    val probe = TestProbe[MessageRelay.Status]("probe")
+    val switchboard = TestProbe("switchboard")(system.classicSystem)
+    val peerConnection = TypedProbe[Nothing]("peerConnection")
+    val peer = TypedProbe[Peer.RelayOnionMessage]("peer")
+    val probe = TypedProbe[Status]("probe")
     val relay = testKit.spawn(MessageRelay())
     try {
-      withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, peerConnection, probe)))
+      withFixture(test.toNoArgTest(FixtureParam(relay, switchboard, peerConnection, peer, probe)))
     } finally {
       testKit.stop(relay)
     }
@@ -51,37 +55,85 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
-    relay ! MessageRelay.RelayMessage(switchboard.ref.toClassic, bobId, message, probe.ref)
+    relay ! RelayMessage(switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
 
-    val connectToNextPeer = switchboard.expectMessageType[Peer.Connect]
+    val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
-    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.Connected(peerConnection.ref.toClassic)
-    peerConnection.expectMessage(message)
-    probe.expectMessage(MessageRelay.Success)
+    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.Connected(peerConnection.ref.toClassic, peer.ref.toClassic)
+    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg === message)
   }
 
-  test("relay with existing connection") { f =>
+  test("relay with existing peer") { f =>
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
-    relay ! MessageRelay.RelayMessage(switchboard.ref.toClassic, bobId, message, probe.ref)
+    relay ! RelayMessage(switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
 
-    val connectToNextPeer = switchboard.expectMessageType[Peer.Connect]
+    val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
-    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic)
-    peerConnection.expectMessage(message)
-    probe.expectMessage(MessageRelay.Success)
+    connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref.toClassic, peer.ref.toClassic)
+    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg === message)
   }
 
   test("can't open new connection") { f =>
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
-    relay ! MessageRelay.RelayMessage(switchboard.ref.toClassic, bobId, message, probe.ref)
+    relay ! RelayMessage(switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
 
-    val connectToNextPeer = switchboard.expectMessageType[Peer.Connect]
+    val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
     connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.NoAddressFound
-    probe.expectMessage(MessageRelay.Failure(PeerConnection.ConnectionResult.NoAddressFound))
+    probe.expectMessage(ConnectionFailure(PeerConnection.ConnectionResult.NoAddressFound))
+  }
+
+  test("no channel with previous node") { f =>
+    import f._
+
+    val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    val previousNodeId = randomKey().publicKey
+    relay ! RelayMessage(switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+
+    val getPeerInfo = switchboard.expectMsgType[GetPeerInfo]
+    assert(getPeerInfo.remoteNodeId === previousNodeId)
+    getPeerInfo.replyTo ! PeerInfo(TestProbe()(system.classicSystem).ref, previousNodeId, Peer.CONNECTED, None, 0)
+
+    probe.expectMessage(AgainstPolicy(RelayChannelsOnly))
+  }
+
+  test("no channel with next node") { f =>
+    import f._
+
+    val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    val previousNodeId = randomKey().publicKey
+    relay ! RelayMessage(switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+
+    val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
+    assert(getPeerInfo1.remoteNodeId === previousNodeId)
+    getPeerInfo1.replyTo ! PeerInfo(TestProbe()(system.classicSystem).ref, previousNodeId, Peer.CONNECTED, None, 1)
+
+    val getPeerInfo2 = switchboard.expectMsgType[GetPeerInfo]
+    assert(getPeerInfo2.remoteNodeId === bobId)
+    getPeerInfo2.replyTo ! PeerNotFound(bobId)
+
+    probe.expectMessage(AgainstPolicy(RelayChannelsOnly))
+  }
+
+  test("channels on both ends") { f =>
+    import f._
+
+    val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    val previousNodeId = randomKey().publicKey
+    relay ! RelayMessage(switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+
+    val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
+    assert(getPeerInfo1.remoteNodeId === previousNodeId)
+    getPeerInfo1.replyTo ! PeerInfo(TestProbe()(system.classicSystem).ref, previousNodeId, Peer.CONNECTED, None, 1)
+
+    val getPeerInfo2 = switchboard.expectMsgType[GetPeerInfo]
+    assert(getPeerInfo2.remoteNodeId === bobId)
+    getPeerInfo2.replyTo ! PeerInfo(peer.ref.toClassic, bobId, Peer.CONNECTED, None, 2)
+
+    assert(peer.expectMessageType[Peer.RelayOnionMessage].msg === message)
   }
 }

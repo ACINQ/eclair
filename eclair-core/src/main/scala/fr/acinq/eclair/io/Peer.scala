@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
@@ -31,8 +32,10 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{OnChainAddressGenerator, OnChainChannelFunder}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.MessageRelay.Status
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
+import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
@@ -102,7 +105,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
   when(CONNECTED) {
     dropStaleMessages {
       case Event(c: Peer.Connect, d: ConnectedData) =>
-        c.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(d.peerConnection)
+        c.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(d.peerConnection, self)
         stay()
 
       case Event(Peer.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
@@ -249,18 +252,23 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
 
-      case Event(msg: OnionMessage, _: ConnectedData) =>
+      case Event(msg: OnionMessage, d: ConnectedData) =>
         if (nodeParams.features.hasFeature(Features.OnionMessages)) {
           OnionMessages.process(nodeParams.privateKey, msg) match {
             case OnionMessages.DropMessage(reason) =>
               log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
-            case send: OnionMessages.SendMessage =>
-              switchboard ! send
+            case OnionMessages.SendMessage(nextNodeId, message) =>
+              switchboard ! RelayMessage(remoteNodeId, nextNodeId, message, nodeParams.onionMessageRelayPolicy)
             case received: OnionMessages.ReceiveMessage =>
               log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
               context.system.eventStream.publish(received)
           }
         }
+        stay()
+
+      case Event(RelayOnionMessage(msg, replyTo), d: ConnectedData) =>
+        d.peerConnection ! msg
+        replyTo ! MessageRelay.Success
         stay()
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
@@ -283,7 +291,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       stay()
 
     case Event(r: GetPeerInfo, d) =>
-      val replyTo = if (r.replyTo == ActorRef.noSender) sender() else r.replyTo
+      val replyTo = r.replyTo.getOrElse(sender().toTyped)
       replyTo ! PeerInfo(self, remoteNodeId, stateName, d match {
         case c: ConnectedData => Some(c.address)
         case _ => None
@@ -460,7 +468,7 @@ object Peer {
     fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum ${FeeratePerKw.MinimumFeeratePerKw} rate/kw"))
   }
 
-  case class GetPeerInfo(replyTo: ActorRef)
+  case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
   sealed trait PeerInfoResponse {
     def nodeId: PublicKey
   }
@@ -486,6 +494,7 @@ object Peer {
    */
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
 
+  case class RelayOnionMessage(msg: OnionMessage, replyTo: typed.ActorRef[Status])
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {
