@@ -59,16 +59,16 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
   def normal(peersWithChannels: Set[PublicKey]): Receive = {
 
-    case Peer.Connect(publicKey, _, _) if publicKey == nodeParams.nodeId =>
+    case Peer.Connect(publicKey, _, _, _) if publicKey == nodeParams.nodeId =>
       sender() ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
-    case Peer.Connect(nodeId, address_opt, replyTo) =>
+    case Peer.Connect(nodeId, address_opt, replyTo, enableGossip) =>
       // we create a peer if it doesn't exist
       val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty)
       val c = if (replyTo == ActorRef.noSender){
-        Peer.Connect(nodeId, address_opt, sender())
+        Peer.Connect(nodeId, address_opt, sender(), enableGossip)
       }else{
-        Peer.Connect(nodeId, address_opt, replyTo)
+        Peer.Connect(nodeId, address_opt, replyTo, enableGossip)
       }
       peer forward c
 

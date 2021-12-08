@@ -50,7 +50,7 @@ class ClientSpawner(keyPair: KeyPair, socks5ProxyParams_opt: Option[Socks5ProxyP
   override def receive: Receive = {
     case req: ClientSpawner.ConnectionRequest =>
       log.info("initiating new connection to nodeId={} origin={}", req.remoteNodeId, sender())
-      context.actorOf(Client.props(keyPair, socks5ProxyParams_opt, peerConnectionConf, switchboard, router, req.address, req.remoteNodeId, origin_opt = Some(req.origin)))
+      context.actorOf(Client.props(keyPair, socks5ProxyParams_opt, peerConnectionConf, switchboard, router, req.address, req.remoteNodeId, origin_opt = Some(req.origin), req.enableGossip))
     case DeadLetter(req: ClientSpawner.ConnectionRequest, _, _) =>
       // we only subscribe to the deadletters event stream when in cluster mode
       // in that case we want to be warned when connections are spawned by the backend
@@ -67,5 +67,6 @@ object ClientSpawner {
 
   case class ConnectionRequest(address: InetSocketAddress,
                                remoteNodeId: PublicKey,
-                               origin: ActorRef) extends RemoteTypes
+                               origin: ActorRef,
+                               enableGossip: Boolean) extends RemoteTypes
 }

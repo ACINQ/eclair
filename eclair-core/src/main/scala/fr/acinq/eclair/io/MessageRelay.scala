@@ -37,7 +37,7 @@ object MessageRelay {
   def apply(): Behavior[Command] = {
     Behaviors.receivePartial {
       case (context, RelayMessage(switchboard, nextNodeId, msg, replyTo)) =>
-        switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic)
+        switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic, enableGossip = false)
         waitForConnection(msg, replyTo)
     }
   }

@@ -155,7 +155,8 @@ abstract class IntegrationSpec extends TestKitBaseClass with BitcoindService wit
     sender.send(node1.switchboard, Peer.Connect(
       nodeId = node2.nodeParams.nodeId,
       address_opt = Some(HostAndPort.fromParts(address.socketAddress.getHostString, address.socketAddress.getPort)),
-      sender.ref
+      sender.ref,
+      enableGossip = true
     ))
     sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](10 seconds)
   }

@@ -41,7 +41,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     nodeParams.db.network.addNode(NodeAnnouncement(ByteVector64.Zeroes, Features.empty, 0 unixsec, remoteNodeId, Color(0, 0, 0), "alias", remoteNodeAddress :: Nil))
 
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(remoteNodeId, peer)))
-    probe.send(switchboard, Peer.Connect(remoteNodeId, None, probe.ref))
+    probe.send(switchboard, Peer.Connect(remoteNodeId, None, probe.ref, enableGossip = true))
     peer.expectMsg(Peer.Init(Set.empty))
     val connect = peer.expectMsgType[Peer.Connect]
     assert(connect.nodeId === remoteNodeId)

@@ -78,7 +78,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       }
       context.watch(transport)
       startSingleTimer(AUTH_TIMER, AuthTimeout, conf.authTimeout)
-      goto(AUTHENTICATING) using AuthenticatingData(p, transport)
+      goto(AUTHENTICATING) using AuthenticatingData(p, transport, p.enableGossip)
   }
 
   when(AUTHENTICATING) {
@@ -88,7 +88,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (d.pendingAuth.outgoing) "outgoing" else "incoming"}")
       Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Authenticated).increment()
       switchboard ! Authenticated(self, remoteNodeId)
-      goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport)
+      goto(BEFORE_INIT) using BeforeInitData(remoteNodeId, d.pendingAuth, d.transport, d.enableGossip)
 
     case Event(AuthTimeout, d: AuthenticatingData) =>
       log.warning(s"authentication timed out after ${conf.authTimeout}")
@@ -104,7 +104,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
       val localInit = protocol.Init(localFeatures, TlvStream(InitTlv.Networks(chainHash :: Nil)))
       d.transport ! localInit
       startSingleTimer(INIT_TIMER, InitTimeout, conf.initTimeout)
-      goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync)
+      goto(INITIALIZING) using InitializingData(chainHash, d.pendingAuth, d.remoteNodeId, d.transport, peer, localInit, doSync, d.enableGossip)
   }
 
   when(INITIALIZING) {
@@ -146,9 +146,11 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
           // we will delay all rebroadcasts with this value in order to prevent herd effects (each peer has a different delay)
           val rebroadcastDelay = Random.nextInt(conf.maxRebroadcastDelay.toSeconds.toInt).seconds
           log.info(s"rebroadcast will be delayed by $rebroadcastDelay")
-          context.system.eventStream.subscribe(self, classOf[Rebroadcast])
+          if(d.enableGossip) {
+            context.system.eventStream.subscribe(self, classOf[Rebroadcast])
+          }
 
-          goto(CONNECTED) using ConnectedData(d.chainHash, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay)
+          goto(CONNECTED) using ConnectedData(d.chainHash, d.remoteNodeId, d.transport, d.peer, d.localInit, remoteInit, rebroadcastDelay, enableGossip = d.enableGossip)
         }
 
       case Event(InitTimeout, d: InitializingData) =>
@@ -279,7 +281,8 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
             // this is actually for the channel
             d.transport ! TransportHandler.ReadAck(msg)
             d.peer ! msg
-            stay()
+          case _ if !d.enableGossip =>
+            d.transport ! TransportHandler.ReadAck(msg)
           case _: ChannelAnnouncement | _: ChannelUpdate | _: NodeAnnouncement if d.behavior.ignoreNetworkAnnouncement =>
             // this peer is currently under embargo!
             d.transport ! TransportHandler.ReadAck(msg)
@@ -491,10 +494,10 @@ object PeerConnection {
   sealed trait Data
   sealed trait HasTransport { this: Data => def transport: ActorRef }
   case object Nothing extends Data
-  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
-  case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef) extends Data with HasTransport
-  case class InitializingData(chainHash: ByteVector32, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean) extends Data with HasTransport
-  case class ConnectedData(chainHash: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
+  case class AuthenticatingData(pendingAuth: PendingAuth, transport: ActorRef, enableGossip: Boolean) extends Data with HasTransport
+  case class BeforeInitData(remoteNodeId: PublicKey, pendingAuth: PendingAuth, transport: ActorRef, enableGossip: Boolean) extends Data with HasTransport
+  case class InitializingData(chainHash: ByteVector32, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean, enableGossip: Boolean) extends Data with HasTransport
+  case class ConnectedData(chainHash: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None, enableGossip: Boolean) extends Data with HasTransport
 
   case class ExpectedPong(ping: Ping, timestamp: TimestampMilli = TimestampMilli.now())
   case class PingTimeout(ping: Ping)
@@ -506,7 +509,7 @@ object PeerConnection {
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
-  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None) {
+  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef], transport_opt: Option[ActorRef] = None, enableGossip: Boolean) {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey) extends RemoteTypes

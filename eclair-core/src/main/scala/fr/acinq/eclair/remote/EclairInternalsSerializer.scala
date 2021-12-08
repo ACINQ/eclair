@@ -137,7 +137,8 @@ object EclairInternalsSerializer {
   def connectionRequestCodec(system: ExtendedActorSystem): Codec[ClientSpawner.ConnectionRequest] = (
     ("address" | inetSocketAddressCodec) ::
       ("remoteNodeId" | publicKey) ::
-      ("origin" | actorRefCodec(system))).as[ClientSpawner.ConnectionRequest]
+      ("origin" | actorRefCodec(system)) ::
+      ("enableGossip" | bool8)).as[ClientSpawner.ConnectionRequest]
 
   def initializeConnectionCodec(system: ExtendedActorSystem): Codec[PeerConnection.InitializeConnection] = (
     ("peer" | actorRefCodec(system)) ::
