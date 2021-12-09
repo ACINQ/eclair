@@ -468,29 +468,6 @@ class RouterSpec extends BaseRouterSpec {
     ))
   }
 
-  test("send network statistics") { fixture =>
-    import fixture._
-    val sender = TestProbe()
-    sender.send(router, GetNetworkStats)
-    sender.expectMsg(GetNetworkStatsResponse(None))
-
-    // Network statistics should be computed after initial sync
-    router ! SyncProgress(1.0)
-    awaitCond({
-      sender.send(router, GetNetworkStats)
-      sender.expectMsgType[GetNetworkStatsResponse].stats.isDefined
-    })
-
-    sender.send(router, GetNetworkStats)
-    val GetNetworkStatsResponse(Some(stats)) = sender.expectMsgType[GetNetworkStatsResponse]
-    // if you change this test update test "router returns Network Stats" in EclairImpSpec that mocks this call.
-    // else will break the networkstats API call
-    assert(stats.channels === 5)
-    assert(stats.nodes === 8)
-    assert(stats.capacity.median === 1000000.sat)
-    assert(stats.cltvExpiryDelta.median === CltvExpiryDelta(7))
-  }
-
   test("given a pre-defined nodes route add the proper channel updates") { fixture =>
     import fixture._
 

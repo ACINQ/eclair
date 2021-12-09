@@ -42,8 +42,8 @@ import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, RelayFees, UsableBalance}
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendPaymentToRouteResponse, SendSpontaneousPayment}
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
-import fr.acinq.eclair.router.{NetworkStats, Router}
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -125,8 +125,6 @@ trait Eclair {
   def networkFees(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[NetworkFee]]
 
   def channelStats(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[Stats]]
-
-  def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]]
 
   def getInvoice(paymentHash: ByteVector32)(implicit timeout: Timeout): Future[Option[PaymentRequest]]
 
@@ -395,8 +393,6 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     Future(appKit.nodeParams.db.audit.stats(from.toTimestampMilli, to.toTimestampMilli))
   }
 
-  override def networkStats()(implicit timeout: Timeout): Future[Option[NetworkStats]] = (appKit.router ? GetNetworkStats).mapTo[GetNetworkStatsResponse].map(_.stats)
-
   override def allInvoices(from: TimestampSecond, to: TimestampSecond)(implicit timeout: Timeout): Future[Seq[PaymentRequest]] = Future {
     appKit.nodeParams.db.payments.listIncomingPayments(from.toTimestampMilli, to.toTimestampMilli).map(_.paymentRequest)
   }
@@ -412,8 +408,6 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   override def deleteInvoice(paymentHash: ByteVector32): Future[String] = {
     Future.fromTry(appKit.nodeParams.db.payments.removeIncomingPayment(paymentHash).map(_ => s"deleted invoice $paymentHash"))
   }
-
-
 
   /**
    * Send a request to a channel and expect a response.
@@ -522,9 +516,9 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
             Nil,
             userCustomTlvs)
         (appKit.switchboard ? OnionMessages.SendMessage(nextNodeId, message)).mapTo[MessageRelay.Status].map {
-            case MessageRelay.Success => SendOnionMessageResponse(sent = true, None)
-            case MessageRelay.Failure(f) => SendOnionMessageResponse(sent = false, Some(f.toString))
-          }
+          case MessageRelay.Success => SendOnionMessageResponse(sent = true, None)
+          case MessageRelay.Failure(f) => SendOnionMessageResponse(sent = false, Some(f.toString))
+        }
       case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}")))
     }
 

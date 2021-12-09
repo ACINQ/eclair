@@ -57,16 +57,12 @@ trait PathFinding {
     }
   }
 
-  val networkStats: Route = postRequest("networkstats") { implicit t =>
-    complete(eclairApi.networkStats())
-  }
-
   val nodes: Route = postRequest("nodes") { implicit t =>
     formFields(nodeIdsFormParam.?) { nodeIds_opt =>
       complete(eclairApi.nodes(nodeIds_opt.map(_.toSet)))
     }
   }
 
-  val pathFindingRoutes: Route = findRoute ~ findRouteToNode ~ findRouteBetweenNodes ~ networkStats ~ nodes
+  val pathFindingRoutes: Route = findRoute ~ findRouteToNode ~ findRouteBetweenNodes ~ nodes
 
 }

@@ -455,7 +455,6 @@ object NodeParams extends Logging {
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
-        networkStatsRefreshInterval = FiniteDuration(config.getDuration("router.network-stats-interval").getSeconds, TimeUnit.SECONDS),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
         encodingType = routerSyncEncodingType,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
