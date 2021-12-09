@@ -404,9 +404,9 @@ object GlobalBalanceSerializer extends MinimalSerializer({
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
 })
 
-private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[BlindedRoute], unknownTlvs: Seq[GenericTlv])
+private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
 object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage]({ m: OnionMessages.ReceiveMessage =>
-  MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.toSeq)
+  MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => (tlv.tag.toString -> tlv.value)).toMap)
 })
 
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
