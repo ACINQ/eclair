@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
-import akka.actor.{ActorContext, ActorRef, FSM}
+import akka.actor.{ActorContext, ActorRef, FSM, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -187,6 +187,21 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
     probe.expectMsg("disconnecting")
+  }
+
+  test("handle disconnect in state DISCONNECTED") { f =>
+    import f._
+
+    val probe = TestProbe()
+    switchboard.send(peer, Peer.Init(Set.empty))
+
+    awaitCond {
+      probe.send(peer, Peer.GetPeerInfo)
+      probe.expectMsgType[Peer.PeerInfo].state == "DISCONNECTED"
+    }
+
+    probe.send(peer, Peer.Disconnect(f.remoteNodeId))
+    assert(probe.expectMsgType[Status.Failure].cause.getMessage === "not connected")
   }
 
   test("handle new connection in state CONNECTED") { f =>
