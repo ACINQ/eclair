@@ -164,7 +164,13 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
     heartbeat {
       case Event(msg: LightningMessage, d: ConnectedData) if sender() != d.transport => // if the message doesn't originate from the transport, it is an outgoing message
         d.transport forward msg
-        stay()
+        msg match {
+          // If we send any channel management message to this peer, we enable the gossip.
+          case _ : ChannelMessage if !d.enableGossip =>
+            context.system.eventStream.subscribe(self, classOf[Rebroadcast])
+            stay() using d.copy(enableGossip = true)
+          case _ => stay()
+        }
 
       case Event(SendPing, d: ConnectedData) =>
         if (d.expectedPong_opt.isEmpty) {
