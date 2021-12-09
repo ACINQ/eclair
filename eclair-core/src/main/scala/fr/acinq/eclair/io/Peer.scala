@@ -275,6 +275,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       sender() ! Status.Failure(new RuntimeException("not connected"))
       stay()
 
+    case Event(_: Peer.Disconnect, _) =>
+      sender() ! Status.Failure(new RuntimeException("not connected"))
+      stay()
+
     case Event(GetPeerInfo, d) =>
       sender() ! PeerInfo(remoteNodeId, stateName.toString, d match {
         case c: ConnectedData => Some(c.address)
