@@ -22,9 +22,11 @@ import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Tra
 import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Route}
@@ -402,6 +404,11 @@ object GlobalBalanceSerializer extends MinimalSerializer({
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
 })
 
+private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
+object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage]({ m: OnionMessages.ReceiveMessage =>
+  MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => (tlv.tag.toString -> tlv.value)).toMap)
+})
+
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
 
@@ -433,7 +440,11 @@ object CustomTypeHints {
     classOf[TrampolinePaymentRelayed] -> "trampoline-payment-relayed",
     classOf[PaymentReceived] -> "payment-received",
     classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
-    classOf[PaymentFailed] -> "payment-failed"
+    classOf[PaymentFailed] -> "payment-failed",
+  ))
+
+  val onionMessageEvent: CustomTypeHints = CustomTypeHints(Map(
+    classOf[MessageReceivedJson] -> "onion-message-received"
   ))
 
   val channelStates: ShortTypeHints = ShortTypeHints(
@@ -462,6 +473,7 @@ object JsonSerializers {
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +
+    CustomTypeHints.onionMessageEvent +
     CustomTypeHints.channelStates +
     ByteVectorSerializer +
     ByteVector32Serializer +
@@ -505,6 +517,7 @@ object JsonSerializers {
     JavaUUIDSerializer +
     OriginSerializer +
     GlobalBalanceSerializer +
-    PaymentFailedSummarySerializer
+    PaymentFailedSummarySerializer +
+    OnionMessageReceivedSerializer
 
 }
