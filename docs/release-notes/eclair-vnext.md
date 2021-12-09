@@ -29,10 +29,12 @@ Messages sent to Eclair can be read with the websocket API.
 #### Timestamps
 
 All timestamps are now returned as an object with two attributes:
+
 - `iso`: ISO-8601 format with GMT time zone. Precision may be second or millisecond depending on the timestamp.
 - `unix`: seconds since epoch formats (seconds since epoch). Precision is always second.
 
 Examples:
+
 - second-precision timestamp:
   - before:
   ```json
@@ -73,6 +75,14 @@ It expects `--route` a list of `nodeId` to send the message through, the last on
 It also accepts `--pathId` as an encoded TLV stream in hexadecimal.
 Sending to a blinded route (as a reply to a previous message) is not supported.
 
+#### Balance
+
+The detailed balance json format has been slightly updated for channels in state `normal` and `shutdown`, and `closing`.
+
+Amounts corresponding to incoming htlcs for which we knew the preimage were previously included in `toLocal`, they are
+now grouped with outgoing htlcs amounts and the field has been renamed from `htlcOut` to `htlcs`.
+
+#### Miscellaneous
 
 This release contains many other API updates:
 
@@ -83,15 +93,9 @@ This release contains many other API updates:
 - `findroute`, `findroutetonode` and `findroutebetweennodes` now accept `--maxFeeMsat` to specify an upper bound of fees (#1969)
 - `getsentinfo` output includes `failedNode` field for all failed routes
 - for `payinvoice` and `sendtonode`, `--feeThresholdSat` has been renamed to `--maxFeeFlatSat`
+- the `networkstats` API has been removed
 
 Have a look at our [API documentation](https://acinq.github.io/eclair) for more details.
-
-#### Balance
-
-The detailed balance json format has been slightly updated for channels in state `normal` and `shutdown`, and `closing`.
-
-Amounts corresponding to incoming htlcs for which we knew the preimage were previously included in `toLocal`, they are
-now grouped with outgoing htlcs amounts and the field has been renamed from `htlcOut` to `htlcs`.
 
 ### Miscellaneous improvements and bug fixes
 

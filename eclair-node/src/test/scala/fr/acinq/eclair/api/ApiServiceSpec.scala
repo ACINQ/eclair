@@ -46,7 +46,7 @@ import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
 import fr.acinq.eclair.router.Router.PredefinedNodeRoute
-import fr.acinq.eclair.router.{NetworkStats, Router, Stats}
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, GenericTlv, MessageOnion, NodeAddress, OnionMessagePayloadTlv, TlvStream}
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.AnyFunSuite
@@ -1048,29 +1048,6 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
         val response = entityAs[String]
         matchTestJson("findroute-full", response)
         eclair.findRoute(invoice.nodeId, 456.msat, any, any, any, any, any, any)(any[Timeout]).wasCalled(fourTimes)
-      }
-  }
-
-  test("'networkstats' response should return expected statistics") {
-    val capStat = Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
-    val cltvStat = Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
-    val feeBaseStat = Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
-    val feePropStat = Stats(32L, 11L, 13L, 22L, 42L, 51L, 53L)
-    val networkStats = new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat)
-
-    val eclair = mock[Eclair]
-    val mockService = new MockService(eclair)
-    eclair.networkStats()(any[Timeout]) returns Future.successful(Some(networkStats))
-
-    Post("/networkstats") ~>
-      addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
-      Route.seal(mockService.networkStats) ~>
-      check {
-        assert(handled)
-        assert(status == OK)
-        val resp = entityAs[String]
-        eclair.networkStats()(any[Timeout]).wasCalled(once)
-        matchTestJson("networkstats", resp)
       }
   }
 

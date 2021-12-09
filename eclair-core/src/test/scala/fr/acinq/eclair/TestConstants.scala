@@ -168,7 +168,6 @@ object TestConstants {
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
-        networkStatsRefreshInterval = 1 hour,
         requestNodeAnnouncements = true,
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
@@ -295,7 +294,6 @@ object TestConstants {
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
-        networkStatsRefreshInterval = 1 hour,
         requestNodeAnnouncements = true,
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,

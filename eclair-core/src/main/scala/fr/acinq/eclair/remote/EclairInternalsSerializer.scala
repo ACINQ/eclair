@@ -83,13 +83,12 @@ object EclairInternalsSerializer {
       ("experimentPercentage" | int32)).as[PathFindingConf]
 
   val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
-    ("experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => (e.experimentName -> e)).toMap, _.values.toList))
+    "experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => e.experimentName -> e).toMap, _.values.toList)
     ).as[PathFindingExperimentConf]
 
   val routerConfCodec: Codec[RouterConf] = (
     ("channelExcludeDuration" | finiteDurationCodec) ::
       ("routerBroadcastInterval" | finiteDurationCodec) ::
-      ("networkStatsRefreshInterval" | finiteDurationCodec) ::
       ("requestNodeAnnouncements" | bool(8)) ::
       ("encodingType" | discriminated[EncodingType].by(uint8)
         .typecase(0, provide(EncodingType.UNCOMPRESSED))

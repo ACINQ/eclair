@@ -36,8 +36,8 @@ import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendSpontaneousPayment}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
-import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
-import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
+import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PublicChannel}
+import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAnnouncement}
 import org.mockito.Mockito
@@ -262,28 +262,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
         case _ => false
       }
     })
-  }
-
-  test("router returns Network Stats") { f =>
-    import f._
-
-    val capStat = Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
-    val cltvStat = Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
-    val feeBaseStat = Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
-    val feePropStat = Stats(32L, 11L, 13L, 22L, 42L, 51L, 53L)
-    val eclair = new EclairImpl(kit)
-    val fResp = eclair.networkStats()
-    f.router.expectMsg(GetNetworkStats)
-
-    f.router.reply(GetNetworkStatsResponse(Some(new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat))))
-
-    awaitCond({
-      fResp.value match {
-        case Some(Success(Some(res))) => res.channels == 1
-        case _ => false
-      }
-    })
-
   }
 
   test("close and forceclose should work both with channelId and shortChannelId") { f =>
