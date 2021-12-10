@@ -90,16 +90,19 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features)
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
     val probe = TestProbe()
-    probe.send(peer, Peer.GetPeerInfo)
-    assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
+    probe.send(peer, Peer.GetPeerInfo(probe.ref))
+    val peerInfo = probe.expectMsgType[Peer.PeerInfo]
+    assert(peerInfo.peer === peer)
+    assert(peerInfo.nodeId === remoteNodeId)
+    assert(peerInfo.state === Peer.CONNECTED)
   }
 
   test("restore existing channels") { f =>
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
-    probe.send(peer, Peer.GetPeerInfo)
-    probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
+    probe.send(peer, Peer.GetPeerInfo(ActorRef.noSender))
+    probe.expectMsg(PeerInfo(peer, remoteNodeId, Peer.CONNECTED, Some(fakeIPAddress.socketAddress), 1))
   }
 
   test("fail to connect if no address provided or found") { f =>
@@ -182,8 +185,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
-    probe.send(peer, Peer.GetPeerInfo)
-    assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
+    probe.send(peer, Peer.GetPeerInfo(probe.ref))
+    assert(probe.expectMsgType[Peer.PeerInfo].state === Peer.CONNECTED)
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
     probe.expectMsg("disconnecting")
@@ -196,8 +199,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     switchboard.send(peer, Peer.Init(Set.empty))
 
     awaitCond {
-      probe.send(peer, Peer.GetPeerInfo)
-      probe.expectMsgType[Peer.PeerInfo].state == "DISCONNECTED"
+      probe.send(peer, Peer.GetPeerInfo(ActorRef.noSender))
+      probe.expectMsgType[Peer.PeerInfo].state === Peer.DISCONNECTED
     }
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
@@ -468,14 +471,14 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     peer ! ConnectionDown(peerConnection.ref)
-    probe.send(peer, Peer.GetPeerInfo)
+    probe.send(peer, Peer.GetPeerInfo(probe.ref))
     val peerInfo1 = probe.expectMsgType[Peer.PeerInfo]
-    assert(peerInfo1.state === "DISCONNECTED")
+    assert(peerInfo1.state === Peer.DISCONNECTED)
     assert(peerInfo1.channels === 1)
     peer ! ChannelIdAssigned(probe.ref, remoteNodeId, randomBytes32(), randomBytes32())
-    probe.send(peer, Peer.GetPeerInfo)
+    probe.send(peer, Peer.GetPeerInfo(probe.ref))
     val peerInfo2 = probe.expectMsgType[Peer.PeerInfo]
-    assert(peerInfo2.state === "DISCONNECTED")
+    assert(peerInfo2.state === Peer.DISCONNECTED)
     assert(peerInfo2.channels === 2)
   }
 

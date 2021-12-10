@@ -26,6 +26,7 @@ import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
@@ -404,10 +405,17 @@ object GlobalBalanceSerializer extends MinimalSerializer({
     JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
 })
 
+// @formatter:off
+private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
+object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address, peerInfo.channels))
+// @formatter:on
+
+// @formatter:off
 private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
 object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage]({ m: OnionMessages.ReceiveMessage =>
   MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => (tlv.tag.toString -> tlv.value)).toMap)
 })
+// @formatter:on
 
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
@@ -517,6 +525,7 @@ object JsonSerializers {
     JavaUUIDSerializer +
     OriginSerializer +
     GlobalBalanceSerializer +
+    PeerInfoSerializer +
     PaymentFailedSummarySerializer +
     OnionMessageReceivedSerializer
 

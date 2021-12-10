@@ -282,8 +282,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       sender() ! Status.Failure(new RuntimeException("not connected"))
       stay()
 
-    case Event(GetPeerInfo, d) =>
-      sender() ! PeerInfo(remoteNodeId, stateName.toString, d match {
+    case Event(r: GetPeerInfo, d) =>
+      val replyTo = if (r.replyTo == ActorRef.noSender) sender() else r.replyTo
+      replyTo ! PeerInfo(self, remoteNodeId, stateName, d match {
         case c: ConnectedData => Some(c.address)
         case _ => None
       }, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
@@ -458,8 +459,9 @@ object Peer {
     require(pushMsat >= 0.msat, s"pushMsat must be positive")
     fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum ${FeeratePerKw.MinimumFeeratePerKw} rate/kw"))
   }
-  case object GetPeerInfo
-  case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
+
+  case class GetPeerInfo(replyTo: ActorRef)
+  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[InetSocketAddress], channels: Int)
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes
 

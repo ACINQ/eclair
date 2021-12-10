@@ -76,13 +76,13 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case d: Peer.Disconnect =>
       getPeer(d.nodeId) match {
         case Some(peer) => peer forward d
-        case None => sender() ! Status.Failure(new RuntimeException("peer not found"))
+        case None => sender() ! Status.Failure(new RuntimeException(s"peer ${d.nodeId} not found"))
       }
 
     case o: Peer.OpenChannel =>
       getPeer(o.remoteNodeId) match {
         case Some(peer) => peer forward o
-        case None => sender() ! Status.Failure(new RuntimeException("no connection to peer"))
+        case None => sender() ! Status.Failure(new RuntimeException(s"peer ${o.remoteNodeId} not found"))
       }
 
     case authenticated: PeerConnection.Authenticated =>
@@ -101,8 +101,8 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
     case GetPeerInfo(replyTo, remoteNodeId) =>
       getPeer(remoteNodeId) match {
-        case Some(peer) => replyTo ! KnownPeer(peer, peersWithChannels.contains(remoteNodeId))
-        case None => replyTo ! UnknownPeer
+        case Some(peer) => peer ! Peer.GetPeerInfo(replyTo)
+        case None => replyTo ! PeerNotFound(remoteNodeId)
       }
 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
@@ -160,9 +160,7 @@ object Switchboard {
   case object GetPeers
 
   case class GetPeerInfo(replyTo: ActorRef, remoteNodeId: PublicKey)
-  sealed trait PeerInfo
-  case class UnknownPeer(remoteNodeId: PublicKey) extends PeerInfo
-  case class KnownPeer(peer: ActorRef, hasChannel: Boolean) extends PeerInfo
+  case class PeerNotFound(remoteNodeId: PublicKey) { override def toString: String = s"peer $remoteNodeId not found" }
 
   case object GetRouterPeerConf extends RemoteTypes
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
