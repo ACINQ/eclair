@@ -131,7 +131,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
 
     val unknownPeerNodeId = randomKey().publicKey
     probe.send(switchboard, GetPeerInfo(probe.ref, unknownPeerNodeId))
-    probe.expectMsg(PeerNotFound(unknownPeerNodeId))
+    probe.expectMsg(Peer.PeerNotFound(unknownPeerNodeId))
 
     probe.send(switchboard, GetPeerInfo(probe.ref, knownPeerNodeId))
     peer.expectMsg(Peer.GetPeerInfo(probe.ref))

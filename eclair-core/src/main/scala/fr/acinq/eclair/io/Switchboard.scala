@@ -102,7 +102,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case GetPeerInfo(replyTo, remoteNodeId) =>
       getPeer(remoteNodeId) match {
         case Some(peer) => peer ! Peer.GetPeerInfo(replyTo)
-        case None => replyTo ! PeerNotFound(remoteNodeId)
+        case None => replyTo ! Peer.PeerNotFound(remoteNodeId)
       }
 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
@@ -158,9 +158,7 @@ object Switchboard {
 
   // @formatter:off
   case object GetPeers
-
   case class GetPeerInfo(replyTo: ActorRef, remoteNodeId: PublicKey)
-  case class PeerNotFound(remoteNodeId: PublicKey) { override def toString: String = s"peer $remoteNodeId not found" }
 
   case object GetRouterPeerConf extends RemoteTypes
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes

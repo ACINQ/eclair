@@ -461,7 +461,11 @@ object Peer {
   }
 
   case class GetPeerInfo(replyTo: ActorRef)
-  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[InetSocketAddress], channels: Int)
+  sealed trait PeerInfoResponse {
+    def nodeId: PublicKey
+  }
+  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[InetSocketAddress], channels: Int) extends PeerInfoResponse
+  case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse { override def toString: String = s"peer $nodeId not found" }
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes
 
