@@ -65,7 +65,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
-
       goto(DISCONNECTED) using DisconnectedData(channels) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
@@ -77,11 +76,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
     case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
       gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) })
 
-    case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
-      val h = d.channels.filter(_._2 == actor).keys
-      log.info(s"channel closed: channelId=${h.mkString("/")}")
-      val channels1 = d.channels -- h
+    case Event(Terminated(actor), d: DisconnectedData) if d.channels.values.toSet.contains(actor) =>
+      // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+      val channelIds = d.channels.filter(_._2 == actor).keys
+      log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
+      val channels1 = d.channels -- channelIds
       if (channels1.isEmpty) {
+        log.info("that was the last open channel")
+        context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
         // we have no existing channels, we can forget about this peer
         stopPeer()
       } else {
@@ -230,15 +232,16 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         }
 
       case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
-        // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+        // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
         val channelIds = d.channels.filter(_._2 == actor).keys
         log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
-        if (d.channels.values.toSet - actor == Set.empty) {
-          log.info(s"that was the last open channel, closing the connection")
+        val channels1 = d.channels -- channelIds
+        if (channels1.isEmpty) {
+          log.info("that was the last open channel, closing the connection")
           context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
           d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
         }
-        stay() using d.copy(channels = d.channels -- channelIds)
+        stay() using d.copy(channels = channels1)
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
         log.info(s"got new connection, killing current one and switching")

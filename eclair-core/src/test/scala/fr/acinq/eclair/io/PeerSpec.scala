@@ -17,7 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
-import akka.actor.{ActorContext, ActorRef, FSM, Status}
+import akka.actor.{ActorContext, ActorRef, FSM, PoisonPill, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -477,6 +477,25 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val peerInfo2 = probe.expectMsgType[Peer.PeerInfo]
     assert(peerInfo2.state === "DISCONNECTED")
     assert(peerInfo2.channels === 2)
+  }
+
+  test("notify when last channel is closed") { f =>
+    import f._
+    val probe = TestProbe()
+    system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    probe.send(channel.ref, PoisonPill)
+    probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
+  }
+
+  test("notify when last channel is closed in state DISCONNECTED") { f =>
+    import f._
+    val probe = TestProbe()
+    system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    peer ! ConnectionDown(peerConnection.ref)
+    probe.send(channel.ref, PoisonPill)
+    probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
   }
 
 }
