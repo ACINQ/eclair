@@ -38,16 +38,16 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.io.Peer.PeerInfo
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer.UsableBalance
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentToRouteResponse
-import fr.acinq.eclair.router.Router.PredefinedNodeRoute
 import fr.acinq.eclair.router.Router
-import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, GenericTlv, MessageOnion, NodeAddress, OnionMessagePayloadTlv, TlvStream}
+import fr.acinq.eclair.router.Router.PredefinedNodeRoute
+import fr.acinq.eclair.wire.protocol._
 import org.mockito.scalatest.IdiomaticMockito
 import org.scalatest.funsuite.AnyFunSuite
 import org.scalatest.matchers.should.Matchers
@@ -164,13 +164,15 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
 
     eclair.peers()(any[Timeout]) returns Future.successful(List(
       PeerInfo(
+        ActorRef.noSender,
         nodeId = aliceNodeId,
-        state = "CONNECTED",
+        state = Peer.CONNECTED,
         address = Some(NodeAddress.fromParts("localhost", 9731).get.socketAddress),
         channels = 1),
       PeerInfo(
+        ActorRef.noSender,
         nodeId = bobNodeId,
-        state = "DISCONNECTED",
+        state = Peer.DISCONNECTED,
         address = None,
         channels = 1)))
 

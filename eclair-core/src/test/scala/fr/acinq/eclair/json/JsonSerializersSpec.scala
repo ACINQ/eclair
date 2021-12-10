@@ -17,11 +17,14 @@
 package fr.acinq.eclair.json
 
 import akka.actor.ActorRef
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Btc, ByteVector32, OutPoint, Satoshi, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.balance.CheckBalance
 import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, GlobalBalance, MainAndHtlcBalance, PossiblyPublishedMainAndHtlcBalance, PossiblyPublishedMainBalance}
 import fr.acinq.eclair.channel.{CMD_UPDATE_RELAY_FEE, CommandResponse, CommandUnavailableInThisState, Origin, RES_FAILURE, RES_SUCCESS}
+import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.io.Peer.PeerInfo
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentSettlingOnChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions.{IncomingHtlc, OutgoingHtlc}
@@ -96,6 +99,12 @@ class JsonSerializersSpec extends AnyFunSuite with Matchers {
     JsonSerializers.serialization.write(ipv6LocalHost)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""[0:0:0:0:0:0:0:1]:9735""""
     JsonSerializers.serialization.write(tor2)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocaj.onion:7777""""
     JsonSerializers.serialization.write(tor3)(org.json4s.DefaultFormats + NodeAddressSerializer) shouldBe s""""aaaqeayeaudaocajbifqydiob4ibceqtcqkrmfyydenbwha5dypsaijc.onion:9999""""
+  }
+
+  test("PeerInfo serialization") {
+    val peerInfo = PeerInfo(ActorRef.noSender, PublicKey(hex"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b"), Peer.CONNECTED, None, 5)
+    val expected = """{"nodeId":"0270685ca81a8e4d4d01beec5781f4cc924684072ae52c507f8ebe9daf0caaab7b","state":"CONNECTED","channels":5}"""
+    JsonSerializers.serialization.write(peerInfo)(JsonSerializers.formats) shouldBe expected
   }
 
   test("DirectedHtlc serialization") {

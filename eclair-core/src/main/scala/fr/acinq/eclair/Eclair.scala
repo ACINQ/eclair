@@ -35,7 +35,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.io.{MessageRelay, NodeURI, Peer, PeerConnection}
+import fr.acinq.eclair.io.{MessageRelay, NodeURI, Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -200,7 +200,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def peers()(implicit timeout: Timeout): Future[Iterable[PeerInfo]] = for {
-    peers <- (appKit.switchboard ? Symbol("peers")).mapTo[Iterable[ActorRef]]
+    peers <- (appKit.switchboard ? Switchboard.GetPeers).mapTo[Iterable[ActorRef]]
     peerinfos <- Future.sequence(peers.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
   } yield peerinfos
 

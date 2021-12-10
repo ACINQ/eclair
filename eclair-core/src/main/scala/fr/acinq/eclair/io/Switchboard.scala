@@ -39,7 +39,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
   context.system.eventStream.subscribe(self, classOf[LastChannelClosed])
 
   // we load channels from database
-  private def initialPeersWithChannels: Set[PublicKey] = {
+  private def initialPeersWithChannels(): Set[PublicKey] = {
     // Check if channels that are still in CLOSING state have actually been closed. This can happen when the app is stopped
     // just after a channel state has transitioned to CLOSED and before it has effectively been removed.
     // Closed channels will be removed, other channels will be restored.
@@ -55,7 +55,7 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     peerChannels.keySet
   }
 
-  def receive: Receive = normal(initialPeersWithChannels)
+  def receive: Receive = normal(initialPeersWithChannels())
 
   def normal(peersWithChannels: Set[PublicKey]): Receive = {
 
@@ -63,11 +63,12 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
       sender() ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case Peer.Connect(nodeId, address_opt, replyTo) =>
-      // we create a peer if it doesn't exist
+      // we create a peer if it doesn't exist: when the peer doesn't exist, we can be sure that we don't have channels,
+      // otherwise the peer would have been created during the initialization step.
       val peer = createOrGetPeer(nodeId, offlineChannels = Set.empty)
-      val c = if (replyTo == ActorRef.noSender){
+      val c = if (replyTo == ActorRef.noSender) {
         Peer.Connect(nodeId, address_opt, sender())
-      }else{
+      } else {
         Peer.Connect(nodeId, address_opt, replyTo)
       }
       peer forward c
@@ -75,13 +76,13 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case d: Peer.Disconnect =>
       getPeer(d.nodeId) match {
         case Some(peer) => peer forward d
-        case None => sender() ! Status.Failure(new RuntimeException("peer not found"))
+        case None => sender() ! Status.Failure(new RuntimeException(s"peer ${d.nodeId} not found"))
       }
 
     case o: Peer.OpenChannel =>
       getPeer(o.remoteNodeId) match {
         case Some(peer) => peer forward o
-        case None => sender() ! Status.Failure(new RuntimeException("no connection to peer"))
+        case None => sender() ! Status.Failure(new RuntimeException(s"peer ${o.remoteNodeId} not found"))
       }
 
     case authenticated: PeerConnection.Authenticated =>
@@ -96,7 +97,13 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
     case LastChannelClosed(_, remoteNodeId) => context.become(normal(peersWithChannels - remoteNodeId))
 
-    case Symbol("peers") => sender() ! context.children
+    case GetPeers => sender() ! context.children
+
+    case GetPeerInfo(replyTo, remoteNodeId) =>
+      getPeer(remoteNodeId) match {
+        case Some(peer) => peer ! Peer.GetPeerInfo(replyTo)
+        case None => replyTo ! Peer.PeerNotFound(remoteNodeId)
+      }
 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
 
@@ -149,8 +156,12 @@ object Switchboard {
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
-  case object GetRouterPeerConf extends RemoteTypes
+  // @formatter:off
+  case object GetPeers
+  case class GetPeerInfo(replyTo: ActorRef, remoteNodeId: PublicKey)
 
+  case object GetRouterPeerConf extends RemoteTypes
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
+  // @formatter:on
 
 }
