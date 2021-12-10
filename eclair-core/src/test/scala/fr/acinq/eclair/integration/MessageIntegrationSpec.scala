@@ -27,6 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{Watch, WatchFundingConfirmed}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.{CMD_CLOSE, RES_SUCCESS}
+import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire.protocol.{GenericTlv, NodeAnnouncement}
@@ -165,9 +166,9 @@ class MessageIntegrationSpec extends IntegrationSpec {
 
     // nodes should disconnect automatically once they don't have any channels left
     awaitCond({
-      probe.send(nodes("A").switchboard, Symbol("peers"))
+      probe.send(nodes("A").switchboard, Switchboard.GetPeers)
       val peersA = probe.expectMsgType[Iterable[ActorRef]]
-      probe.send(nodes("B").switchboard, Symbol("peers"))
+      probe.send(nodes("B").switchboard, Switchboard.GetPeers)
       val peersB = probe.expectMsgType[Iterable[ActorRef]]
       // A and B are now only connected to D
       peersA.size == 1 && peersB.size == 1

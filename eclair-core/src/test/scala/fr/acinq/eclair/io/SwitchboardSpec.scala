@@ -1,12 +1,12 @@
 package fr.acinq.eclair.io
 
-import akka.actor.{ActorContext, ActorRef}
+import akka.actor.{ActorContext, ActorRef, Props}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector64
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.channel.ChannelIdAssigned
-import fr.acinq.eclair.io.Switchboard.PeerFactory
+import fr.acinq.eclair.io.Switchboard._
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, NodeParams, TestKitBaseClass, TimestampSecondLong, randomBytes32, randomKey}
@@ -48,7 +48,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     assert(connect.address_opt === None)
   }
 
-  def sendFeatures(nodeParams: NodeParams, remoteNodeId: PublicKey, expectedFeatures: Features, expectedSync: Boolean) = {
+  def sendFeatures(nodeParams: NodeParams, remoteNodeId: PublicKey, expectedFeatures: Features, expectedSync: Boolean): Unit = {
     val peer = TestProbe()
     val peerConnection = TestProbe()
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(remoteNodeId, peer)))
@@ -97,6 +97,46 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val remoteNodeId = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
     sendFeatures(nodeParams, remoteNodeId, nodeParams.features, expectedSync = false)
+  }
+
+  test("get peer info") {
+    val probe = TestProbe()
+    val peerFactory = new PeerFactory {
+      override def spawn(context: ActorContext, remoteNodeId: PublicKey): ActorRef = context.actorOf(Props.empty, peerActorName(remoteNodeId))
+    }
+    // We initially have two peers: one with channels and the other without channels.
+    val nodeParams = Alice.nodeParams
+    val remoteNodeId1 = ChannelCodecsSpec.normal.commitments.remoteParams.nodeId
+    nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.normal)
+    val remoteNodeId2 = randomKey().publicKey
+    val switchboard = TestActorRef(new Switchboard(nodeParams, peerFactory))
+    probe.send(switchboard, Peer.Connect(remoteNodeId1, None, probe.ref))
+    probe.send(switchboard, Peer.Connect(remoteNodeId2, None, probe.ref))
+
+    probe.send(switchboard, GetPeers)
+    assert(probe.expectMsgType[Iterable[ActorRef]].size === 2)
+    probe.send(switchboard, GetPeerInfo(probe.ref, randomKey().publicKey))
+    probe.expectMsg(UnknownPeer)
+    probe.send(switchboard, GetPeerInfo(probe.ref, remoteNodeId1))
+    assert(probe.expectMsgType[KnownPeer].hasChannel)
+    probe.send(switchboard, GetPeerInfo(probe.ref, remoteNodeId2))
+    assert(!probe.expectMsgType[KnownPeer].hasChannel)
+
+    // Channels are created with our second peer:
+    probe.send(switchboard, ChannelIdAssigned(TestProbe().ref, remoteNodeId2, randomBytes32(), randomBytes32()))
+    probe.send(switchboard, ChannelIdAssigned(TestProbe().ref, remoteNodeId2, randomBytes32(), randomBytes32()))
+    probe.send(switchboard, GetPeerInfo(probe.ref, remoteNodeId2))
+    assert(probe.expectMsgType[KnownPeer].hasChannel)
+    // Then all channels close:
+    probe.send(switchboard, LastChannelClosed(TestProbe().ref, remoteNodeId2))
+    probe.send(switchboard, GetPeerInfo(probe.ref, remoteNodeId2))
+    assert(!probe.expectMsgType[KnownPeer].hasChannel)
+
+    probe.send(switchboard, GetPeerInfo(probe.ref, remoteNodeId1))
+    assert(probe.expectMsgType[KnownPeer].hasChannel)
+    probe.send(switchboard, LastChannelClosed(TestProbe().ref, remoteNodeId1))
+    probe.send(switchboard, GetPeerInfo(probe.ref, remoteNodeId1))
+    assert(!probe.expectMsgType[KnownPeer].hasChannel)
   }
 
 }

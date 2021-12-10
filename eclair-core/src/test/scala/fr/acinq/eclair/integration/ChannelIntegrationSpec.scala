@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.io.{Peer, PeerConnection}
+import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
@@ -109,7 +109,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     nodes("C").system.eventStream.subscribe(stateListenerC.ref, classOf[ChannelStateChanged])
     nodes("F").system.eventStream.subscribe(stateListenerF.ref, classOf[ChannelStateChanged])
 
-    sender.send(nodes("F").switchboard, Symbol("peers"))
+    sender.send(nodes("F").switchboard, Switchboard.GetPeers)
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
     peers.head ! Peer.Disconnect(nodes("C").nodeParams.nodeId)
