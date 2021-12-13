@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeTargets, FeeratePerKw}
 import fr.acinq.eclair.blockchain.{DummyOnChainWallet, OnChainWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.TxPublisher
+import fr.acinq.eclair.channel.publish.TxPublisher.PublishReplaceableTx
 import fr.acinq.eclair.channel.states.ChannelStateTestsHelperMethods.FakeTxPublisherFactory
 import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
@@ -427,7 +428,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     // all htlcs success/timeout should be claimed
     val claimHtlcTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTx) => tx }.toSeq
     claimHtlcTxs.foreach(claimHtlc => Transaction.correctlySpends(claimHtlc.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-    s2blockchain.expectMsgAllOf(claimHtlcTxs.map(claimHtlc => TxPublisher.PublishRawTx(claimHtlc, claimHtlc.fee, None)): _*)
+    val publishedClaimHtlcTxs = claimHtlcTxs.map(_ => s2blockchain.expectMsgType[PublishReplaceableTx])
+    assert(publishedClaimHtlcTxs.map(_.input).toSet == claimHtlcTxs.map(_.input.outPoint).toSet)
 
     // we watch the confirmation of the "final" transactions that send funds to our wallets (main delayed output and 2nd stage htlc transactions)
     assert(s2blockchain.expectMsgType[WatchTxConfirmed].txId === rCommitTx.txid)

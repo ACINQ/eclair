@@ -267,9 +267,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
             case Some(c: Closing.LocalClose) =>
               doPublish(c.localCommitPublished, closing.commitments)
             case Some(c: Closing.RemoteClose) =>
-              doPublish(c.remoteCommitPublished)
+              doPublish(c.remoteCommitPublished, closing.commitments)
             case Some(c: Closing.RecoveryClose) =>
-              doPublish(c.remoteCommitPublished)
+              doPublish(c.remoteCommitPublished, closing.commitments)
             case Some(c: Closing.RevokedClose) =>
               doPublish(c.revokedCommitPublished)
             case None =>
@@ -277,10 +277,10 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
               watchFundingTx(data.commitments, closing.spendingTxs.map(_.txid).toSet)
               closing.mutualClosePublished.foreach(mcp => doPublish(mcp, isFunder))
               closing.localCommitPublished.foreach(lcp => doPublish(lcp, closing.commitments))
-              closing.remoteCommitPublished.foreach(doPublish)
-              closing.nextRemoteCommitPublished.foreach(doPublish)
+              closing.remoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments))
+              closing.nextRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments))
               closing.revokedCommitPublished.foreach(doPublish)
-              closing.futureRemoteCommitPublished.foreach(doPublish)
+              closing.futureRemoteCommitPublished.foreach(rcp => doPublish(rcp, closing.commitments))
 
               // if commitment number is zero, we also need to make sure that the funding tx has been published
               if (closing.commitments.localCommit.index == 0 && closing.commitments.remoteCommit.index == 0) {
@@ -1415,8 +1415,8 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
 
           def republish(): Unit = {
             localCommitPublished1.foreach(lcp => doPublish(lcp, commitments1))
-            remoteCommitPublished1.foreach(doPublish)
-            nextRemoteCommitPublished1.foreach(doPublish)
+            remoteCommitPublished1.foreach(rcp => doPublish(rcp, commitments1))
+            nextRemoteCommitPublished1.foreach(rcp => doPublish(rcp, commitments1))
           }
 
           handleCommandSuccess(c, d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1)) storing() calling republish()
@@ -2498,7 +2498,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       case waitForFundingConfirmed: DATA_WAIT_FOR_FUNDING_CONFIRMED => DATA_CLOSING(d.commitments, fundingTx = waitForFundingConfirmed.fundingTx, waitingSinceBlock = nodeParams.currentBlockHeight, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
       case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSinceBlock = nodeParams.currentBlockHeight, mutualCloseProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
     }
-    goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished)
+    goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
   }
 
   private def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
@@ -2513,7 +2513,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint
         val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(keyManager, d.commitments, remotePerCommitmentPoint, commitTx, nodeParams.onChainFeeConf.feeEstimator, nodeParams.onChainFeeConf.feeTargets)
         val nextData = DATA_CLOSING(d.commitments, fundingTx = None, waitingSinceBlock = nodeParams.currentBlockHeight, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
-        goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished)
+        goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
     }
   }
 
@@ -2532,13 +2532,13 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
       // NB: if there is a next commitment, we can't be in DATA_WAIT_FOR_FUNDING_CONFIRMED so we don't have the case where fundingTx is defined
       case _ => DATA_CLOSING(d.commitments, fundingTx = None, waitingSinceBlock = nodeParams.currentBlockHeight, mutualCloseProposed = Nil, nextRemoteCommitPublished = Some(remoteCommitPublished))
     }
-    goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished)
+    goto(CLOSING) using nextData storing() calling doPublish(remoteCommitPublished, d.commitments)
   }
 
-  private def doPublish(remoteCommitPublished: RemoteCommitPublished): Unit = {
+  private def doPublish(remoteCommitPublished: RemoteCommitPublished, commitments: Commitments): Unit = {
     import remoteCommitPublished._
 
-    val publishQueue = (claimMainOutputTx ++ claimHtlcTxs.values.flatten).map(tx => PublishRawTx(tx, tx.fee, None))
+    val publishQueue = claimMainOutputTx.map(tx => PublishRawTx(tx, tx.fee, None)).toSeq ++ claimHtlcTxs.values.flatten.map(tx => PublishReplaceableTx(tx, commitments))
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
