@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version3
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -128,7 +128,8 @@ private[channel] object ChannelCodecs3 {
     val htlcSuccessTxCodec: Codec[HtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow)).as[HtlcSuccessTx]
     val htlcTimeoutTxCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[HtlcTimeoutTx]
     val htlcDelayedTxCodec: Codec[HtlcDelayedTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcDelayedTx]
-    val claimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[ClaimHtlcSuccessTx]
+    private val legacyClaimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | provide(ByteVector32.Zeroes)) :: ("htlcId" | uint64overflow)).as[ClaimHtlcSuccessTx]
+    val claimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow)).as[ClaimHtlcSuccessTx]
     val claimHtlcTimeoutTxCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[ClaimHtlcTimeoutTx]
     val claimLocalDelayedOutputTxCodec: Codec[ClaimLocalDelayedOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx]
     val claimP2WPKHOutputTxCodec: Codec[ClaimP2WPKHOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx]
@@ -144,7 +145,9 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x01, commitTxCodec)
       .typecase(0x02, htlcSuccessTxCodec)
       .typecase(0x03, htlcTimeoutTxCodec)
-      .typecase(0x04, claimHtlcSuccessTxCodec)
+      // NB: order matters!
+      .typecase(0x16, claimHtlcSuccessTxCodec)
+      .typecase(0x04, legacyClaimHtlcSuccessTxCodec)
       .typecase(0x05, claimHtlcTimeoutTxCodec)
       .typecase(0x06, claimP2WPKHOutputTxCodec)
       .typecase(0x07, claimLocalDelayedOutputTxCodec)
@@ -170,7 +173,9 @@ private[channel] object ChannelCodecs3 {
       .typecase(0x02, htlcTimeoutTxCodec)
 
     val claimHtlcTxCodec: Codec[ClaimHtlcTx] = discriminated[ClaimHtlcTx].by(uint8)
-      .typecase(0x01, claimHtlcSuccessTxCodec)
+      // NB: order matters!
+      .typecase(0x03, claimHtlcSuccessTxCodec)
+      .typecase(0x01, legacyClaimHtlcSuccessTxCodec)
       .typecase(0x02, claimHtlcTimeoutTxCodec)
 
     val htlcTxsAndRemoteSigsCodec: Codec[HtlcTxAndRemoteSig] = (

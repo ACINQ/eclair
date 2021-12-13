@@ -15,12 +15,13 @@
  */
 package fr.acinq.eclair.wire.internal.channel.version3
 
-import fr.acinq.bitcoin.Satoshi
+import fr.acinq.bitcoin.{ByteVector32, Satoshi}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.transactions.Transactions.ClaimHtlcSuccessTx
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec.normal
-import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.Codecs.{DATA_NORMAL_Codec, channelConfigCodec, remoteParamsCodec}
+import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.Codecs._
 import fr.acinq.eclair.wire.internal.channel.version3.ChannelCodecs3.stateDataCodec
 import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshi, UInt64, randomKey}
 import org.scalatest.funsuite.AnyFunSuite
@@ -122,6 +123,33 @@ class ChannelCodecs3Spec extends AnyFunSuite {
     assert(newBin.startsWith(hex"0008"))
     val decoded2 = stateDataCodec.decode(newBin.bits).require.value
     assert(decoded1 === decoded2)
+  }
+
+  test("backwards compatibility with legacy claim-htlc-success transactions") {
+    // We can decode old data that didn't contain a payment hash.
+    val oldTxWithInputInfoCodecBin = hex"0004 24020bc3ab58d19af4aac858786c2cbec2e8f9c43a3bd1ce4a51f6b0e1e1b17ffd000000002bb0ad010000000000220020e63b4729b67c90212244953d1c9eb15da73dffb035eaef21a5fd883c5968145b8576a914a0fc54aee923e51ceb5d37283b6f263a571cae428763ac672103ea61bef3c6ef05f1e65aaea2020c786e6fc923102c8fe0e53a6fe0315da2e62e7c820120876475527c21023b468606d008f702a9ad940c5fb8539f5b66cf2a3d0a7baa4960377dda9a61d152ae67a91452d220bcd80633ae134ec71b1bd8e79dc1490b9388ac6868fd014302000000000101020bc3ab58d19af4aac858786c2cbec2e8f9c43a3bd1ce4a51f6b0e1e1b17ffd0000000000ffffffff016297010000000000160014b95a632df5806773f328bb583f973fe5cb05e7a303463043022045676e573cc8314baad6038f2655f106c5cff1d968cd2373ea1a746cb764ffd5021f4c373a06f917f4ed606c9abb3cb9e770c215bc77480c95c6d36e90edea31680120f992c96b4fe64f43cd031c52be0bc39d6c9bf6fc2712a5a9c310dbd58872a9fc8576a914a0fc54aee923e51ceb5d37283b6f263a571cae428763ac672103ea61bef3c6ef05f1e65aaea2020c786e6fc923102c8fe0e53a6fe0315da2e62e7c820120876475527c21023b468606d008f702a9ad940c5fb8539f5b66cf2a3d0a7baa4960377dda9a61d152ae67a91452d220bcd80633ae134ec71b1bd8e79dc1490b9388ac6868000000000000000000000000"
+    val oldClaimHtlcTxBin = hex"01 24020bc3ab58d19af4aac858786c2cbec2e8f9c43a3bd1ce4a51f6b0e1e1b17ffd000000002bb0ad010000000000220020e63b4729b67c90212244953d1c9eb15da73dffb035eaef21a5fd883c5968145b8576a914a0fc54aee923e51ceb5d37283b6f263a571cae428763ac672103ea61bef3c6ef05f1e65aaea2020c786e6fc923102c8fe0e53a6fe0315da2e62e7c820120876475527c21023b468606d008f702a9ad940c5fb8539f5b66cf2a3d0a7baa4960377dda9a61d152ae67a91452d220bcd80633ae134ec71b1bd8e79dc1490b9388ac6868fd014302000000000101020bc3ab58d19af4aac858786c2cbec2e8f9c43a3bd1ce4a51f6b0e1e1b17ffd0000000000ffffffff016297010000000000160014b95a632df5806773f328bb583f973fe5cb05e7a303463043022045676e573cc8314baad6038f2655f106c5cff1d968cd2373ea1a746cb764ffd5021f4c373a06f917f4ed606c9abb3cb9e770c215bc77480c95c6d36e90edea31680120f992c96b4fe64f43cd031c52be0bc39d6c9bf6fc2712a5a9c310dbd58872a9fc8576a914a0fc54aee923e51ceb5d37283b6f263a571cae428763ac672103ea61bef3c6ef05f1e65aaea2020c786e6fc923102c8fe0e53a6fe0315da2e62e7c820120876475527c21023b468606d008f702a9ad940c5fb8539f5b66cf2a3d0a7baa4960377dda9a61d152ae67a91452d220bcd80633ae134ec71b1bd8e79dc1490b9388ac6868000000000000000000000000"
+    val claimHtlcSuccessWithoutPaymentHash = {
+      val claimHtlcSuccessTx1 = txWithInputInfoCodec.decode(oldTxWithInputInfoCodecBin.bits).require.value
+      val claimHtlcSuccessTx2 = claimHtlcTxCodec.decode(oldClaimHtlcTxBin.bits).require.value
+      assert(claimHtlcSuccessTx1 === claimHtlcSuccessTx2)
+      assert(claimHtlcSuccessTx1.isInstanceOf[ClaimHtlcSuccessTx])
+      assert(claimHtlcSuccessTx1.asInstanceOf[ClaimHtlcSuccessTx].paymentHash === ByteVector32.Zeroes)
+      claimHtlcSuccessTx1.asInstanceOf[ClaimHtlcSuccessTx]
+    }
+
+    // We can encode data that contains a payment hash.
+    val claimHtlcSuccess = claimHtlcSuccessWithoutPaymentHash.copy(paymentHash = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101"))
+    val txWithInputInfoCodecBin = txWithInputInfoCodec.encode(claimHtlcSuccess).require.bytes
+    assert(txWithInputInfoCodecBin !== oldTxWithInputInfoCodecBin)
+    val claimHtlcTxBin = claimHtlcTxCodec.encode(claimHtlcSuccess).require.bytes
+    assert(claimHtlcTxBin !== oldClaimHtlcTxBin)
+
+    // And decode new data that contains a payment hash.
+    val decoded1 = txWithInputInfoCodec.decode(txWithInputInfoCodecBin.bits).require.value
+    assert(claimHtlcSuccess === decoded1)
+    val decoded2 = claimHtlcTxCodec.decode(claimHtlcTxBin.bits).require.value
+    assert(claimHtlcSuccess === decoded2)
   }
 
 }

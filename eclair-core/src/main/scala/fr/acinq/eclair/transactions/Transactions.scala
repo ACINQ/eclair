@@ -125,7 +125,7 @@ object Transactions {
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long) extends HtlcTx { override def desc: String = "htlc-timeout" }
   case class HtlcDelayedTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "htlc-delayed" }
   sealed trait ClaimHtlcTx extends TransactionWithInputInfo { def htlcId: Long }
-  case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
+  case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-timeout" }
   sealed trait ClaimAnchorOutputTx extends TransactionWithInputInfo
   case class ClaimLocalAnchorOutputTx(input: InputInfo, tx: Transaction) extends ClaimAnchorOutputTx with ReplaceableTransactionWithInputInfo { override def desc: String = "local-anchor" }
@@ -528,14 +528,14 @@ object Transactions {
           txIn = TxIn(input.outPoint, ByteVector.empty, sequence) :: Nil,
           txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
           lockTime = 0)
-        val weight = addSigs(ClaimHtlcSuccessTx(input, tx, htlc.id), PlaceHolderSig, ByteVector32.Zeroes).tx.weight()
+        val weight = addSigs(ClaimHtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id), PlaceHolderSig, ByteVector32.Zeroes).tx.weight()
         val fee = weight2fee(feeratePerKw, weight)
         val amount = input.txOut.amount - fee
         if (amount < localDustLimit) {
           Left(AmountBelowDustLimit)
         } else {
           val tx1 = tx.copy(txOut = tx.txOut.head.copy(amount = amount) :: Nil)
-          Right(ClaimHtlcSuccessTx(input, tx1, htlc.id))
+          Right(ClaimHtlcSuccessTx(input, tx1, htlc.paymentHash, htlc.id))
         }
       case None => Left(OutputNotFound)
     }
