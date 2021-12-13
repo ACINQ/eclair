@@ -252,7 +252,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
 
-      case Event(msg: OnionMessage, d: ConnectedData) =>
+      case Event(msg: OnionMessage, _: ConnectedData) =>
         if (nodeParams.features.hasFeature(Features.OnionMessages)) {
           OnionMessages.process(nodeParams.privateKey, msg) match {
             case OnionMessages.DropMessage(reason) =>
@@ -299,6 +299,10 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       stay()
 
     case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
+
+    case Event(RelayOnionMessage(_, replyTo), _) =>
+      replyTo ! MessageRelay.Disconnected
+      stay()
   }
 
   private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")

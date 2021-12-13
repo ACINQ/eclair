@@ -197,7 +197,6 @@ class MessageIntegrationSpec extends IntegrationSpec {
 
   test("relay with channels-only") {
     val alice = new EclairImpl(nodes("A"))
-    connect(nodes("E"), nodes("C"))
 
     val probe = TestProbe()
     val eventListener = TestProbe()
@@ -212,7 +211,6 @@ class MessageIntegrationSpec extends IntegrationSpec {
 
   test("channel relay with no-relay") {
     val alice = new EclairImpl(nodes("A"))
-    connect(nodes("F"), nodes("C"))
 
     val probe = TestProbe()
     val eventListener = TestProbe()

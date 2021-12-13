@@ -33,6 +33,7 @@ import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
+import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
@@ -502,6 +503,22 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
   }
 
+  test("reply to relay request") { f =>
+    import f._
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    val probe = TestProbe()
+    peer ! RelayOnionMessage(msg, probe.ref.toTyped)
+    probe.expectMsg(MessageRelay.Success)
+  }
+
+  test("reply to relay request disconnected") { f =>
+    import f._
+    val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    val probe = TestProbe()
+    peer ! RelayOnionMessage(msg, probe.ref.toTyped)
+    probe.expectMsg(MessageRelay.Disconnected)
+  }
 }
 
 object PeerSpec {

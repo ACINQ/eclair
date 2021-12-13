@@ -519,8 +519,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
             userCustomTlvs)
         (appKit.switchboard ? RelayMessage(appKit.nodeParams.nodeId, nextNodeId, message, RelayAll)).mapTo[MessageRelay.Status].map {
           case MessageRelay.Success => SendOnionMessageResponse(sent = true, None)
-          case MessageRelay.AgainstPolicy(_) => SendOnionMessageResponse(sent = false, Some("Unreachable"))
-          case MessageRelay.ConnectionFailure(f) => SendOnionMessageResponse(sent = false, Some(f.toString))
+          case f: MessageRelay.Failure => SendOnionMessageResponse(sent = false, Some(f.toString))
         }
       case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}")))
     }

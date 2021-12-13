@@ -34,8 +34,16 @@ object MessageRelay {
 
   sealed trait Status
   case object Success extends Status
-  case class AgainstPolicy(policy: RelayPolicy) extends Status
-  case class ConnectionFailure(failure: PeerConnection.ConnectionResult.Failure) extends Status
+  sealed trait Failure extends Status
+  case class AgainstPolicy(policy: RelayPolicy) extends Failure {
+    override def toString: String = s"Relay prevented by policy $policy"
+  }
+  case class ConnectionFailure(failure: PeerConnection.ConnectionResult.Failure) extends Failure{
+    override def toString: String = s"Can't connect to peer: ${failure.toString}"
+  }
+  case object Disconnected extends Failure{
+    override def toString: String = "Peer is not connected"
+  }
 
   sealed trait RelayPolicy
   case object NoRelay extends RelayPolicy
