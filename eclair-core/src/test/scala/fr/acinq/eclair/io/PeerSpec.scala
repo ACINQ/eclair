@@ -17,6 +17,7 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{ActorContext, ActorRef, FSM, PoisonPill, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
@@ -32,6 +33,7 @@ import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
+import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
@@ -90,7 +92,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features)
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
     val probe = TestProbe()
-    probe.send(peer, Peer.GetPeerInfo(probe.ref))
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo = probe.expectMsgType[Peer.PeerInfo]
     assert(peerInfo.peer === peer)
     assert(peerInfo.nodeId === remoteNodeId)
@@ -101,7 +103,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
-    probe.send(peer, Peer.GetPeerInfo(ActorRef.noSender))
+    probe.send(peer, Peer.GetPeerInfo(None))
     probe.expectMsg(PeerInfo(peer, remoteNodeId, Peer.CONNECTED, Some(fakeIPAddress.socketAddress), 1))
   }
 
@@ -185,7 +187,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
-    probe.send(peer, Peer.GetPeerInfo(probe.ref))
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     assert(probe.expectMsgType[Peer.PeerInfo].state === Peer.CONNECTED)
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
@@ -199,7 +201,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     switchboard.send(peer, Peer.Init(Set.empty))
 
     awaitCond {
-      probe.send(peer, Peer.GetPeerInfo(ActorRef.noSender))
+      probe.send(peer, Peer.GetPeerInfo(None))
       probe.expectMsgType[Peer.PeerInfo].state === Peer.DISCONNECTED
     }
 
@@ -471,12 +473,12 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     peer ! ConnectionDown(peerConnection.ref)
-    probe.send(peer, Peer.GetPeerInfo(probe.ref))
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo1 = probe.expectMsgType[Peer.PeerInfo]
     assert(peerInfo1.state === Peer.DISCONNECTED)
     assert(peerInfo1.channels === 1)
     peer ! ChannelIdAssigned(probe.ref, remoteNodeId, randomBytes32(), randomBytes32())
-    probe.send(peer, Peer.GetPeerInfo(probe.ref))
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo2 = probe.expectMsgType[Peer.PeerInfo]
     assert(peerInfo2.state === Peer.DISCONNECTED)
     assert(peerInfo2.channels === 2)
@@ -501,6 +503,22 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
   }
 
+  test("reply to relay request") { f =>
+    import f._
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    val probe = TestProbe()
+    peer ! RelayOnionMessage(msg, probe.ref.toTyped)
+    probe.expectMsg(MessageRelay.Success)
+  }
+
+  test("reply to relay request disconnected") { f =>
+    import f._
+    val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    val probe = TestProbe()
+    peer ! RelayOnionMessage(msg, probe.ref.toTyped)
+    probe.expectMsg(MessageRelay.Disconnected)
+  }
 }
 
 object PeerSpec {

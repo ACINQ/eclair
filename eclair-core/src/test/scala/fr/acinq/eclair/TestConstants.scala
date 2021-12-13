@@ -23,6 +23,7 @@ import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.WeightRatios
@@ -198,7 +199,8 @@ object TestConstants {
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
       balanceCheckInterval = 1 hour,
-      blockchainWatchdogSources = blockchainWatchdogSources
+      blockchainWatchdogSources = blockchainWatchdogSources,
+      onionMessageRelayPolicy = RelayAll
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -324,7 +326,8 @@ object TestConstants {
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
       balanceCheckInterval = 1 hour,
-      blockchainWatchdogSources = blockchainWatchdogSources
+      blockchainWatchdogSources = blockchainWatchdogSources,
+      onionMessageRelayPolicy = RelayAll
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(

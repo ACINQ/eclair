@@ -1,5 +1,6 @@
 package fr.acinq.eclair.io
 
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{Actor, ActorContext, ActorRef, Props, Status}
 import akka.testkit.{TestActorRef, TestProbe}
 import fr.acinq.bitcoin.ByteVector64
@@ -130,11 +131,11 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     peer.expectMsgType[Peer.Connect]
 
     val unknownPeerNodeId = randomKey().publicKey
-    probe.send(switchboard, GetPeerInfo(probe.ref, unknownPeerNodeId))
+    probe.send(switchboard, GetPeerInfo(probe.ref.toTyped, unknownPeerNodeId))
     probe.expectMsg(Peer.PeerNotFound(unknownPeerNodeId))
 
-    probe.send(switchboard, GetPeerInfo(probe.ref, knownPeerNodeId))
-    peer.expectMsg(Peer.GetPeerInfo(probe.ref))
+    probe.send(switchboard, GetPeerInfo(probe.ref.toTyped, knownPeerNodeId))
+    peer.expectMsg(Peer.GetPeerInfo(Some(probe.ref.toTyped)))
   }
 
 }

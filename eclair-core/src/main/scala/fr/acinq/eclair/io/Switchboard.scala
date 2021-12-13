@@ -17,15 +17,17 @@
 package fr.acinq.eclair.io
 
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
-import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, typed}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.message.OnionMessages
+import fr.acinq.eclair.io.MessageRelay.RelayPolicy
+import fr.acinq.eclair.io.Peer.PeerInfoResponse
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
+import fr.acinq.eclair.wire.protocol.OnionMessage
 
 /**
  * Ties network connections to peers.
@@ -101,15 +103,15 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
 
     case GetPeerInfo(replyTo, remoteNodeId) =>
       getPeer(remoteNodeId) match {
-        case Some(peer) => peer ! Peer.GetPeerInfo(replyTo)
+        case Some(peer) => peer ! Peer.GetPeerInfo(Some(replyTo))
         case None => replyTo ! Peer.PeerNotFound(remoteNodeId)
       }
 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
 
-    case OnionMessages.SendMessage(nextNodeId, dataToRelay) =>
+    case RelayMessage(prevNodeId, nextNodeId, dataToRelay, relayPolicy) =>
       val relay = context.spawnAnonymous(MessageRelay())
-      relay ! MessageRelay.RelayMessage(self, nextNodeId, dataToRelay, sender().toTyped)
+      relay ! MessageRelay.RelayMessage(self, prevNodeId, nextNodeId, dataToRelay, relayPolicy, sender().toTyped)
   }
 
   /**
@@ -158,10 +160,11 @@ object Switchboard {
 
   // @formatter:off
   case object GetPeers
-  case class GetPeerInfo(replyTo: ActorRef, remoteNodeId: PublicKey)
+  case class GetPeerInfo(replyTo: typed.ActorRef[PeerInfoResponse], remoteNodeId: PublicKey)
 
   case object GetRouterPeerConf extends RemoteTypes
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
   // @formatter:on
 
+  case class RelayMessage(prevNodeId: PublicKey, nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy)
 }
