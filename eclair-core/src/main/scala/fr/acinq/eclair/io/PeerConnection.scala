@@ -365,8 +365,12 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         log.info(s"resuming processing of network announcements for peer")
         stay() using d.copy(behavior = d.behavior.copy(fundingTxAlreadySpentCount = 0, ignoreNetworkAnnouncement = false))
 
-      case Event(KillIdle, d: ConnectedData) if !d.isPersistent =>
-        stop(FSM.Normal)
+      case Event(KillIdle, d: ConnectedData) =>
+        if (!d.isPersistent) {
+          stop(FSM.Normal)
+        } else {
+          stay()
+        }
     }
   }
 

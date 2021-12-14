@@ -165,7 +165,7 @@ object TestConstants {
         pingTimeout = 10 seconds,
         pingDisconnect = true,
         maxRebroadcastDelay = 5 seconds,
-        killIdleDelay = 10 seconds
+        killIdleDelay = 1 seconds
       ),
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
