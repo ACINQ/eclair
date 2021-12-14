@@ -27,7 +27,7 @@ object BalanceActor {
   private final case object TickBalance extends Command
   final case class GetGlobalBalance(replyTo: ActorRef[Try[GlobalBalance]], channels: Map[ByteVector32, HasCommitments]) extends Command
   private final case class WrappedChannels(wrapped: ChannelsListener.GetChannelsResponse) extends Command
-  private final case class WrappedGlobalBalance(wrapped: Try[GlobalBalance]) extends Command
+  private final case class WrappedGlobalBalanceWithChannels(wrapped: Try[GlobalBalance], channelsCount: Int) extends Command
   private final case class WrappedUtxoInfo(wrapped: Try[UtxoInfo]) extends Command
   // @formatter:on
 
@@ -79,9 +79,10 @@ private class BalanceActor(context: ActorContext[Command],
       context.pipeToSelf(checkUtxos(bitcoinClient))(WrappedUtxoInfo)
       Behaviors.same
     case WrappedChannels(res) =>
-      context.pipeToSelf(CheckBalance.computeGlobalBalance(res.channels, db, bitcoinClient))(WrappedGlobalBalance)
+      val channelsCount = res.channels.size
+      context.pipeToSelf(CheckBalance.computeGlobalBalance(res.channels, db, bitcoinClient))(b => WrappedGlobalBalanceWithChannels(b, channelsCount))
       Behaviors.same
-    case WrappedGlobalBalance(res) =>
+    case WrappedGlobalBalanceWithChannels(res, channelsCount) =>
       res match {
         case Success(result) =>
           log.info("current balance: total={} onchain.confirmed={} onchain.unconfirmed={} offchain={}", result.total.toDouble, result.onChain.confirmed.toDouble, result.onChain.unconfirmed.toDouble, result.offChain.total.toDouble)
@@ -90,11 +91,11 @@ private class BalanceActor(context: ActorContext[Command],
           val perChannelFeeBumpingReserve = 50_000.sat
           // Instead of scaling this linearly with the number of channels we have, we use sqrt(channelsCount) to reflect
           // the fact that if you have channels with many peers, only a subset of these peers will likely be malicious.
-          val estimatedFeeBumpingReserve = perChannelFeeBumpingReserve * Math.sqrt(result.channelsCount)
+          val estimatedFeeBumpingReserve = perChannelFeeBumpingReserve * Math.sqrt(channelsCount)
           if (result.onChain.confirmed < estimatedFeeBumpingReserve) {
             val message =
               s"""On-chain confirmed balance is low (${result.onChain.confirmed.toMilliBtc}): eclair may not be able to guarantee funds safety in case channels force-close.
-                 |You have ${result.channelsCount} open channels, which could cost $estimatedFeeBumpingReserve in fees if some of these channels are malicious.
+                 |You have $channelsCount channels, which could cost $estimatedFeeBumpingReserve in fees if some of these channels are malicious.
                  |Please note that the value above is a very arbitrary estimation: the real cost depends on the feerate and the number of malicious channels.
                  |You should add more utxos to your bitcoin wallet to guarantee funds safety.
                  |""".stripMargin

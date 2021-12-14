@@ -400,8 +400,8 @@ object OriginSerializer extends MinimalSerializer({
 })
 
 // @formatter:off
-private case class GlobalBalanceJson(total: Double, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
-object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total.toDouble, b.onChain, b.offChain))
+private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
+object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
 
 private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address, peerInfo.channels))
