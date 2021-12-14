@@ -289,7 +289,7 @@ object CheckBalance {
     }
   } yield CorrectedOnChainBalance(detailed.confirmed, detailed.unconfirmed)
 
-  case class GlobalBalance (onChain: CorrectedOnChainBalance, offChain: OffChainBalance) {
+  case class GlobalBalance(onChain: CorrectedOnChainBalance, offChain: OffChainBalance) {
     val total: Btc = onChain.total + offChain.total
   }
 
