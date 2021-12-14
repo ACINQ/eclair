@@ -68,7 +68,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, ByteVector.empty, Some(hex"111111")).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage]
+    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.pathId === Some(hex"111111"))
   }
 
@@ -82,7 +82,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     eve.sendOnionMessage(nodes("A").nodeParams.nodeId :: Nil, ByteVector.empty, Some(hex"111111")).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage]
+    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.pathId === Some(hex"111111"))
   }
 
@@ -96,7 +96,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     fabrice.sendOnionMessage(nodes("A").nodeParams.nodeId :: Nil, ByteVector.empty, Some(hex"111111")).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage]
+    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.pathId === Some(hex"111111"))
   }
 
@@ -110,7 +110,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil, hex"710301020375020102", Some(hex"2222")).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage]
+    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.pathId === Some(hex"2222"))
     assert(r.finalPayload.records.unknown.toSet === Set(GenericTlv(UInt64(113), hex"010203"), GenericTlv(UInt64(117), hex"0102")))
   }
@@ -204,7 +204,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(nodes("E").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil, hex"710301020375020102", Some(hex"2222")).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage]
+    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.pathId === Some(hex"2222"))
     assert(r.finalPayload.records.unknown.toSet === Set(GenericTlv(UInt64(113), hex"010203"), GenericTlv(UInt64(117), hex"0102")))
   }
@@ -230,7 +230,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(nodes("C").nodeParams.nodeId :: Nil, ByteVector.empty, Some(hex"33333333")).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage]
+    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.pathId === Some(hex"33333333"))
 
     // We disconnect A from C for future tests.
@@ -283,7 +283,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: nodes("C").nodeParams.nodeId :: Nil, hex"7300", None).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage]
+    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
     assert(r.pathId === None)
     assert(r.finalPayload.records.unknown.toSet === Set(GenericTlv(UInt64(115), hex"")))
   }
