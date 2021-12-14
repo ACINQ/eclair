@@ -51,6 +51,7 @@ object ReplaceableTxPublisher {
   private case object TimeLocksOk extends Command
   private case object CommitTxAlreadyConfirmed extends RuntimeException with Command
   private case object RemoteCommitTxPublished extends RuntimeException with Command
+  private case object LocalCommitTxConfirmed extends Command
   private case object RemoteCommitTxConfirmed extends Command
   private case object PreconditionsOk extends Command
   private case class FundingFailed(reason: Throwable) extends Command
@@ -120,6 +121,28 @@ object ReplaceableTxPublisher {
     (updatedHtlcTx, fee)
   }
 
+  def adjustClaimHtlcTxOutput(unsignedTx: ClaimHtlcTx, targetFeerate: FeeratePerKw, commitments: Commitments): Either[TxGenerationSkipped, (ClaimHtlcTx, Satoshi)] = {
+    require(unsignedTx.tx.txIn.size == 1, "claim-htlc transaction should have a single input")
+    require(unsignedTx.tx.txOut.size == 1, "claim-htlc transaction should have a single output")
+    val dummySignedTx = unsignedTx match {
+      case tx: ClaimHtlcSuccessTx => addSigs(tx, PlaceHolderSig, ByteVector32.Zeroes)
+      case tx: ClaimHtlcTimeoutTx => addSigs(tx, PlaceHolderSig)
+      case tx: LegacyClaimHtlcSuccessTx => tx
+    }
+    val targetFee = weight2fee(targetFeerate, dummySignedTx.tx.weight())
+    val outputAmount = unsignedTx.input.txOut.amount - targetFee
+    if (outputAmount < commitments.localParams.dustLimit) {
+      Left(AmountBelowDustLimit)
+    } else {
+      val updatedClaimHtlcTx = unsignedTx match {
+        case claimHtlcSuccess: ClaimHtlcSuccessTx => claimHtlcSuccess.copy(tx = claimHtlcSuccess.tx.copy(txOut = Seq(claimHtlcSuccess.tx.txOut.head.copy(amount = outputAmount))))
+        case claimHtlcTimeout: ClaimHtlcTimeoutTx => claimHtlcTimeout.copy(tx = claimHtlcTimeout.tx.copy(txOut = Seq(claimHtlcTimeout.tx.txOut.head.copy(amount = outputAmount))))
+        case legacyClaimHtlcSuccess: LegacyClaimHtlcSuccessTx => legacyClaimHtlcSuccess
+      }
+      Right(updatedClaimHtlcTx, targetFee)
+    }
+  }
+
   sealed trait HtlcTxAndWitnessData {
     // @formatter:off
     def txInfo: HtlcTx
@@ -183,6 +206,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         cmd.txInfo match {
           case _: ClaimLocalAnchorOutputTx => checkAnchorPreconditions(replyTo, cmd, targetFeerate)
           case htlcTx: HtlcTx => checkHtlcPreconditions(replyTo, cmd, htlcTx, targetFeerate)
+          case claimHtlcTx: ClaimHtlcTx => checkClaimHtlcPreconditions(replyTo, cmd, claimHtlcTx, targetFeerate)
         }
       case Stop => Behaviors.stopped
     }
@@ -255,6 +279,23 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
+  def checkClaimHtlcPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, claimHtlcTx: ClaimHtlcTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+    // We verify that:
+    //  - our commit is not confirmed: if it is, there is no need to publish our claim-HTLC transactions
+    context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)) {
+      case Success(Some(depth)) if depth >= nodeParams.minDepthBlocks => LocalCommitTxConfirmed
+      case Success(_) => PreconditionsOk
+      case Failure(_) => PreconditionsOk // if our checks fail, we don't want it to prevent us from publishing claim-HTLC transactions
+    }
+    Behaviors.receiveMessagePartial {
+      case PreconditionsOk => checkTimeLocks(replyTo, cmd, claimHtlcTx, targetFeerate)
+      case LocalCommitTxConfirmed =>
+        log.warn("cannot publish {}: local commit has been confirmed", cmd.desc)
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.ConflictingTxConfirmed))
+      case Stop => Behaviors.stopped
+    }
+  }
+
   def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTxWithWitnessData: HtlcTxAndWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
     val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
     timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
@@ -272,6 +313,48 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         } else {
           fund(replyTo, cmd, targetFeerate)
         }
+      case Stop =>
+        timeLocksChecker ! TxTimeLocksMonitor.Stop
+        Behaviors.stopped
+    }
+  }
+
+  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, claimHtlcTx: ClaimHtlcTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
+    timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
+    Behaviors.receiveMessagePartial {
+      case TimeLocksOk => adjustClaimHtlcTxOutput(claimHtlcTx, targetFeerate, cmd.commitments) match {
+        case Left(reason) =>
+          // The HTLC isn't economical to claim at the current feerate, but if the feerate goes down, we may want to claim it later.
+          log.warn("cannot publish {}: {}", cmd.desc, reason)
+          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
+        case Right((updatedClaimHtlcTx, fee)) =>
+          val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
+          val sig = keyManager.sign(updatedClaimHtlcTx, keyManager.htlcPoint(channelKeyPath), cmd.commitments.remoteCommit.remotePerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
+          updatedClaimHtlcTx match {
+            case claimHtlcSuccess: LegacyClaimHtlcSuccessTx =>
+              // The payment hash has been added to claim-htlc-success in https://github.com/ACINQ/eclair/pull/2101
+              // Some transactions made with older versions of eclair may not set it correctly, in which case we simply
+              // publish the transaction as initially signed.
+              log.warn("payment hash not set for htlcId={}, publishing original transaction", claimHtlcSuccess.htlcId)
+              publish(replyTo, cmd, cmd.txInfo.tx, cmd.txInfo.fee)
+            case claimHtlcSuccess: ClaimHtlcSuccessTx =>
+              val preimage_opt = cmd.commitments.localChanges.all.collectFirst {
+                case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == claimHtlcSuccess.paymentHash => u.paymentPreimage
+              }
+              preimage_opt match {
+                case Some(preimage) =>
+                  val signedClaimHtlcTx = addSigs(claimHtlcSuccess, sig, preimage)
+                  publish(replyTo, cmd, signedClaimHtlcTx.tx, fee)
+                case None =>
+                  log.error("preimage not found for htlcId={}, skipping...", claimHtlcSuccess.htlcId)
+                  sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
+              }
+            case claimHtlcTimeout: ClaimHtlcTimeoutTx =>
+              val signedClaimHtlcTx = addSigs(claimHtlcTimeout, sig)
+              publish(replyTo, cmd, signedClaimHtlcTx.tx, fee)
+          }
+      }
       case Stop =>
         timeLocksChecker ! TxTimeLocksMonitor.Stop
         Behaviors.stopped
@@ -330,6 +413,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
           case Success(signedTx) => PublishSignedTx(signedTx)
           case Failure(reason) => UnknownFailure(reason)
         }
+      case _: ClaimHtlcTx => log.error("claim-htlc-tx should not use external inputs")
     }
     Behaviors.receiveMessagePartial {
       case PublishSignedTx(signedTx) => publish(replyTo, cmd, signedTx, fee)
@@ -390,6 +474,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     txInfo match {
       case anchorTx: ClaimLocalAnchorOutputTx => addInputs(anchorTx, targetFeerate, commitments)
       case htlcTx: HtlcTx => addInputs(htlcTx, targetFeerate, commitments)
+      case _: ClaimHtlcTx => Future.failed(new RuntimeException("claim-htlc-tx should not use external inputs"))
     }
   }
 
