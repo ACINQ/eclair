@@ -125,6 +125,7 @@ object Transactions {
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long) extends HtlcTx { override def desc: String = "htlc-timeout" }
   case class HtlcDelayedTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "htlc-delayed" }
   sealed trait ClaimHtlcTx extends TransactionWithInputInfo { def htlcId: Long }
+  case class LegacyClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: ByteVector32, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-success" }
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction, htlcId: Long) extends ClaimHtlcTx { override def desc: String = "claim-htlc-timeout" }
   sealed trait ClaimAnchorOutputTx extends TransactionWithInputInfo

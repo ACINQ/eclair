@@ -163,6 +163,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
   }
 
   private def removeHtlcId(claimHtlcTx: ClaimHtlcTx): ClaimHtlcTx = claimHtlcTx match {
+    case claimHtlcTx: LegacyClaimHtlcSuccessTx => claimHtlcTx.copy(htlcId = 0)
     case claimHtlcTx: ClaimHtlcSuccessTx => claimHtlcTx.copy(htlcId = 0)
     case claimHtlcTx: ClaimHtlcTimeoutTx => claimHtlcTx.copy(htlcId = 0)
   }
