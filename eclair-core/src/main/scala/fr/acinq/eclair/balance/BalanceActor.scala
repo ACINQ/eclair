@@ -3,7 +3,7 @@ package fr.acinq.eclair.balance
 import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.{ByteVector32, MilliBtcDouble}
+import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
 import fr.acinq.eclair.NotificationsLogger
 import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.balance.BalanceActor._
@@ -87,7 +87,7 @@ private class BalanceActor(context: ActorContext[Command],
           log.info("current balance: total={} onchain.confirmed={} onchain.unconfirmed={} offchain={}", result.total.toDouble, result.onChain.confirmed.toDouble, result.onChain.unconfirmed.toDouble, result.offChain.total.toDouble)
           log.debug("current balance details: {}", result)
           // This is a very rough estimation of the fee we would need to pay for a force-close with 5 pending HTLCs at 100 sat/byte.
-          val perChannelFeeBumpingReserve = 0.5.millibtc
+          val perChannelFeeBumpingReserve = 50_000.sat
           // Instead of scaling this linearly with the number of channels we have, we use sqrt(channelsCount) to reflect
           // the fact that if you have channels with many peers, only a subset of these peers will likely be malicious.
           val estimatedFeeBumpingReserve = perChannelFeeBumpingReserve * Math.sqrt(result.channelsCount)
