@@ -289,7 +289,7 @@ object CheckBalance {
     }
   } yield CorrectedOnChainBalance(detailed.confirmed, detailed.unconfirmed)
 
-  case class GlobalBalance (onChain: CorrectedOnChainBalance, offChain: OffChainBalance) {
+  case class GlobalBalance (onChain: CorrectedOnChainBalance, offChain: OffChainBalance, channelsCount: Int) {
     val total: Btc = onChain.total + offChain.total
   }
 
@@ -298,6 +298,6 @@ object CheckBalance {
     knownPreimages = db.pendingCommands.listSettlementCommands().collect { case (channelId, cmd: CMD_FULFILL_HTLC) => (channelId, cmd.id) }.toSet
     offChainRaw = CheckBalance.computeOffChainBalance(channels.values, knownPreimages)
     offChainPruned <- CheckBalance.prunePublishedTransactions(offChainRaw, bitcoinClient)
-  } yield GlobalBalance(onChain, offChainPruned)
+  } yield GlobalBalance(onChain, offChainPruned, channels.size)
 
 }

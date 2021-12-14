@@ -19,7 +19,7 @@ package fr.acinq.eclair.json
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
+import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
@@ -399,22 +399,15 @@ object OriginSerializer extends MinimalSerializer({
   })
 })
 
-object GlobalBalanceSerializer extends MinimalSerializer({
-  case o: GlobalBalance =>
-    val formats = DefaultFormats + ByteVector32KeySerializer + BtcSerializer + SatoshiSerializer
-    JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
-})
-
 // @formatter:off
+private case class GlobalBalanceJson(total: Double, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
+object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total.toDouble, b.onChain, b.offChain))
+
 private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address, peerInfo.channels))
-// @formatter:on
 
-// @formatter:off
 private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
-object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage]({ m: OnionMessages.ReceiveMessage =>
-  MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => (tlv.tag.toString -> tlv.value)).toMap)
-})
+object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
 // @formatter:on
 
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
@@ -524,6 +517,7 @@ object JsonSerializers {
     PaymentRequestSerializer +
     JavaUUIDSerializer +
     OriginSerializer +
+    ByteVector32KeySerializer +
     GlobalBalanceSerializer +
     PeerInfoSerializer +
     PaymentFailedSummarySerializer +
