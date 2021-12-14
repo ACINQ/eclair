@@ -36,7 +36,10 @@ class DbEventHandler(nodeParams: NodeParams) extends Actor with DiagnosticActorL
   val auditDb: AuditDb = nodeParams.db.audit
   val channelsDb: ChannelsDb = nodeParams.db.channels
 
-  context.system.eventStream.subscribe(self, classOf[PaymentEvent])
+  context.system.eventStream.subscribe(self, classOf[PaymentSent])
+  context.system.eventStream.subscribe(self, classOf[PaymentFailed])
+  context.system.eventStream.subscribe(self, classOf[PaymentReceived])
+  context.system.eventStream.subscribe(self, classOf[PaymentRelayed])
   context.system.eventStream.subscribe(self, classOf[TransactionPublished])
   context.system.eventStream.subscribe(self, classOf[TransactionConfirmed])
   context.system.eventStream.subscribe(self, classOf[ChannelErrorOccurred])
