@@ -469,7 +469,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val c1 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
     register.reply(RES_GETINFO(map(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
     register.expectMsgType[Register.Forward[CMD_GETINFO]]
-    register.reply(RES_FAILURE(CMD_GETINFO(ActorRef.noSender), new Throwable("Non-standard channel")))
+    register.reply(RES_FAILURE(CMD_GETINFO(ActorRef.noSender), new IllegalArgumentException("Non-standard channel")))
     val c3 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
     register.reply(RES_GETINFO(map(c3.channelId), c3.channelId, NORMAL, ChannelCodecsSpec.normal))
     register.expectNoMessage()
