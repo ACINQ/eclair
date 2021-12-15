@@ -33,7 +33,7 @@ import fr.acinq.eclair.router.Router.ChannelHop
 import fr.acinq.eclair.transactions.{DirectedHtlc, IncomingHtlc, OutgoingHtlc}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilli, TimestampMilliLong, randomBytes32}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, CustomCommitmentsPlugin, MilliSatoshi, MilliSatoshiLong, NodeParams, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32}
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import org.scalatest.{Outcome, ParallelTestExecution}
 import scodec.bits.ByteVector
