@@ -227,7 +227,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
   }
 
   override def channelInfo(channel: ApiTypes.ChannelIdentifier)(implicit timeout: Timeout): Future[CommandResponse[CMD_GETINFO]] = {
-    sendToChannel[CMD_GETINFO, RES_GETINFO](channel, CMD_GETINFO(ActorRef.noSender))
+    sendToChannel[CMD_GETINFO, CommandResponse[CMD_GETINFO]](channel, CMD_GETINFO(ActorRef.noSender))
   }
 
   override def allChannels()(implicit timeout: Timeout): Future[Iterable[ChannelDesc]] = {
