@@ -22,10 +22,11 @@ import akka.testkit.TestProbe
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, ByteVector32, ByteVector64, Crypto, SatoshiLong}
+import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
-import fr.acinq.eclair.channel.{CMD_FORCECLOSE, Register, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.PaymentRequest
@@ -35,8 +36,9 @@ import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendSpontaneousPayment}
 import fr.acinq.eclair.router.RouteCalculationSpec.makeUpdateShort
-import fr.acinq.eclair.router.Router.{GetNetworkStats, GetNetworkStatsResponse, PredefinedNodeRoute, PublicChannel}
-import fr.acinq.eclair.router.{Announcements, NetworkStats, Router, Stats}
+import fr.acinq.eclair.router.Router.{PredefinedNodeRoute, PublicChannel}
+import fr.acinq.eclair.router.{Announcements, Router}
+import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol.{ChannelUpdate, Color, NodeAnnouncement}
 import org.mockito.Mockito
 import org.mockito.scalatest.IdiomaticMockito
@@ -132,7 +134,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     // with finalCltvExpiry
     val externalId2 = "487da196-a4dc-4b1e-92b4-3e5e905e9f3f"
-    val invoice2 = PaymentRequest("lntb", Some(123 msat), System.currentTimeMillis() / 1000L, nodePrivKey.publicKey, List(PaymentRequest.MinFinalCltvExpiry(96), PaymentRequest.PaymentHash(ByteVector32.Zeroes), PaymentRequest.Description("description")), ByteVector.empty)
+    val invoice2 = PaymentRequest("lntb", Some(123 msat), TimestampSecond.now(), nodePrivKey.publicKey, List(PaymentRequest.MinFinalCltvExpiry(96), PaymentRequest.PaymentHash(ByteVector32.Zeroes), PaymentRequest.Description("description")), ByteVector.empty)
     eclair.send(Some(externalId2), 123 msat, invoice2)
     val send2 = paymentInitiator.expectMsgType[SendPaymentToNode]
     assert(send2.externalId === Some(externalId2))
@@ -155,7 +157,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     val invalidExternalId = "Robert'); DROP TABLE received_payments; DROP TABLE sent_payments; DROP TABLE payments;"
     assertThrows[IllegalArgumentException](Await.result(eclair.send(Some(invalidExternalId), 123 msat, invoice0), 50 millis))
 
-    val expiredInvoice = invoice2.copy(timestamp = 0L)
+    val expiredInvoice = invoice2.copy(timestamp = 0.unixsec)
     assertThrows[IllegalArgumentException](Await.result(eclair.send(None, 123 msat, expiredInvoice), 50 millis))
   }
 
@@ -163,13 +165,13 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     import f._
 
     val eclair = new EclairImpl(kit)
-    val remoteNodeAnn1 = NodeAnnouncement(randomBytes64(), Features.empty, 42L, randomKey().publicKey, Color(42, 42, 42), "LN-rocks", Nil)
-    val remoteNodeAnn2 = NodeAnnouncement(randomBytes64(), Features.empty, 43L, randomKey().publicKey, Color(43, 43, 43), "LN-papers", Nil)
+    val remoteNodeAnn1 = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(42L), randomKey().publicKey, Color(42, 42, 42), "LN-rocks", Nil)
+    val remoteNodeAnn2 = NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(43L), randomKey().publicKey, Color(43, 43, 43), "LN-papers", Nil)
     val allNodes = Seq(
-      NodeAnnouncement(randomBytes64(), Features.empty, 561L, randomKey().publicKey, Color(0, 0, 0), "some-node", Nil),
+      NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(561L), randomKey().publicKey, Color(0, 0, 0), "some-node", Nil),
       remoteNodeAnn1,
       remoteNodeAnn2,
-      NodeAnnouncement(randomBytes64(), Features.empty, 1105L, randomKey().publicKey, Color(0, 0, 0), "some-other-node", Nil),
+      NodeAnnouncement(randomBytes64(), Features.empty, TimestampSecond(1105L), randomKey().publicKey, Color(0, 0, 0), "some-other-node", Nil),
     )
 
     {
@@ -262,28 +264,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     })
   }
 
-  test("router returns Network Stats") { f =>
-    import f._
-
-    val capStat = Stats(30 sat, 12 sat, 14 sat, 20 sat, 40 sat, 46 sat, 48 sat)
-    val cltvStat = Stats(CltvExpiryDelta(32), CltvExpiryDelta(11), CltvExpiryDelta(13), CltvExpiryDelta(22), CltvExpiryDelta(42), CltvExpiryDelta(51), CltvExpiryDelta(53))
-    val feeBaseStat = Stats(32 msat, 11 msat, 13 msat, 22 msat, 42 msat, 51 msat, 53 msat)
-    val feePropStat = Stats(32L, 11L, 13L, 22L, 42L, 51L, 53L)
-    val eclair = new EclairImpl(kit)
-    val fResp = eclair.networkStats()
-    f.router.expectMsg(GetNetworkStats)
-
-    f.router.reply(GetNetworkStatsResponse(Some(new NetworkStats(1, 2, capStat, cltvStat, feeBaseStat, feePropStat))))
-
-    awaitCond({
-      fResp.value match {
-        case Some(Success(Some(res))) => res.channels == 1
-        case _ => false
-      }
-    })
-
-  }
-
   test("close and forceclose should work both with channelId and shortChannelId") { f =>
     import f._
 
@@ -352,37 +332,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
         case _ => false
       }
     })
-  }
-
-  test("networkFees/audit/allinvoices should use a default to/from filter expressed in seconds") { f =>
-    import f._
-
-    val auditDb = mock[AuditDb]
-    val paymentDb = mock[PaymentsDb]
-
-    auditDb.listNetworkFees(anyLong, anyLong) returns Seq.empty
-    auditDb.listSent(anyLong, anyLong) returns Seq.empty
-    auditDb.listReceived(anyLong, anyLong) returns Seq.empty
-    auditDb.listRelayed(anyLong, anyLong) returns Seq.empty
-    paymentDb.listIncomingPayments(anyLong, anyLong) returns Seq.empty
-
-    val databases = mock[Databases]
-    databases.audit returns auditDb
-    databases.payments returns paymentDb
-
-    val kitWithMockAudit = kit.copy(nodeParams = kit.nodeParams.copy(db = databases))
-    val eclair = new EclairImpl(kitWithMockAudit)
-
-    Await.result(eclair.networkFees(None, None), 10 seconds)
-    auditDb.listNetworkFees(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once) // assert the call was made only once and with the specified params
-
-    Await.result(eclair.audit(None, None), 10 seconds)
-    auditDb.listRelayed(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
-    auditDb.listReceived(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
-    auditDb.listSent(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once)
-
-    Await.result(eclair.allInvoices(None, None), 10 seconds)
-    paymentDb.listIncomingPayments(0, TimestampQueryFilters.MaxEpochMilliseconds).wasCalled(once) // assert the call was made only once and with the specified params
   }
 
   test("sendtoroute should pass the parameters correctly") { f =>
@@ -500,6 +449,121 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
 
+  test("get channel info (all channels)") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val a = randomKey().publicKey
+    val b = randomKey().publicKey
+    val a1 = randomBytes32()
+    val a2 = randomBytes32()
+    val b1 = randomBytes32()
+    val map = Map(a1 -> a, a2 -> a, b1 -> b)
+
+    val res = eclair.channelsInfo(toRemoteNode_opt = None)
+
+    register.expectMsg(Symbol("channels"))
+    register.reply(map)
+
+    val c1 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
+    register.reply(RES_GETINFO(map(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
+    val c2 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
+    register.reply(RES_GETINFO(map(c2.channelId), c2.channelId, NORMAL, ChannelCodecsSpec.normal))
+    val c3 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
+    register.reply(RES_GETINFO(map(c3.channelId), c3.channelId, NORMAL, ChannelCodecsSpec.normal))
+    register.expectNoMessage()
+
+    awaitCond(res.isCompleted)
+
+    assert(res.value.get.get.toSet === Set(
+      RES_GETINFO(a, a1, NORMAL, ChannelCodecsSpec.normal),
+      RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal),
+      RES_GETINFO(b, b1, NORMAL, ChannelCodecsSpec.normal),
+    ))
+  }
+
+  test("get channel info (using node id)") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val a = randomKey().publicKey
+    val b = randomKey().publicKey
+    val a1 = randomBytes32()
+    val a2 = randomBytes32()
+    val b1 = randomBytes32()
+    val channels2Nodes = Map(a1 -> a, a2 -> a, b1 -> b)
+
+    val res = eclair.channelsInfo(toRemoteNode_opt = Some(a))
+
+    register.expectMsg(Symbol("channelsTo"))
+    register.reply(channels2Nodes)
+
+    val c1 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
+    register.reply(RES_GETINFO(channels2Nodes(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
+    val c2 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
+    register.reply(RES_GETINFO(channels2Nodes(c2.channelId), c2.channelId, NORMAL, ChannelCodecsSpec.normal))
+    register.expectNoMessage()
+
+    awaitCond(res.isCompleted)
+
+    assert(res.value.get.get.toSet === Set(
+      RES_GETINFO(a, a1, NORMAL, ChannelCodecsSpec.normal),
+      RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal)
+    ))
+  }
+
+  test("get channel info (using channel id)") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val a = randomKey().publicKey
+    val b = randomKey().publicKey
+    val a1 = randomBytes32()
+    val a2 = randomBytes32()
+    val b1 = randomBytes32()
+    val channels2Nodes = Map(a1 -> a, a2 -> a, b1 -> b)
+
+    val res = eclair.channelInfo(Left(a2))
+
+    val c1 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
+    register.reply(RES_GETINFO(channels2Nodes(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
+    register.expectNoMessage()
+
+    awaitCond(res.isCompleted)
+
+    assert(res.value.get.get === RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal))
+  }
+
+  test("close channels") { f =>
+    import f._
+
+    val eclair = new EclairImpl(kit)
+
+    val a = randomKey().publicKey
+    val b = randomKey().publicKey
+    val a1 = randomBytes32()
+    val a2 = randomBytes32()
+    val b1 = randomBytes32()
+
+    val res = eclair.close(List(Left(a2), Left(b1)), None, None)
+
+    val c1 = register.expectMsgType[Register.Forward[CMD_CLOSE]]
+    register.reply(RES_SUCCESS(c1.message, c1.channelId))
+    val c2 = register.expectMsgType[Register.Forward[CMD_CLOSE]]
+    register.reply(RES_SUCCESS(c2.message, c2.channelId))
+    register.expectNoMessage()
+
+    awaitCond(res.isCompleted)
+
+    assert(res.value.get.get === Map(
+      Left(a2) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), a2)),
+      Left(b1) -> Right(RES_SUCCESS(CMD_CLOSE(ActorRef.noSender, None, None), b1))
+    ))
+  }
+
   test("update relay fees in database") { f =>
     import f._
 
@@ -513,8 +577,31 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val a = randomKey().publicKey
     val b = randomKey().publicKey
+    val a1 = randomBytes32()
+    val a2 = randomBytes32()
+    val b1 = randomBytes32()
+    val map = Map(a1 -> a, a2 -> a, b1 -> b)
 
-    eclair.updateRelayFee(List(a, b), 999 msat, 1234)
+    val res = eclair.updateRelayFee(List(a, b), 999 msat, 1234)
+
+    register.expectMsg(Symbol("channelsTo"))
+    register.reply(map)
+
+    val u1 = register.expectMsgType[Register.Forward[CMD_UPDATE_RELAY_FEE]]
+    register.reply(RES_SUCCESS(u1.message, u1.channelId))
+    val u2 = register.expectMsgType[Register.Forward[CMD_UPDATE_RELAY_FEE]]
+    register.reply(RES_FAILURE(u2.message, CommandUnavailableInThisState(u2.channelId, "CMD_UPDATE_RELAY_FEE", channel.CLOSING)))
+    val u3 = register.expectMsgType[Register.Forward[CMD_UPDATE_RELAY_FEE]]
+    register.reply(Register.ForwardFailure(u3))
+    register.expectNoMessage()
+
+    awaitCond(res.isCompleted)
+
+    assert(res.value.get.get === Map(
+      Left(a1) -> Right(RES_SUCCESS(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, None), a1)),
+      Left(a2) -> Right(RES_FAILURE(CMD_UPDATE_RELAY_FEE(ActorRef.noSender, 999 msat, 1234, None), CommandUnavailableInThisState(a2, "CMD_UPDATE_RELAY_FEE", channel.CLOSING))),
+      Left(b1) -> Left(ChannelNotFound(Left(b1)))
+    ))
 
     peersDb.addOrUpdateRelayFees(a, RelayFees(999 msat, 1234)).wasCalled(once)
     peersDb.addOrUpdateRelayFees(b, RelayFees(999 msat, 1234)).wasCalled(once)

@@ -99,6 +99,14 @@ package object eclair {
     def msat = MilliSatoshi(n)
   }
 
+  implicit class TimestampSecondLong(private val n: Long) extends AnyVal {
+    def unixsec = TimestampSecond(n)
+  }
+
+  implicit class TimestampMilliLong(private val n: Long) extends AnyVal {
+    def unixms = TimestampMilli(n)
+  }
+
   // We implement Numeric to take advantage of operations such as sum, sort or min/max on iterables.
   implicit object NumericMilliSatoshi extends Numeric[MilliSatoshi] {
     // @formatter:off

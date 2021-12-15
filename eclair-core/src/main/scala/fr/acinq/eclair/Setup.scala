@@ -28,7 +28,7 @@ import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.balance.{BalanceActor, ChannelsListener}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, BitcoinCoreClient, BitcoinJsonRPCAuthMethod}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.{Channel, Register}
@@ -86,6 +86,9 @@ class Setup(val datadir: File,
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later
   randomGen.init()
   system.spawn(Behaviors.supervise(WeakEntropyPool(randomGen)).onFailure(typed.SupervisorStrategy.restart), "entropy-pool")
+
+  // start a system-wide actor to collect and log important notifications for the node operator
+  system.spawn(Behaviors.supervise(NotificationsLogger()).onFailure(typed.SupervisorStrategy.restart), "notifications-logger")
 
   datadir.mkdirs()
   val config = system.settings.config.getConfig("eclair")
@@ -146,9 +149,15 @@ class Setup(val datadir: File,
       val name = config.getString("bitcoind.wallet")
       if (!name.isBlank) Some(name) else None
     }
+    val rpcAuthMethod = config.getString("bitcoind.auth") match {
+      case "safecookie" => BitcoinJsonRPCAuthMethod.readCookie(config.getString("bitcoind.cookie")) match {
+        case Success(safeCookie) => safeCookie
+        case Failure(exception) => throw new RuntimeException("could not read bitcoind cookie file", exception)
+      }
+      case "password" => BitcoinJsonRPCAuthMethod.UserPassword(config.getString("bitcoind.rpcuser"), config.getString("bitcoind.rpcpassword"))
+    }
     val bitcoinClient = new BasicBitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
+      rpcAuthMethod = rpcAuthMethod,
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport"),
       wallet = wallet)

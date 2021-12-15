@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.db.{OutgoingPayment, OutgoingPaymentStatus, PaymentType}
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment.PaymentSent.PartialPayment
 import fr.acinq.eclair.payment._
@@ -33,7 +33,7 @@ import fr.acinq.eclair.payment.send.PaymentInitiator.SendPaymentConfig
 import fr.acinq.eclair.payment.send.PaymentLifecycle._
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire.protocol.Onion._
+import fr.acinq.eclair.wire.protocol.PaymentOnion._
 import fr.acinq.eclair.wire.protocol._
 
 import java.util.concurrent.TimeUnit
@@ -48,7 +48,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   private val id = cfg.id
   private val paymentHash = cfg.paymentHash
   private val paymentsDb = nodeParams.db.payments
-  private val start = System.currentTimeMillis
+  private val start = TimestampMilli.now()
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
@@ -60,7 +60,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
         route => self ! RouteResponse(route :: Nil)
       )
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
 
@@ -68,7 +68,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
       log.debug("sending {} to {}", c.finalPayload.amount, c.targetNodeId)
       router ! RouteRequest(nodeParams.nodeId, c.targetNodeId, c.finalPayload.amount, c.maxFee, c.assistedRoutes, routeParams = c.routeParams, paymentContext = Some(cfg.paymentContext))
       if (cfg.storeInDb) {
-        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, System.currentTimeMillis, cfg.paymentRequest, OutgoingPaymentStatus.Pending))
+        paymentsDb.addOutgoingPayment(OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, c.finalPayload.amount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.paymentRequest, OutgoingPaymentStatus.Pending))
       }
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(c, Nil, Ignore.empty)
   }
@@ -76,7 +76,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(route +: _), WaitingForRoute(c, failures, ignore)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${route.printNodes()} channels=${route.printChannels()}")
-      val (cmd, sharedSecrets) = OutgoingPacket.buildCommand(self, cfg.upstream, paymentHash, route.hops, c.finalPayload)
+      val (cmd, sharedSecrets) = OutgoingPaymentPacket.buildCommand(self, cfg.upstream, paymentHash, route.hops, c.finalPayload)
       register ! Register.ForwardShortId(self, route.hops.head.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(c, cmd, failures, sharedSecrets, ignore, route)
 
@@ -302,7 +302,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
           "FAILURE"
         }
     }
-    val now = System.currentTimeMillis
+    val now = TimestampMilli.now()
     val duration = now - start
     if (cfg.recordPathFindingMetrics) {
       val fees = result match {
@@ -334,7 +334,7 @@ class PaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, router: A
     Metrics.SentPaymentDuration
       .withTag(Tags.MultiPart, if (cfg.id != cfg.parentId) Tags.MultiPartType.Child else Tags.MultiPartType.Disabled)
       .withTag(Tags.Success, value = status == "SUCCESS")
-      .record(duration, TimeUnit.MILLISECONDS)
+      .record(duration.toMillis, TimeUnit.MILLISECONDS)
     stop(FSM.Normal)
   }
 

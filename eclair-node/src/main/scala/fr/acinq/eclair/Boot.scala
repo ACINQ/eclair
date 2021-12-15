@@ -16,15 +16,15 @@
 
 package fr.acinq.eclair
 
-import java.io.File
-
 import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.stream.BindFailedException
+import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair.api.Service
 import grizzled.slf4j.Logging
 import kamon.Kamon
 
+import java.io.File
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success}
 
@@ -53,6 +53,7 @@ object Boot extends App with Logging {
         plugins.foreach(_.onKit(kit))
         val routeProviderPlugins = plugins.collect { case plugin: RouteProvider => plugin }
         startApiServiceIfEnabled(kit, routeProviderPlugins)
+        kit.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Info, s"eclair successfully started (version=${Kit.getVersion} commit=${Kit.getCommit})"))
       case Failure(t) => onError(t)
     }
   } catch {
@@ -61,10 +62,6 @@ object Boot extends App with Logging {
 
   /**
    * Starts the http APIs service if enabled in the configuration
-   *
-   * @param kit
-   * @param system
-   * @param ec
    */
   def startApiServiceIfEnabled(kit: Kit, providers: Seq[RouteProvider] = Nil)(implicit system: ActorSystem, ec: ExecutionContext) = {
     val config = system.settings.config.getConfig("eclair")
@@ -91,6 +88,7 @@ object Boot extends App with Logging {
     val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
     System.err.println(s"fatal error: $errorMsg")
     logger.error(s"fatal error: $errorMsg", t)
+    NotificationsLogger.logFatalError("could not start eclair", t)
     System.exit(1)
   }
 }

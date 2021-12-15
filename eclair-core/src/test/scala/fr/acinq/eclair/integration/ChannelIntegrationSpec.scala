@@ -27,7 +27,7 @@ import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.DecryptedFailurePacket
-import fr.acinq.eclair.io.{Peer, PeerConnection}
+import fr.acinq.eclair.io.{Peer, PeerConnection, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.receive.{ForwardHandler, PaymentHandler}
@@ -109,7 +109,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     nodes("C").system.eventStream.subscribe(stateListenerC.ref, classOf[ChannelStateChanged])
     nodes("F").system.eventStream.subscribe(stateListenerF.ref, classOf[ChannelStateChanged])
 
-    sender.send(nodes("F").switchboard, Symbol("peers"))
+    sender.send(nodes("F").switchboard, Switchboard.GetPeers)
     val peers = sender.expectMsgType[Iterable[ActorRef]]
     // F's only node is C
     peers.head ! Peer.Disconnect(nodes("C").nodeParams.nodeId)
@@ -151,7 +151,7 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     val paymentId = paymentSender.expectMsgType[UUID]
     // F gets the htlc
-    val htlc = htlcReceiver.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds).add
+    val htlc = htlcReceiver.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds).add
     // now that we have the channel id, we retrieve channels default final addresses
     sender.send(nodes("C").register, Register.Forward(sender.ref, htlc.channelId, CMD_GETSTATEDATA(ActorRef.noSender)))
     val dataC = sender.expectMsgType[RES_GETSTATEDATA[DATA_NORMAL]].data
@@ -376,19 +376,19 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
 
     val buffer = TestProbe()
     send(100000000 msat, paymentHandlerF, nodes("C").paymentInitiator)
-    forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerF.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(110000000 msat, paymentHandlerF, nodes("C").paymentInitiator)
-    forwardHandlerF.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerF.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
     forwardHandlerF.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(120000000 msat, paymentHandlerC, nodes("F").paymentInitiator)
-    forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerC.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
     forwardHandlerC.forward(buffer.ref)
     sigListener.expectMsgType[ChannelSignatureReceived]
     send(130000000 msat, paymentHandlerC, nodes("F").paymentInitiator)
-    forwardHandlerC.expectMsgType[IncomingPacket.FinalPacket](max = 60 seconds)
+    forwardHandlerC.expectMsgType[IncomingPaymentPacket.FinalPacket](max = 60 seconds)
     forwardHandlerC.forward(buffer.ref)
     val commitmentsF = sigListener.expectMsgType[ChannelSignatureReceived].commitments
     sigListener.expectNoMessage(1 second)
@@ -404,22 +404,22 @@ abstract class ChannelIntegrationSpec extends IntegrationSpec {
     assert(htlcTimeoutTxs.size === 2)
     assert(htlcSuccessTxs.size === 2)
     // we fulfill htlcs to get the preimages
-    buffer.expectMsgType[IncomingPacket.FinalPacket]
+    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage1 = sender.expectMsgType[PreimageReceived].paymentPreimage
     assert(sender.expectMsgType[PaymentSent].paymentPreimage === preimage1)
-    buffer.expectMsgType[IncomingPacket.FinalPacket]
+    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerF)
     sigListener.expectMsgType[ChannelSignatureReceived]
     val preimage2 = sender.expectMsgType[PreimageReceived].paymentPreimage
     assert(sender.expectMsgType[PaymentSent].paymentPreimage === preimage2)
-    buffer.expectMsgType[IncomingPacket.FinalPacket]
+    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PreimageReceived]
     sender.expectMsgType[PaymentSent]
-    buffer.expectMsgType[IncomingPacket.FinalPacket]
+    buffer.expectMsgType[IncomingPaymentPacket.FinalPacket]
     buffer.forward(paymentHandlerC)
     sigListener.expectMsgType[ChannelSignatureReceived]
     sender.expectMsgType[PreimageReceived]
@@ -530,9 +530,10 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       // reconnection
       sender.send(fundee.switchboard, Peer.Connect(
         nodeId = funder.nodeParams.nodeId,
-        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort))
+        address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort)),
+        sender.ref
       ))
-      sender.expectMsgAnyOf(30 seconds, PeerConnection.ConnectionResult.Connected, PeerConnection.ConnectionResult.AlreadyConnected)
+      sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](30 seconds)
 
       fundee.register ! Register.Forward(sender.ref, channelId, CMD_GETSTATE(ActorRef.noSender))
       val fundeeState = sender.expectMsgType[RES_GETSTATE[ChannelState]].state

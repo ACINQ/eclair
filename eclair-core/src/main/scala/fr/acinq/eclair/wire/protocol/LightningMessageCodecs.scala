@@ -145,7 +145,7 @@ object LightningMessageCodecs {
       ("amountMsat" | millisatoshi) ::
       ("paymentHash" | bytes32) ::
       ("expiry" | cltvExpiry) ::
-      ("onionRoutingPacket" | OnionCodecs.paymentOnionPacketCodec) ::
+      ("onionRoutingPacket" | PaymentOnionCodecs.paymentOnionPacketCodec) ::
       ("tlvStream" | UpdateAddHtlcTlv.addHtlcTlvCodec)).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
@@ -210,7 +210,7 @@ object LightningMessageCodecs {
 
   val nodeAnnouncementWitnessCodec =
     ("features" | featuresCodec) ::
-      ("timestamp" | uint32) ::
+      ("timestamp" | timestampSecond) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
@@ -250,7 +250,7 @@ object LightningMessageCodecs {
   val channelUpdateWitnessCodec =
     (("chainHash" | bytes32) ::
       ("shortChannelId" | shortchannelid) ::
-      ("timestamp" | uint32) ::
+      ("timestamp" | timestampSecond) ::
       (messageFlagsCodec >>:~ { messageFlags =>
         channelFlagsCodec ::
           ("cltvExpiryDelta" | cltvExpiryDelta) ::
@@ -304,9 +304,14 @@ object LightningMessageCodecs {
 
   val gossipTimestampFilterCodec: Codec[GossipTimestampFilter] = (
     ("chainHash" | bytes32) ::
-      ("firstTimestamp" | uint32) ::
+      ("firstTimestamp" | timestampSecond) ::
       ("timestampRange" | uint32) ::
       ("tlvStream" | GossipTimestampFilterTlv.gossipTimestampFilterTlvCodec)).as[GossipTimestampFilter]
+
+  val onionMessageCodec: Codec[OnionMessage] = (
+    ("blindingKey" | publicKey) ::
+      ("onionPacket" | MessageOnionCodecs.messageOnionPacketCodec) ::
+      ("tlvStream" | OnionMessageTlv.onionMessageTlvCodec)).as[OnionMessage]
 
   // NB: blank lines to minimize merge conflicts
 
@@ -361,6 +366,7 @@ object LightningMessageCodecs {
     .typecase(263, queryChannelRangeCodec)
     .typecase(264, replyChannelRangeCodec)
     .typecase(265, gossipTimestampFilterCodec)
+    .typecase(513, onionMessageCodec)
   // NB: blank lines to minimize merge conflicts
 
   //

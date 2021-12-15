@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRP
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop}
-import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.{ConflictingTxUnconfirmed, CouldNotFund, TxSkipped, WalletInputGone}
+import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
 import fr.acinq.eclair.transactions.Transactions.{ClaimLocalAnchorOutputTx, HtlcSuccessTx, HtlcTimeoutTx}
@@ -443,6 +443,53 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
           assert(targetFee * 0.9 <= actualFee && actualFee <= targetFee * 1.1, s"actualFee=$actualFee targetFee=$targetFee amountIn=$amountIn tx=$signedTx")
         }
       }
+    })
+  }
+
+  test("remote commit tx confirmed, not publishing htlc tx") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+      import f._
+
+      // Add htlcs in both directions and ensure that preimages are available.
+      addHtlc(5_000_000 msat, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+      val (r, htlc) = addHtlc(4_000_000 msat, bob, alice, bob2alice, alice2bob)
+      crossSign(bob, alice, bob2alice, alice2bob)
+      probe.send(alice, CMD_FULFILL_HTLC(htlc.id, r, replyTo_opt = Some(probe.ref)))
+      probe.expectMsgType[CommandSuccess[CMD_FULFILL_HTLC]]
+
+      // Force-close channel.
+      probe.send(alice, CMD_FORCECLOSE(probe.ref))
+      probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
+      alice2blockchain.expectMsgType[PublishRawTx]
+      assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
+      alice2blockchain.expectMsgType[PublishRawTx] // claim main output
+      val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
+      assert(htlcSuccess.txInfo.isInstanceOf[HtlcSuccessTx])
+      val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
+      assert(htlcTimeout.txInfo.isInstanceOf[HtlcTimeoutTx])
+
+      // Ensure remote commit tx confirms.
+      val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
+      wallet.publishTransaction(remoteCommitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(remoteCommitTx.tx.txid)
+      generateBlocks(5)
+
+      // Verify that HTLC transactions immediately fail to publish.
+      val targetFeerate = FeeratePerKw(15_000 sat)
+      val htlcSuccessPublisher = createPublisher()
+      htlcSuccessPublisher ! Publish(probe.ref, htlcSuccess, targetFeerate)
+      val result1 = probe.expectMsgType[TxRejected]
+      assert(result1.cmd === htlcSuccess)
+      assert(result1.reason === ConflictingTxConfirmed)
+      htlcSuccessPublisher ! Stop
+
+      val htlcTimeoutPublisher = createPublisher()
+      htlcTimeoutPublisher ! Publish(probe.ref, htlcTimeout, targetFeerate)
+      val result2 = probe.expectMsgType[TxRejected]
+      assert(result2.cmd === htlcTimeout)
+      assert(result2.reason === ConflictingTxConfirmed)
+      htlcTimeoutPublisher ! Stop
     })
   }
 

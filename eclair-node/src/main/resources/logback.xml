@@ -39,6 +39,20 @@
         </encoder>
     </appender>
 
+    <appender name="ROLLING_NOTIFICATIONS" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${eclair.datadir:-${user.home}/.eclair}/notifications.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <!-- daily rollover -->
+            <fileNamePattern>${eclair.datadir:-${user.home}/.eclair}/notifications.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <!-- keep 30 days' worth of history capped at 1 GB total size -->
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%d %-5level- %msg%ex{24}%n</pattern>
+        </encoder>
+    </appender>
+
     <if condition='isDefined("eclair.printToConsole")'>
         <then>
             <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
@@ -51,6 +65,11 @@
             </root>
         </then>
     </if>
+
+    <!-- This logger contains important notifications for node operators. -->
+    <logger level="INFO" name="notifications" additivity="false">
+        <appender-ref ref="ROLLING_NOTIFICATIONS"/>
+    </logger>
 
     <root level="INFO">
         <appender-ref ref="ROLLING"/>

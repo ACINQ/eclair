@@ -25,6 +25,7 @@ import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, MilliBtcDouble, OutPoin
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService.BitcoinReq
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient._
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinCoreClient, JsonRPCError}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
@@ -67,7 +68,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val error = sender.expectMsgType[Failure].cause.asInstanceOf[JsonRPCError].error
     assert(error.message.contains("Please enter the wallet passphrase with walletpassphrase first"))
 
-    sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 10))
+    sender.send(bitcoincli, BitcoinReq("walletpassphrase", walletPassword, 3600)) // wallet stay unlocked for 3600s
     sender.expectMsgType[JValue]
   }
 
@@ -135,7 +136,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
 
     0 to 9 foreach { satoshi =>
       val apiAmount = JDecimal(BigDecimal(s"0.0000000$satoshi"))
-      val rpcClient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 0) {
+      val rpcClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = UserPassword("foo", "bar"), host = "localhost", port = 0) {
         override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
           case "getbalances" => Future(JObject("mine" -> JObject("trusted" -> apiAmount, "untrusted_pending" -> apiAmount)))(ec)
           case "getmempoolinfo" => Future(JObject("mempoolminfee" -> JDecimal(0.0002)))(ec)
@@ -453,7 +454,7 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
     val sender = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
 
-    val priv = dumpPrivateKey(getNewAddress(sender), sender)
+    val priv = randomKey()
     val noInputTx = Transaction(2, Nil, TxOut(6.btc.toSatoshi, Script.pay2wpkh(priv.publicKey)) :: Nil, 0)
     bitcoinClient.fundTransaction(noInputTx, FundTransactionOptions(TestConstants.feeratePerKw)).pipeTo(sender.ref)
     val fundTxResponse = sender.expectMsgType[FundTransactionResponse]
@@ -478,9 +479,10 @@ class BitcoinCoreClientSpec extends TestKitBaseClass with BitcoindService with A
       val address = getNewAddress(sender)
       val pos = if (changePos == 0) 1 else 0
       bitcoinrpcclient.invoke("createrawtransaction", Array(Map("txid" -> tx.txid.toHex, "vout" -> pos)), Map(address -> 5.999)).pipeTo(sender.ref)
-      val JString(unsignedTx) = sender.expectMsgType[JValue]
-      bitcoinClient.signTransaction(Transaction.read(unsignedTx), Nil).pipeTo(sender.ref)
-      sender.expectMsgType[SignTransactionResponse].tx
+      val JString(unsignedTxStr) = sender.expectMsgType[JValue]
+      val unsignedTx = Transaction.read(unsignedTxStr)
+      val sig = Transaction.signInput(unsignedTx, 0, Script.pay2pkh(priv.publicKey), SIGHASH_ALL, 6.btc.toSatoshi, SIGVERSION_WITNESS_V0, priv)
+      unsignedTx.updateWitness(0, Script.witnessPay2wpkh(priv.publicKey, sig))
     }
     bitcoinClient.publishTransaction(spendingTx).pipeTo(sender.ref)
     sender.expectMsg(spendingTx.txid)

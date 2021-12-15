@@ -16,38 +16,42 @@
 
 package fr.acinq.eclair.api.directives
 
+import akka.http.scaladsl.model.StatusCodes.OK
+import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
+import fr.acinq.eclair.api.serde.JsonSupport._
+import fr.acinq.eclair.json.{JsonSerializers, RouteFullSerializer, RouteNodeIdsSerializer, RouteShortChannelIdsSerializer}
 import fr.acinq.eclair.router.Router.RouteResponse
+import org.json4s.Formats
 
 // @formatter:off
 sealed trait RouteFormat
 case object NodeIdRouteFormat extends RouteFormat
 case object ShortChannelIdRouteFormat extends RouteFormat
+case object FullRouteFormat extends RouteFormat
 // @formatter:on
 
 object RouteFormat {
 
   val NODE_ID = "nodeId"
   val SHORT_CHANNEL_ID = "shortChannelId"
+  val FULL = "full"
 
   def fromString(s: String): RouteFormat = s match {
     case NODE_ID => NodeIdRouteFormat
     case SHORT_CHANNEL_ID => ShortChannelIdRouteFormat
-    case _ => throw new IllegalArgumentException(s"invalid route format, possible values are ($NODE_ID, $SHORT_CHANNEL_ID)")
+    case FULL => FullRouteFormat
+    case _ => throw new IllegalArgumentException(s"invalid route format, possible values are ($NODE_ID, $SHORT_CHANNEL_ID, $FULL)")
   }
 
-  def format(route: RouteResponse, format_opt: Option[RouteFormat]): Seq[String] = format(route, format_opt.getOrElse(NodeIdRouteFormat))
+  def format(route: RouteResponse, format_opt: Option[RouteFormat]): HttpResponse = format(route, format_opt.getOrElse(NodeIdRouteFormat))
 
-  def format(route: RouteResponse, format: RouteFormat): Seq[String] = format match {
-    case NodeIdRouteFormat =>
-      val nodeIds = route.routes.head.hops match {
-        case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
-        case Nil => Nil
-      }
-      nodeIds.toList.map(_.toString)
-    case ShortChannelIdRouteFormat =>
-      val shortChannelIds = route.routes.head.hops.map(_.lastUpdate.shortChannelId)
-      shortChannelIds.map(_.toString)
+  def format(route: RouteResponse, format: RouteFormat): HttpResponse = {
+    val serializationFormats: Formats = format match {
+      case NodeIdRouteFormat => JsonSerializers.formats + RouteNodeIdsSerializer
+      case ShortChannelIdRouteFormat => JsonSerializers.formats + RouteShortChannelIdsSerializer
+      case FullRouteFormat => JsonSerializers.formats + RouteFullSerializer
+    }
+    HttpResponse(OK).withEntity(ContentTypes.`application/json`, serialization.write(route)(serializationFormats))
   }
-
 }
 

@@ -51,6 +51,7 @@ object ReplaceableTxPublisher {
   private case object TimeLocksOk extends Command
   private case object CommitTxAlreadyConfirmed extends RuntimeException with Command
   private case object RemoteCommitTxPublished extends RuntimeException with Command
+  private case object RemoteCommitTxConfirmed extends Command
   private case object PreconditionsOk extends Command
   private case class FundingFailed(reason: Throwable) extends Command
   private case class SignFundedTx(tx: ReplaceableTransactionWithInputInfo, fee: Satoshi) extends Command
@@ -178,23 +179,12 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   def start(): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case Publish(replyTo, cmd, targetFeerate) => checkTimeLocks(replyTo, cmd, targetFeerate)
-      case Stop => Behaviors.stopped
-    }
-  }
-
-  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
-    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
-    timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
-    Behaviors.receiveMessagePartial {
-      case TimeLocksOk =>
+      case Publish(replyTo, cmd, targetFeerate) =>
         cmd.txInfo match {
           case _: ClaimLocalAnchorOutputTx => checkAnchorPreconditions(replyTo, cmd, targetFeerate)
           case htlcTx: HtlcTx => checkHtlcPreconditions(replyTo, cmd, htlcTx, targetFeerate)
         }
-      case Stop =>
-        timeLocksChecker ! TxTimeLocksMonitor.Stop
-        Behaviors.stopped
+      case Stop => Behaviors.stopped
     }
   }
 
@@ -243,23 +233,48 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   }
 
   def checkHtlcPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTx: HtlcTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
-    val htlcFeerate = cmd.commitments.localCommit.spec.htlcTxFeerate(cmd.commitments.commitmentFormat)
-    // HTLC transactions have a 1-block relative delay when using anchor outputs, which ensures our commit tx has already
-    // been confirmed (we don't need to check again here).
-    HtlcTxAndWitnessData(htlcTx, cmd.commitments) match {
-      case Some(txWithWitnessData) if targetFeerate <= htlcFeerate =>
-        val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
-        val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitments.localCommit.index)
-        val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
-        val localSig = keyManager.sign(htlcTx, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
-        val signedHtlcTx = txWithWitnessData.addSigs(localSig, cmd.commitments.commitmentFormat)
-        log.info("publishing {} without adding inputs: txid={}", htlcTx.desc, signedHtlcTx.tx.txid)
-        publish(replyTo, cmd, signedHtlcTx.tx, htlcTx.fee)
-      case Some(_) =>
-        fund(replyTo, cmd, targetFeerate)
-      case None =>
-        log.error("witness data not found for htlcId={}, skipping...", htlcTx.htlcId)
-        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
+    // We verify that:
+    //  - their commit is not confirmed: if it is, there is no need to publish our HTLC transactions
+    context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitments.remoteCommit.txid)) {
+      case Success(Some(depth)) if depth >= nodeParams.minDepthBlocks => RemoteCommitTxConfirmed
+      case Success(_) => PreconditionsOk
+      case Failure(_) => PreconditionsOk // if our checks fail, we don't want it to prevent us from publishing HTLC transactions
+    }
+    Behaviors.receiveMessagePartial {
+      case PreconditionsOk =>
+        HtlcTxAndWitnessData(htlcTx, cmd.commitments) match {
+          case Some(txWithWitnessData) => checkTimeLocks(replyTo, cmd, txWithWitnessData, targetFeerate)
+          case None =>
+            log.error("witness data not found for htlcId={}, skipping...", htlcTx.htlcId)
+            sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
+        }
+      case RemoteCommitTxConfirmed =>
+        log.warn("cannot publish {}: remote commit has been confirmed", cmd.desc)
+        sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.ConflictingTxConfirmed))
+      case Stop => Behaviors.stopped
+    }
+  }
+
+  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTxWithWitnessData: HtlcTxAndWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
+    val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
+    timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
+    Behaviors.receiveMessagePartial {
+      case TimeLocksOk =>
+        val htlcFeerate = cmd.commitments.localCommit.spec.htlcTxFeerate(cmd.commitments.commitmentFormat)
+        if (targetFeerate <= htlcFeerate) {
+          val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
+          val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitments.localCommit.index)
+          val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
+          val localSig = keyManager.sign(htlcTxWithWitnessData.txInfo, localHtlcBasepoint, localPerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
+          val signedHtlcTx = htlcTxWithWitnessData.addSigs(localSig, cmd.commitments.commitmentFormat)
+          log.info("publishing {} without adding inputs: txid={}", cmd.desc, signedHtlcTx.tx.txid)
+          publish(replyTo, cmd, signedHtlcTx.tx, signedHtlcTx.fee)
+        } else {
+          fund(replyTo, cmd, targetFeerate)
+        }
+      case Stop =>
+        timeLocksChecker ! TxTimeLocksMonitor.Stop
+        Behaviors.stopped
     }
   }
 

@@ -20,7 +20,7 @@ import akka.actor.{ActorRef, PossiblyHarmful}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, DeterministicWallet, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
-import fr.acinq.eclair.payment.OutgoingPacket.Upstream
+import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions._
@@ -229,13 +229,12 @@ final case class RES_ADD_SETTLED[+O <: Origin, +R <: HtlcResult](origin: O, htlc
 final case class RES_GETSTATE[+S <: ChannelState](state: S) extends CommandSuccess[CMD_GETSTATE]
 final case class RES_GETSTATEDATA[+D <: ChannelData](data: D) extends CommandSuccess[CMD_GETSTATEDATA]
 final case class RES_GETINFO(nodeId: PublicKey, channelId: ByteVector32, state: ChannelState, data: ChannelData) extends CommandSuccess[CMD_GETINFO]
-final case class RES_CLOSE(channelId: ByteVector32) extends CommandSuccess[CMD_CLOSE]
 
 /**
  * Those are not response to [[Command]], but to [[fr.acinq.eclair.io.Peer.OpenChannel]]
  *
  * If actor A sends a [[fr.acinq.eclair.io.Peer.OpenChannel]] and actor B sends a [[CMD_CLOSE]], then A will receive a
- * [[ChannelOpenResponse.ChannelClosed]] whereas B will receive a [[RES_CLOSE]]
+ * [[ChannelOpenResponse.ChannelClosed]] whereas B will receive a [[RES_SUCCESS]]
  */
 sealed trait ChannelOpenResponse
 object ChannelOpenResponse {

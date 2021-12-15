@@ -166,6 +166,15 @@ class PgChannelsDb(implicit ds: DataSource, lock: PgLock) extends ChannelsDb wit
     }
   }
 
+  override def getChannel(channelId: ByteVector32): Option[HasCommitments] = withMetrics("channels/get-channel", DbBackends.Postgres) {
+    withLock { pg =>
+      using(pg.prepareStatement("SELECT data FROM local.channels WHERE channel_id=? AND is_closed=FALSE")) { statement =>
+        statement.setString(1, channelId.toHex)
+        statement.executeQuery.mapCodec(stateDataCodec).lastOption
+      }
+    }
+  }
+
   /**
    * Helper method to factor updating timestamp columns
    */

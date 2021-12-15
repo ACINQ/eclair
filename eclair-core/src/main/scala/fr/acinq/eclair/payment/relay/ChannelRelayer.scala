@@ -24,7 +24,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.payment.IncomingPacket
+import fr.acinq.eclair.payment.IncomingPaymentPacket
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId}
 
@@ -43,7 +43,7 @@ object ChannelRelayer {
   // @formatter:off
   sealed trait Command
   case class GetOutgoingChannels(replyTo: ActorRef, getOutgoingChannels: Relayer.GetOutgoingChannels) extends Command
-  case class Relay(channelRelayPacket: IncomingPacket.ChannelRelayPacket) extends Command
+  case class Relay(channelRelayPacket: IncomingPaymentPacket.ChannelRelayPacket) extends Command
   private[payment] case class WrappedLocalChannelUpdate(localChannelUpdate: LocalChannelUpdate) extends Command
   private[payment] case class WrappedLocalChannelDown(localChannelDown: LocalChannelDown) extends Command
   private[payment] case class WrappedAvailableBalanceChanged(availableBalanceChanged: AvailableBalanceChanged) extends Command
@@ -67,7 +67,7 @@ object ChannelRelayer {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelDown](WrappedLocalChannelDown))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[AvailableBalanceChanged](WrappedAvailableBalanceChanged))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ShortChannelIdAssigned](WrappedShortChannelIdAssigned))
-      context.messageAdapter[IncomingPacket.ChannelRelayPacket](Relay)
+      context.messageAdapter[IncomingPaymentPacket.ChannelRelayPacket](Relay)
       Behaviors.withMdc(Logs.mdc(category_opt = Some(Logs.LogCategory.PAYMENT)), mdc) {
         Behaviors.receiveMessage {
           case Relay(channelRelayPacket) =>

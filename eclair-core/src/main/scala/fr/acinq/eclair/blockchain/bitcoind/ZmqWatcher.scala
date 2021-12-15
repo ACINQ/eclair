@@ -25,7 +25,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.watchdogs.BlockchainWatchdog
 import fr.acinq.eclair.wire.protocol.ChannelAnnouncement
-import fr.acinq.eclair.{KamonExt, NodeParams, ShortChannelId}
+import fr.acinq.eclair.{KamonExt, NodeParams, ShortChannelId, TimestampSecond}
 
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.duration._
@@ -68,7 +68,7 @@ object ZmqWatcher {
   final case class ValidateResult(c: ChannelAnnouncement, fundingTx: Either[Throwable, (Transaction, UtxoStatus)])
 
   final case class GetTxWithMeta(replyTo: ActorRef[GetTxWithMetaResponse], txid: ByteVector32) extends Command
-  final case class GetTxWithMetaResponse(txid: ByteVector32, tx_opt: Option[Transaction], lastBlockTimestamp: Long)
+  final case class GetTxWithMetaResponse(txid: ByteVector32, tx_opt: Option[Transaction], lastBlockTimestamp: TimestampSecond)
 
   sealed trait UtxoStatus
   object UtxoStatus {

@@ -52,7 +52,7 @@ class MultiPartPaymentFSMSpec extends TestKitBaseClass with AnyFunSuiteLike {
   }
 
   test("timeout waiting for first htlc") {
-    val f = createFixture(250 millis, 1000 msat)
+    val f = createFixture(2 seconds, 1000 msat)
     val monitor = TestProbe()
     f.handler ! SubscribeTransitionCallBack(monitor.ref)
 

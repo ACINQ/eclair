@@ -487,6 +487,25 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     assert(alice.stateName === CLOSING)
   }
 
+  test("recv WatchFundingSpentTriggered (self mutual close)") { f =>
+    import f._
+    bob.feeEstimator.setFeerate(FeeratesPerKw.single(FeeratePerKw(10000 sat)))
+    bobClose(f)
+    // alice starts with a very low proposal
+    val (aliceClosing1, _) = makeLegacyClosingSigned(f, 500 sat)
+    alice2bob.send(bob, aliceClosing1)
+    val bobClosing1 = bob2alice.expectMsgType[ClosingSigned]
+    // at this point bob has received a mutual close signature from alice, but doesn't yet agree on the fee
+    // bob's mutual close is published from the outside of the actor
+    assert(bob.stateName === NEGOTIATING)
+    val mutualCloseTx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt.get.tx
+    bob ! WatchFundingSpentTriggered(mutualCloseTx)
+    assert(bob2blockchain.expectMsgType[PublishRawTx].tx === mutualCloseTx)
+    assert(bob2blockchain.expectMsgType[WatchTxConfirmed].txId === mutualCloseTx.txid)
+    bob2blockchain.expectNoMessage(100 millis)
+    assert(bob.stateName == CLOSING)
+  }
+
   test("recv CMD_CLOSE") { f =>
     import f._
     bobClose(f)

@@ -27,7 +27,7 @@ import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
-import fr.acinq.eclair.payment.{IncomingPacket, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Features, Logs, MilliSatoshi, NodeParams, randomBytes32}
 
@@ -59,7 +59,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
       val child = ctx.spawnAnonymous(CreateInvoiceActor(nodeParams))
       child ! CreateInvoiceActor.CreatePaymentRequest(ctx.sender(), receivePayment)
 
-    case p: IncomingPacket.FinalPacket if doHandle(p.add.paymentHash) =>
+    case p: IncomingPaymentPacket.FinalPacket if doHandle(p.add.paymentHash) =>
       val child = ctx.spawnAnonymous(GetIncomingPaymentActor(nodeParams))
       child ! GetIncomingPaymentActor.GetIncomingPayment(ctx.self, p)
 
@@ -136,10 +136,14 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
             // NB: this case shouldn't happen unless the sender violated the spec, so it's ok that we take a slightly more
             // expensive code path by fetching the preimage from DB.
             case p: MultiPartPaymentFSM.HtlcPart => db.getIncomingPayment(paymentHash).foreach(record => {
-              PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
               val received = PaymentReceived(paymentHash, PaymentReceived.PartialPayment(p.amount, p.htlc.channelId) :: Nil)
-              db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)
-              ctx.system.eventStream.publish(received)
+              if (db.receiveIncomingPayment(paymentHash, p.amount, received.timestamp)) {
+                PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, record.paymentPreimage, commit = true))
+                ctx.system.eventStream.publish(received)
+              } else {
+                val cmdFail = CMD_FAIL_HTLC(p.htlc.id, Right(IncorrectOrUnknownPaymentDetails(received.amount, nodeParams.currentBlockHeight)), commit = true)
+                PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, cmdFail)
+              }
             })
           }
         }
@@ -151,12 +155,20 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
         val received = PaymentReceived(paymentHash, parts.map {
           case p: MultiPartPaymentFSM.HtlcPart => PaymentReceived.PartialPayment(p.amount, p.htlc.channelId)
         })
-        db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)
-        parts.collect {
-          case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
+        if (db.receiveIncomingPayment(paymentHash, received.amount, received.timestamp)) {
+          parts.collect {
+            case p: MultiPartPaymentFSM.HtlcPart => PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, CMD_FULFILL_HTLC(p.htlc.id, preimage, commit = true))
+          }
+          postFulfill(received)
+          ctx.system.eventStream.publish(received)
+        } else {
+          parts.collect {
+            case p: MultiPartPaymentFSM.HtlcPart =>
+              Metrics.PaymentFailed.withTag(Tags.Direction, Tags.Directions.Received).withTag(Tags.Failure, "InvoiceNotFound").increment()
+              val cmdFail = CMD_FAIL_HTLC(p.htlc.id, Right(IncorrectOrUnknownPaymentDetails(received.amount, nodeParams.currentBlockHeight)), commit = true)
+              PendingCommandsDb.safeSend(register, nodeParams.db.pendingCommands, p.htlc.channelId, cmdFail)
+          }
         }
-        postFulfill(received)
-        ctx.system.eventStream.publish(received)
       }
 
     case GetPendingPayments => ctx.sender() ! PendingPayments(pendingPayments.keySet)
@@ -169,7 +181,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
 object MultiPartHandler {
 
   // @formatter:off
-  case class ProcessPacket(packet: IncomingPacket.FinalPacket, payment_opt: Option[IncomingPayment])
+  case class ProcessPacket(packet: IncomingPaymentPacket.FinalPacket, payment_opt: Option[IncomingPayment])
   case class DoFulfill(preimage: ByteVector32, success: MultiPartPaymentFSM.MultiPartPaymentSucceeded)
 
   case object GetPendingPayments
@@ -236,7 +248,7 @@ object MultiPartHandler {
 
     // @formatter:off
     sealed trait Command
-    case class GetIncomingPayment(replyTo: ActorRef, packet: IncomingPacket.FinalPacket) extends Command
+    case class GetIncomingPayment(replyTo: ActorRef, packet: IncomingPaymentPacket.FinalPacket) extends Command
     // @formatter:on
 
     def apply(nodeParams: NodeParams): Behavior[Command] = {
@@ -248,7 +260,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePaymentStatus(payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentStatus(payment: IncomingPaymentPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     if (record.status.isInstanceOf[IncomingPaymentStatus.Received]) {
       log.warning("ignoring incoming payment for which has already been paid")
       false
@@ -260,7 +272,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePaymentAmount(payment: IncomingPacket.FinalPacket, expectedAmount: MilliSatoshi)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentAmount(payment: IncomingPaymentPacket.FinalPacket, expectedAmount: MilliSatoshi)(implicit log: LoggingAdapter): Boolean = {
     // The total amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
     // it must not be greater than two times the requested amount.
     // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
@@ -275,7 +287,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePaymentCltv(nodeParams: NodeParams, payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
+  private def validatePaymentCltv(nodeParams: NodeParams, payment: IncomingPaymentPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Boolean = {
     val minExpiry = record.paymentRequest.minFinalCltvExpiryDelta.getOrElse(nodeParams.minFinalExpiryDelta).toCltvExpiry(nodeParams.currentBlockHeight)
     if (payment.add.cltvExpiry < minExpiry) {
       log.warning("received payment with expiry too small for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
@@ -285,7 +297,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validateInvoiceFeatures(payment: IncomingPacket.FinalPacket, pr: PaymentRequest)(implicit log: LoggingAdapter): Boolean = {
+  private def validateInvoiceFeatures(payment: IncomingPaymentPacket.FinalPacket, pr: PaymentRequest)(implicit log: LoggingAdapter): Boolean = {
     if (payment.payload.amount < payment.payload.totalAmount && !pr.features.allowMultiPart) {
       log.warning("received multi-part payment but invoice doesn't support it for amount={} totalAmount={}", payment.add.amountMsat, payment.payload.totalAmount)
       false
@@ -300,7 +312,7 @@ object MultiPartHandler {
     }
   }
 
-  private def validatePayment(nodeParams: NodeParams, payment: IncomingPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
+  private def validatePayment(nodeParams: NodeParams, payment: IncomingPaymentPacket.FinalPacket, record: IncomingPayment)(implicit log: LoggingAdapter): Option[CMD_FAIL_HTLC] = {
     // We send the same error regardless of the failure to avoid probing attacks.
     val cmdFail = CMD_FAIL_HTLC(payment.add.id, Right(IncorrectOrUnknownPaymentDetails(payment.payload.totalAmount, nodeParams.currentBlockHeight)), commit = true)
     val paymentAmountOk = record.paymentRequest.amount.forall(a => validatePaymentAmount(payment, a))

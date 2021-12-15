@@ -50,7 +50,24 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeOffChainBalance(Seq(alice.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ===
       MainAndHtlcBalance(
         toLocal = (TestConstants.fundingSatoshis - TestConstants.pushMsat - 30_000_000.msat).truncateToSatoshi,
-        htlcOut = 30_000.sat
+        htlcs = 30_000.sat
+      )
+    )
+  }
+
+  test("take in-flight signed fulfills into account") { f =>
+    import f._
+
+    val (preimage, htlc) = addHtlc(10_000_000 msat, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    fulfillHtlc(htlc.id, preimage, bob, alice, bob2alice, alice2bob)
+    bob ! CMD_SIGN()
+    bob2alice.expectMsgType[CommitSig]
+
+    assert(CheckBalance.computeOffChainBalance(Seq(bob.stateData.asInstanceOf[DATA_NORMAL]), knownPreimages = Set.empty).normal ===
+      MainAndHtlcBalance(
+        toLocal = TestConstants.pushMsat.truncateToSatoshi,
+        htlcs = htlc.amountMsat.truncateToSatoshi
       )
     )
   }

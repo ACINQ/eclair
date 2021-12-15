@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.channel.states.b
 
+import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, SatoshiLong}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -38,7 +39,7 @@ import scala.concurrent.duration._
 
 class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], aliceOrigin: TestProbe, alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     import com.softwaremill.quicklens._
@@ -73,7 +74,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
       alice2bob.forward(bob)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
-      withFixture(test.toNoArgTest(FixtureParam(alice, alice2bob, bob2alice, alice2blockchain)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, aliceOrigin, alice2bob, bob2alice, alice2blockchain)))
     }
   }
 
@@ -90,6 +91,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(txPublished.miningFee > 0.sat)
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
+    aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
   }
 
   test("recv FundingSigned with valid signature (wumbo)", Tag(ChannelStateTestsTags.Wumbo)) { f =>
@@ -101,6 +103,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val watchConfirmed = alice2blockchain.expectMsgType[WatchFundingConfirmed]
     // when we are funder, we keep our regular min depth even for wumbo channels
     assert(watchConfirmed.minDepth === Alice.nodeParams.minDepthBlocks)
+    aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelOpened]
   }
 
   test("recv FundingSigned with invalid signature") { f =>
@@ -109,6 +112,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! FundingSigned(ByteVector32.Zeroes, ByteVector64.Zeroes)
     awaitCond(alice.stateName == CLOSED)
     alice2bob.expectMsgType[Error]
+    aliceOrigin.expectMsgType[Status.Failure]
   }
 
   test("recv CMD_CLOSE") { f =>
@@ -118,6 +122,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! c
     sender.expectMsg(RES_SUCCESS(c, alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_SIGNED].channelId))
     awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelClosed]
   }
 
   test("recv CMD_FORCECLOSE") { f =>
@@ -125,6 +130,7 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     val sender = TestProbe()
     alice ! CMD_FORCECLOSE(sender.ref)
     awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[ChannelOpenResponse.ChannelClosed]
   }
 
   test("recv INPUT_DISCONNECTED") { f =>
@@ -134,12 +140,14 @@ class WaitForFundingSignedStateSpec extends TestKitBaseClass with FixtureAnyFunS
     alice ! INPUT_DISCONNECTED
     awaitCond(alice.stateName == CLOSED)
     assert(alice.underlyingActor.wallet.asInstanceOf[DummyOnChainWallet].rolledback.contains(fundingTx))
+    aliceOrigin.expectMsgType[Status.Failure]
   }
 
   test("recv TickChannelOpenTimeout") { f =>
     import f._
     alice ! TickChannelOpenTimeout
     awaitCond(alice.stateName == CLOSED)
+    aliceOrigin.expectMsgType[Status.Failure]
   }
 
 }

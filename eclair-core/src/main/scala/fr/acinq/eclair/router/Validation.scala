@@ -86,7 +86,7 @@ object Validation {
     }
     val remoteOrigins_opt = d0.awaiting.get(c)
     Logs.withMdc(log)(Logs.mdc(remoteNodeId_opt = remoteOrigins_opt.flatMap(_.headOption).map(_.nodeId))) { // in the MDC we use the node id that sent us the announcement first
-      log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
+      log.debug("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
       val publicChannel_opt = r match {
         case ValidateResult(c, Left(t)) =>
           log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId, t.getMessage)
@@ -123,7 +123,7 @@ object Validation {
           }
         case ValidateResult(c, Right((tx, fundingTxStatus: UtxoStatus.Spent))) =>
           if (fundingTxStatus.spendingTxConfirmed) {
-            log.warning("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
+            log.debug("ignoring shortChannelId={} tx={} (funding tx already spent and spending tx is confirmed)", c.shortChannelId, tx.txid)
             // the funding tx has been spent by a transaction that is now confirmed: peer shouldn't send us those
             remoteOrigins_opt.foreach(_.foreach(o => sendDecision(o.peerConnection, GossipDecision.ChannelClosed(c))))
           } else {

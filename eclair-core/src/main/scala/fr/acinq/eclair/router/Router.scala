@@ -35,7 +35,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
-import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
+import fr.acinq.eclair.router.Monitoring.Metrics
 import fr.acinq.eclair.wire.protocol._
 import kamon.context.Context
 
@@ -63,7 +63,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
 
   startTimerWithFixedDelay(TickBroadcast.toString, TickBroadcast, nodeParams.routerConf.routerBroadcastInterval)
   startTimerWithFixedDelay(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour)
-  startTimerWithFixedDelay(TickComputeNetworkStats.toString, TickComputeNetworkStats, nodeParams.routerConf.networkStatsRefreshInterval)
 
   val db: NetworkDb = nodeParams.db.network
 
@@ -99,31 +98,23 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, nodeParams.features)
     self ! nodeAnn
 
-    log.info(s"computing network stats...")
-    val stats = NetworkStats.computeStats(initChannels.values)
-
     log.info(s"initialization completed, ready to process messages")
     Try(initialized.map(_.success(Done)))
-    startWith(NORMAL, Data(initNodes, initChannels, stats, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, excludedChannels = Set.empty, graph, sync = Map.empty))
   }
 
   when(NORMAL) {
 
     case Event(SyncProgress(progress), d: Data) =>
       Metrics.SyncProgress.withoutTags().update(100 * progress)
-      if (d.stats.isEmpty && progress == 1.0 && d.channels.nonEmpty) {
-        log.info("initial routing sync done: computing network statistics")
-        self ! TickComputeNetworkStats
+      if (progress == 1.0 && d.channels.nonEmpty) {
+        log.info("initial routing sync done")
       }
       stay()
 
     case Event(GetRoutingState, d: Data) =>
       log.info(s"getting valid announcements for ${sender()}")
       sender() ! RoutingState(d.channels.values, d.nodes.values)
-      stay()
-
-    case Event(GetNetworkStats, d: Data) =>
-      sender() ! GetNetworkStatsResponse(d.stats)
       stay()
 
     case Event(GetRoutingStateStreaming, d) =>
@@ -162,18 +153,6 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
         log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
         context.system.eventStream.publish(d.rebroadcast)
         stay() using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
-      }
-
-    case Event(TickComputeNetworkStats, d) =>
-      if (d.channels.nonEmpty) {
-        Metrics.Nodes.withoutTags().update(d.nodes.size)
-        Metrics.Channels.withTag(Tags.Announced, value = true).update(d.channels.size)
-        Metrics.Channels.withTag(Tags.Announced, value = false).update(d.privateChannels.size)
-        log.info("re-computing network statistics")
-        stay() using d.copy(stats = NetworkStats.computeStats(d.channels.values))
-      } else {
-        log.debug("cannot compute network statistics: no public channels available")
-        stay()
       }
 
     case Event(TickPruneStaleChannels, d) =>
@@ -320,7 +299,6 @@ object Router {
 
   case class RouterConf(channelExcludeDuration: FiniteDuration,
                         routerBroadcastInterval: FiniteDuration,
-                        networkStatsRefreshInterval: FiniteDuration,
                         requestNodeAnnouncements: Boolean,
                         encodingType: EncodingType,
                         channelRangeChunkSize: Int,
@@ -535,8 +513,6 @@ object Router {
 
   // @formatter:off
   case class SendChannelQuery(chainHash: ByteVector32, remoteNodeId: PublicKey, to: ActorRef, replacePrevious: Boolean, flags_opt: Option[QueryChannelRangeTlv]) extends RemoteTypes
-  case object GetNetworkStats
-  case class GetNetworkStatsResponse(stats: Option[NetworkStats])
   case object GetRoutingState
   case class RoutingState(channels: Iterable[PublicChannel], nodes: Iterable[NodeAnnouncement])
   case object GetRoutingStateStreaming extends RemoteTypes
@@ -591,7 +567,6 @@ object Router {
 
   case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: SortedMap[ShortChannelId, PublicChannel],
-                  stats: Option[NetworkStats],
                   stash: Stash,
                   rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, Seq[RemoteGossip]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
@@ -607,7 +582,6 @@ object Router {
 
   case object TickBroadcast
   case object TickPruneStaleChannels
-  case object TickComputeNetworkStats
   // @formatter:on
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {

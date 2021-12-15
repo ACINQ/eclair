@@ -21,7 +21,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Satoshi}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.ChannelType
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, UInt64}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64}
 import scodec.bits.ByteVector
 
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
@@ -39,7 +39,7 @@ sealed trait ChannelMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
 sealed trait AnnouncementMessage extends RoutingMessage // <- not in the spec
-sealed trait HasTimestamp extends LightningMessage { def timestamp: Long }
+sealed trait HasTimestamp extends LightningMessage { def timestamp: TimestampSecond }
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: ByteVector32 } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: ByteVector32 } // <- not in the spec
 sealed trait HasChainHash extends LightningMessage { def chainHash: ByteVector32 } // <- not in the spec
@@ -243,7 +243,7 @@ case class Tor3(tor3: String, port: Int) extends OnionAddress { override def soc
 
 case class NodeAnnouncement(signature: ByteVector64,
                             features: Features,
-                            timestamp: Long,
+                            timestamp: TimestampSecond,
                             nodeId: PublicKey,
                             rgbColor: Color,
                             alias: String,
@@ -253,7 +253,7 @@ case class NodeAnnouncement(signature: ByteVector64,
 case class ChannelUpdate(signature: ByteVector64,
                          chainHash: ByteVector32,
                          shortChannelId: ShortChannelId,
-                         timestamp: Long,
+                         timestamp: TimestampSecond,
                          channelFlags: ChannelUpdate.ChannelFlags,
                          cltvExpiryDelta: CltvExpiryDelta,
                          htlcMinimumMsat: MilliSatoshi,
@@ -318,7 +318,9 @@ object ReplyChannelRange {
   }
 }
 
-case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: Long, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
+case class GossipTimestampFilter(chainHash: ByteVector32, firstTimestamp: TimestampSecond, timestampRange: Long, tlvStream: TlvStream[GossipTimestampFilterTlv] = TlvStream.empty) extends RoutingMessage with HasChainHash
+
+case class OnionMessage(blindingKey: PublicKey, onionRoutingPacket: OnionRoutingPacket, tlvStream: TlvStream[OnionMessageTlv] = TlvStream.empty) extends LightningMessage
 
 // NB: blank lines to minimize merge conflicts
 

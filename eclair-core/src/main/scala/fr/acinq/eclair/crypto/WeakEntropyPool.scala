@@ -21,6 +21,7 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.Behaviors
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.eclair.TimestampMilli
 import fr.acinq.eclair.blockchain.NewBlock
 import fr.acinq.eclair.channel.ChannelSignatureReceived
 import fr.acinq.eclair.io.PeerConnected
@@ -47,7 +48,7 @@ object WeakEntropyPool {
   sealed trait Command
   private case object FlushEntropy extends Command
   private case class WrappedNewBlock(blockHash: ByteVector32) extends Command
-  private case class WrappedPaymentRelayed(paymentHash: ByteVector32, relayedAt: Long) extends Command
+  private case class WrappedPaymentRelayed(paymentHash: ByteVector32, relayedAt: TimestampMilli) extends Command
   private case class WrappedPeerConnected(nodeId: PublicKey) extends Command
   private case class WrappedChannelSignature(wtxid: ByteVector32) extends Command
   private case class WrappedNodeUpdated(sig: ByteVector64) extends Command
@@ -80,7 +81,7 @@ object WeakEntropyPool {
 
       case WrappedNewBlock(blockHash) => collecting(collector, collect(entropy_opt, blockHash ++ ByteVector.fromLong(System.currentTimeMillis())))
 
-      case WrappedPaymentRelayed(paymentHash, relayedAt) => collecting(collector, collect(entropy_opt, paymentHash ++ ByteVector.fromLong(relayedAt)))
+      case WrappedPaymentRelayed(paymentHash, relayedAt) => collecting(collector, collect(entropy_opt, paymentHash ++ ByteVector.fromLong(relayedAt.toLong)))
 
       case WrappedPeerConnected(nodeId) => collecting(collector, collect(entropy_opt, nodeId.value ++ ByteVector.fromLong(System.currentTimeMillis())))
 
