@@ -16,6 +16,7 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
 import akka.actor.{Actor, ActorContext, ActorRef, ExtendedActorSystem, FSM, OneForOneStrategy, PossiblyHarmful, Props, Status, SupervisorStrategy, Terminated, typed}
 import akka.event.Logging.MDC
 import akka.event.{BusLogging, DiagnosticLoggingAdapter}
@@ -25,16 +26,20 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.Features.Wumbo
 import fr.acinq.eclair.Logs.LogCategory
+import fr.acinq.eclair.NotificationsLogger.NotifyNodeOperator
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.blockchain.{OnChainAddressGenerator, OnChainChannelFunder}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.MessageRelay.Status
 import fr.acinq.eclair.io.Monitoring.Metrics
 import fr.acinq.eclair.io.PeerConnection.KillReason
+import fr.acinq.eclair.io.Switchboard.RelayMessage
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.wire.protocol
-import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, RoutingMessage, UnknownMessage, Warning}
+import fr.acinq.eclair.wire.protocol.{Error, HasChannelId, HasTemporaryChannelId, LightningMessage, NodeAddress, OnionMessage, RoutingMessage, UnknownMessage, Warning}
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
@@ -50,7 +55,7 @@ import scala.concurrent.ExecutionContext
  *
  * Created by PM on 26/08/2016.
  */
-class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
+class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: Peer.ChannelFactory, switchboard: ActorRef) extends FSMDiagnosticActorLogging[Peer.State, Peer.Data] {
 
   import Peer._
 
@@ -63,7 +68,6 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         channel ! INPUT_RESTORED(state)
         FinalChannelId(state.channelId) -> channel
       }.toMap
-
       goto(DISCONNECTED) using DisconnectedData(channels) // when we restart, we will attempt to reconnect right away, but then we'll wait
   }
 
@@ -75,11 +79,14 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
     case Event(connectionReady: PeerConnection.ConnectionReady, d: DisconnectedData) =>
       gotoConnected(connectionReady, d.channels.map { case (k: ChannelId, v) => (k, v) })
 
-    case Event(Terminated(actor), d: DisconnectedData) if d.channels.exists(_._2 == actor) =>
-      val h = d.channels.filter(_._2 == actor).keys
-      log.info(s"channel closed: channelId=${h.mkString("/")}")
-      val channels1 = d.channels -- h
+    case Event(Terminated(actor), d: DisconnectedData) if d.channels.values.toSet.contains(actor) =>
+      // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+      val channelIds = d.channels.filter(_._2 == actor).keys
+      log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
+      val channels1 = d.channels -- channelIds
       if (channels1.isEmpty) {
+        log.info("that was the last open channel")
+        context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
         // we have no existing channels, we can forget about this peer
         stopPeer()
       } else {
@@ -97,11 +104,11 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   when(CONNECTED) {
     dropStaleMessages {
-      case Event(_: Peer.Connect, _) =>
-        sender() ! PeerConnection.ConnectionResult.AlreadyConnected
+      case Event(c: Peer.Connect, d: ConnectedData) =>
+        c.replyTo ! PeerConnection.ConnectionResult.AlreadyConnected(d.peerConnection, self)
         stay()
 
-      case Event(Channel.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
+      case Event(Peer.OutgoingMessage(msg, peerConnection), d: ConnectedData) if peerConnection == d.peerConnection => // this is an outgoing message, but we need to make sure that this is for the current active connection
         logMessage(msg, "OUT")
         d.peerConnection forward msg
         stay()
@@ -114,6 +121,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
       case Event(err@Error(channelId, reason, _), d: ConnectedData) if channelId == CHANNELID_ZERO =>
         log.error(s"connection-level error, failing all channels! reason=${new String(reason.toArray)}")
+        context.system.eventStream.publish(NotifyNodeOperator(NotificationsLogger.Info, s"$remoteNodeId sent us a connection-level error, closing all channels (reason=${new String(reason.toArray)})"))
         d.channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         d.peerConnection ! PeerConnection.Kill(KillReason.AllChannelsFail)
         stay()
@@ -154,14 +162,16 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         d.channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
           case None =>
             val channelConfig = ChannelConfig.standard
-            val chosenChannelType: Either[InvalidChannelType, SupportedChannelType] = msg.channelType_opt match {
-              // remote doesn't specify a channel type: we use spec-defined defaults
-              case None => Right(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures))
-              // remote explicitly specifies a channel type: we negotiate
+            val chosenChannelType: Either[ChannelException, SupportedChannelType] = msg.channelType_opt match {
+              // remote explicitly specifies a channel type: we check whether we want to allow it
               case Some(remoteChannelType) => ChannelTypes.areCompatible(d.localFeatures, remoteChannelType) match {
                 case Some(acceptedChannelType) => Right(acceptedChannelType)
                 case None => Left(InvalidChannelType(msg.temporaryChannelId, ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures), remoteChannelType))
               }
+              // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
+              case None if Features.canUseFeature(d.localFeatures, d.remoteFeatures, Features.ChannelType) => Left(MissingChannelType(msg.temporaryChannelId))
+              // remote doesn't specify a channel type: we use spec-defined defaults
+              case None => Right(ChannelTypes.defaultFromFeatures(d.localFeatures, d.remoteFeatures))
             }
             chosenChannelType match {
               case Right(channelType) =>
@@ -173,7 +183,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
                 stay() using d.copy(channels = d.channels + (TemporaryChannelId(temporaryChannelId) -> channel))
               case Left(ex) =>
                 log.warning(s"ignoring open_channel: ${ex.getMessage}")
-                d.peerConnection ! Error(msg.temporaryChannelId, ex.getMessage)
+                val err = Error(msg.temporaryChannelId, ex.getMessage)
+                self ! Peer.OutgoingMessage(err, d.peerConnection)
                 stay()
             }
           case Some(_) =>
@@ -224,21 +235,41 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         }
 
       case Event(Terminated(actor), d: ConnectedData) if d.channels.values.toSet.contains(actor) =>
-        // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
+        // we have at most 2 ids: a TemporaryChannelId and a FinalChannelId
         val channelIds = d.channels.filter(_._2 == actor).keys
         log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
-        if (d.channels.values.toSet - actor == Set.empty) {
-          log.info(s"that was the last open channel, closing the connection")
+        val channels1 = d.channels -- channelIds
+        if (channels1.isEmpty) {
+          log.info("that was the last open channel, closing the connection")
           context.system.eventStream.publish(LastChannelClosed(self, remoteNodeId))
           d.peerConnection ! PeerConnection.Kill(KillReason.NoRemainingChannel)
         }
-        stay() using d.copy(channels = d.channels -- channelIds)
+        stay() using d.copy(channels = channels1)
 
       case Event(connectionReady: PeerConnection.ConnectionReady, d: ConnectedData) =>
         log.info(s"got new connection, killing current one and switching")
         d.peerConnection ! PeerConnection.Kill(KillReason.ConnectionReplaced)
         d.channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         gotoConnected(connectionReady, d.channels)
+
+      case Event(msg: OnionMessage, _: ConnectedData) =>
+        if (nodeParams.features.hasFeature(Features.OnionMessages)) {
+          OnionMessages.process(nodeParams.privateKey, msg) match {
+            case OnionMessages.DropMessage(reason) =>
+              log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
+            case OnionMessages.SendMessage(nextNodeId, message) =>
+              switchboard ! RelayMessage(remoteNodeId, nextNodeId, message, nodeParams.onionMessageRelayPolicy)
+            case received: OnionMessages.ReceiveMessage =>
+              log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
+              context.system.eventStream.publish(received)
+          }
+        }
+        stay()
+
+      case Event(RelayOnionMessage(msg, replyTo), d: ConnectedData) =>
+        d.peerConnection ! msg
+        replyTo ! MessageRelay.Success
+        stay()
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
         context.system.eventStream.publish(UnknownMessageReceived(self, remoteNodeId, unknownMsg, d.connectionInfo))
@@ -255,14 +286,23 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
       sender() ! Status.Failure(new RuntimeException("not connected"))
       stay()
 
-    case Event(GetPeerInfo, d) =>
-      sender() ! PeerInfo(remoteNodeId, stateName.toString, d match {
+    case Event(_: Peer.Disconnect, _) =>
+      sender() ! Status.Failure(new RuntimeException("not connected"))
+      stay()
+
+    case Event(r: GetPeerInfo, d) =>
+      val replyTo = r.replyTo.getOrElse(sender().toTyped)
+      replyTo ! PeerInfo(self, remoteNodeId, stateName, d match {
         case c: ConnectedData => Some(c.address)
         case _ => None
       }, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
       stay()
 
-    case Event(_: Channel.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
+    case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
+
+    case Event(RelayOnionMessage(_, replyTo), _) =>
+      replyTo ! MessageRelay.Disconnected
+      stay()
   }
 
   private val reconnectionTask = context.actorOf(ReconnectionTask.props(nodeParams, remoteNodeId), "reconnection-task")
@@ -337,8 +377,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
   def replyUnknownChannel(peerConnection: ActorRef, unknownChannelId: ByteVector32): Unit = {
     val msg = Warning(unknownChannelId, "unknown channel")
-    logMessage(msg, "OUT")
-    peerConnection ! msg
+    self ! Peer.OutgoingMessage(msg, peerConnection)
   }
 
   def stopPeer(): State = {
@@ -390,7 +429,7 @@ object Peer {
       context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, relayer, txPublisherFactory, origin_opt))
   }
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainAddressGenerator, channelFactory: ChannelFactory, switchboard: ActorRef): Props = Props(new Peer(nodeParams, remoteNodeId, wallet, channelFactory, switchboard))
 
   // @formatter:off
 
@@ -418,11 +457,11 @@ object Peer {
   case object CONNECTED extends State
 
   case class Init(storedChannels: Set[HasCommitments])
-  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort]) {
+  case class Connect(nodeId: PublicKey, address_opt: Option[HostAndPort], replyTo: ActorRef) {
     def uri: Option[NodeURI] = address_opt.map(NodeURI(nodeId, _))
   }
   object Connect {
-    def apply(uri: NodeURI): Connect = new Connect(uri.nodeId, Some(uri.address))
+    def apply(uri: NodeURI, replyTo: ActorRef): Connect = new Connect(uri.nodeId, Some(uri.address), replyTo)
   }
 
   case class Disconnect(nodeId: PublicKey) extends PossiblyHarmful
@@ -432,10 +471,24 @@ object Peer {
     require(pushMsat >= 0.msat, s"pushMsat must be positive")
     fundingTxFeeratePerKw_opt.foreach(feeratePerKw => require(feeratePerKw >= FeeratePerKw.MinimumFeeratePerKw, s"fee rate $feeratePerKw is below minimum ${FeeratePerKw.MinimumFeeratePerKw} rate/kw"))
   }
-  case object GetPeerInfo
-  case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
+
+  case class GetPeerInfo(replyTo: Option[typed.ActorRef[PeerInfoResponse]])
+  sealed trait PeerInfoResponse {
+    def nodeId: PublicKey
+  }
+  case class PeerInfo(peer: ActorRef, nodeId: PublicKey, state: State, address: Option[InetSocketAddress], channels: Int) extends PeerInfoResponse
+  case class PeerNotFound(nodeId: PublicKey) extends PeerInfoResponse { override def toString: String = s"peer $nodeId not found" }
 
   case class PeerRoutingMessage(peerConnection: ActorRef, remoteNodeId: PublicKey, message: RoutingMessage) extends RemoteTypes
+
+  /**
+   * Dedicated command for outgoing messages for logging purposes.
+   *
+   * To preserve sequentiality of messages in the event of disconnections and reconnections, we provide a reference to
+   * the connection that the message is valid for. If the actual connection was reset in the meantime, the [[Peer]]
+   * will simply drop the message.
+   */
+  case class OutgoingMessage(msg: LightningMessage, peerConnection: ActorRef)
 
   case class Transition(previousData: Peer.Data, nextData: Peer.Data)
 
@@ -445,6 +498,7 @@ object Peer {
    */
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
 
+  case class RelayOnionMessage(msg: OnionMessage, replyTo: typed.ActorRef[Status])
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {

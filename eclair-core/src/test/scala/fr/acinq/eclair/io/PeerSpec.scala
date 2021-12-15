@@ -17,20 +17,23 @@
 package fr.acinq.eclair.io
 
 import akka.actor.Status.Failure
-import akka.actor.{ActorContext, ActorRef, FSM}
+import akka.actor.typed.scaladsl.adapter.ClassicActorRefOps
+import akka.actor.{ActorContext, ActorRef, FSM, PoisonPill, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Block, Btc, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
-import fr.acinq.eclair.Features.{AnchorOutputs, AnchorOutputsZeroFeeHtlcTx, StaticRemoteKey, Wumbo}
+import fr.acinq.eclair.Features._
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.ChannelTypes.UnsupportedChannelType
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.states.ChannelStateTestsTags
 import fr.acinq.eclair.io.Peer._
+import fr.acinq.eclair.message.OnionMessages.{Recipient, buildMessage}
 import fr.acinq.eclair.wire.internal.channel.ChannelCodecsSpec
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
@@ -48,7 +51,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
   val fakeIPAddress: NodeAddress = NodeAddress.fromParts("1.2.3.4", 42000).get
 
-  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe)
+  case class FixtureParam(nodeParams: NodeParams, remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channel: TestProbe, switchboard: TestProbe)
 
   case class FakeChannelFactory(channel: TestProbe) extends ChannelFactory {
     override def spawn(context: ActorContext, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): ActorRef = {
@@ -62,9 +65,11 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val remoteNodeId = Bob.nodeParams.nodeId
     val peerConnection = TestProbe()
     val channel = TestProbe()
+    val switchboard = TestProbe()
 
     import com.softwaremill.quicklens._
     val aliceParams = TestConstants.Alice.nodeParams
+      .modify(_.features).setToIf(test.tags.contains(ChannelStateTestsTags.ChannelType))(Features(ChannelType -> Optional))
       .modify(_.features).setToIf(test.tags.contains("static_remotekey"))(Features(StaticRemoteKey -> Optional))
       .modify(_.features).setToIf(test.tags.contains("wumbo"))(Features(Wumbo -> Optional))
       .modify(_.features).setToIf(test.tags.contains("anchor_outputs"))(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional))
@@ -73,31 +78,33 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
     if (test.tags.contains("with_node_announcement")) {
-      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
-    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel)))
-    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, peer, peerConnection, channel)))
+    val peer: TestFSMRef[Peer.State, Peer.Data, Peer] = TestFSMRef(new Peer(aliceParams, remoteNodeId, wallet, FakeChannelFactory(channel), switchboard.ref))
+    withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, peer, peerConnection, channel, switchboard)))
   }
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features)): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features)): Unit = {
     // let's simulate a connection
-    val switchboard = TestProbe()
     switchboard.send(peer, Peer.Init(channels))
     val localInit = protocol.Init(peer.underlyingActor.nodeParams.features)
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
     val probe = TestProbe()
-    probe.send(peer, Peer.GetPeerInfo)
-    assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    val peerInfo = probe.expectMsgType[Peer.PeerInfo]
+    assert(peerInfo.peer === peer)
+    assert(peerInfo.nodeId === remoteNodeId)
+    assert(peerInfo.state === Peer.CONNECTED)
   }
 
   test("restore existing channels") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
-    probe.send(peer, Peer.GetPeerInfo)
-    probe.expectMsg(PeerInfo(remoteNodeId, "CONNECTED", Some(fakeIPAddress.socketAddress), 1))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    probe.send(peer, Peer.GetPeerInfo(None))
+    probe.expectMsg(PeerInfo(peer, remoteNodeId, Peer.CONNECTED, Some(fakeIPAddress.socketAddress), 1))
   }
 
   test("fail to connect if no address provided or found") { f =>
@@ -105,7 +112,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
-    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None))
+    probe.send(peer, Peer.Connect(remoteNodeId, address_opt = None, probe.ref))
     probe.expectMsg(PeerConnection.ConnectionResult.NoAddressFound)
   }
 
@@ -122,7 +129,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     probe.send(peer, Peer.Init(Set.empty))
     // we have auto-reconnect=false so we need to manually tell the peer to reconnect
-    probe.send(peer, Peer.Connect(remoteNodeId, Some(mockAddress)))
+    probe.send(peer, Peer.Connect(remoteNodeId, Some(mockAddress), probe.ref))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     awaitCond(mockServer.accept() != null, max = 30 seconds, interval = 1 second)
@@ -140,7 +147,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
 
     // we put the server address in the node db
-    val ann = NodeAnnouncement(randomBytes64(), Features.empty, 1, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    val ann = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(ann)
 
     val probe = TestProbe()
@@ -155,10 +162,10 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
-    probe.send(peer, Peer.Connect(remoteNodeId, None))
-    probe.expectMsg(PeerConnection.ConnectionResult.AlreadyConnected)
+    probe.send(peer, Peer.Connect(remoteNodeId, None, probe.ref))
+    probe.expectMsgType[PeerConnection.ConnectionResult.AlreadyConnected]
   }
 
   test("handle unknown messages") { f =>
@@ -166,7 +173,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[UnknownMessageReceived])
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
     peerConnection.send(peer, UnknownMessage(tag = TestConstants.pluginParams.messageTags.head, data = ByteVector.empty))
     listener.expectMsgType[UnknownMessageReceived]
@@ -178,13 +185,28 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
 
-    probe.send(peer, Peer.GetPeerInfo)
-    assert(probe.expectMsgType[Peer.PeerInfo].state == "CONNECTED")
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
+    assert(probe.expectMsgType[Peer.PeerInfo].state === Peer.CONNECTED)
 
     probe.send(peer, Peer.Disconnect(f.remoteNodeId))
     probe.expectMsg("disconnecting")
+  }
+
+  test("handle disconnect in state DISCONNECTED") { f =>
+    import f._
+
+    val probe = TestProbe()
+    switchboard.send(peer, Peer.Init(Set.empty))
+
+    awaitCond {
+      probe.send(peer, Peer.GetPeerInfo(None))
+      probe.expectMsgType[Peer.PeerInfo].state === Peer.DISCONNECTED
+    }
+
+    probe.send(peer, Peer.Disconnect(f.remoteNodeId))
+    assert(probe.expectMsgType[Status.Failure].cause.getMessage === "not connected")
   }
 
   test("handle new connection in state CONNECTED") { f =>
@@ -194,7 +216,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val peerConnection2 = TestProbe()
     val peerConnection3 = TestProbe()
 
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     channel.expectMsg(INPUT_RESTORED(ChannelCodecsSpec.normal))
     val (localInit, remoteInit) = {
       val inputReconnected = channel.expectMsgType[INPUT_RECONNECTED]
@@ -247,10 +269,10 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
 
     val probe = TestProbe()
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
     assert(peer.stateData.channels.isEmpty)
 
-    val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0)
+    val open = createOpenChannelMessage()
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)
     assert(channel.expectMsgType[INPUT_INIT_FUNDEE].temporaryChannelId === open.temporaryChannelId)
@@ -269,7 +291,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
@@ -283,7 +305,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val fundingAmountBig = Channel.MAX_FUNDING + 10000.sat
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection) // Bob doesn't support wumbo, Alice does
+    connect(remoteNodeId, peer, peerConnection, switchboard) // Bob doesn't support wumbo, Alice does
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
@@ -297,7 +319,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val probe = TestProbe()
     val fundingAmountBig = Btc(1).toSatoshi
     system.eventStream.subscribe(probe.ref, classOf[ChannelCreated])
-    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(Wumbo -> Optional))) // Bob supports wumbo
 
     assert(peer.stateData.channels.isEmpty)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, fundingAmountBig, 0 msat, None, None, None, None))
@@ -308,47 +330,53 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("don't spawn a channel if we don't support their channel type") { f =>
     import f._
 
-    connect(remoteNodeId, peer, peerConnection)
+    connect(remoteNodeId, peer, peerConnection, switchboard)
     assert(peer.stateData.channels.isEmpty)
 
     // They only support anchor outputs and we don't.
     {
-      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs))
-      val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputs)))
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs, expected channel_type=standard"))
     }
     // They only support anchor outputs with zero fee htlc txs and we don't.
     {
-      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx))
-      val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.AnchorOutputsZeroFeeHtlcTx)))
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=anchor_outputs_zero_fee_htlc_tx, expected channel_type=standard"))
     }
     // They want to use a channel type that doesn't exist in the spec.
     {
-      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(AnchorOutputs -> Optional))))
-      val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(AnchorOutputs -> Optional)))))
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x200000, expected channel_type=standard"))
     }
     // They want to use a channel type we don't support yet.
     {
-      val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map[Feature, FeatureSupport](StaticRemoteKey -> Mandatory), Set(UnknownFeature(22))))))
-      val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map[Feature, FeatureSupport](StaticRemoteKey -> Mandatory), Set(UnknownFeature(22)))))))
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"))
     }
+  }
+
+  test("don't spawn a channel is channel type is missing with the feature bit set", Tag(ChannelStateTestsTags.ChannelType)) { f =>
+    import f._
+
+    val remoteInit = protocol.Init(Features(ChannelType -> Optional))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = remoteInit)
+    assert(peer.stateData.channels.isEmpty)
+    val open = createOpenChannelMessage()
+    peerConnection.send(peer, open)
+    peerConnection.expectMsg(Error(open.temporaryChannelId, "option_channel_type was negotiated but channel_type is missing"))
   }
 
   test("use their channel type when spawning a channel", Tag("static_remotekey")) { f =>
     import f._
 
     // We both support option_static_remotekey but they want to open a standard channel.
-    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional)))
     assert(peer.stateData.channels.isEmpty)
-    val openTlv = TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard))
-    val open = protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
+    val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(ChannelTypes.Standard)))
     peerConnection.send(peer, open)
     awaitCond(peer.stateData.channels.nonEmpty)
     assert(channel.expectMsgType[INPUT_INIT_FUNDEE].channelType === ChannelTypes.Standard)
@@ -359,7 +387,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
     assert(peer.stateData.channels.isEmpty)
 
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 0 msat, None, None, None, None))
@@ -378,7 +406,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional)))
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
@@ -396,7 +424,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Optional, AnchorOutputs -> Optional, AnchorOutputsZeroFeeHtlcTx -> Optional)))
     assert(peer.stateData.channels.isEmpty)
 
     // We ensure the current network feerate is higher than the default anchor output feerate.
@@ -414,7 +442,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     import f._
 
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
+    connect(remoteNodeId, peer, peerConnection, switchboard, remoteInit = protocol.Init(Features(StaticRemoteKey -> Mandatory)))
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 24000 sat, 0 msat, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.channelType === ChannelTypes.StaticRemoteKey)
@@ -432,8 +460,8 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
         channel.ref
       }
     }
-    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory))
-    connect(remoteNodeId, peer, peerConnection)
+    val peer = TestFSMRef(new Peer(TestConstants.Alice.nodeParams, remoteNodeId, new DummyOnChainWallet(), channelFactory, switchboard.ref))
+    connect(remoteNodeId, peer, peerConnection, switchboard)
     probe.send(peer, Peer.OpenChannel(remoteNodeId, 15000 sat, 100 msat, None, None, None, None))
     val init = channel.expectMsgType[INPUT_INIT_FUNDER]
     assert(init.fundingAmount === 15000.sat)
@@ -443,19 +471,54 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
   test("handle final channelId assigned in state DISCONNECTED") { f =>
     import f._
     val probe = TestProbe()
-    connect(remoteNodeId, peer, peerConnection, channels = Set(ChannelCodecsSpec.normal))
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
     peer ! ConnectionDown(peerConnection.ref)
-    probe.send(peer, Peer.GetPeerInfo)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo1 = probe.expectMsgType[Peer.PeerInfo]
-    assert(peerInfo1.state === "DISCONNECTED")
+    assert(peerInfo1.state === Peer.DISCONNECTED)
     assert(peerInfo1.channels === 1)
     peer ! ChannelIdAssigned(probe.ref, remoteNodeId, randomBytes32(), randomBytes32())
-    probe.send(peer, Peer.GetPeerInfo)
+    probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
     val peerInfo2 = probe.expectMsgType[Peer.PeerInfo]
-    assert(peerInfo2.state === "DISCONNECTED")
+    assert(peerInfo2.state === Peer.DISCONNECTED)
     assert(peerInfo2.channels === 2)
   }
 
+  test("notify when last channel is closed") { f =>
+    import f._
+    val probe = TestProbe()
+    system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    probe.send(channel.ref, PoisonPill)
+    probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
+  }
+
+  test("notify when last channel is closed in state DISCONNECTED") { f =>
+    import f._
+    val probe = TestProbe()
+    system.eventStream.subscribe(probe.ref, classOf[LastChannelClosed])
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    peer ! ConnectionDown(peerConnection.ref)
+    probe.send(channel.ref, PoisonPill)
+    probe.expectMsg(LastChannelClosed(peer, remoteNodeId))
+  }
+
+  test("reply to relay request") { f =>
+    import f._
+    connect(remoteNodeId, peer, peerConnection, switchboard, channels = Set(ChannelCodecsSpec.normal))
+    val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    val probe = TestProbe()
+    peer ! RelayOnionMessage(msg, probe.ref.toTyped)
+    probe.expectMsg(MessageRelay.Success)
+  }
+
+  test("reply to relay request disconnected") { f =>
+    import f._
+    val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    val probe = TestProbe()
+    peer ! RelayOnionMessage(msg, probe.ref.toTyped)
+    probe.expectMsg(MessageRelay.Disconnected)
+  }
 }
 
 object PeerSpec {
@@ -466,6 +529,10 @@ object PeerSpec {
     mockServer.bind(new InetSocketAddress("127.0.0.1", 0))
     mockServer.configureBlocking(false)
     (mockServer, mockServer.getLocalAddress.asInstanceOf[InetSocketAddress])
+  }
+
+  def createOpenChannelMessage(openTlv: TlvStream[OpenChannelTlv] = TlvStream.empty): protocol.OpenChannel = {
+    protocol.OpenChannel(Block.RegtestGenesisBlock.hash, randomBytes32(), 25000 sat, 0 msat, 483 sat, UInt64(100), 1000 sat, 1 msat, TestConstants.feeratePerKw, CltvExpiryDelta(144), 10, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, randomKey().publicKey, 0, openTlv)
   }
 
 }

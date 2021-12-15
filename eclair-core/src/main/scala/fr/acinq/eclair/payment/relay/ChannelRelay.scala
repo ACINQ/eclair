@@ -28,7 +28,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.db.PendingCommandsDb
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.relay.Relayer.OutgoingChannel
-import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPacket}
+import fr.acinq.eclair.payment.{ChannelPaymentRelayed, IncomingPaymentPacket}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Logs, NodeParams, ShortChannelId, channel, nodeFee}
@@ -48,7 +48,7 @@ object ChannelRelay {
   case class RelaySuccess(shortChannelId: ShortChannelId, cmdAdd: CMD_ADD_HTLC) extends RelayResult
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, register: ActorRef, channels: Map[ShortChannelId, Relayer.OutgoingChannel], relayId: UUID, r: IncomingPacket.ChannelRelayPacket): Behavior[Command] =
+  def apply(nodeParams: NodeParams, register: ActorRef, channels: Map[ShortChannelId, Relayer.OutgoingChannel], relayId: UUID, r: IncomingPaymentPacket.ChannelRelayPacket): Behavior[Command] =
     Behaviors.setup { context =>
       Behaviors.withMdc(Logs.mdc(
         category_opt = Some(Logs.LogCategory.PAYMENT),
@@ -94,7 +94,7 @@ object ChannelRelay {
 class ChannelRelay private(nodeParams: NodeParams,
                            register: ActorRef,
                            channels: Map[ShortChannelId, Relayer.OutgoingChannel],
-                           r: IncomingPacket.ChannelRelayPacket,
+                           r: IncomingPaymentPacket.ChannelRelayPacket,
                            context: ActorContext[ChannelRelay.Command]) {
 
   import ChannelRelay._

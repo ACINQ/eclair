@@ -19,7 +19,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ShortChannelId.coordinates
-import fr.acinq.eclair.TxCoordinates
+import fr.acinq.eclair.{TimestampSecond, TxCoordinates}
 import fr.acinq.eclair.blockchain.OnChainWallet
 import fr.acinq.eclair.blockchain.OnChainWallet.{MakeFundingTxResponse, OnChainBalance}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{GetTxWithMetaResponse, UtxoStatus, ValidateResult}
@@ -62,7 +62,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
       tx_opt <- getTransaction(txid).map(Some(_)).recover { case _ => None }
       blockchainInfo <- rpcClient.invoke("getblockchaininfo")
       JInt(timestamp) = blockchainInfo \ "mediantime"
-    } yield GetTxWithMetaResponse(txid, tx_opt, timestamp.toLong)
+    } yield GetTxWithMetaResponse(txid, tx_opt, TimestampSecond(timestamp.toLong))
 
   /** Get the number of confirmations of a given transaction. */
   def getTxConfirmations(txid: ByteVector32)(implicit ec: ExecutionContext): Future[Option[Int]] =

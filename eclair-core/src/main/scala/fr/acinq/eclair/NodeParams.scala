@@ -22,9 +22,11 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Crypto, Satoshi}
 import fr.acinq.eclair.Setup.Seeds
 import fr.acinq.eclair.blockchain.fee._
 import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
+import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
@@ -76,6 +78,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       relayParams: RelayParams,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
+                      unhandledExceptionStrategy: UnhandledExceptionStrategy,
                       db: Databases,
                       revocationTimeout: FiniteDuration,
                       autoReconnect: Boolean,
@@ -94,7 +97,8 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       maxPaymentAttempts: Int,
                       enableTrampolinePayment: Boolean,
                       balanceCheckInterval: FiniteDuration,
-                      blockchainWatchdogSources: Seq[String]) {
+                      blockchainWatchdogSources: Seq[String],
+                      onionMessageRelayPolicy: RelayPolicy) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -263,6 +267,7 @@ object NodeParams extends Logging {
       require(features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)), s"${Features.VariableLengthOnion.rfcName} must be enabled and mandatory")
       require(features.hasFeature(Features.PaymentSecret, Some(FeatureSupport.Mandatory)), s"${Features.PaymentSecret.rfcName} must be enabled and mandatory")
       require(!features.hasFeature(Features.InitialRoutingSync), s"${Features.InitialRoutingSync.rfcName} is not supported anymore, use ${Features.ChannelRangeQueries.rfcName} instead")
+      require(features.hasFeature(Features.ChannelType), s"${Features.ChannelType.rfcName} must be enabled")
     }
 
     val pluginMessageParams = pluginParams.collect { case p: CustomFeaturePlugin => p }
@@ -357,9 +362,20 @@ object NodeParams extends Logging {
       PathFindingExperimentConf(experiments.toMap)
     }
 
+    val unhandledExceptionStrategy = config.getString("unhandled-exception-strategy") match {
+      case "local-close" => UnhandledExceptionStrategy.LocalClose
+      case "stop" => UnhandledExceptionStrategy.Stop
+    }
+
     val routerSyncEncodingType = config.getString("router.sync.encoding-type") match {
       case "uncompressed" => EncodingType.UNCOMPRESSED
       case "zlib" => EncodingType.COMPRESSED_ZLIB
+    }
+
+    val onionMessageRelayPolicy: RelayPolicy = config.getString("onion-messages.relay-policy") match {
+      case "no-relay" => NoRelay
+      case "channels-only" => RelayChannelsOnly
+      case "relay-all" => RelayAll
     }
 
     NodeParams(
@@ -423,6 +439,7 @@ object NodeParams extends Logging {
       ),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
+      unhandledExceptionStrategy = unhandledExceptionStrategy,
       db = database,
       revocationTimeout = FiniteDuration(config.getDuration("revocation-timeout").getSeconds, TimeUnit.SECONDS),
       autoReconnect = config.getBoolean("auto-reconnect"),
@@ -446,7 +463,6 @@ object NodeParams extends Logging {
       routerConf = RouterConf(
         channelExcludeDuration = FiniteDuration(config.getDuration("router.channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
         routerBroadcastInterval = FiniteDuration(config.getDuration("router.broadcast-interval").getSeconds, TimeUnit.SECONDS),
-        networkStatsRefreshInterval = FiniteDuration(config.getDuration("router.network-stats-interval").getSeconds, TimeUnit.SECONDS),
         requestNodeAnnouncements = config.getBoolean("router.sync.request-node-announcements"),
         encodingType = routerSyncEncodingType,
         channelRangeChunkSize = config.getInt("router.sync.channel-range-chunk-size"),
@@ -457,7 +473,8 @@ object NodeParams extends Logging {
       maxPaymentAttempts = config.getInt("max-payment-attempts"),
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
       balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
-      blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq
+      blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq,
+      onionMessageRelayPolicy = onionMessageRelayPolicy
     )
   }
 }

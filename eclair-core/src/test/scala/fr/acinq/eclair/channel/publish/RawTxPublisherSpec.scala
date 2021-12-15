@@ -76,8 +76,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val f = createFixture()
     import f._
 
-    val address = getNewAddress(probe)
-    val priv = dumpPrivateKey(address)
+    val (priv, address) = createExternalAddress()
     val parentTx = sendToAddress(address, 125_000 sat, probe)
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, sequence = 5, lockTime = 0)
     val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-time-locks", 0 sat, None)
@@ -106,8 +105,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val f = createFixture()
     import f._
 
-    val address = getNewAddress(probe)
-    val priv = dumpPrivateKey(address)
+    val (priv, address) = createExternalAddress()
     val ancestorTx = sendToAddress(address, 125_000 sat, probe)
     val parentTx = createSpendP2WPKH(ancestorTx, priv, priv.publicKey, 2_500 sat, 0, 0)
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_000 sat, 0, 0)
@@ -131,8 +129,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val f = createFixture()
     import f._
 
-    val address = getNewAddress(probe)
-    val priv = dumpPrivateKey(address)
+    val (priv, address) = createExternalAddress()
     val parentTx = sendToAddress(address, 125_000 sat, probe)
     val tx1 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, 0, 0)
     val cmd = PublishRawTx(tx1, tx1.txIn.head.outPoint, "tx-time-locks", 10 sat, None)

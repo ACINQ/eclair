@@ -156,13 +156,16 @@ object Helpers {
    */
   def validateParamsFunder(nodeParams: NodeParams, channelType: SupportedChannelType, localFeatures: Features, remoteFeatures: Features, open: OpenChannel, accept: AcceptChannel): Either[ChannelException, (ChannelFeatures, Option[ByteVector])] = {
     accept.channelType_opt match {
+      case Some(theirChannelType) if accept.channelType_opt != open.channelType_opt =>
+        // if channel_type is set, and channel_type was set in open_channel, and they are not equal types: MUST reject the channel.
+        return Left(InvalidChannelType(open.temporaryChannelId, channelType, theirChannelType))
+      case None if Features.canUseFeature(localFeatures, remoteFeatures, Features.ChannelType) =>
+        // Bolt 2: if `option_channel_type` is negotiated: MUST set `channel_type`
+        return Left(MissingChannelType(open.temporaryChannelId))
       case None if channelType != ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures) =>
         // If we have overridden the default channel type, but they didn't support explicit channel type negotiation,
         // we need to abort because they expect a different channel type than what we offered.
         return Left(InvalidChannelType(open.temporaryChannelId, channelType, ChannelTypes.defaultFromFeatures(localFeatures, remoteFeatures)))
-      case Some(theirChannelType) if accept.channelType_opt != open.channelType_opt =>
-        // if channel_type is set, and channel_type was set in open_channel, and they are not equal types: MUST reject the channel.
-        return Left(InvalidChannelType(open.temporaryChannelId, channelType, theirChannelType))
       case _ => // we agree on channel type
     }
 
@@ -204,8 +207,8 @@ object Helpers {
    *
    * @return the delay until the next update
    */
-  def nextChannelUpdateRefresh(currentUpdateTimestamp: Long)(implicit log: DiagnosticLoggingAdapter): FiniteDuration = {
-    val age = System.currentTimeMillis.milliseconds - currentUpdateTimestamp.seconds
+  def nextChannelUpdateRefresh(currentUpdateTimestamp: TimestampSecond)(implicit log: DiagnosticLoggingAdapter): FiniteDuration = {
+    val age = TimestampSecond.now() - currentUpdateTimestamp
     val delay = 0.days.max(REFRESH_CHANNEL_UPDATE_INTERVAL - age)
     Logs.withMdc(log)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
       log.debug("current channel_update was created {} days ago, will refresh it in {} days", age.toDays, delay.toDays)
@@ -313,56 +316,108 @@ object Helpers {
 
   }
 
-  /**
-   * Tells whether or not their expected next remote commitment number matches with our data
-   *
-   * @return
-   *         - true if parties are in sync or remote is behind
-   *         - false if we are behind
-   */
-  def checkLocalCommit(d: HasCommitments, nextRemoteRevocationNumber: Long): Boolean = {
-    if (d.commitments.localCommit.index == nextRemoteRevocationNumber) {
-      // they just sent a new commit_sig, we have received it but they didn't receive our revocation
-      true
-    } else if (d.commitments.localCommit.index == nextRemoteRevocationNumber + 1) {
-      // we are in sync
-      true
-    } else if (d.commitments.localCommit.index > nextRemoteRevocationNumber + 1) {
-      // remote is behind: we return true because things are fine on our side
-      true
-    } else {
-      // we are behind
-      false
-    }
-  }
+  object Syncing {
 
-  /**
-   * Tells whether or not their expected next local commitment number matches with our data
-   *
-   * @return
-   *         - true if parties are in sync or remote is behind
-   *         - false if we are behind
-   */
-  def checkRemoteCommit(d: HasCommitments, nextLocalCommitmentNumber: Long): Boolean = {
-    d.commitments.remoteNextCommitInfo match {
-      case Left(waitingForRevocation) if nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
-        // we just sent a new commit_sig but they didn't receive it
-        true
-      case Left(waitingForRevocation) if nextLocalCommitmentNumber == (waitingForRevocation.nextRemoteCommit.index + 1) =>
-        // we just sent a new commit_sig, they have received it but we haven't received their revocation
-        true
-      case Left(waitingForRevocation) if nextLocalCommitmentNumber < waitingForRevocation.nextRemoteCommit.index =>
-        // they are behind
-        true
-      case Right(_) if nextLocalCommitmentNumber == (d.commitments.remoteCommit.index + 1) =>
-        // they have acknowledged the last commit_sig we sent
-        true
-      case Right(_) if nextLocalCommitmentNumber < (d.commitments.remoteCommit.index + 1) =>
-        // they are behind
-        true
-      case _ =>
-        // we are behind
-        false
+    // @formatter:off
+    sealed trait SyncResult
+    object SyncResult {
+      case class Success(retransmit: Seq[LightningMessage]) extends SyncResult
+      sealed trait Failure extends SyncResult
+      case class LocalLateProven(ourLocalCommitmentNumber: Long, theirRemoteCommitmentNumber: Long) extends Failure
+      case class LocalLateUnproven(ourRemoteCommitmentNumber: Long, theirLocalCommitmentNumber: Long) extends Failure
+      case class RemoteLying(ourLocalCommitmentNumber: Long, theirRemoteCommitmentNumber: Long, invalidPerCommitmentSecret: PrivateKey) extends Failure
+      case object RemoteLate extends Failure
+    }
+    // @formatter:on
+
+    /**
+     * Check whether we are in sync with our peer.
+     */
+    def checkSync(keyManager: ChannelKeyManager, d: HasCommitments, remoteChannelReestablish: ChannelReestablish): SyncResult = {
+
+      // This is done in two steps:
+      // - step 1: we check our local commitment
+      // - step 2: we check the remote commitment
+      // step 2 depends on step 1 because we need to preserve ordering between commit_sig and revocation
+
+      // step 2: we check the remote commitment
+      def checkRemoteCommit(d: HasCommitments, remoteChannelReestablish: ChannelReestablish, retransmitRevocation_opt: Option[RevokeAndAck]): SyncResult = {
+        d.commitments.remoteNextCommitInfo match {
+          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == waitingForRevocation.nextRemoteCommit.index =>
+            // we just sent a new commit_sig but they didn't receive it
+            // we resend the same updates and the same sig, and preserve the same ordering
+            val signedUpdates = d.commitments.localChanges.signed
+            val commitSig = waitingForRevocation.sent
+            retransmitRevocation_opt match {
+              case None =>
+                SyncResult.Success(retransmit = signedUpdates :+ commitSig)
+              case Some(revocation) if d.commitments.localCommit.index > waitingForRevocation.sentAfterLocalCommitIndex =>
+                SyncResult.Success(retransmit = signedUpdates :+ commitSig :+ revocation)
+              case Some(revocation) =>
+                SyncResult.Success(retransmit = revocation +: signedUpdates :+ commitSig)
+            }
+          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber == (waitingForRevocation.nextRemoteCommit.index + 1) =>
+            // we just sent a new commit_sig, they have received it but we haven't received their revocation
+            SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
+          case Left(waitingForRevocation) if remoteChannelReestablish.nextLocalCommitmentNumber < waitingForRevocation.nextRemoteCommit.index =>
+            // they are behind
+            SyncResult.RemoteLate
+          case Left(waitingForRevocation) =>
+            // we are behind
+            SyncResult.LocalLateUnproven(
+              ourRemoteCommitmentNumber = waitingForRevocation.nextRemoteCommit.index,
+              theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
+            )
+          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber == (d.commitments.remoteCommit.index + 1) =>
+            // they have acknowledged the last commit_sig we sent
+            SyncResult.Success(retransmit = retransmitRevocation_opt.toSeq)
+          case Right(_) if remoteChannelReestablish.nextLocalCommitmentNumber < (d.commitments.remoteCommit.index + 1) =>
+            // they are behind
+            SyncResult.RemoteLate
+          case Right(_) =>
+            // we are behind
+            SyncResult.LocalLateUnproven(
+              ourRemoteCommitmentNumber = d.commitments.remoteCommit.index,
+              theirLocalCommitmentNumber = remoteChannelReestablish.nextLocalCommitmentNumber - 1
+            )
+        }
+      }
+
+      // step 1: we check our local commitment
+      if (d.commitments.localCommit.index == remoteChannelReestablish.nextRemoteRevocationNumber) {
+        // our local commitment is in sync, let's check the remote commitment
+        checkRemoteCommit(d, remoteChannelReestablish, retransmitRevocation_opt = None)
+      } else if (d.commitments.localCommit.index == remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
+        // they just sent a new commit_sig, we have received it but they didn't receive our revocation
+        val channelKeyPath = keyManager.keyPath(d.commitments.localParams, d.commitments.channelConfig)
+        val localPerCommitmentSecret = keyManager.commitmentSecret(channelKeyPath, d.commitments.localCommit.index - 1)
+        val localNextPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, d.commitments.localCommit.index + 1)
+        val revocation = RevokeAndAck(
+          channelId = d.channelId,
+          perCommitmentSecret = localPerCommitmentSecret,
+          nextPerCommitmentPoint = localNextPerCommitmentPoint
+        )
+        checkRemoteCommit(d, remoteChannelReestablish, retransmitRevocation_opt = Some(revocation))
+      } else if (d.commitments.localCommit.index > remoteChannelReestablish.nextRemoteRevocationNumber + 1) {
+        SyncResult.RemoteLate
+      } else {
+        // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
+        // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
+        val channelKeyPath = keyManager.keyPath(d.commitments.localParams, d.commitments.channelConfig)
+        if (keyManager.commitmentSecret(channelKeyPath, remoteChannelReestablish.nextRemoteRevocationNumber - 1) == remoteChannelReestablish.yourLastPerCommitmentSecret) {
+          SyncResult.LocalLateProven(
+            ourLocalCommitmentNumber = d.commitments.localCommit.index,
+            theirRemoteCommitmentNumber = remoteChannelReestablish.nextRemoteRevocationNumber
+          )
+        } else {
+          // they lied! the last per_commitment_secret they claimed to have received from us is invalid
+          SyncResult.RemoteLying(
+            ourLocalCommitmentNumber = d.commitments.localCommit.index,
+            theirRemoteCommitmentNumber = remoteChannelReestablish.nextRemoteRevocationNumber,
+            invalidPerCommitmentSecret = remoteChannelReestablish.yourLastPerCommitmentSecret
+          )
+        }
+      }
     }
   }
 
@@ -549,18 +604,18 @@ object Helpers {
     }
 
     /** Wraps transaction generation in a Try and filters failures to avoid one transaction negatively impacting a whole commitment. */
-    private def generateTx[T <: TransactionWithInputInfo](desc: String)(attempt: => Either[TxGenerationSkipped, T])(implicit log: LoggingAdapter): Option[T] = {
+    private def withTxGenerationLog[T <: TransactionWithInputInfo](desc: String, logSuccess: Boolean = true, logSkipped: Boolean = true, logFailure: Boolean = true)(generateTx: => Either[TxGenerationSkipped, T])(implicit log: LoggingAdapter): Option[T] = {
       Try {
-        attempt
+        generateTx
       } match {
         case Success(Right(txinfo)) =>
-          log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount).sum} tx=${txinfo.tx}")
+          if (logSuccess) log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount).sum} tx=${txinfo.tx}")
           Some(txinfo)
         case Success(Left(skipped)) =>
-          log.info(s"tx generation skipped: desc=$desc reason: ${skipped.toString}")
+          if (logSkipped) log.info(s"tx generation skipped: desc=$desc reason: ${skipped.toString}")
           None
         case Failure(t) =>
-          log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
+          if (logFailure) log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
           None
       }
     }
@@ -589,7 +644,7 @@ object Helpers {
       val feeratePerKwDelayed = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
       // first we will claim our main output as soon as the delay is over
-      val mainDelayedTx = generateTx("local-main-delayed") {
+      val mainDelayedTx = withTxGenerationLog("local-main-delayed") {
         Transactions.makeClaimLocalDelayedOutputTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
           val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
           Transactions.addSigs(claimDelayed, sig)
@@ -603,7 +658,7 @@ object Helpers {
         case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _), remoteSig) =>
           if (preimages.contains(paymentHash)) {
             // incoming htlc for which we have the preimage: we can spend it immediately
-            txInfo.input.outPoint -> generateTx("htlc-success") {
+            txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
               val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
               Right(Transactions.addSigs(txInfo, localSig, remoteSig, preimages(paymentHash), commitmentFormat))
             }
@@ -614,17 +669,17 @@ object Helpers {
           }
         case HtlcTxAndRemoteSig(txInfo: HtlcTimeoutTx, remoteSig) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-          txInfo.input.outPoint -> generateTx("htlc-timeout") {
+          txInfo.input.outPoint -> withTxGenerationLog("htlc-timeout") {
             val localSig = keyManager.sign(txInfo, keyManager.htlcPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
             Right(Transactions.addSigs(txInfo, localSig, remoteSig, commitmentFormat))
           }
       }.toMap
 
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
-        generateTx("local-anchor") {
+        withTxGenerationLog("local-anchor") {
           Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey)
         },
-        generateTx("remote-anchor") {
+        withTxGenerationLog("remote-anchor") {
           Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
         }
       ).flatten
@@ -652,7 +707,7 @@ object Helpers {
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, commitments.localCommit.index.toInt)
         val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
         val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(channelKeyPath).publicKey, localPerCommitmentPoint)
-        val htlcDelayedTx = generateTx("htlc-delayed") {
+        val htlcDelayedTx = withTxGenerationLog("htlc-delayed") {
           Transactions.makeHtlcDelayedTx(tx, localParams.dustLimit, localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed).map(claimDelayed => {
             val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(channelKeyPath), localPerCommitmentPoint, TxOwner.Local, commitmentFormat)
             Transactions.addSigs(claimDelayed, sig)
@@ -696,12 +751,13 @@ object Helpers {
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       val htlcTxs: Map[OutPoint, Option[ClaimHtlcTx]] = remoteCommit.spec.htlcs.collect {
         case OutgoingHtlc(add: UpdateAddHtlc) =>
-          generateTx("claim-htlc-success") {
+          // NB: we first generate the tx skeleton and finalize it below if we have the preimage, so we set logSuccess to false to avoid logging twice
+          withTxGenerationLog("claim-htlc-success", logSuccess = false) {
             Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
           }.map(claimHtlcTx => {
             if (preimages.contains(add.paymentHash)) {
               // incoming htlc for which we have the preimage: we can spend it immediately
-              claimHtlcTx.input.outPoint -> generateTx("claim-htlc-success") {
+              claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-success") {
                 val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
                 Right(Transactions.addSigs(claimHtlcTx, sig, preimages(add.paymentHash)))
               }
@@ -713,10 +769,11 @@ object Helpers {
           })
         case IncomingHtlc(add: UpdateAddHtlc) =>
           // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
-          generateTx("claim-htlc-timeout") {
+          // NB: we first generate the tx skeleton and finalize it below, so we set logSuccess to false to avoid logging twice
+          withTxGenerationLog("claim-htlc-timeout", logSuccess = false) {
             Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, outputs, commitments.localParams.dustLimit, localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, commitments.localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc, commitments.commitmentFormat)
           }.map(claimHtlcTx => {
-            claimHtlcTx.input.outPoint -> generateTx("claim-htlc-timeout") {
+            claimHtlcTx.input.outPoint -> withTxGenerationLog("claim-htlc-timeout") {
               val sig = keyManager.sign(claimHtlcTx, keyManager.htlcPoint(channelKeyPath), remoteCommit.remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
               Right(Transactions.addSigs(claimHtlcTx, sig))
             }
@@ -724,10 +781,10 @@ object Helpers {
       }.toSeq.flatten.toMap
 
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
-        generateTx("local-anchor") {
+        withTxGenerationLog("local-anchor") {
           Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey)
         },
-        generateTx("remote-anchor") {
+        withTxGenerationLog("remote-anchor") {
           Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
         }
       ).flatten
@@ -765,13 +822,13 @@ object Helpers {
       val feeratePerKwMain = feeEstimator.getFeeratePerKw(feeTargets.claimMainBlockTarget)
 
       val mainTx = commitments.commitmentFormat match {
-        case DefaultCommitmentFormat => generateTx("remote-main") {
+        case DefaultCommitmentFormat => withTxGenerationLog("remote-main") {
           Transactions.makeClaimP2WPKHOutputTx(tx, commitments.localParams.dustLimit, localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitments.commitmentFormat)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
         }
-        case _: AnchorOutputsCommitmentFormat => generateTx("remote-main-delayed") {
+        case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
           Transactions.makeClaimRemoteDelayedOutputTx(tx, commitments.localParams.dustLimit, localPaymentPoint, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
             val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitments.commitmentFormat)
             Transactions.addSigs(claimMain, sig)
@@ -828,13 +885,13 @@ object Helpers {
               log.info(s"channel uses option_static_remotekey to pay directly to our wallet, there is nothing to do")
               None
             case ct => ct.commitmentFormat match {
-              case DefaultCommitmentFormat => generateTx("claim-p2wpkh-output") {
+              case DefaultCommitmentFormat => withTxGenerationLog("claim-p2wpkh-output") {
                 Transactions.makeClaimP2WPKHOutputTx(commitTx, localParams.dustLimit, localPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
                   val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), remotePerCommitmentPoint, TxOwner.Local, commitmentFormat)
                   Transactions.addSigs(claimMain, localPaymentPubkey, sig)
                 })
               }
-              case _: AnchorOutputsCommitmentFormat => generateTx("remote-main-delayed") {
+              case _: AnchorOutputsCommitmentFormat => withTxGenerationLog("remote-main-delayed") {
                 Transactions.makeClaimRemoteDelayedOutputTx(commitTx, localParams.dustLimit, localPaymentPoint, localParams.defaultFinalScriptPubKey, feeratePerKwMain).map(claimMain => {
                   val sig = keyManager.sign(claimMain, keyManager.paymentPoint(channelKeyPath), TxOwner.Local, commitmentFormat)
                   Transactions.addSigs(claimMain, sig)
@@ -844,7 +901,7 @@ object Helpers {
           }
 
           // then we punish them by stealing their main output
-          val mainPenaltyTx = generateTx("main-penalty") {
+          val mainPenaltyTx = withTxGenerationLog("main-penalty") {
             Transactions.makeMainPenaltyTx(commitTx, localParams.dustLimit, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty).map(txinfo => {
               val sig = keyManager.sign(txinfo, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
               Transactions.addSigs(txinfo, sig)
@@ -864,7 +921,7 @@ object Helpers {
           // and finally we steal the htlc outputs
           val htlcPenaltyTxs = commitTx.txOut.zipWithIndex.collect { case (txOut, outputIndex) if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
             val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
-            generateTx("htlc-penalty") {
+            withTxGenerationLog("htlc-penalty") {
               Transactions.makeHtlcPenaltyTx(commitTx, outputIndex, htlcRedeemScript, localParams.dustLimit, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).map(htlcPenalty => {
                 val sig = keyManager.sign(htlcPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
                 Transactions.addSigs(htlcPenalty, sig, remoteRevocationPubkey)
@@ -921,7 +978,7 @@ object Helpers {
             val feeratePerKwPenalty = feeEstimator.getFeeratePerKw(target = 1)
 
             val penaltyTxs = Transactions.makeClaimHtlcDelayedOutputPenaltyTxs(htlcTx, localParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty).flatMap(claimHtlcDelayedOutputPenaltyTx => {
-              generateTx("htlc-delayed-penalty") {
+              withTxGenerationLog("htlc-delayed-penalty") {
                 claimHtlcDelayedOutputPenaltyTx.map(htlcDelayedPenalty => {
                   val sig = keyManager.sign(htlcDelayedPenalty, keyManager.revocationPoint(channelKeyPath), remotePerCommitmentSecret, TxOwner.Local, commitmentFormat)
                   val signedTx = Transactions.addSigs(htlcDelayedPenalty, sig)
@@ -1027,12 +1084,13 @@ object Helpers {
 
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
-     * more htlcs have timed out and need to be failed in an upstream channel.
+     * more htlcs have timed out and need to be failed in an upstream channel. Trimmed htlcs can be failed as soon as
+     * the commitment tx has been confirmed.
      *
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def timedOutHtlcs(commitmentFormat: CommitmentFormat, localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def trimmedOrTimedOutHtlcs(commitmentFormat: CommitmentFormat, localCommit: LocalCommit, localCommitPublished: LocalCommitPublished, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec, commitmentFormat).map(_.add)
       if (tx.txid == localCommit.commitTxAndRemoteSig.commitTx.tx.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
@@ -1068,12 +1126,13 @@ object Helpers {
 
     /**
      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
-     * more htlcs have timed out and need to be failed in an upstream channel.
+     * more htlcs have timed out and need to be failed in an upstream channel. Trimmed htlcs can be failed as soon as
+     * the commitment tx has been confirmed.
      *
      * @param tx a tx that has reached mindepth
      * @return a set of htlcs that need to be failed upstream
      */
-    def timedOutHtlcs(commitmentFormat: CommitmentFormat, remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
+    def trimmedOrTimedOutHtlcs(commitmentFormat: CommitmentFormat, remoteCommit: RemoteCommit, remoteCommitPublished: RemoteCommitPublished, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] = {
       val untrimmedHtlcs = Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec, commitmentFormat).map(_.add)
       if (tx.txid == remoteCommit.txid) {
         // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)

@@ -20,37 +20,46 @@ import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Hop, NodeHop}
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
 
 import java.io.Closeable
 import java.util.UUID
+import scala.util.Try
 
 trait PaymentsDb extends IncomingPaymentsDb with OutgoingPaymentsDb with PaymentsOverviewDb with Closeable
 
 trait IncomingPaymentsDb {
+
   /** Add a new expected incoming payment (not yet received). */
   def addIncomingPayment(pr: PaymentRequest, preimage: ByteVector32, paymentType: String = PaymentType.Standard): Unit
 
   /**
    * Mark an incoming payment as received (paid). The received amount may exceed the payment request amount.
-   * Note that this function assumes that there is a matching payment request in the DB.
+   * If there was no matching payment request in the DB, this will return false.
    */
-  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: Long = System.currentTimeMillis): Unit
+  def receiveIncomingPayment(paymentHash: ByteVector32, amount: MilliSatoshi, receivedAt: TimestampMilli = TimestampMilli.now()): Boolean
 
   /** Get information about the incoming payment (paid or not) for the given payment hash, if any. */
   def getIncomingPayment(paymentHash: ByteVector32): Option[IncomingPayment]
 
+  /**
+   * Remove an unpaid incoming payment from the DB.
+   * Returns a failure if the payment has already been paid.
+   */
+  def removeIncomingPayment(paymentHash: ByteVector32): Try[Unit]
+
   /** List all incoming payments (pending, expired and succeeded) in the given time range (milli-seconds). */
-  def listIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+  def listIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
 
   /** List all pending (not paid, not expired) incoming payments in the given time range (milli-seconds). */
-  def listPendingIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+  def listPendingIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
 
   /** List all expired (not paid) incoming payments in the given time range (milli-seconds). */
-  def listExpiredIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+  def listExpiredIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
 
   /** List all received (paid) incoming payments in the given time range (milli-seconds). */
-  def listReceivedIncomingPayments(from: Long, to: Long): Seq[IncomingPayment]
+  def listReceivedIncomingPayments(from: TimestampMilli, to: TimestampMilli): Seq[IncomingPayment]
+
 }
 
 trait OutgoingPaymentsDb {
@@ -74,7 +83,7 @@ trait OutgoingPaymentsDb {
   def listOutgoingPayments(paymentHash: ByteVector32): Seq[OutgoingPayment]
 
   /** List all the outgoing payment attempts in the given time range (milli-seconds). */
-  def listOutgoingPayments(from: Long, to: Long): Seq[OutgoingPayment]
+  def listOutgoingPayments(from: TimestampMilli, to: TimestampMilli): Seq[OutgoingPayment]
 
 }
 
@@ -99,7 +108,7 @@ case object PaymentType {
 case class IncomingPayment(paymentRequest: PaymentRequest,
                            paymentPreimage: ByteVector32,
                            paymentType: String,
-                           createdAt: Long,
+                           createdAt: TimestampMilli,
                            status: IncomingPaymentStatus)
 
 sealed trait IncomingPaymentStatus
@@ -118,7 +127,7 @@ object IncomingPaymentStatus {
    * @param amount     amount of the payment received, in milli-satoshis (may exceed the payment request amount).
    * @param receivedAt absolute time in milli-seconds since UNIX epoch when the payment was received.
    */
-  case class Received(amount: MilliSatoshi, receivedAt: Long) extends IncomingPaymentStatus
+  case class Received(amount: MilliSatoshi, receivedAt: TimestampMilli) extends IncomingPaymentStatus
 
 }
 
@@ -146,7 +155,7 @@ case class OutgoingPayment(id: UUID,
                            amount: MilliSatoshi,
                            recipientAmount: MilliSatoshi,
                            recipientNodeId: PublicKey,
-                           createdAt: Long,
+                           createdAt: TimestampMilli,
                            paymentRequest: Option[PaymentRequest],
                            status: OutgoingPaymentStatus)
 
@@ -167,7 +176,7 @@ object OutgoingPaymentStatus {
    * @param route           payment route used.
    * @param completedAt     absolute time in milli-seconds since UNIX epoch when the payment was completed.
    */
-  case class Succeeded(paymentPreimage: ByteVector32, feesPaid: MilliSatoshi, route: Seq[HopSummary], completedAt: Long) extends OutgoingPaymentStatus
+  case class Succeeded(paymentPreimage: ByteVector32, feesPaid: MilliSatoshi, route: Seq[HopSummary], completedAt: TimestampMilli) extends OutgoingPaymentStatus
 
   /**
    * Payment has failed and may be retried.
@@ -175,7 +184,7 @@ object OutgoingPaymentStatus {
    * @param failures    failed payment attempts.
    * @param completedAt absolute time in milli-seconds since UNIX epoch when the payment was completed.
    */
-  case class Failed(failures: Seq[FailureSummary], completedAt: Long) extends OutgoingPaymentStatus
+  case class Failed(failures: Seq[FailureSummary], completedAt: TimestampMilli) extends OutgoingPaymentStatus
 
 }
 
@@ -198,7 +207,9 @@ object HopSummary {
 }
 
 /** A minimal representation of a payment failure (suitable to store in a database). */
-case class FailureSummary(failureType: FailureType.Value, failureMessage: String, failedRoute: List[HopSummary])
+trait GenericFailureSummary
+
+case class FailureSummary(failureType: FailureType.Value, failureMessage: String, failedRoute: List[HopSummary], failedNode: Option[PublicKey]) extends GenericFailureSummary
 
 object FailureType extends Enumeration {
   type FailureType = Value
@@ -209,9 +220,9 @@ object FailureType extends Enumeration {
 
 object FailureSummary {
   def apply(f: PaymentFailure): FailureSummary = f match {
-    case LocalFailure(_, route, t) => FailureSummary(FailureType.LOCAL, t.getMessage, route.map(h => HopSummary(h)).toList)
-    case RemoteFailure(_, route, e) => FailureSummary(FailureType.REMOTE, e.failureMessage.message, route.map(h => HopSummary(h)).toList)
-    case UnreadableRemoteFailure(_, route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList)
+    case LocalFailure(_, route, t) => FailureSummary(FailureType.LOCAL, t.getMessage, route.map(h => HopSummary(h)).toList, route.headOption.map(_.nodeId))
+    case RemoteFailure(_, route, e) => FailureSummary(FailureType.REMOTE, e.failureMessage.message, route.map(h => HopSummary(h)).toList, Some(e.originNode))
+    case UnreadableRemoteFailure(_, route) => FailureSummary(FailureType.UNREADABLE_REMOTE, "could not decrypt failure onion", route.map(h => HopSummary(h)).toList, None)
   }
 }
 
@@ -232,8 +243,8 @@ sealed trait PlainPayment {
   val paymentType: String
   val paymentRequest: Option[String]
   val finalAmount: Option[MilliSatoshi]
-  val createdAt: Long
-  val completedAt: Option[Long]
+  val createdAt: TimestampMilli
+  val completedAt: Option[TimestampMilli]
 }
 
 case class PlainIncomingPayment(paymentHash: ByteVector32,
@@ -241,9 +252,9 @@ case class PlainIncomingPayment(paymentHash: ByteVector32,
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: IncomingPaymentStatus,
-                                createdAt: Long,
-                                completedAt: Option[Long],
-                                expireAt: Option[Long]) extends PlainPayment
+                                createdAt: TimestampMilli,
+                                completedAt: Option[TimestampMilli],
+                                expireAt: Option[TimestampMilli]) extends PlainPayment
 
 case class PlainOutgoingPayment(parentId: Option[UUID],
                                 externalId: Option[String],
@@ -252,5 +263,51 @@ case class PlainOutgoingPayment(parentId: Option[UUID],
                                 finalAmount: Option[MilliSatoshi],
                                 paymentRequest: Option[String],
                                 status: OutgoingPaymentStatus,
-                                createdAt: Long,
-                                completedAt: Option[Long]) extends PlainPayment
+                                createdAt: TimestampMilli,
+                                completedAt: Option[TimestampMilli]) extends PlainPayment
+
+object PaymentsDb {
+
+  import fr.acinq.eclair.wire.protocol.CommonCodecs
+  import scodec.Attempt
+  import scodec.bits.BitVector
+  import scodec.codecs._
+
+  private case class LegacyFailureSummary(failureType: FailureType.Value, failureMessage: String, failedRoute: List[HopSummary]) extends GenericFailureSummary {
+    def toFailureSummary: FailureSummary = FailureSummary(failureType, failureMessage, failedRoute, None)
+  }
+
+  private val hopSummaryCodec = (("node_id" | CommonCodecs.publicKey) :: ("next_node_id" | CommonCodecs.publicKey) :: ("short_channel_id" | optional(bool, CommonCodecs.shortchannelid))).as[HopSummary]
+  val paymentRouteCodec = discriminated[List[HopSummary]].by(byte)
+    .typecase(0x01, listOfN(uint8, hopSummaryCodec))
+  private val legacyFailureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec).as[LegacyFailureSummary]
+  private val failureSummaryCodec = (("type" | enumerated(uint8, FailureType)) :: ("message" | ascii32) :: paymentRouteCodec :: ("node_id" | optional(bool, CommonCodecs.publicKey))).as[FailureSummary]
+  private val paymentFailuresCodec = discriminated[List[GenericFailureSummary]].by(byte)
+    .typecase(0x02, listOfN(uint8, failureSummaryCodec))
+    .typecase(0x01, listOfN(uint8, legacyFailureSummaryCodec).decodeOnly)
+
+  def encodeRoute(route: List[HopSummary]): Array[Byte] = {
+    paymentRouteCodec.encode(route).require.toByteArray
+  }
+
+  def decodeRoute(b: BitVector): List[HopSummary] = {
+    paymentRouteCodec.decode(b) match {
+      case Attempt.Successful(route) => route.value
+      case Attempt.Failure(_) => Nil
+    }
+  }
+
+  def encodeFailures(failures: List[FailureSummary]): Array[Byte] = {
+    paymentFailuresCodec.encode(failures).require.toByteArray
+  }
+
+  def decodeFailures(b: BitVector): List[FailureSummary] = {
+    paymentFailuresCodec.decode(b) match {
+      case Attempt.Successful(f) => f.value.collect {
+        case failure: FailureSummary => failure
+        case legacy: LegacyFailureSummary => legacy.toFailureSummary
+      }
+      case Attempt.Failure(_) => Nil
+    }
+  }
+}

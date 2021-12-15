@@ -19,19 +19,22 @@ package fr.acinq.eclair.json
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Btc, ByteVector32, ByteVector64, OutPoint, Satoshi, Transaction}
-import fr.acinq.eclair.balance.CheckBalance.GlobalBalance
+import fr.acinq.eclair.balance.CheckBalance.{CorrectedOnChainBalance, GlobalBalance, OffChainBalance}
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.db.FailureType.FailureType
 import fr.acinq.eclair.db.{IncomingPaymentStatus, OutgoingPaymentStatus}
+import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentFailure.PaymentFailedSummary
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Router.RouteResponse
+import fr.acinq.eclair.router.Router.{ChannelHop, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, UInt64, UnknownFeature}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
 import org.json4s.JsonAST._
 import org.json4s.jackson.Serialization
@@ -39,6 +42,8 @@ import org.json4s.{DefaultFormats, Extraction, Formats, JDecimal, JValue, KeySer
 import scodec.bits.ByteVector
 
 import java.net.InetSocketAddress
+import java.time.Instant
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 
 /**
@@ -107,6 +112,18 @@ object ByteVector64Serializer extends MinimalSerializer({
 object UInt64Serializer extends MinimalSerializer({
   case x: UInt64 => JInt(x.toBigInt)
 })
+
+// @formatter:off
+private case class TimestampJson(iso: String, unix: Long)
+object TimestampSecondSerializer extends ConvertClassSerializer[TimestampSecond](ts => TimestampJson(
+  iso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochSecond(ts.toLong)),
+  unix = ts.toLong
+))
+object TimestampMilliSerializer extends ConvertClassSerializer[TimestampMilli](ts => TimestampJson(
+  iso = DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochMilli(ts.toLong)),
+  unix = ts.toLong / 1000 // we convert to standard unix timestamp with second precision
+))
+// @formatter:on
 
 object BtcSerializer extends MinimalSerializer({
   case x: Btc => JDecimal(x.toDouble)
@@ -177,6 +194,7 @@ object ChannelOpenResponseSerializer extends MinimalSerializer({
 
 object CommandResponseSerializer extends MinimalSerializer({
   case RES_SUCCESS(_: CloseCommand, channelId) => JString(s"closed channel $channelId")
+  case RES_SUCCESS(_, _) => JString("ok")
   case RES_FAILURE(_: Command, ex: Throwable) => JString(ex.getMessage)
 })
 
@@ -246,14 +264,22 @@ object ColorSerializer extends MinimalSerializer({
   case c: Color => JString(c.toString)
 })
 
-object RouteResponseSerializer extends MinimalSerializer({
-  case route: RouteResponse =>
-    val nodeIds = route.routes.head.hops match {
-      case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
-      case Nil => Nil
-    }
-    JArray(nodeIds.toList.map(n => JString(n.toString)))
+// @formatter:off
+private case class RouteFullJson(amount: MilliSatoshi, hops: Seq[ChannelHop])
+object RouteFullSerializer extends ConvertClassSerializer[Route](route => RouteFullJson(route.amount, route.hops))
+
+private case class RouteNodeIdsJson(amount: MilliSatoshi, nodeIds: Seq[PublicKey])
+object RouteNodeIdsSerializer extends ConvertClassSerializer[Route](route => {
+  val nodeIds = route.hops match {
+    case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
+    case Nil => Nil
+  }
+  RouteNodeIdsJson(route.amount, nodeIds)
 })
+
+private case class RouteShortChannelIdsJson(amount: MilliSatoshi, shortChannelIds: Seq[ShortChannelId])
+object RouteShortChannelIdsSerializer extends ConvertClassSerializer[Route](route => RouteShortChannelIdsJson(route.amount, route.hops.map(_.lastUpdate.shortChannelId)))
+// @formatter:on
 
 // @formatter:off
 private case class PaymentFailureSummaryJson(amount: MilliSatoshi, route: Seq[PublicKey], message: String)
@@ -318,7 +344,7 @@ object PaymentRequestSerializer extends MinimalSerializer({
         CltvExpiryDeltaSerializer
     ))
     val fieldList = List(JField("prefix", JString(p.prefix)),
-      JField("timestamp", JLong(p.timestamp)),
+      JField("timestamp", JLong(p.timestamp.toLong)),
       JField("nodeId", JString(p.nodeId.toString())),
       JField("serialized", JString(PaymentRequest.write(p))),
       p.description.fold(string => JField("description", JString(string)), hash => JField("descriptionHash", JString(hash.toHex))),
@@ -373,11 +399,16 @@ object OriginSerializer extends MinimalSerializer({
   })
 })
 
-object GlobalBalanceSerializer extends MinimalSerializer({
-  case o: GlobalBalance =>
-    val formats = DefaultFormats + ByteVector32KeySerializer + BtcSerializer + SatoshiSerializer
-    JObject(JField("total", JDecimal(o.total.toDouble))) merge Extraction.decompose(o)(formats)
-})
+// @formatter:off
+private case class GlobalBalanceJson(total: Btc, onChain: CorrectedOnChainBalance, offChain: OffChainBalance)
+object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b => GlobalBalanceJson(b.total, b.onChain, b.offChain))
+
+private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
+object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address, peerInfo.channels))
+
+private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
+object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
+// @formatter:on
 
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {
   val reverse: Map[String, Class[_]] = custom.map(_.swap)
@@ -410,7 +441,11 @@ object CustomTypeHints {
     classOf[TrampolinePaymentRelayed] -> "trampoline-payment-relayed",
     classOf[PaymentReceived] -> "payment-received",
     classOf[PaymentSettlingOnChain] -> "payment-settling-onchain",
-    classOf[PaymentFailed] -> "payment-failed"
+    classOf[PaymentFailed] -> "payment-failed",
+  ))
+
+  val onionMessageEvent: CustomTypeHints = CustomTypeHints(Map(
+    classOf[MessageReceivedJson] -> "onion-message-received"
   ))
 
   val channelStates: ShortTypeHints = ShortTypeHints(
@@ -439,12 +474,15 @@ object JsonSerializers {
     CustomTypeHints.incomingPaymentStatus +
     CustomTypeHints.outgoingPaymentStatus +
     CustomTypeHints.paymentEvent +
+    CustomTypeHints.onionMessageEvent +
     CustomTypeHints.channelStates +
     ByteVectorSerializer +
     ByteVector32Serializer +
     ByteVector64Serializer +
     ChannelEventSerializer +
     UInt64Serializer +
+    TimestampSecondSerializer +
+    TimestampMilliSerializer +
     BtcSerializer +
     SatoshiSerializer +
     MilliSatoshiSerializer +
@@ -471,7 +509,6 @@ object JsonSerializers {
     CommandResponseSerializer +
     InputInfoSerializer +
     ColorSerializer +
-    RouteResponseSerializer +
     ThrowableSerializer +
     FailureMessageSerializer +
     FailureTypeSerializer +
@@ -480,7 +517,10 @@ object JsonSerializers {
     PaymentRequestSerializer +
     JavaUUIDSerializer +
     OriginSerializer +
+    ByteVector32KeySerializer +
     GlobalBalanceSerializer +
-    PaymentFailedSummarySerializer
+    PeerInfoSerializer +
+    PaymentFailedSummarySerializer +
+    OnionMessageReceivedSerializer
 
 }

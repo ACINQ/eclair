@@ -37,7 +37,7 @@ object NodeRelayer {
 
   // @formatter:off
   sealed trait Command
-  case class Relay(nodeRelayPacket: IncomingPacket.NodeRelayPacket) extends Command
+  case class Relay(nodeRelayPacket: IncomingPaymentPacket.NodeRelayPacket) extends Command
   case class RelayComplete(childHandler: ActorRef[NodeRelay.Command], paymentHash: ByteVector32, paymentSecret: ByteVector32) extends Command
   private[relay] case class GetPendingPayments(replyTo: akka.actor.ActorRef) extends Command
   // @formatter:on

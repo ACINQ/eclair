@@ -25,7 +25,7 @@ import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
 import scodec.bits.ByteVector
 
 import java.util.UUID
@@ -65,6 +65,8 @@ object FormParamExtractors {
   implicit val base64DataUnmarshaller: Unmarshaller[String, ByteVector] = Unmarshaller.strict { str => ByteVector.fromValidBase64(str) }
 
   implicit val routeFormatUnmarshaller: Unmarshaller[String, RouteFormat] = Unmarshaller.strict { str => RouteFormat.fromString(str) }
+
+  implicit val timestampSecondUnmarshaller: Unmarshaller[String, TimestampSecond] = Unmarshaller.strict { str => TimestampSecond(str.toLong) }
 
   private def listUnmarshaller[T](unmarshal: String => T): Unmarshaller[String, List[T]] = Unmarshaller.strict { str =>
     Try(serialization.read[List[String]](str).map(unmarshal))

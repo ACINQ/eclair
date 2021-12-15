@@ -23,6 +23,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestKitBaseClass
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCAuthMethod.UserPassword
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST._
@@ -94,7 +95,7 @@ class BitcoinCoreFeeProviderSpec extends TestKitBaseClass with BitcoindService w
       blocks_144 = fees(144),
       blocks_1008 = fees(1008))
 
-    val mockBitcoinClient = new BasicBitcoinJsonRPCClient(user = "", password = "", host = "localhost", port = 0) {
+    val mockBitcoinClient = new BasicBitcoinJsonRPCClient(rpcAuthMethod = UserPassword("", ""), host = "localhost", port = 0) {
       override def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = method match {
         case "estimatesmartfee" =>
           val blocks = params(0).asInstanceOf[Int]

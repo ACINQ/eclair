@@ -21,9 +21,6 @@ import fr.acinq.eclair.json.JsonSerializers
 import org.json4s.{Formats, Serialization}
 
 object JsonSupport extends Json4sSupport {
-
   implicit val serialization: Serialization = JsonSerializers.serialization
-
   implicit val formats: Formats = JsonSerializers.formats
-
 }

@@ -26,7 +26,7 @@ import fr.acinq.eclair.channel.publish.TxPublisher
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.transactions.Scripts.multiSig2of2
 import fr.acinq.eclair.wire.protocol.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel}
-import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
+import fr.acinq.eclair.{TestConstants, TestKitBaseClass, TimestampSecond, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -38,7 +38,7 @@ import scala.concurrent.duration._
 
 class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with ChannelStateTestsBase {
 
-  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe)
+  case class FixtureParam(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel], alice2bob: TestProbe, bob2alice: TestProbe, alice2blockchain: TestProbe, listener: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
 
@@ -50,6 +50,8 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
     val aliceInit = Init(aliceParams.initFeatures)
     val bobInit = Init(bobParams.initFeatures)
     within(30 seconds) {
+      val listener = TestProbe()
+      system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
       alice ! INPUT_INIT_FUNDER(ByteVector32.Zeroes, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit, ChannelFlags.Empty, channelConfig, channelType)
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       bob ! INPUT_INIT_FUNDEE(ByteVector32.Zeroes, bobParams, bob2alice.ref, aliceInit, channelConfig, channelType)
@@ -65,13 +67,15 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
       alice2blockchain.expectMsgType[TxPublisher.SetChannelId]
       alice2blockchain.expectMsgType[WatchFundingSpent]
       alice2blockchain.expectMsgType[WatchFundingConfirmed]
+      listener.expectMsgType[TransactionPublished] // alice has published the funding transaction
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
-      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain)))
+      withFixture(test.toNoArgTest(FixtureParam(alice, bob, alice2bob, bob2alice, alice2blockchain, listener)))
     }
   }
 
   test("recv FundingLocked") { f =>
     import f._
+    // we create a new listener that registers after alice has published the funding tx
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
@@ -90,6 +94,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
 
   test("recv WatchFundingConfirmedTriggered") { f =>
     import f._
+    // we create a new listener that registers after alice has published the funding tx
     val listener = TestProbe()
     system.eventStream.subscribe(listener.ref, classOf[TransactionPublished])
     system.eventStream.subscribe(listener.ref, classOf[TransactionConfirmed])
@@ -165,7 +170,7 @@ class WaitForFundingConfirmedStateSpec extends TestKitBaseClass with FixtureAnyF
   test("migrate waitingSince to waitingSinceBlocks") { f =>
     import f._
     // Before version 0.5.1, eclair used an absolute timestamp instead of a block height for funding timeouts.
-    val beforeMigration = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].copy(waitingSinceBlock = System.currentTimeMillis().milliseconds.toSeconds)
+    val beforeMigration = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].copy(waitingSinceBlock = TimestampSecond.now().toLong)
     bob.setState(WAIT_FOR_INIT_INTERNAL, Nothing)
     bob ! INPUT_RESTORED(beforeMigration)
     awaitCond(bob.stateName == OFFLINE)

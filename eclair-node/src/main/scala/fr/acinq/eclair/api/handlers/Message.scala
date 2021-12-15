@@ -17,6 +17,7 @@
 package fr.acinq.eclair.api.handlers
 
 import akka.http.scaladsl.server.Route
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
@@ -39,5 +40,11 @@ trait Message {
     }
   }
 
-  val messageRoutes: Route = signMessage ~ verifyMessage
+  val sendOnionMessage: Route = postRequest("sendonionmessage") { implicit t =>
+    formFields("route".as[List[PublicKey]](pubkeyListUnmarshaller), "content".as[ByteVector](binaryDataUnmarshaller), "pathId".as[ByteVector](binaryDataUnmarshaller)?) { (route, userCustomContent, pathId) =>
+      complete(eclairApi.sendOnionMessage(route, userCustomContent, pathId))
+    }
+  }
+
+  val messageRoutes: Route = signMessage ~ verifyMessage ~ sendOnionMessage
 }

@@ -16,7 +16,7 @@
 
 package fr.acinq.eclair.api.directives
 
-import akka.http.scaladsl.common.{NameReceptacle, NameUnmarshallerReceptacle}
+import akka.http.scaladsl.common.{NameDefaultUnmarshallerReceptacle, NameReceptacle, NameUnmarshallerReceptacle}
 import akka.http.scaladsl.marshalling.ToResponseMarshaller
 import akka.http.scaladsl.model.StatusCodes.NotFound
 import akka.http.scaladsl.model.{ContentTypes, HttpResponse}
@@ -27,7 +27,7 @@ import fr.acinq.eclair.ApiTypes.ChannelIdentifier
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eclair.{MilliSatoshi, ShortChannelId}
+import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond, TimestampSecondLong}
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success}
@@ -42,11 +42,14 @@ trait ExtraDirectives extends Directives {
   val nodeIdFormParam: NameReceptacle[PublicKey] = "nodeId".as[PublicKey]
   val nodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "nodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
   val paymentHashFormParam: NameUnmarshallerReceptacle[ByteVector32] = "paymentHash".as[ByteVector32](sha256HashUnmarshaller)
-  val fromFormParam: NameReceptacle[Long] = "from".as[Long]
-  val toFormParam: NameReceptacle[Long] = "to".as[Long]
+  val fromFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "from".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.min)
+  val toFormParam: NameDefaultUnmarshallerReceptacle[TimestampSecond] = "to".as[TimestampSecond](timestampSecondUnmarshaller).?(TimestampSecond.max)
   val amountMsatFormParam: NameReceptacle[MilliSatoshi] = "amountMsat".as[MilliSatoshi]
   val invoiceFormParam: NameReceptacle[PaymentRequest] = "invoice".as[PaymentRequest]
-  val routeFormat: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
+  val routeFormatFormParam: NameUnmarshallerReceptacle[RouteFormat] = "format".as[RouteFormat](routeFormatUnmarshaller)
+  val ignoreNodeIdsFormParam: NameUnmarshallerReceptacle[List[PublicKey]] = "ignoreNodeIds".as[List[PublicKey]](pubkeyListUnmarshaller)
+  val ignoreShortChannelIdsFormParam: NameUnmarshallerReceptacle[List[ShortChannelId]] = "ignoreShortChannelIds".as[List[ShortChannelId]](shortChannelIdsUnmarshaller)
+  val maxFeeMsatFormParam: NameReceptacle[MilliSatoshi] = "maxFeeMsat".as[MilliSatoshi]
 
   // custom directive to fail with HTTP 404 (and JSON response) if the element was not found
   def completeOrNotFound[T](fut: Future[Option[T]])(implicit marshaller: ToResponseMarshaller[T]): Route = onComplete(fut) {

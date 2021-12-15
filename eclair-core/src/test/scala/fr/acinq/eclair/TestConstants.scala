@@ -20,8 +20,10 @@ import fr.acinq.bitcoin.{Block, ByteVector32, Satoshi, SatoshiLong, Script}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features._
 import fr.acinq.eclair.blockchain.fee._
+import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
+import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.WeightRatios
@@ -143,6 +145,7 @@ object TestConstants {
           feeProportionalMillionths = 30)),
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
+      unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
       db = TestDatabases.inMemoryDb(),
       revocationTimeout = 20 seconds,
       autoReconnect = false,
@@ -166,7 +169,6 @@ object TestConstants {
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
-        networkStatsRefreshInterval = 1 hour,
         requestNodeAnnouncements = true,
         encodingType = EncodingType.COMPRESSED_ZLIB,
         channelRangeChunkSize = 20,
@@ -197,7 +199,8 @@ object TestConstants {
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
       balanceCheckInterval = 1 hour,
-      blockchainWatchdogSources = blockchainWatchdogSources
+      blockchainWatchdogSources = blockchainWatchdogSources,
+      onionMessageRelayPolicy = RelayAll
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -269,6 +272,7 @@ object TestConstants {
           feeProportionalMillionths = 30)),
       reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
+      unhandledExceptionStrategy = UnhandledExceptionStrategy.LocalClose,
       db = TestDatabases.inMemoryDb(),
       revocationTimeout = 20 seconds,
       autoReconnect = false,
@@ -292,7 +296,6 @@ object TestConstants {
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
         routerBroadcastInterval = 5 seconds,
-        networkStatsRefreshInterval = 1 hour,
         requestNodeAnnouncements = true,
         encodingType = EncodingType.UNCOMPRESSED,
         channelRangeChunkSize = 20,
@@ -323,7 +326,8 @@ object TestConstants {
       enableTrampolinePayment = true,
       instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
       balanceCheckInterval = 1 hour,
-      blockchainWatchdogSources = blockchainWatchdogSources
+      blockchainWatchdogSources = blockchainWatchdogSources,
+      onionMessageRelayPolicy = RelayAll
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(

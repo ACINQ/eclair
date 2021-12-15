@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, Logs}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -135,7 +135,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         } else {
           Metrics.PeerConnectionsConnecting.withTag(Tags.ConnectionState, Tags.ConnectionStates.Initialized).increment()
           d.peer ! ConnectionReady(self, d.remoteNodeId, d.pendingAuth.address, d.pendingAuth.outgoing, d.localInit, remoteInit)
-          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected)
+          d.pendingAuth.origin_opt.foreach(_ ! ConnectionResult.Connected(self, d.peer))
 
           if (d.doSync) {
             self ! DoSync(replacePrevious = true)
@@ -203,7 +203,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
         d.expectedPong_opt match {
           case Some(ExpectedPong(ping, timestamp)) if ping.pongLength == data.length =>
             // we use the pong size to correlate between pings and pongs
-            val latency = System.currentTimeMillis - timestamp
+            val latency = TimestampMilli.now() - timestamp
             log.debug(s"received pong with latency=$latency")
             cancelTimer(PingTimeout.toString())
           // we don't need to call scheduleNextPing here, the next ping was already scheduled when we received that pong
@@ -496,7 +496,7 @@ object PeerConnection {
   case class InitializingData(chainHash: ByteVector32, pendingAuth: PendingAuth, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, doSync: Boolean) extends Data with HasTransport
   case class ConnectedData(chainHash: ByteVector32, remoteNodeId: PublicKey, transport: ActorRef, peer: ActorRef, localInit: protocol.Init, remoteInit: protocol.Init, rebroadcastDelay: FiniteDuration, gossipTimestampFilter: Option[GossipTimestampFilter] = None, behavior: Behavior = Behavior(), expectedPong_opt: Option[ExpectedPong] = None) extends Data with HasTransport
 
-  case class ExpectedPong(ping: Ping, timestamp: Long = System.currentTimeMillis)
+  case class ExpectedPong(ping: Ping, timestamp: TimestampMilli = TimestampMilli.now())
   case class PingTimeout(ping: Ping)
 
   sealed trait State
@@ -517,13 +517,17 @@ object PeerConnection {
   object ConnectionResult {
     sealed trait Success extends ConnectionResult
     sealed trait Failure extends ConnectionResult
+    sealed trait HasConnection extends ConnectionResult {
+      val peerConnection: ActorRef
+      val peer: ActorRef
+    }
 
     case object NoAddressFound extends ConnectionResult.Failure { override def toString: String = "no address found" }
     case class ConnectionFailed(address: InetSocketAddress) extends ConnectionResult.Failure { override def toString: String = s"connection failed to $address" }
     case class AuthenticationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
     case class InitializationFailed(reason: String) extends ConnectionResult.Failure { override def toString: String = reason }
-    case object AlreadyConnected extends ConnectionResult.Failure { override def toString: String = "already connected" }
-    case object Connected extends ConnectionResult.Success { override def toString: String = "connected" }
+    case class AlreadyConnected(peerConnection: ActorRef, peer: ActorRef) extends ConnectionResult.Failure with HasConnection { override def toString: String = "already connected" }
+    case class Connected(peerConnection: ActorRef, peer: ActorRef) extends ConnectionResult.Success with HasConnection { override def toString: String = "connected" }
   }
 
   case class DelayedRebroadcast(rebroadcast: Rebroadcast)
@@ -563,7 +567,7 @@ object PeerConnection {
     // Otherwise we check if this message has a timestamp that matches the timestamp filter.
     val matchesFilter = (msg, gossipTimestampFilter_opt) match {
       case (_, None) => false // BOLT 7: A node which wants any gossip messages would have to send this, otherwise [...] no gossip messages would be received.
-      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange, _))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= firstTimestamp + timestampRange
+      case (hasTs: HasTimestamp, Some(GossipTimestampFilter(_, firstTimestamp, timestampRange, _))) => hasTs.timestamp >= firstTimestamp && hasTs.timestamp <= TimestampSecond(firstTimestamp.toLong + timestampRange)
       case _ => true // if there is a filter and message doesn't have a timestamp (e.g. channel_announcement), then we send it
     }
     isOurGossip || matchesFilter

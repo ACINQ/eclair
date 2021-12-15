@@ -25,7 +25,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.Monitoring.Metrics
 import fr.acinq.eclair.crypto.keymanager.ChannelKeyManager
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
-import fr.acinq.eclair.payment.OutgoingPacket
+import fr.acinq.eclair.payment.OutgoingPaymentPacket
 import fr.acinq.eclair.transactions.DirectedHtlc._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -489,7 +489,7 @@ object Commitments {
         Left(UnknownHtlcId(commitments.channelId, cmd.id))
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        OutgoingPacket.buildHtlcFailure(nodeSecret, cmd, htlc).map(fail => (addLocalProposal(commitments, fail), fail))
+        OutgoingPaymentPacket.buildHtlcFailure(nodeSecret, cmd, htlc).map(fail => (addLocalProposal(commitments, fail), fail))
       case None => Left(UnknownHtlcId(commitments.channelId, cmd.id))
     }
 
@@ -873,6 +873,22 @@ object Commitments {
     val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localPaymentBasepoint, !localParams.isFunder, outputs)
     val htlcTxs = Transactions.makeHtlcTxs(commitTx.tx, remoteParams.dustLimit, remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, spec.htlcTxFeerate(channelFeatures.commitmentFormat), outputs, channelFeatures.commitmentFormat)
     (commitTx, htlcTxs)
+  }
+
+  /**
+   * When reconnecting, we drop all unsigned changes.
+   */
+  def discardUnsignedUpdates(commitments: Commitments)(implicit log: LoggingAdapter): Commitments = {
+    log.debug("discarding proposed OUT: {}", commitments.localChanges.proposed.map(msg2String(_)).mkString(","))
+    log.debug("discarding proposed IN: {}", commitments.remoteChanges.proposed.map(msg2String(_)).mkString(","))
+    val commitments1 = commitments.copy(
+      localChanges = commitments.localChanges.copy(proposed = Nil),
+      remoteChanges = commitments.remoteChanges.copy(proposed = Nil),
+      localNextHtlcId = commitments.localNextHtlcId - commitments.localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
+      remoteNextHtlcId = commitments.remoteNextHtlcId - commitments.remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
+    log.debug(s"localNextHtlcId=${commitments.localNextHtlcId}->${commitments1.localNextHtlcId}")
+    log.debug(s"remoteNextHtlcId=${commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
+    commitments1
   }
 
   def msg2String(msg: LightningMessage): String = msg match {

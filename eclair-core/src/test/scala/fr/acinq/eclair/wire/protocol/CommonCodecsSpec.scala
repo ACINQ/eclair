@@ -196,6 +196,57 @@ class CommonCodecsSpec extends AnyFunSuite {
     }
   }
 
+  test("encode/decode bytevector32") {
+    val testCases = Seq(
+      (hex"0000000000000000000000000000000000000000000000000000000000000000", Some(ByteVector32.Zeroes)),
+      (hex"0101010101010101010101010101010101010101010101010101010101010101", Some(ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101"))),
+      (hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", Some(ByteVector32(hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))),
+      // Ignore additional trailing bytes
+      (hex"000000000000000000000000000000000000000000000000000000000000000000", Some(ByteVector32.Zeroes)),
+      (hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", Some(ByteVector32(hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))),
+      // Not enough bytes
+      (hex"00000000000000000000000000000000000000000000000000000000000000", None),
+      (hex"", None)
+    )
+
+    for ((encoded, expected_opt) <- testCases) {
+      expected_opt match {
+        case Some(expected) =>
+          val decoded = bytes32.decode(encoded.bits).require.value
+          assert(decoded === expected)
+          assert(expected.bytes === bytes32.encode(decoded).require.bytes)
+        case None =>
+          assert(bytes32.decode(encoded.bits).isFailure)
+      }
+    }
+  }
+
+  test("encode/decode bytevector64") {
+    val testCases = Seq(
+      (hex"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", Some(ByteVector64.Zeroes)),
+      (hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101", Some(ByteVector64(hex"01010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"))),
+      (hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", Some(ByteVector64(hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))),
+      // Ignore additional trailing bytes
+      (hex"0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", Some(ByteVector64.Zeroes)),
+      (hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00", Some(ByteVector64(hex"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"))),
+      // Not enough bytes
+      (hex"000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", None),
+      (hex"00000000000000000000000000000000000000000000000000000000000000", None),
+      (hex"", None)
+    )
+
+    for ((encoded, expected_opt) <- testCases) {
+      expected_opt match {
+        case Some(expected) =>
+          val decoded = bytes64.decode(encoded.bits).require.value
+          assert(decoded === expected)
+          assert(expected.bytes === bytes64.encode(decoded).require.bytes)
+        case None =>
+          assert(bytes64.decode(encoded.bits).isFailure)
+      }
+    }
+  }
+
   test("encode/decode with private key codec") {
     val value = PrivateKey(randomBytes32())
     val wire = privateKey.encode(value).require

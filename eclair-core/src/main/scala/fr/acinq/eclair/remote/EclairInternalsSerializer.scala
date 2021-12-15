@@ -83,13 +83,12 @@ object EclairInternalsSerializer {
       ("experimentPercentage" | int32)).as[PathFindingConf]
 
   val pathFindingExperimentConfCodec: Codec[PathFindingExperimentConf] = (
-    ("experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => (e.experimentName -> e)).toMap, _.values.toList))
+    "experiments" | listOfN(int32, pathFindingConfCodec).xmap[Map[String, PathFindingConf]](_.map(e => e.experimentName -> e).toMap, _.values.toList)
     ).as[PathFindingExperimentConf]
 
   val routerConfCodec: Codec[RouterConf] = (
     ("channelExcludeDuration" | finiteDurationCodec) ::
       ("routerBroadcastInterval" | finiteDurationCodec) ::
-      ("networkStatsRefreshInterval" | finiteDurationCodec) ::
       ("requestNodeAnnouncements" | bool(8)) ::
       ("encodingType" | discriminated[EncodingType].by(uint8)
         .typecase(0, provide(EncodingType.UNCOMPRESSED))
@@ -184,8 +183,8 @@ object EclairInternalsSerializer {
     .typecase(14, inetSocketAddressCodec.as[PeerConnection.ConnectionResult.ConnectionFailed])
     .typecase(15, variableSizeBytes(uint16, utf8).as[PeerConnection.ConnectionResult.AuthenticationFailed])
     .typecase(16, variableSizeBytes(uint16, utf8).as[PeerConnection.ConnectionResult.InitializationFailed])
-    .typecase(17, provide(PeerConnection.ConnectionResult.AlreadyConnected))
-    .typecase(18, provide(PeerConnection.ConnectionResult.Connected))
+    .typecase(17, (actorRefCodec(system) :: actorRefCodec(system)).as[PeerConnection.ConnectionResult.AlreadyConnected])
+    .typecase(18, (actorRefCodec(system) :: actorRefCodec(system)).as[PeerConnection.ConnectionResult.Connected])
     .typecase(19, actorRefCodec(system).as[Peer.ConnectionDown])
     .typecase(20, provide(Router.GetRoutingStateStreaming))
     .typecase(21, provide(Router.RoutingStateStreamingUpToDate))

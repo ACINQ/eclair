@@ -48,7 +48,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
     if (test.tags.contains("with_node_announcements")) {
-      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
@@ -116,7 +116,7 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // NB: we change the data to make it appear like we have been connected for a long time
-    reconnectionTask.setState(stateData = reconnectionTask.stateData.asInstanceOf[ReconnectionTask.IdleData].copy(since = 0.seconds))
+    reconnectionTask.setState(stateData = reconnectionTask.stateData.asInstanceOf[ReconnectionTask.IdleData].copy(since = 0 unixms))
     val TransitionWithData(ReconnectionTask.IDLE, ReconnectionTask.IDLE, _, _) = monitor.expectMsgType[TransitionWithData]
 
     // disconnection
@@ -192,7 +192,8 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // at this point, we are attempting to connect to the peer
     // let's assume that an incoming connection arrives from the peer right before our outgoing connection, but we haven't
     // yet received the peer transition
-    reconnectionTask ! PeerConnection.ConnectionResult.AlreadyConnected
+    val peerConnection = TestProbe()
+    reconnectionTask ! PeerConnection.ConnectionResult.AlreadyConnected(peerConnection.ref, peer.ref)
     // we will schedule a reconnection
     val TransitionWithData(ReconnectionTask.CONNECTING, ReconnectionTask.WAITING, _, _) = monitor.expectMsgType[TransitionWithData]
     // but immediately after that we finally get notified that the peer is connected
@@ -208,12 +209,12 @@ class ReconnectionTaskSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // we create a dummy tcp server and update bob's announcement to point to it
     val (mockServer, serverAddress) = PeerSpec.createMockServer()
     val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
-    val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, remoteNodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(bobAnnouncement)
 
     val peer = TestProbe()
     // we have auto-reconnect=false so we need to manually tell the peer to reconnect
-    peer.send(reconnectionTask, Peer.Connect(remoteNodeId, None))
+    peer.send(reconnectionTask, Peer.Connect(remoteNodeId, None, peer.ref))
 
     // assert our mock server got an incoming connection (the client was spawned with the address from node_announcement)
     awaitCond(mockServer.accept() != null, max = 60 seconds, interval = 1 second)
