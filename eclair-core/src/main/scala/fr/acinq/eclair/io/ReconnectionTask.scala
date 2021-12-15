@@ -67,7 +67,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       // we query the db every time because it may have been updated in the meantime (e.g. with network announcements)
       getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId) match {
         case Some(address) =>
-          connect(address, origin = self)
+          connect(address, origin = self, isPersistent = true)
           goto(CONNECTING) using ConnectingData(address, d.nextReconnectionDelay)
         case None =>
           // we don't have an address for that peer, nothing to do
@@ -130,14 +130,14 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
 
     case Event(TickReconnect, _) => stay()
 
-    case Event(Peer.Connect(_, hostAndPort_opt, replyTo), _) =>
+    case Event(Peer.Connect(_, hostAndPort_opt, replyTo, isPersistent), _) =>
       // manual connection requests happen completely independently of the automated reconnection process;
       // we initiate a connection but don't modify our state.
       // if we are already connecting/connected, the peer will kill any duplicate connections
       hostAndPort_opt
         .map(hostAndPort2InetSocketAddress)
         .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
-        case Some(address) => connect(address, origin = replyTo)
+        case Some(address) => connect(address, origin = replyTo, isPersistent)
         case None => replyTo ! PeerConnection.ConnectionResult.NoAddressFound
       }
       stay()
@@ -148,9 +148,9 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   // activate the extension only on demand, so that tests pass
   lazy val mediator = DistributedPubSub(context.system).mediator
 
-  private def connect(address: InetSocketAddress, origin: ActorRef): Unit = {
+  private def connect(address: InetSocketAddress, origin: ActorRef, isPersistent: Boolean): Unit = {
     log.info(s"connecting to $address")
-    val req = ClientSpawner.ConnectionRequest(address, remoteNodeId, origin)
+    val req = ClientSpawner.ConnectionRequest(address, remoteNodeId, origin, isPersistent)
     if (context.system.hasExtension(Cluster) && !address.getHostName.endsWith("onion")) {
       mediator ! Send(path = "/user/client-spawner", msg = req, localAffinity = false)
     } else {

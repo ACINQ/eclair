@@ -38,7 +38,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     nodeParams.db.network.addNode(NodeAnnouncement(ByteVector64.Zeroes, Features.empty, 0 unixsec, remoteNodeId, Color(0, 0, 0), "alias", remoteNodeAddress :: Nil))
 
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
-    probe.send(switchboard, Peer.Connect(remoteNodeId, None, probe.ref))
+    probe.send(switchboard, Peer.Connect(remoteNodeId, None, probe.ref, isPersistent = true))
     probe.expectMsg(remoteNodeId)
     peer.expectMsg(Peer.Init(Set.empty))
     val connect = peer.expectMsgType[Peer.Connect]
@@ -51,7 +51,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val (probe, peer) = (TestProbe(), TestProbe())
     val remoteNodeId = randomKey().publicKey
     val switchboard = TestActorRef(new Switchboard(nodeParams, FakePeerFactory(probe, peer)))
-    probe.send(switchboard, Peer.Connect(remoteNodeId, None, probe.ref))
+    probe.send(switchboard, Peer.Connect(remoteNodeId, None, probe.ref, isPersistent = true))
     probe.expectMsg(remoteNodeId)
     peer.expectMsg(Peer.Init(Set.empty))
     peer.expectMsgType[Peer.Connect]
@@ -125,7 +125,7 @@ class SwitchboardSpec extends TestKitBaseClass with AnyFunSuiteLike {
     val (probe, peer) = (TestProbe(), TestProbe())
     val switchboard = TestActorRef(new Switchboard(Alice.nodeParams, FakePeerFactory(probe, peer)))
     val knownPeerNodeId = randomKey().publicKey
-    probe.send(switchboard, Peer.Connect(knownPeerNodeId, None, probe.ref))
+    probe.send(switchboard, Peer.Connect(knownPeerNodeId, None, probe.ref, isPersistent = true))
     probe.expectMsg(knownPeerNodeId)
     peer.expectMsgType[Peer.Init]
     peer.expectMsgType[Peer.Connect]

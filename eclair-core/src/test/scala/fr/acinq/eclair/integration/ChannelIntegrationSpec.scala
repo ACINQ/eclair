@@ -531,7 +531,8 @@ class StandardChannelIntegrationSpec extends ChannelIntegrationSpec {
       sender.send(fundee.switchboard, Peer.Connect(
         nodeId = funder.nodeParams.nodeId,
         address_opt = Some(HostAndPort.fromParts(funder.nodeParams.publicAddresses.head.socketAddress.getHostString, funder.nodeParams.publicAddresses.head.socketAddress.getPort)),
-        sender.ref
+        sender.ref,
+        isPersistent = true
       ))
       sender.expectMsgType[PeerConnection.ConnectionResult.HasConnection](30 seconds)
 

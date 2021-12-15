@@ -18,13 +18,14 @@ package fr.acinq.eclair.io
 
 import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient, buildMessage}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router.RoutingSyncSpec
 import fr.acinq.eclair.wire.protocol
@@ -66,10 +67,10 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer)))
   }
 
-  def connect(aliceParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features), doSync: Boolean = false): Unit = {
+  def connect(aliceParams: NodeParams, remoteNodeId: PublicKey, switchboard: TestProbe, router: TestProbe, connection: TestProbe, transport: TestProbe, peerConnection: TestFSMRef[PeerConnection.State, PeerConnection.Data, PeerConnection], peer: TestProbe, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features), doSync: Boolean = false, isPersistent: Boolean = true): Unit = {
     // let's simulate a connection
     val probe = TestProbe()
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref), isPersistent = isPersistent))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     switchboard.expectMsg(PeerConnection.Authenticated(peerConnection, remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, aliceParams.chainHash, aliceParams.features, doSync))
@@ -96,7 +97,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     import f._
     val probe = TestProbe()
     probe.watch(peerConnection)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = None, transport_opt = Some(transport.ref), isPersistent = true))
     transport.ref ! PoisonPill
     probe.expectTerminated(peerConnection, 100 millis)
   }
@@ -106,7 +107,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val origin = TestProbe()
     probe.watch(peerConnection)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     probe.expectTerminated(peerConnection, nodeParams.peerConnectionConf.authTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
     origin.expectMsg(PeerConnection.ConnectionResult.AuthenticationFailed("authentication timed out"))
   }
@@ -116,7 +117,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val origin = TestProbe()
     probe.watch(peerConnection)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     probe.expectTerminated(peerConnection, nodeParams.peerConnectionConf.initTimeout / transport.testKitSettings.TestTimeFactor + 1.second) // we don't want dilated time here
@@ -128,7 +129,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val origin = TestProbe()
     probe.watch(transport.ref)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
@@ -144,7 +145,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val origin = TestProbe()
     probe.watch(transport.ref)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
@@ -160,7 +161,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val origin = TestProbe()
     probe.watch(transport.ref)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
@@ -177,7 +178,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val origin = TestProbe()
     probe.watch(transport.ref)
-    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref)))
+    probe.send(peerConnection, PeerConnection.PendingAuth(connection.ref, Some(remoteNodeId), address, origin_opt = Some(origin.ref), transport_opt = Some(transport.ref), isPersistent = true))
     transport.send(peerConnection, TransportHandler.HandshakeCompleted(remoteNodeId))
     probe.send(peerConnection, PeerConnection.InitializeConnection(peer.ref, nodeParams.chainHash, nodeParams.features, doSync = true))
     transport.expectMsgType[TransportHandler.Listener]
@@ -372,5 +373,53 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     assert(new String(warn2.data.toArray).startsWith("invalid announcement sig"))
   }
 
+  test("establish transient connection") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
+    val probe = TestProbe()
+    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    probe.send(peerConnection, message)
+    probe watch peerConnection
+    probe.expectTerminated(peerConnection, max = Duration(1500, MILLISECONDS))
+  }
+
+  def sleep(duration: FiniteDuration): Unit = {
+    val probe = TestProbe()
+    system.scheduler.scheduleOnce(duration, probe.ref, ())(system.dispatcher)
+    probe.expectMsg(())
+  }
+
+  test("keep using transient connection") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
+    val probe = TestProbe()
+    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    probe.send(peerConnection, message)
+    probe watch peerConnection
+    sleep(900 millis)
+    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    probe.send(peerConnection, message)
+    sleep(900 millis)
+    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    probe.send(peerConnection, message)
+    sleep(900 millis)
+    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    sleep(200 millis)
+    probe.expectTerminated(peerConnection, max = Duration.Zero)
+  }
+
+  test("convert transient connection to persistent") { f =>
+    import f._
+    connect(nodeParams, remoteNodeId, switchboard, router, connection, transport, peerConnection, peer, isPersistent = false)
+    val probe = TestProbe()
+    val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
+    probe.send(peerConnection, message)
+    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    probe.send(peerConnection, FundingLocked(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
+    peerConnection.stateData match {
+      case d : PeerConnection.ConnectedData => assert(d.isPersistent)
+      case _ => fail()
+    }
+  }
 }
 
