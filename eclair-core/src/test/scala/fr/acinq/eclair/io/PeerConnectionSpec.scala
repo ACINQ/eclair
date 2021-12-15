@@ -380,10 +380,13 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
     probe.send(peerConnection, message)
     probe watch peerConnection
-    Thread.sleep(900)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
-    Thread.sleep(200)
-    probe.expectTerminated(peerConnection, max = Duration.Zero)
+    probe.expectTerminated(peerConnection, max = Duration(1500, MILLISECONDS))
+  }
+
+  def sleep(duration: FiniteDuration): Unit = {
+    val probe = TestProbe()
+    system.scheduler.scheduleOnce(duration, probe.ref, ())(system.dispatcher)
+    probe.expectMsg(())
   }
 
   test("keep using transient connection") { f =>
@@ -393,15 +396,15 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
     probe.send(peerConnection, message)
     probe watch peerConnection
-    Thread.sleep(900)
+    sleep(900 millis)
     assert(peerConnection.stateName === PeerConnection.CONNECTED)
     probe.send(peerConnection, message)
-    Thread.sleep(900)
+    sleep(900 millis)
     assert(peerConnection.stateName === PeerConnection.CONNECTED)
     probe.send(peerConnection, message)
-    Thread.sleep(900)
+    sleep(900 millis)
     assert(peerConnection.stateName === PeerConnection.CONNECTED)
-    Thread.sleep(200)
+    sleep(200 millis)
     probe.expectTerminated(peerConnection, max = Duration.Zero)
   }
 
@@ -411,11 +414,12 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     val probe = TestProbe()
     val (_, message) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
     probe.send(peerConnection, message)
-    Thread.sleep(900)
     assert(peerConnection.stateName === PeerConnection.CONNECTED)
     probe.send(peerConnection, FundingLocked(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
-    Thread.sleep(1100)
-    assert(peerConnection.stateName === PeerConnection.CONNECTED)
+    peerConnection.stateData match {
+      case d : PeerConnection.ConnectedData => assert(d.isPersistent)
+      case _ => fail()
+    }
   }
 }
 

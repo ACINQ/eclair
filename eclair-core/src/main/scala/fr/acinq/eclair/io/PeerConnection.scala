@@ -367,6 +367,7 @@ class PeerConnection(keyPair: KeyPair, conf: PeerConnection.Conf, switchboard: A
 
       case Event(KillIdle, d: ConnectedData) =>
         if (!d.isPersistent) {
+          log.info("stopping idle transient connection")
           stop(FSM.Normal)
         } else {
           stay()
