@@ -26,7 +26,7 @@ import fr.acinq.eclair.ApiTypes.ChannelNotFound
 import fr.acinq.eclair.TestConstants._
 import fr.acinq.eclair.blockchain.DummyOnChainWallet
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{Command, _}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.Peer.OpenChannel
 import fr.acinq.eclair.payment.PaymentRequest
@@ -449,7 +449,7 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
     assert(verifiedMessage.publicKey !== kit.nodeParams.nodeId)
   }
 
-  test("get channel info (all channels)") { f =>
+  test("get channel info (filtered channels)") { f =>
     import f._
 
     val eclair = new EclairImpl(kit)
@@ -468,8 +468,8 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     val c1 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
     register.reply(RES_GETINFO(map(c1.channelId), c1.channelId, NORMAL, ChannelCodecsSpec.normal))
-    val c2 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
-    register.reply(RES_GETINFO(map(c2.channelId), c2.channelId, NORMAL, ChannelCodecsSpec.normal))
+    register.expectMsgType[Register.Forward[CMD_GETINFO]]
+    register.reply(RES_FAILURE(CMD_GETINFO(ActorRef.noSender), new Throwable("Non-standard channel")))
     val c3 = register.expectMsgType[Register.Forward[CMD_GETINFO]]
     register.reply(RES_GETINFO(map(c3.channelId), c3.channelId, NORMAL, ChannelCodecsSpec.normal))
     register.expectNoMessage()
@@ -478,7 +478,6 @@ class EclairImplSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with I
 
     assert(res.value.get.get.toSet === Set(
       RES_GETINFO(a, a1, NORMAL, ChannelCodecsSpec.normal),
-      RES_GETINFO(a, a2, NORMAL, ChannelCodecsSpec.normal),
       RES_GETINFO(b, b1, NORMAL, ChannelCodecsSpec.normal),
     ))
   }
