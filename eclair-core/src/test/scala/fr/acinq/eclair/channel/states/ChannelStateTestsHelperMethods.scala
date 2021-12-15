@@ -228,18 +228,38 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     channelUpdateListener.expectMsgType[LocalChannelUpdate]
   }
 
-  def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(replyTo, UUID.randomUUID)
+  def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(replyTo, UUID.randomUUID())
 
-  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32 = randomBytes32(), upstream: Upstream = Upstream.Local(UUID.randomUUID), replyTo: ActorRef = TestProbe().ref): (ByteVector32, CMD_ADD_HTLC) = {
+  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long): (ByteVector32, CMD_ADD_HTLC) = {
+    makeCmdAdd(amount, CltvExpiryDelta(144), destination, randomBytes32(), currentBlockHeight, Upstream.Local(UUID.randomUUID()))
+  }
+
+  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32): (ByteVector32, CMD_ADD_HTLC) = {
+    makeCmdAdd(amount, destination, currentBlockHeight, paymentPreimage, Upstream.Local(UUID.randomUUID()))
+  }
+
+  def makeCmdAdd(amount: MilliSatoshi, destination: PublicKey, currentBlockHeight: Long, paymentPreimage: ByteVector32, upstream: Upstream): (ByteVector32, CMD_ADD_HTLC) = {
+    makeCmdAdd(amount, CltvExpiryDelta(144), destination, paymentPreimage, currentBlockHeight, upstream)
+  }
+
+  def makeCmdAdd(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, destination: PublicKey, paymentPreimage: ByteVector32, currentBlockHeight: Long, upstream: Upstream, replyTo: ActorRef = TestProbe().ref): (ByteVector32, CMD_ADD_HTLC) = {
     val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
-    val expiry = CltvExpiryDelta(144).toCltvExpiry(currentBlockHeight)
+    val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
     val cmd = OutgoingPaymentPacket.buildCommand(replyTo, upstream, paymentHash, ChannelHop(null, destination, null) :: Nil, PaymentOnion.createSinglePartPayload(amount, expiry, randomBytes32()))._1.copy(commit = false)
     (paymentPreimage, cmd)
   }
 
-  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef = TestProbe().ref): (ByteVector32, UpdateAddHtlc) = {
+  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe): (ByteVector32, UpdateAddHtlc) = {
+    addHtlc(amount, CltvExpiryDelta(144), s, r, s2r, r2s)
+  }
+
+  def addHtlc(amount: MilliSatoshi, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef): (ByteVector32, UpdateAddHtlc) = {
+    addHtlc(amount, CltvExpiryDelta(144), s, r, s2r, r2s, replyTo)
+  }
+
+  def addHtlc(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, s: TestFSMRef[ChannelState, ChannelData, Channel], r: TestFSMRef[ChannelState, ChannelData, Channel], s2r: TestProbe, r2s: TestProbe, replyTo: ActorRef = TestProbe().ref): (ByteVector32, UpdateAddHtlc) = {
     val currentBlockHeight = s.underlyingActor.nodeParams.currentBlockHeight
-    val (payment_preimage, cmd) = makeCmdAdd(amount, r.underlyingActor.nodeParams.nodeId, currentBlockHeight, replyTo = replyTo)
+    val (payment_preimage, cmd) = makeCmdAdd(amount, cltvExpiryDelta, r.underlyingActor.nodeParams.nodeId, randomBytes32(), currentBlockHeight, Upstream.Local(UUID.randomUUID()), replyTo)
     val htlc = addHtlc(cmd, s, r, s2r, r2s)
     (payment_preimage, htlc)
   }
