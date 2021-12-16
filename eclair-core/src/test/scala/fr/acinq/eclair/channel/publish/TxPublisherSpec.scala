@@ -109,7 +109,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     f.setFeerate(FeeratePerKw(750 sat))
     val input = OutPoint(randomBytes32(), 3)
-    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null)
+    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null, 0)
     txPublisher ! cmd
     val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     val p = child.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -122,7 +122,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
     f.setFeerate(FeeratePerKw(750 sat))
     val input = OutPoint(randomBytes32(), 3)
-    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null)
+    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null, 0)
     txPublisher ! cmd
     val child1 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     val p1 = child1.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -159,7 +159,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned].actor
     attempt2.expectMsgType[FinalTxPublisher.Publish]
 
-    val cmd3 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null)
+    val cmd3 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null, 0)
     txPublisher ! cmd3
     val attempt3 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     attempt3.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -181,7 +181,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt1 = factory.expectMsgType[FinalTxPublisherSpawned]
     attempt1.actor.expectMsgType[FinalTxPublisher.Publish]
 
-    val cmd2 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null)
+    val cmd2 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null, 0)
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -201,13 +201,13 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     f.setFeerate(FeeratePerKw(600 sat))
     val input = OutPoint(randomBytes32(), 7)
     val paymentHash = randomBytes32()
-    val cmd1 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null)
+    val cmd1 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null, 0)
     txPublisher ! cmd1
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]
 
     f.setFeerate(FeeratePerKw(750 sat))
-    val cmd2 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null)
+    val cmd2 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null, 0)
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]

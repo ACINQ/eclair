@@ -86,7 +86,7 @@ object TxPublisher {
     def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments) extends PublishTx {
+  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments, deadline: Long) extends PublishTx {
     override def input: OutPoint = txInfo.input.outPoint
     override def desc: String = txInfo.desc
   }
