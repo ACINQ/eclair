@@ -88,6 +88,8 @@ object Graph {
     override def compare(x: WeightedPath, y: WeightedPath): Int = y.weight.compare(x.weight)
   }
 
+  case class InfiniteLoop(path: Seq[GraphEdge]) extends Exception
+
   /**
    * Yen's algorithm to find the k-shortest (loop-less) paths in a graph, uses dijkstra as search algo. Is guaranteed to
    * terminate finding at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
@@ -271,6 +273,9 @@ object Graph {
       while (current.isDefined) {
         edgePath += current.get
         current = bestEdges.get(current.get.desc.b)
+        if(edgePath.length > RouteCalculation.ROUTE_MAX_LENGTH){
+          throw InfiniteLoop(edgePath.toSeq)
+        }
       }
       edgePath.toSeq
     } else {

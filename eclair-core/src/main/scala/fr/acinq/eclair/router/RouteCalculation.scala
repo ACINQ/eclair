@@ -26,7 +26,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{RichWeight, RoutingHeuristics}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, RichWeight, RoutingHeuristics}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
@@ -117,7 +117,7 @@ object RouteCalculation {
       val routesToFind = if (params.randomize) DEFAULT_ROUTES_COUNT else 1
 
       log.info(s"finding routes ${r.source}->${r.target} with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedChannels.keys.mkString(","), r.ignore.nodes.map(_.value).mkString(","), r.ignore.channels.mkString(","), d.excludedChannels.mkString(","))
-      log.info("finding routes with randomize={} params={}", params.randomize, params)
+      log.info("finding routes with params={}, multiPart={}", params, r.allowMultiPart)
       val tags = TagSet.Empty.withTag(Tags.MultiPart, r.allowMultiPart).withTag(Tags.Amount, Tags.amountBucket(r.amount))
       KamonExt.time(Metrics.FindRouteDuration.withTags(tags.withTag(Tags.NumberOfRoutes, routesToFind.toLong))) {
         val result = if (r.allowMultiPart) {
@@ -130,6 +130,10 @@ object RouteCalculation {
             Metrics.RouteResults.withTags(tags).record(routes.length)
             routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
             ctx.sender() ! RouteResponse(routes)
+          case Failure(InfiniteLoop(loop)) =>
+            log.error(s"found infinite loop ${loop.map(edge => edge.desc).mkString(" -> ")}")
+            Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "InfiniteLoop")).increment()
+            ctx.sender() ! Status.Failure(InfiniteLoop(loop))
           case Failure(t) =>
             val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
