@@ -17,6 +17,7 @@
 package fr.acinq.eclair.channel
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import com.softwaremill.quicklens.ModifyPimp
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.Alice.nodeParams
 import fr.acinq.eclair.TestUtils.NoLoggingDiagnostics
@@ -187,8 +188,11 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
 
     val htlcTimeoutTxs = getHtlcTimeoutTxs(localCommitPublished)
     val htlcSuccessTxs = getHtlcSuccessTxs(localCommitPublished)
+    // Claim-HTLC txs can be modified to pay more (or less) fees by changing the output amount.
     val claimHtlcTimeoutTxs = getClaimHtlcTimeoutTxs(remoteCommitPublished)
+    val claimHtlcTimeoutTxsModifiedFees = claimHtlcTimeoutTxs.map(tx => tx.modify(_.tx.txOut).setTo(Seq(tx.tx.txOut.head.copy(amount = 5000 sat))))
     val claimHtlcSuccessTxs = getClaimHtlcSuccessTxs(remoteCommitPublished)
+    val claimHtlcSuccessTxsModifiedFees = claimHtlcSuccessTxs.map(tx => tx.modify(_.tx.txOut).setTo(Seq(tx.tx.txOut.head.copy(amount = 5000 sat))))
 
     val aliceTimedOutHtlcs = htlcTimeoutTxs.map(htlcTimeout => {
       val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, htlcTimeout.tx)
@@ -204,10 +208,19 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     })
     assert(bobTimedOutHtlcs.toSet === bobHtlcs)
 
+    val bobTimedOutHtlcs2 = claimHtlcTimeoutTxsModifiedFees.map(claimHtlcTimeout => {
+      val timedOutHtlcs = Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcTimeout.tx)
+      assert(timedOutHtlcs.size === 1)
+      timedOutHtlcs.head
+    })
+    assert(bobTimedOutHtlcs2.toSet === bobHtlcs)
+
     htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
     htlcSuccessTxs.foreach(htlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, htlcSuccess.tx).isEmpty))
     claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
+    claimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
     claimHtlcSuccessTxs.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
+    claimHtlcSuccessTxsModifiedFees.foreach(claimHtlcSuccess => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, claimHtlcSuccess.tx).isEmpty))
     htlcTimeoutTxs.foreach(htlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, remoteCommit, remoteCommitPublished, dustLimit, htlcTimeout.tx).isEmpty))
     claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(Closing.trimmedOrTimedOutHtlcs(commitmentFormat, localCommit, localCommitPublished, dustLimit, claimHtlcTimeout.tx).isEmpty))
   }

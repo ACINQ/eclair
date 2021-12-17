@@ -1078,7 +1078,11 @@ object Helpers {
         log.error(s"some htlcs don't have a corresponding timeout transaction: tx=$tx, htlcs=$matchingHtlcs, timeout-txs=$matchingTxs")
       }
       matchingHtlcs.zip(matchingTxs).collectFirst {
+        // HTLC transactions cannot change when anchor outputs is unused, so we directly check the txid
         case (add, timeoutTx) if timeoutTx.txid == tx.txid => add
+        // Claim-HTLC transactions can be updated to pay more or less fees by changing the output amount, so we cannot
+        // rely on txid equality: we instead check that the input is the same and the output goes to the same address.
+        case (add, timeoutTx) if timeoutTx.txIn.head.outPoint == tx.txIn.head.outPoint && timeoutTx.txOut.head.publicKeyScript == tx.txOut.head.publicKeyScript => add
       }
     }
 

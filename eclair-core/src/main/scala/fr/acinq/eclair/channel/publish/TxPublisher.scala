@@ -24,7 +24,6 @@ import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.{Logs, NodeParams}
@@ -163,7 +162,6 @@ object TxPublisher {
 private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFactory, context: ActorContext[TxPublisher.Command], timers: TimerScheduler[TxPublisher.Command]) {
 
   import TxPublisher._
-  import nodeParams.onChainFeeConf.{feeEstimator, feeTargets}
 
   private val log = context.log
 
@@ -173,7 +171,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
     def cmd: PublishTx
   }
   private case class FinalAttempt(id: UUID, cmd: PublishFinalTx, actor: ActorRef[FinalTxPublisher.Command]) extends PublishAttempt
-  private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, feerate: FeeratePerKw, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
+  private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
   // @formatter:on
 
   private def run(pending: Map[OutPoint, Seq[PublishAttempt]], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
@@ -196,22 +194,21 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         }
 
       case cmd: PublishReplaceableTx =>
-        val targetFeerate = feeEstimator.getFeeratePerKw(feeTargets.commitmentBlockTarget)
         val attempts = pending.getOrElse(cmd.input, Seq.empty)
-        val alreadyPublished = attempts.exists {
-          // If there is already an attempt at spending this outpoint with a higher feerate, there is no point in publishing again.
-          case a: ReplaceableAttempt => targetFeerate <= a.feerate
-          case _ => false
+        val alreadyPublished = attempts.collectFirst {
+          // If there is already an attempt at spending this outpoint with a more aggressive deadline, there is no point in publishing again.
+          case a: ReplaceableAttempt if a.cmd.deadline <= cmd.deadline => a.cmd.deadline
         }
-        if (alreadyPublished) {
-          log.info("not publishing replaceable {} spending {}:{} with feerate={}, publishing is already in progress", cmd.desc, cmd.input.txid, cmd.input.index, targetFeerate)
-          Behaviors.same
-        } else {
-          val publishId = UUID.randomUUID()
-          log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.length)
-          val actor = factory.spawnReplaceableTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
-          actor ! ReplaceableTxPublisher.Publish(context.self, cmd, targetFeerate)
-          run(pending + (cmd.input -> attempts.appended(ReplaceableAttempt(publishId, cmd, targetFeerate, actor))), retryNextBlock, channelInfo)
+        alreadyPublished match {
+          case Some(currentDeadline) =>
+            log.info("not publishing replaceable {} spending {}:{} with deadline={}, publishing is already in progress with deadline={}", cmd.desc, cmd.input.txid, cmd.input.index, cmd.deadline, currentDeadline)
+            Behaviors.same
+          case None =>
+            val publishId = UUID.randomUUID()
+            log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.length)
+            val actor = factory.spawnReplaceableTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
+            actor ! ReplaceableTxPublisher.Publish(context.self, cmd)
+            run(pending + (cmd.input -> attempts.appended(ReplaceableAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
         }
 
       case result: PublishTxResult => result match {
@@ -269,7 +266,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
 
   private def stopAttempt(attempt: PublishAttempt): Unit = attempt match {
     case FinalAttempt(_, _, actor) => actor ! FinalTxPublisher.Stop
-    case ReplaceableAttempt(_, _, _, actor) => actor ! ReplaceableTxPublisher.Stop
+    case ReplaceableAttempt(_, _, actor) => actor ! ReplaceableTxPublisher.Stop
   }
 
 }

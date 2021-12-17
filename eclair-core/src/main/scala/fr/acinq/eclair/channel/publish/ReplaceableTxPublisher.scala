@@ -23,7 +23,7 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.FundTransactionOptions
-import fr.acinq.eclair.blockchain.fee.FeeratePerKw
+import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw}
 import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.CheckTx
 import fr.acinq.eclair.channel.{Commitments, HtlcTxAndRemoteSig}
@@ -47,7 +47,7 @@ object ReplaceableTxPublisher {
 
   // @formatter:off
   sealed trait Command
-  case class Publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, targetFeerate: FeeratePerKw) extends Command
+  case class Publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx) extends Command
   private case object TimeLocksOk extends Command
   private case object CommitTxAlreadyConfirmed extends RuntimeException with Command
   private case object RemoteCommitTxPublished extends RuntimeException with Command
@@ -71,6 +71,22 @@ object ReplaceableTxPublisher {
         }
       }
     }
+  }
+
+  def getFeerate(feeEstimator: FeeEstimator, deadline: Long, currentBlockHeight: Long): FeeratePerKw = {
+    val remainingBlocks = deadline - currentBlockHeight
+    val blockTarget = remainingBlocks match {
+      // If our target is still very far in the future, no need to rush
+      case t if t >= 144 => 144
+      case t if t >= 72 => 72
+      case t if t >= 36 => 36
+      // However, if we get closer to the deadline, we start being more aggressive
+      case t if t >= 18 => 12
+      case t if t >= 12 => 6
+      case t if t >= 2 => 2
+      case _ => 1
+    }
+    feeEstimator.getFeeratePerKw(blockTarget)
   }
 
   /**
@@ -202,17 +218,17 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   def start(): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case Publish(replyTo, cmd, targetFeerate) =>
+      case Publish(replyTo, cmd) =>
         cmd.txInfo match {
-          case _: ClaimLocalAnchorOutputTx => checkAnchorPreconditions(replyTo, cmd, targetFeerate)
-          case htlcTx: HtlcTx => checkHtlcPreconditions(replyTo, cmd, htlcTx, targetFeerate)
-          case claimHtlcTx: ClaimHtlcTx => checkClaimHtlcPreconditions(replyTo, cmd, claimHtlcTx, targetFeerate)
+          case _: ClaimLocalAnchorOutputTx => checkAnchorPreconditions(replyTo, cmd)
+          case htlcTx: HtlcTx => checkHtlcPreconditions(replyTo, cmd, htlcTx)
+          case claimHtlcTx: ClaimHtlcTx => checkClaimHtlcPreconditions(replyTo, cmd, claimHtlcTx)
         }
       case Stop => Behaviors.stopped
     }
   }
 
-  def checkAnchorPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def checkAnchorPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx): Behavior[Command] = {
     // We verify that:
     //  - our commit is not confirmed (if it is, no need to claim our anchor)
     //  - their commit is not confirmed (if it is, no need to claim our anchor either)
@@ -233,6 +249,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
     Behaviors.receiveMessagePartial {
       case PreconditionsOk =>
+        val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.deadline, nodeParams.currentBlockHeight)
         val commitFeerate = cmd.commitments.localCommit.spec.commitTxFeerate
         if (targetFeerate <= commitFeerate) {
           log.info("skipping {}: commit feerate is high enough (feerate={})", cmd.desc, commitFeerate)
@@ -256,7 +273,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkHtlcPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTx: HtlcTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def checkHtlcPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTx: HtlcTx): Behavior[Command] = {
     // We verify that:
     //  - their commit is not confirmed: if it is, there is no need to publish our HTLC transactions
     context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitments.remoteCommit.txid)) {
@@ -267,7 +284,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case PreconditionsOk =>
         HtlcTxAndWitnessData(htlcTx, cmd.commitments) match {
-          case Some(txWithWitnessData) => checkTimeLocks(replyTo, cmd, txWithWitnessData, targetFeerate)
+          case Some(txWithWitnessData) => checkTimeLocks(replyTo, cmd, txWithWitnessData)
           case None =>
             log.error("witness data not found for htlcId={}, skipping...", htlcTx.htlcId)
             sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
@@ -279,7 +296,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkClaimHtlcPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, claimHtlcTx: ClaimHtlcTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def checkClaimHtlcPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, claimHtlcTx: ClaimHtlcTx): Behavior[Command] = {
     // We verify that:
     //  - our commit is not confirmed: if it is, there is no need to publish our claim-HTLC transactions
     context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx.txid)) {
@@ -288,7 +305,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case Failure(_) => PreconditionsOk // if our checks fail, we don't want it to prevent us from publishing claim-HTLC transactions
     }
     Behaviors.receiveMessagePartial {
-      case PreconditionsOk => checkTimeLocks(replyTo, cmd, claimHtlcTx, targetFeerate)
+      case PreconditionsOk => checkTimeLocks(replyTo, cmd, claimHtlcTx)
       case LocalCommitTxConfirmed =>
         log.warn("cannot publish {}: local commit has been confirmed", cmd.desc)
         sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.ConflictingTxConfirmed))
@@ -296,11 +313,12 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTxWithWitnessData: HtlcTxAndWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, htlcTxWithWitnessData: HtlcTxAndWitnessData): Behavior[Command] = {
     val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
     timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
     Behaviors.receiveMessagePartial {
       case TimeLocksOk =>
+        val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.deadline, nodeParams.currentBlockHeight)
         val htlcFeerate = cmd.commitments.localCommit.spec.htlcTxFeerate(cmd.commitments.commitmentFormat)
         if (targetFeerate <= htlcFeerate) {
           val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
@@ -319,42 +337,44 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, claimHtlcTx: ClaimHtlcTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, claimHtlcTx: ClaimHtlcTx): Behavior[Command] = {
     val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
     timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
     Behaviors.receiveMessagePartial {
-      case TimeLocksOk => adjustClaimHtlcTxOutput(claimHtlcTx, targetFeerate, cmd.commitments) match {
-        case Left(reason) =>
-          // The HTLC isn't economical to claim at the current feerate, but if the feerate goes down, we may want to claim it later.
-          log.warn("cannot publish {}: {}", cmd.desc, reason)
-          sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
-        case Right((updatedClaimHtlcTx, fee)) =>
-          val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
-          val sig = keyManager.sign(updatedClaimHtlcTx, keyManager.htlcPoint(channelKeyPath), cmd.commitments.remoteCommit.remotePerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
-          updatedClaimHtlcTx match {
-            case claimHtlcSuccess: LegacyClaimHtlcSuccessTx =>
-              // The payment hash has been added to claim-htlc-success in https://github.com/ACINQ/eclair/pull/2101
-              // Some transactions made with older versions of eclair may not set it correctly, in which case we simply
-              // publish the transaction as initially signed.
-              log.warn("payment hash not set for htlcId={}, publishing original transaction", claimHtlcSuccess.htlcId)
-              publish(replyTo, cmd, cmd.txInfo.tx, cmd.txInfo.fee)
-            case claimHtlcSuccess: ClaimHtlcSuccessTx =>
-              val preimage_opt = cmd.commitments.localChanges.all.collectFirst {
-                case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == claimHtlcSuccess.paymentHash => u.paymentPreimage
-              }
-              preimage_opt match {
-                case Some(preimage) =>
-                  val signedClaimHtlcTx = addSigs(claimHtlcSuccess, sig, preimage)
-                  publish(replyTo, cmd, signedClaimHtlcTx.tx, fee)
-                case None =>
-                  log.error("preimage not found for htlcId={}, skipping...", claimHtlcSuccess.htlcId)
-                  sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
-              }
-            case claimHtlcTimeout: ClaimHtlcTimeoutTx =>
-              val signedClaimHtlcTx = addSigs(claimHtlcTimeout, sig)
-              publish(replyTo, cmd, signedClaimHtlcTx.tx, fee)
-          }
-      }
+      case TimeLocksOk =>
+        val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.deadline, nodeParams.currentBlockHeight)
+        adjustClaimHtlcTxOutput(claimHtlcTx, targetFeerate, cmd.commitments) match {
+          case Left(reason) =>
+            // The HTLC isn't economical to claim at the current feerate, but if the feerate goes down, we may want to claim it later.
+            log.warn("cannot publish {}: {}", cmd.desc, reason)
+            sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true)))
+          case Right((updatedClaimHtlcTx, fee)) =>
+            val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
+            val sig = keyManager.sign(updatedClaimHtlcTx, keyManager.htlcPoint(channelKeyPath), cmd.commitments.remoteCommit.remotePerCommitmentPoint, TxOwner.Local, cmd.commitments.commitmentFormat)
+            updatedClaimHtlcTx match {
+              case claimHtlcSuccess: LegacyClaimHtlcSuccessTx =>
+                // The payment hash has been added to claim-htlc-success in https://github.com/ACINQ/eclair/pull/2101
+                // Some transactions made with older versions of eclair may not set it correctly, in which case we simply
+                // publish the transaction as initially signed.
+                log.warn("payment hash not set for htlcId={}, publishing original transaction", claimHtlcSuccess.htlcId)
+                publish(replyTo, cmd, cmd.txInfo.tx, cmd.txInfo.fee)
+              case claimHtlcSuccess: ClaimHtlcSuccessTx =>
+                val preimage_opt = cmd.commitments.localChanges.all.collectFirst {
+                  case u: UpdateFulfillHtlc if Crypto.sha256(u.paymentPreimage) == claimHtlcSuccess.paymentHash => u.paymentPreimage
+                }
+                preimage_opt match {
+                  case Some(preimage) =>
+                    val signedClaimHtlcTx = addSigs(claimHtlcSuccess, sig, preimage)
+                    publish(replyTo, cmd, signedClaimHtlcTx.tx, fee)
+                  case None =>
+                    log.error("preimage not found for htlcId={}, skipping...", claimHtlcSuccess.htlcId)
+                    sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false)))
+                }
+              case claimHtlcTimeout: ClaimHtlcTimeoutTx =>
+                val signedClaimHtlcTx = addSigs(claimHtlcTimeout, sig)
+                publish(replyTo, cmd, signedClaimHtlcTx.tx, fee)
+            }
+        }
       case Stop =>
         timeLocksChecker ! TxTimeLocksMonitor.Stop
         Behaviors.stopped

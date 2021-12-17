@@ -59,6 +59,19 @@ object TestConstants {
     override def getMempoolMinFeeratePerKw(): FeeratePerKw = currentFeerates.mempoolMinFee
     // @formatter:on
 
+    def setFeerate(target: Int, feerate: FeeratePerKw): Unit = {
+      target match {
+        case 1 => currentFeerates = currentFeerates.copy(block_1 = feerate)
+        case 2 => currentFeerates = currentFeerates.copy(blocks_2 = feerate)
+        case t if t <= 6 => currentFeerates = currentFeerates.copy(blocks_6 = feerate)
+        case t if t <= 12 => currentFeerates = currentFeerates.copy(blocks_12 = feerate)
+        case t if t <= 36 => currentFeerates = currentFeerates.copy(blocks_36 = feerate)
+        case t if t <= 72 => currentFeerates = currentFeerates.copy(blocks_72 = feerate)
+        case t if t <= 144 => currentFeerates = currentFeerates.copy(blocks_144 = feerate)
+        case _ => currentFeerates = currentFeerates.copy(blocks_1008 = feerate)
+      }
+    }
+
     def setFeerate(feeratesPerKw: FeeratesPerKw): Unit = {
       currentFeerates = feeratesPerKw
     }

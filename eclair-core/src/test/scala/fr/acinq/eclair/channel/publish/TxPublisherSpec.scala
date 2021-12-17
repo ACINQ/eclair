@@ -21,9 +21,7 @@ import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{OutPoint, SatoshiLong, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentBlockCount
-import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.publish
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
@@ -37,11 +35,7 @@ import scala.concurrent.duration.DurationInt
 
 class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(nodeParams: NodeParams, txPublisher: ActorRef[TxPublisher.Command], factory: TestProbe, probe: TestProbe) {
-    def setFeerate(feerate: FeeratePerKw): Unit = {
-      nodeParams.onChainFeeConf.feeEstimator.asInstanceOf[TestFeeEstimator].setFeerate(FeeratesPerKw.single(feerate))
-    }
-  }
+  case class FixtureParam(nodeParams: NodeParams, txPublisher: ActorRef[TxPublisher.Command], factory: TestProbe, probe: TestProbe)
 
   override def withFixture(test: OneArgTest): Outcome = {
     within(max = 30 seconds) {
@@ -107,40 +101,39 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("publish replaceable tx") { f =>
     import f._
 
-    f.setFeerate(FeeratePerKw(750 sat))
+    val deadline = nodeParams.currentBlockHeight + 12
     val input = OutPoint(randomBytes32(), 3)
-    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null, 0)
+    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null, deadline)
     txPublisher ! cmd
     val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     val p = child.expectMsgType[ReplaceableTxPublisher.Publish]
     assert(p.cmd === cmd)
-    assert(p.targetFeerate === FeeratePerKw(750 sat))
   }
 
   test("publish replaceable tx duplicate") { f =>
     import f._
 
-    f.setFeerate(FeeratePerKw(750 sat))
+    val deadline = nodeParams.currentBlockHeight + 12
     val input = OutPoint(randomBytes32(), 3)
-    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null, 0)
+    val cmd = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0)), null, deadline)
     txPublisher ! cmd
     val child1 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     val p1 = child1.expectMsgType[ReplaceableTxPublisher.Publish]
     assert(p1.cmd === cmd)
-    assert(p1.targetFeerate === FeeratePerKw(750 sat))
 
-    // We ignore duplicates that use a lower feerate:
-    f.setFeerate(FeeratePerKw(700 sat))
+    // We ignore duplicates that don't use a more aggressive deadline:
     txPublisher ! cmd
     factory.expectNoMessage(100 millis)
+    val cmdHigherDeadline = cmd.copy(deadline = deadline + 1)
+    txPublisher ! cmdHigherDeadline
+    factory.expectNoMessage(100 millis)
 
-    // But we retry publishing if the feerate is greater than previous attempts:
-    f.setFeerate(FeeratePerKw(1000 sat))
-    txPublisher ! cmd
+    // But we retry publishing if the deadline is more aggressive than previous attempts:
+    val cmdLowerDeadline = cmd.copy(deadline = deadline - 6)
+    txPublisher ! cmdLowerDeadline
     val child2 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     val p2 = child2.expectMsgType[ReplaceableTxPublisher.Publish]
-    assert(p2.cmd === cmd)
-    assert(p2.targetFeerate === FeeratePerKw(1000 sat))
+    assert(p2.cmd === cmdLowerDeadline)
   }
 
   test("stop publishing attempts when transaction confirms") { f =>
@@ -159,7 +152,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt2 = factory.expectMsgType[FinalTxPublisherSpawned].actor
     attempt2.expectMsgType[FinalTxPublisher.Publish]
 
-    val cmd3 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null, 0)
+    val cmd3 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null, nodeParams.currentBlockHeight)
     txPublisher ! cmd3
     val attempt3 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
     attempt3.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -181,7 +174,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val attempt1 = factory.expectMsgType[FinalTxPublisherSpawned]
     attempt1.actor.expectMsgType[FinalTxPublisher.Publish]
 
-    val cmd2 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null, 0)
+    val cmd2 = PublishReplaceableTx(ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, TxOut(20_000 sat, Nil) :: Nil, 0)), null, nodeParams.currentBlockHeight)
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]
@@ -198,16 +191,16 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("publishing attempt fails (not enough funds)") { f =>
     import f._
 
-    f.setFeerate(FeeratePerKw(600 sat))
+    val deadline1 = nodeParams.currentBlockHeight + 12
     val input = OutPoint(randomBytes32(), 7)
     val paymentHash = randomBytes32()
-    val cmd1 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null, 0)
+    val cmd1 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null, deadline1)
     txPublisher ! cmd1
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]
 
-    f.setFeerate(FeeratePerKw(750 sat))
-    val cmd2 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null, 0)
+    val deadline2 = nodeParams.currentBlockHeight + 6
+    val cmd2 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null, deadline2)
     txPublisher ! cmd2
     val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]
