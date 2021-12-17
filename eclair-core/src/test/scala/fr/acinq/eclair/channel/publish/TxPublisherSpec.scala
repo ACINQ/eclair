@@ -243,7 +243,7 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     factory.expectNoMessage(100 millis)
   }
 
-  test("publishing attempt fails (unconfirmed conflicting transaction)") { f =>
+  test("publishing attempt fails (unconfirmed conflicting raw transaction)") { f =>
     import f._
 
     val tx = Transaction(2, TxIn(OutPoint(randomBytes32(), 1), Nil, 0) :: Nil, Nil, 0)
@@ -258,6 +258,26 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     // We don't retry, even after a new block has been found:
     system.eventStream.publish(CurrentBlockCount(8200))
     factory.expectNoMessage(100 millis)
+  }
+
+  test("publishing attempt fails (unconfirmed conflicting replaceable transaction)") { f =>
+    import f._
+
+    val input = OutPoint(randomBytes32(), 7)
+    val paymentHash = randomBytes32()
+    val cmd = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3), null, nodeParams.currentBlockHeight)
+    txPublisher ! cmd
+    val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
+    attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]
+
+    txPublisher ! TxRejected(attempt1.id, cmd, ConflictingTxUnconfirmed)
+    attempt1.actor.expectMsg(ReplaceableTxPublisher.Stop)
+    factory.expectNoMessage(100 millis)
+
+    // We retry when a new block is found:
+    system.eventStream.publish(CurrentBlockCount(nodeParams.currentBlockHeight + 1))
+    val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
+    assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
   }
 
   test("publishing attempt fails (confirmed conflicting transaction)") { f =>

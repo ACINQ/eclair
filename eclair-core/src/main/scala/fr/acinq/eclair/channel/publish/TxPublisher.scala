@@ -234,9 +234,17 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               val retryNextBlock2 = if (retry) retryNextBlock ++ rejectedAttempts.map(_.cmd) else retryNextBlock
               run(pending2, retryNextBlock2, channelInfo)
             case TxRejectedReason.ConflictingTxUnconfirmed =>
-              // Our transaction was replaced by a transaction that pays more fees, so it doesn't make sense to retry now.
-              // We will automatically retry with a higher fee if we get close to the deadline.
-              run(pending2, retryNextBlock, channelInfo)
+              cmd match {
+                case _: PublishFinalTx =>
+                  // Our transaction is not replaceable, and the mempool contains a transaction that pays more fees, so
+                  // it doesn't make sense to retry, we will keep getting rejected.
+                  run(pending2, retryNextBlock, channelInfo)
+                case _: PublishReplaceableTx =>
+                  // The mempool contains a transaction that pays more fees, but as we get closer to the deadline, we will
+                  // try to publish with higher fees, so if the conflicting transaction doesn't confirm, we should be able
+                  // to replace it before we reach the deadline.
+                  run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelInfo)
+              }
             case TxRejectedReason.ConflictingTxConfirmed =>
               // Our transaction was double-spent by a competing transaction that has been confirmed, so it doesn't make
               // sense to retry.
