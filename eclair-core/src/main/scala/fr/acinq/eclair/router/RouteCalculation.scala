@@ -26,7 +26,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Graph.GraphStructure.DirectedGraph.graphEdgeToHop
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.{InfiniteLoop, RichWeight, RoutingHeuristics}
+import fr.acinq.eclair.router.Graph.{InfiniteLoop, NegativeProbability, RichWeight, RoutingHeuristics}
 import fr.acinq.eclair.router.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol.ChannelUpdate
@@ -130,10 +130,14 @@ object RouteCalculation {
             Metrics.RouteResults.withTags(tags).record(routes.length)
             routes.foreach(route => Metrics.RouteLength.withTags(tags).record(route.length))
             ctx.sender() ! RouteResponse(routes)
-          case Failure(InfiniteLoop(loop)) =>
-            log.error(s"found infinite loop ${loop.map(edge => edge.desc).mkString(" -> ")}")
+          case Failure(failure: InfiniteLoop) =>
+            log.error(s"found infinite loop ${failure.path.map(edge => edge.desc).mkString(" -> ")}")
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "InfiniteLoop")).increment()
-            ctx.sender() ! Status.Failure(InfiniteLoop(loop))
+            ctx.sender() ! Status.Failure(failure)
+          case Failure(failure: NegativeProbability) =>
+            log.error(s"computed negative probability $failure")
+            Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, "NegativeProbability")).increment()
+            ctx.sender() ! Status.Failure(failure)
           case Failure(t) =>
             val failure = if (isNeighborBalanceTooLow(d.graph, r)) BalanceTooLow else t
             Metrics.FindRouteErrors.withTags(tags.withTag(Tags.Error, failure.getClass.getSimpleName)).increment()
