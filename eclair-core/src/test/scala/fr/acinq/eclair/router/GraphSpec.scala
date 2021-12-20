@@ -239,6 +239,13 @@ class GraphSpec extends AnyFunSuite {
   def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
 
   test("amount with fees larger than channel capacity") {
+    /*
+    The channel C -> D is just large enough for the payment to go through but when adding the channel fee it becomes too big.
+    A --> B --> C <-> D
+                 \   /
+                  \ /
+                   E
+    */
     val edgeAB = makeEdge(1L, a, b, 10001 msat, 0, capacity = 200000 sat)
     val edgeBC = makeEdge(2L, b, c, 10000 msat, 0, capacity = 200000 sat)
     val edgeCD = makeEdge(3L, c, d, 20001 msat, 0, capacity = 100011 sat)
