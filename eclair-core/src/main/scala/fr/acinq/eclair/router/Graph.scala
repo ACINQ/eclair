@@ -90,6 +90,8 @@ object Graph {
 
   case class InfiniteLoop(path: Seq[GraphEdge]) extends Exception
 
+  case class NegativeProbability(edge: GraphEdge, weight: RichWeight, heuristicsConstants: HeuristicsConstants) extends Exception
+
   /**
    * Yen's algorithm to find the k-shortest (loop-less) paths in a graph, uses dijkstra as search algo. Is guaranteed to
    * terminate finding at most @pathsToFind paths sorted by cost (the cheapest is in position 0).
@@ -326,6 +328,9 @@ object Graph {
         // If the edge was added by the invoice, it is assumed that it can route the payment.
         // If we know the balance of the channel, then we will check separately that it can relay the payment.
         val successProbability = if (edge.update.chainHash == ByteVector32.Zeroes || edge.balance_opt.nonEmpty) 1.0 else 1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
+        if (successProbability < 0) {
+          throw NegativeProbability(edge, prev, heuristicsConstants)
+        }
         val totalSuccessProbability = prev.successProbability * successProbability
         val failureCost = nodeFee(heuristicsConstants.failureCost.feeBase, heuristicsConstants.failureCost.feeProportionalMillionths, totalAmount)
         val weight = totalFees.toLong + totalHopsCost.toLong + riskCost + failureCost.toLong / totalSuccessProbability

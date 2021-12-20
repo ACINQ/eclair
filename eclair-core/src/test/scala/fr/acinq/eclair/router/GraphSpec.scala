@@ -245,6 +245,7 @@ class GraphSpec extends AnyFunSuite {
                  \   /
                   \ /
                    E
+    This tests that the success probability for the channel C -> D is computed properly and is positive.
     */
     val edgeAB = makeEdge(1L, a, b, 10001 msat, 0, capacity = 200000 sat)
     val edgeBC = makeEdge(2L, b, c, 10000 msat, 0, capacity = 200000 sat)
