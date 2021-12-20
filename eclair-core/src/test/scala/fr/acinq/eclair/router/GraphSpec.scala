@@ -17,16 +17,15 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{ByteVector32, SatoshiLong}
+import fr.acinq.bitcoin.SatoshiLong
+import fr.acinq.eclair.payment.relay.Relayer.RelayFees
 import fr.acinq.eclair.router.Graph.GraphStructure.{DirectedGraph, GraphEdge}
-import fr.acinq.eclair.router.Graph.RoutingHeuristics
+import fr.acinq.eclair.router.Graph.{HeuristicsConstants, yenKshortestPaths}
 import fr.acinq.eclair.router.RouteCalculationSpec._
-import fr.acinq.eclair.router.Router.{ChannelDesc, PublicChannel}
+import fr.acinq.eclair.router.Router.ChannelDesc
 import fr.acinq.eclair.{MilliSatoshiLong, ShortChannelId}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.bits._
-
-import scala.collection.immutable.SortedMap
 
 class GraphSpec extends AnyFunSuite {
 
@@ -239,4 +238,19 @@ class GraphSpec extends AnyFunSuite {
 
   def edgeFromNodes(shortChannelId: Long, a: PublicKey, b: PublicKey): GraphEdge = makeEdge(shortChannelId, a, b, 0 msat, 0)
 
+  test("amount with fees larger than channel capacity") {
+    val edgeAB = makeEdge(1L, a, b, 10001 msat, 0, capacity = 200000 sat)
+    val edgeBC = makeEdge(2L, b, c, 10000 msat, 0, capacity = 200000 sat)
+    val edgeCD = makeEdge(3L, c, d, 20001 msat, 0, capacity = 100011 sat)
+    val edgeDC = makeEdge(4L, d, c, 1 msat, 0, capacity = 300000 sat)
+    val edgeCE = makeEdge(5L, c, e, 10 msat, 0, capacity = 200000 sat)
+    val edgeDE = makeEdge(6L, d, e, 9 msat, 0, capacity = 200000 sat)
+    val graph = DirectedGraph(Seq(edgeAB, edgeBC, edgeCD, edgeDC, edgeCE, edgeDE))
+
+    val path :: Nil = yenKshortestPaths(graph, a, e, 100000000 msat,
+      Set.empty, Set.empty, Set.empty, 1,
+      Right(HeuristicsConstants(1.0E-8, RelayFees(2000 msat, 500), RelayFees(50 msat, 20))),
+      714930, _ => true, includeLocalChannelCost = true)
+    assert(path.path == Seq(edgeAB, edgeBC, edgeCE))
+  }
 }

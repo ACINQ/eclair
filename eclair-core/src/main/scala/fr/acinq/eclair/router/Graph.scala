@@ -325,7 +325,7 @@ object Graph {
         val riskCost = totalAmount.toLong * totalCltv.toInt * heuristicsConstants.lockedFundsRisk
         // If the edge was added by the invoice, it is assumed that it can route the payment.
         // If we know the balance of the channel, then we will check separately that it can relay the payment.
-        val successProbability = if (edge.update.chainHash == ByteVector32.Zeroes || edge.balance_opt.nonEmpty) 1.0 else 1.0 - totalAmount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
+        val successProbability = if (edge.update.chainHash == ByteVector32.Zeroes || edge.balance_opt.nonEmpty) 1.0 else 1.0 - prev.amount.toLong.toDouble / edge.capacity.toMilliSatoshi.toLong.toDouble
         val totalSuccessProbability = prev.successProbability * successProbability
         val failureCost = nodeFee(heuristicsConstants.failureCost.feeBase, heuristicsConstants.failureCost.feeProportionalMillionths, totalAmount)
         val weight = totalFees.toLong + totalHopsCost.toLong + riskCost + failureCost.toLong / totalSuccessProbability
