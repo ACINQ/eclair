@@ -20,7 +20,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.pattern.pipe
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BtcAmount, ByteVector32, MilliBtcDouble, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BtcAmount, ByteVector32, ByteVector64, MilliBtcDouble, OutPoint, SatoshiLong, Script, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.TestFeeEstimator
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
@@ -29,6 +29,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, HtlcSuccessWithWitnessData, HtlcTimeoutWithWitnessData}
 import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
@@ -459,19 +460,19 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
         val walletInputs = (1 to walletInputsCount).map(_ => TxIn(OutPoint(randomBytes32(), 0), Nil, 0))
         val amountIn = dustLimit * walletInputsCount + Random.nextInt(25_000_000).sat
         val amountOut = dustLimit + Random.nextLong(amountIn.toLong).sat
-        val unsignedTx = anchorTxInfo.copy(tx = anchorTxInfo.tx.copy(
+        val unsignedTx = ClaimLocalAnchorWithWitnessData(anchorTxInfo.copy(tx = anchorTxInfo.tx.copy(
           txIn = anchorTxInfo.tx.txIn ++ walletInputs,
           txOut = TxOut(amountOut, Script.pay2wpkh(randomKey().publicKey)) :: Nil,
-        ))
-        val (adjustedTx, fee) = ReplaceableTxPublisher.adjustAnchorOutputChange(unsignedTx, commitTx.tx, amountIn, commitFeerate, TestConstants.feeratePerKw, dustLimit)
-        assert(fee === amountIn - adjustedTx.tx.txOut.map(_.amount).sum)
-        assert(adjustedTx.tx.txIn.size === unsignedTx.tx.txIn.size)
-        assert(adjustedTx.tx.txOut.size === 1)
-        assert(adjustedTx.tx.txOut.head.amount >= dustLimit)
-        if (adjustedTx.tx.txOut.head.amount > dustLimit) {
+        )))
+        val (adjustedTx, fee) = ReplaceableTxFunder.adjustAnchorOutputChange(unsignedTx, commitTx.tx, amountIn, commitFeerate, TestConstants.feeratePerKw, dustLimit)
+        assert(fee === amountIn - adjustedTx.txInfo.tx.txOut.map(_.amount).sum)
+        assert(adjustedTx.txInfo.tx.txIn.size === unsignedTx.txInfo.tx.txIn.size)
+        assert(adjustedTx.txInfo.tx.txOut.size === 1)
+        assert(adjustedTx.txInfo.tx.txOut.head.amount >= dustLimit)
+        if (adjustedTx.txInfo.tx.txOut.head.amount > dustLimit) {
           // Simulate tx signing to check final feerate.
           val signedTx = {
-            val anchorSigned = Transactions.addSigs(adjustedTx, Transactions.PlaceHolderSig)
+            val anchorSigned = Transactions.addSigs(adjustedTx.txInfo, Transactions.PlaceHolderSig)
             val signedWalletInputs = anchorSigned.tx.txIn.tail.map(txIn => txIn.copy(witness = ScriptWitness(Seq(Scripts.der(Transactions.PlaceHolderSig), Transactions.PlaceHolderPubKey.value))))
             anchorSigned.tx.copy(txIn = anchorSigned.tx.txIn.head +: signedWalletInputs)
           }
@@ -774,24 +775,24 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
         val walletInputs = (1 to walletInputsCount).map(_ => TxIn(OutPoint(randomBytes32(), 0), Nil, 0))
         val walletAmountIn = dustLimit * walletInputsCount + Random.nextInt(25_000_000).sat
         val changeOutput = TxOut(Random.nextLong(walletAmountIn.toLong).sat, Script.pay2wpkh(randomKey().publicKey))
-        val unsignedHtlcSuccessTx = htlcSuccess.txInfo.asInstanceOf[HtlcSuccessTx].copy(tx = htlcSuccess.txInfo.tx.copy(
+        val unsignedHtlcSuccessTx = HtlcSuccessWithWitnessData(htlcSuccess.txInfo.asInstanceOf[HtlcSuccessTx].copy(tx = htlcSuccess.txInfo.tx.copy(
           txIn = htlcSuccess.txInfo.tx.txIn ++ walletInputs,
           txOut = htlcSuccess.txInfo.tx.txOut ++ Seq(changeOutput)
-        ))
-        val unsignedHtlcTimeoutTx = htlcTimeout.txInfo.asInstanceOf[HtlcTimeoutTx].copy(tx = htlcTimeout.txInfo.tx.copy(
+        )), ByteVector64.Zeroes, ByteVector32.Zeroes)
+        val unsignedHtlcTimeoutTx = HtlcTimeoutWithWitnessData(htlcTimeout.txInfo.asInstanceOf[HtlcTimeoutTx].copy(tx = htlcTimeout.txInfo.tx.copy(
           txIn = htlcTimeout.txInfo.tx.txIn ++ walletInputs,
           txOut = htlcTimeout.txInfo.tx.txOut ++ Seq(changeOutput)
-        ))
+        )), ByteVector64.Zeroes)
         for (unsignedTx <- Seq(unsignedHtlcSuccessTx, unsignedHtlcTimeoutTx)) {
-          val totalAmountIn = unsignedTx.input.txOut.amount + walletAmountIn
-          val (adjustedTx, fee) = ReplaceableTxPublisher.adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, commitments)
-          assert(fee === totalAmountIn - adjustedTx.tx.txOut.map(_.amount).sum)
-          assert(adjustedTx.tx.txIn.size === unsignedTx.tx.txIn.size)
-          assert(adjustedTx.tx.txOut.size === 1 || adjustedTx.tx.txOut.size === 2)
-          if (adjustedTx.tx.txOut.size == 2) {
+          val totalAmountIn = unsignedTx.txInfo.input.txOut.amount + walletAmountIn
+          val (adjustedTx, fee) = ReplaceableTxFunder.adjustHtlcTxChange(unsignedTx, totalAmountIn, targetFeerate, commitments)
+          assert(fee === totalAmountIn - adjustedTx.txInfo.tx.txOut.map(_.amount).sum)
+          assert(adjustedTx.txInfo.tx.txIn.size === unsignedTx.txInfo.tx.txIn.size)
+          assert(adjustedTx.txInfo.tx.txOut.size === 1 || adjustedTx.txInfo.tx.txOut.size === 2)
+          if (adjustedTx.txInfo.tx.txOut.size == 2) {
             // Simulate tx signing to check final feerate.
             val signedTx = {
-              val htlcSigned = adjustedTx match {
+              val htlcSigned = adjustedTx.txInfo match {
                 case tx: HtlcSuccessTx => Transactions.addSigs(tx, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, ByteVector32.Zeroes, commitments.commitmentFormat)
                 case tx: HtlcTimeoutTx => Transactions.addSigs(tx, Transactions.PlaceHolderSig, Transactions.PlaceHolderSig, commitments.commitmentFormat)
               }
