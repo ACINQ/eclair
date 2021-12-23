@@ -16,17 +16,22 @@
 
 package fr.acinq.eclair.channel.publish
 
-import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.typed.eventstream.EventStream
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.{OutPoint, Satoshi, Transaction}
+import fr.acinq.bitcoin.{OutPoint, Transaction}
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw}
+import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, ReplaceableTxWithWitnessData}
-import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.{DurationInt, DurationLong}
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Random, Success}
 
 /**
  * Created by t-bast on 10/06/2021.
@@ -34,6 +39,7 @@ import scala.concurrent.ExecutionContext
 
 /**
  * This actor sets the fees, signs and publishes a transaction that can be RBF-ed.
+ * It regularly RBFs the transaction as we get closer to its deadline.
  * It waits for confirmation or failure before reporting back to the requesting actor.
  */
 object ReplaceableTxPublisher {
@@ -47,13 +53,24 @@ object ReplaceableTxPublisher {
   private case object TimeLocksOk extends Command
   private case class WrappedFundingResult(result: ReplaceableTxFunder.FundingResult) extends Command
   private case class WrappedTxResult(result: MempoolTxMonitor.TxResult) extends Command
+  private case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
+  private case class CheckFee(currentBlockCount: Long) extends Command
+  private case class BumpFee(targetFeerate: FeeratePerKw) extends Command
+  private case object Stay extends Command
+  private case object UnlockUtxos extends Command
   private case object UtxosUnlocked extends Command
+
+  // Keys to ensure we don't have multiple concurrent timers running.
+  private case object CheckFeeKey
+  private case object CurrentBlockCountKey
   // @formatter:on
 
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
-      Behaviors.withMdc(loggingInfo.mdc()) {
-        new ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, context, loggingInfo).start()
+      Behaviors.withTimers { timers =>
+        Behaviors.withMdc(loggingInfo.mdc()) {
+          new ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, context, timers, loggingInfo).start()
+        }
       }
     }
   }
@@ -76,7 +93,7 @@ object ReplaceableTxPublisher {
 
 }
 
-private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], context: ActorContext[ReplaceableTxPublisher.Command], loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], context: ActorContext[ReplaceableTxPublisher.Command], timers: TimerScheduler[ReplaceableTxPublisher.Command], loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import ReplaceableTxPublisher._
 
@@ -123,55 +140,189 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   def fund(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
     val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.deadline, nodeParams.currentBlockHeight)
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder")
-    txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, txWithWitnessData, targetFeerate)
+    txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
         result match {
-          case success: ReplaceableTxFunder.TransactionReady => publish(replyTo, cmd, success.tx, success.fee)
+          case success: ReplaceableTxFunder.TransactionReady => publish(replyTo, cmd, success.fundedTx)
           case ReplaceableTxFunder.FundingFailed(reason) => sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
         }
       case Stop =>
-        // We don't stop right away, because the child actor may need to unlock utxos first.
-        // If the child actor has already been terminated, this will emit the event instantly.
-        context.watchWith(txFunder, UtxosUnlocked)
-        txFunder ! ReplaceableTxFunder.Stop
+        // We can't stop right now, the child actor is currently funding the transaction and will send its result soon.
+        // We just wait for the funding process to finish before stopping (in the next state).
+        timers.startSingleTimer(Stop, 1 second)
         Behaviors.same
-      case UtxosUnlocked =>
-        Behaviors.stopped
     }
   }
 
-  def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, tx: Transaction, fee: Satoshi): Behavior[Command] = {
+  def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, tx: FundedTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx, cmd.input, cmd.desc, fee)
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
+    // We register to new blocks: if the transaction doesn't confirm, we will replace it with one that pays more fees.
+    context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
+    wait(replyTo, cmd, txMonitor, tx)
+  }
+
+  // Wait for our transaction to be confirmed or rejected from the mempool.
+  // If we get close to the deadline and our transaction is stuck in the mempool, we will initiate an RBF attempt.
+  def wait(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, txMonitor: ActorRef[MempoolTxMonitor.Command], tx: FundedTx): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedTxResult(MempoolTxMonitor.TxConfirmed) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, tx))
-      case WrappedTxResult(MempoolTxMonitor.TxRejected(reason)) =>
-        reason match {
-          case TxRejectedReason.WalletInputGone =>
-            // The transaction now has an unknown input from bitcoind's point of view, so it will keep it in the wallet in
-            // case that input appears later in the mempool or the blockchain. In our case, we know it won't happen so we
-            // abandon that transaction and will retry with a different set of inputs (if it still makes sense to publish).
-            bitcoinClient.abandonTransaction(tx.txid)
-          case _ => // nothing to do
-        }
+      case WrappedTxResult(MempoolTxMonitor.TxConfirmed(confirmedTx)) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, confirmedTx))
+      case WrappedTxResult(MempoolTxMonitor.TxRejected(_, reason)) =>
         replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
         // We wait for our parent to stop us: when that happens we will unlock utxos.
         Behaviors.same
+      case WrappedCurrentBlockCount(currentBlockCount) =>
+        // We avoid a herd effect whenever a new block is found.
+        timers.startSingleTimer(CheckFeeKey, CheckFee(currentBlockCount), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
+        Behaviors.same
+      case CheckFee(currentBlockCount) =>
+        val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.deadline, currentBlockCount)
+        val targetFeerate_opt = if (cmd.deadline <= currentBlockCount + 6) {
+          log.debug("{} deadline is close (in {} blocks): bumping fees", cmd.desc, cmd.deadline - currentBlockCount)
+          // We make sure we increase the fees by at least 20% as we get close to the deadline.
+          Some(currentFeerate.max(tx.feerate * 1.2))
+        } else if (tx.feerate * 1.2 <= currentFeerate) {
+          log.debug("{} deadline is in {} blocks: bumping fees", cmd.desc, cmd.deadline - currentBlockCount)
+          Some(currentFeerate)
+        } else {
+          log.debug("{} deadline is in {} blocks: no need to bump fees", cmd.desc, cmd.deadline - currentBlockCount)
+          None
+        }
+        targetFeerate_opt.foreach(targetFeerate => {
+          // We check whether our currently published transaction is confirmed: if it is, it doesn't make sense to bump
+          // the fee, we're just waiting for enough confirmations to report the result back.
+          context.pipeToSelf(bitcoinClient.getTxConfirmations(tx.signedTx.txid)) {
+            case Success(Some(confirmations)) if confirmations > 0 => Stay
+            case _ => BumpFee(targetFeerate)
+          }
+        })
+        Behaviors.same
+      case BumpFee(targetFeerate) => fundReplacement(replyTo, cmd, targetFeerate, txMonitor, tx)
+      case Stay => Behaviors.same
       case Stop =>
         txMonitor ! MempoolTxMonitor.Stop
-        unlockAndStop(cmd.input, tx)
+        unlockAndStop(cmd.input, Seq(tx.signedTx))
     }
   }
 
-  def unlockAndStop(input: OutPoint, tx: Transaction): Behavior[Command] = {
-    val toUnlock = tx.txIn.filterNot(_.outPoint == input).map(_.outPoint)
-    log.debug("unlocking utxos={}", toUnlock.mkString(", "))
-    context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock))(_ => UtxosUnlocked)
+  // Fund a replacement transaction because our previous attempt seems to be stuck in the mempool.
+  def fundReplacement(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, targetFeerate: FeeratePerKw, previousTxMonitor: ActorRef[MempoolTxMonitor.Command], previousTx: FundedTx): Behavior[Command] = {
+    log.info("bumping {} fees: previous feerate={}, next feerate={}", cmd.desc, previousTx.feerate, targetFeerate)
+    val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder-rbf")
+    txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Left(previousTx), targetFeerate)
     Behaviors.receiveMessagePartial {
+      case WrappedFundingResult(result) =>
+        result match {
+          case success: ReplaceableTxFunder.TransactionReady => publishReplacement(replyTo, cmd, previousTx, previousTxMonitor, success.fundedTx)
+          case ReplaceableTxFunder.FundingFailed(_) =>
+            log.warn("could not fund {} replacement transaction (target feerate={})", cmd.desc, targetFeerate)
+            wait(replyTo, cmd, previousTxMonitor, previousTx)
+        }
+      case txResult: WrappedTxResult =>
+        // This is the result of the previous publishing attempt.
+        // We don't need to handle it now that we're in the middle of funding, we can defer it to the next state.
+        timers.startSingleTimer(txResult, 1 second)
+        Behaviors.same
+      case cbc: WrappedCurrentBlockCount =>
+        timers.startSingleTimer(CurrentBlockCountKey, cbc, 1 second)
+        Behaviors.same
+      case Stop =>
+        // We can't stop right away, because the child actor may need to unlock utxos first.
+        // We just wait for the funding process to finish before stopping.
+        timers.startSingleTimer(Stop, 1 second)
+        Behaviors.same
+    }
+  }
+
+  // Publish an RBF attempt. We then have two concurrent transactions: the previous one and the updated one.
+  // Only one of them can be in the mempool, so we wait for the other to be rejected. Once that's done, we're back to a
+  // situation where we have one transaction in the mempool and wait for it to confirm.
+  def publishReplacement(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, previousTx: FundedTx, previousTxMonitor: ActorRef[MempoolTxMonitor.Command], bumpedTx: FundedTx): Behavior[Command] = {
+    val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), s"mempool-tx-monitor-rbf-${bumpedTx.signedTx.txid}")
+    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, cmd.input, cmd.desc, bumpedTx.fee)
+    Behaviors.receiveMessagePartial {
+      case WrappedTxResult(MempoolTxMonitor.TxConfirmed(confirmedTx)) =>
+        // Since our transactions conflict, we should always receive a failure from the evicted transaction before one
+        // of them confirms: this case should not happen, so we don't bother unlocking utxos.
+        log.warn("{} was confirmed while we're publishing an RBF attempt", cmd.desc)
+        sendResult(replyTo, TxPublisher.TxConfirmed(cmd, confirmedTx))
+      case WrappedTxResult(MempoolTxMonitor.TxRejected(txid, _)) =>
+        if (txid == bumpedTx.signedTx.txid) {
+          log.warn("{} transaction paying more fees (txid={}) failed to replace previous transaction", cmd.desc, txid)
+          cleanUpFailedTxAndWait(replyTo, cmd, bumpedTx.signedTx, previousTxMonitor, previousTx)
+        } else {
+          log.info("previous {} replaced by new transaction paying more fees (txid={})", cmd.desc, bumpedTx.signedTx.txid)
+          cleanUpFailedTxAndWait(replyTo, cmd, previousTx.signedTx, txMonitor, bumpedTx)
+        }
+      case cbc: WrappedCurrentBlockCount =>
+        timers.startSingleTimer(CurrentBlockCountKey, cbc, 1 second)
+        Behaviors.same
+      case Stop =>
+        previousTxMonitor ! MempoolTxMonitor.Stop
+        txMonitor ! MempoolTxMonitor.Stop
+        // We don't know yet which transaction won, so we try abandoning both and unlocking their utxos.
+        // One of the calls will fail (for the transaction that is in the mempool), but we will simply ignore that failure.
+        unlockAndStop(cmd.input, Seq(previousTx.signedTx, bumpedTx.signedTx))
+    }
+  }
+
+  // Clean up the failed transaction attempt. Once that's done, go back to the waiting state with the new transaction.
+  def cleanUpFailedTxAndWait(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, failedTx: Transaction, txMonitor: ActorRef[MempoolTxMonitor.Command], mempoolTx: FundedTx): Behavior[Command] = {
+    context.pipeToSelf(bitcoinClient.abandonTransaction(failedTx.txid))(_ => UnlockUtxos)
+    Behaviors.receiveMessagePartial {
+      case UnlockUtxos =>
+        val toUnlock = failedTx.txIn.map(_.outPoint).toSet -- mempoolTx.signedTx.txIn.map(_.outPoint).toSet
+        if (toUnlock.isEmpty) {
+          context.self ! UtxosUnlocked
+        } else {
+          log.debug("unlocking utxos={}", toUnlock.mkString(", "))
+          context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock.toSeq))(_ => UtxosUnlocked)
+        }
+        Behaviors.same
+      case UtxosUnlocked =>
+        // Now that we've cleaned up the failed transaction, we can go back to waiting for the current mempool transaction
+        // or bump it if it doesn't confirm fast enough either.
+        wait(replyTo, cmd, txMonitor, mempoolTx)
+      case txResult: WrappedTxResult =>
+        // This is the result of the current mempool tx: we will handle this command once we're back in the waiting
+        // state for this transaction.
+        timers.startSingleTimer(txResult, 1 second)
+        Behaviors.same
+      case cbc: WrappedCurrentBlockCount =>
+        timers.startSingleTimer(CurrentBlockCountKey, cbc, 1 second)
+        Behaviors.same
+      case Stop =>
+        // We don't stop right away, because we're cleaning up the failed transaction.
+        // This shouldn't take long so we'll handle this command once we're back in the waiting state.
+        timers.startSingleTimer(Stop, 1 second)
+        Behaviors.same
+    }
+  }
+
+  def unlockAndStop(input: OutPoint, txs: Seq[Transaction]): Behavior[Command] = {
+    // The bitcoind wallet will keep transactions around even when they can't be published (e.g. one of their inputs has
+    // disappeared but bitcoind thinks it may reappear later), hoping that it will be able to automatically republish
+    // them later. In our case this is unnecessary, we will publish ourselves, and we don't want to pollute the wallet
+    // state with transactions that will never be valid, so we eagerly abandon every time.
+    // If the transaction is in the mempool or confirmed, it will be a no-op.
+    context.pipeToSelf(Future.traverse(txs)(tx => bitcoinClient.abandonTransaction(tx.txid)))(_ => UnlockUtxos)
+    Behaviors.receiveMessagePartial {
+      case UnlockUtxos =>
+        val toUnlock = txs.flatMap(_.txIn).filterNot(_.outPoint == input).map(_.outPoint).toSet
+        if (toUnlock.isEmpty) {
+          context.self ! UtxosUnlocked
+        } else {
+          log.debug("unlocking utxos={}", toUnlock.mkString(", "))
+          context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock.toSeq))(_ => UtxosUnlocked)
+        }
+        Behaviors.same
       case UtxosUnlocked =>
         log.debug("utxos unlocked")
         Behaviors.stopped
+      case WrappedCurrentBlockCount(_) =>
+        log.debug("ignoring new block while stopping")
+        Behaviors.same
       case Stop =>
         log.debug("waiting for utxos to be unlocked before stopping")
         Behaviors.same
@@ -182,6 +333,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   def sendResult(replyTo: ActorRef[TxPublisher.PublishTxResult], result: TxPublisher.PublishTxResult): Behavior[Command] = {
     replyTo ! result
     Behaviors.receiveMessagePartial {
+      case WrappedCurrentBlockCount(_) =>
+        log.debug("ignoring new block while stopping")
+        Behaviors.same
       case Stop => Behaviors.stopped
     }
   }

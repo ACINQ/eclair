@@ -109,10 +109,10 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     import f._
 
     // alice and bob see different on-chain feerates
-    alice.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(250 sat), FeeratePerKw(10000 sat), FeeratePerKw(5000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat)))
-    bob.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(250 sat), FeeratePerKw(15000 sat), FeeratePerKw(7500 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat)))
-    assert(alice.feeTargets.mutualCloseBlockTarget == 2)
-    assert(bob.feeTargets.mutualCloseBlockTarget == 2)
+    alice.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(250 sat), FeeratePerKw(10000 sat), FeeratePerKw(8000 sat), FeeratePerKw(7500 sat), FeeratePerKw(5000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat), FeeratePerKw(2000 sat)))
+    bob.feeEstimator.setFeerate(FeeratesPerKw(FeeratePerKw(250 sat), FeeratePerKw(15000 sat), FeeratePerKw(12500 sat), FeeratePerKw(10000 sat), FeeratePerKw(7500 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat), FeeratePerKw(3000 sat)))
+    assert(alice.feeTargets.mutualCloseBlockTarget == 12)
+    assert(bob.feeTargets.mutualCloseBlockTarget == 12)
 
     if (bobInitiates) {
       bobClose(f)
@@ -494,7 +494,7 @@ class NegotiatingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     // alice starts with a very low proposal
     val (aliceClosing1, _) = makeLegacyClosingSigned(f, 500 sat)
     alice2bob.send(bob, aliceClosing1)
-    val bobClosing1 = bob2alice.expectMsgType[ClosingSigned]
+    bob2alice.expectMsgType[ClosingSigned]
     // at this point bob has received a mutual close signature from alice, but doesn't yet agree on the fee
     // bob's mutual close is published from the outside of the actor
     assert(bob.stateName === NEGOTIATING)

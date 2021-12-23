@@ -100,7 +100,8 @@ object Transactions {
     def input: InputInfo
     def desc: String
     def tx: Transaction
-    def fee: Satoshi = input.txOut.amount - tx.txOut.map(_.amount).sum
+    def amountIn: Satoshi = input.txOut.amount
+    def fee: Satoshi = amountIn - tx.txOut.map(_.amount).sum
     def minRelayFee: Satoshi = {
       val vsize = (tx.weight() + 3) / 4
       Satoshi(FeeratePerKw.MinimumRelayFeeRate * vsize / 1000)
@@ -520,13 +521,10 @@ object Transactions {
     } match {
       case Some(outputIndex) =>
         val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-        val sequence = commitmentFormat match {
-          case DefaultCommitmentFormat => 0xffffffffL // RBF disabled
-          case _: AnchorOutputsCommitmentFormat => 1 // txs have a 1-block delay to allow CPFP carve-out on anchors
-        }
+        // unsigned tx
         val tx = Transaction(
           version = 2,
-          txIn = TxIn(input.outPoint, ByteVector.empty, sequence) :: Nil,
+          txIn = TxIn(input.outPoint, ByteVector.empty, getHtlcTxInputSequence(commitmentFormat)) :: Nil,
           txOut = TxOut(Satoshi(0), localFinalScriptPubKey) :: Nil,
           lockTime = 0)
         val weight = addSigs(ClaimHtlcSuccessTx(input, tx, htlc.paymentHash, htlc.id), PlaceHolderSig, ByteVector32.Zeroes).tx.weight()

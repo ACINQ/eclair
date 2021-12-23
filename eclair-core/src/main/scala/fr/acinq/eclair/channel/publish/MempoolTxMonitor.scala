@@ -51,8 +51,8 @@ object MempoolTxMonitor {
 
   // @formatter:off
   sealed trait TxResult
-  case object TxConfirmed extends TxResult
-  case class TxRejected(reason: TxPublisher.TxRejectedReason) extends TxResult
+  case class TxConfirmed(tx: Transaction) extends TxResult
+  case class TxRejected(txid: ByteVector32, reason: TxPublisher.TxRejectedReason) extends TxResult
   // @formatter:on
 
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
@@ -90,7 +90,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
         waitForConfirmation(replyTo, tx, input)
       case PublishFailed(reason) if reason.getMessage.contains("rejecting replacement") =>
         log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
-        sendResult(replyTo, TxRejected(TxRejectedReason.ConflictingTxUnconfirmed))
+        sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
       case PublishFailed(reason) if reason.getMessage.contains("bad-txns-inputs-missingorspent") =>
         // This can only happen if one of our inputs is already spent by a confirmed transaction or doesn't exist (e.g.
         // unconfirmed wallet input that has been replaced).
@@ -98,21 +98,21 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
         Behaviors.same
       case PublishFailed(reason) =>
         log.error("could not publish transaction", reason)
-        sendResult(replyTo, TxRejected(TxRejectedReason.UnknownTxFailure))
+        sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.UnknownTxFailure))
       case status: InputStatus =>
         if (status.spentConfirmed) {
           log.info("could not publish tx: a conflicting transaction is already confirmed")
-          sendResult(replyTo, TxRejected(TxRejectedReason.ConflictingTxConfirmed))
+          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxConfirmed))
         } else if (status.spentUnconfirmed) {
           log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
-          sendResult(replyTo, TxRejected(TxRejectedReason.ConflictingTxUnconfirmed))
+          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
         } else {
           log.info("could not publish tx: one of our wallet inputs is not available")
-          sendResult(replyTo, TxRejected(TxRejectedReason.WalletInputGone))
+          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.WalletInputGone))
         }
       case CheckInputFailed(reason) =>
         log.error("could not check input status", reason)
-        sendResult(replyTo, TxRejected(TxRejectedReason.TxSkipped(retryNextBlock = true))) // we act as if the input is potentially still spendable
+        sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true))) // we act as if the input is potentially still spendable
       case Stop =>
         Behaviors.stopped
     }
@@ -136,7 +136,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
         if (nodeParams.minDepthBlocks <= confirmations) {
           log.info("txid={} has reached min depth", tx.txid)
           context.system.eventStream ! EventStream.Publish(TransactionConfirmed(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, tx))
-          sendResult(replyTo, TxConfirmed, Some(messageAdapter))
+          sendResult(replyTo, TxConfirmed(tx), Some(messageAdapter))
         } else {
           Behaviors.same
         }
@@ -151,17 +151,17 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
       case status: InputStatus =>
         if (status.spentConfirmed) {
           log.info("tx was evicted from the mempool: a conflicting transaction has been confirmed")
-          sendResult(replyTo, TxRejected(TxRejectedReason.ConflictingTxConfirmed))
+          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxConfirmed))
         } else if (status.spentUnconfirmed) {
           log.info("tx was evicted from the mempool: a conflicting transaction replaced it")
-          sendResult(replyTo, TxRejected(TxRejectedReason.ConflictingTxUnconfirmed))
+          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
         } else {
           log.info("tx was evicted from the mempool: one of our wallet inputs disappeared")
-          sendResult(replyTo, TxRejected(TxRejectedReason.WalletInputGone))
+          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.WalletInputGone))
         }
       case CheckInputFailed(reason) =>
         log.error("could not check input status", reason)
-        sendResult(replyTo, TxRejected(TxRejectedReason.TxSkipped(retryNextBlock = true)), Some(messageAdapter))
+        sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true)), Some(messageAdapter))
       case Stop =>
         context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
         Behaviors.stopped

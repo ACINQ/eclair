@@ -18,7 +18,7 @@ package fr.acinq.eclair.channel.publish
 
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Transaction}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
@@ -60,17 +60,40 @@ object ReplaceableTxPrePublisher {
   case class PreconditionsFailed(reason: TxPublisher.TxRejectedReason) extends PreconditionsResult
 
   /** Replaceable transaction with all the witness data necessary to finalize. */
-  sealed trait ReplaceableTxWithWitnessData { def txInfo: ReplaceableTransactionWithInputInfo }
+  sealed trait ReplaceableTxWithWitnessData {
+    def txInfo: ReplaceableTransactionWithInputInfo
+    def updateTx(tx: Transaction): ReplaceableTxWithWitnessData
+  }
   /** Replaceable transaction for which we may need to add wallet inputs. */
-  sealed trait ReplaceableTxWithWalletInputs extends ReplaceableTxWithWitnessData
-  case class ClaimLocalAnchorWithWitnessData(txInfo: ClaimLocalAnchorOutputTx) extends ReplaceableTxWithWalletInputs
-  sealed trait HtlcWithWitnessData extends ReplaceableTxWithWalletInputs { override def txInfo: HtlcTx }
-  case class HtlcSuccessWithWitnessData(txInfo: HtlcSuccessTx, remoteSig: ByteVector64, preimage: ByteVector32) extends HtlcWithWitnessData
-  case class HtlcTimeoutWithWitnessData(txInfo: HtlcTimeoutTx, remoteSig: ByteVector64) extends HtlcWithWitnessData
-  sealed trait ClaimHtlcWithWitnessData extends ReplaceableTxWithWitnessData { override def txInfo: ClaimHtlcTx }
-  case class ClaimHtlcSuccessWithWitnessData(txInfo: ClaimHtlcSuccessTx, preimage: ByteVector32) extends ClaimHtlcWithWitnessData
-  case class LegacyClaimHtlcSuccessWithWitnessData(txInfo: LegacyClaimHtlcSuccessTx, preimage: ByteVector32) extends ClaimHtlcWithWitnessData
-  case class ClaimHtlcTimeoutWithWitnessData(txInfo: ClaimHtlcTimeoutTx) extends ClaimHtlcWithWitnessData
+  sealed trait ReplaceableTxWithWalletInputs extends ReplaceableTxWithWitnessData {
+    override def updateTx(tx: Transaction): ReplaceableTxWithWalletInputs
+  }
+  case class ClaimLocalAnchorWithWitnessData(txInfo: ClaimLocalAnchorOutputTx) extends ReplaceableTxWithWalletInputs {
+    override def updateTx(tx: Transaction): ClaimLocalAnchorWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+  }
+  sealed trait HtlcWithWitnessData extends ReplaceableTxWithWalletInputs {
+    override def txInfo: HtlcTx
+    override def updateTx(tx: Transaction): HtlcWithWitnessData
+  }
+  case class HtlcSuccessWithWitnessData(txInfo: HtlcSuccessTx, remoteSig: ByteVector64, preimage: ByteVector32) extends HtlcWithWitnessData {
+    override def updateTx(tx: Transaction): HtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+  }
+  case class HtlcTimeoutWithWitnessData(txInfo: HtlcTimeoutTx, remoteSig: ByteVector64) extends HtlcWithWitnessData {
+    override def updateTx(tx: Transaction): HtlcTimeoutWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+  }
+  sealed trait ClaimHtlcWithWitnessData extends ReplaceableTxWithWitnessData {
+    override def txInfo: ClaimHtlcTx
+    override def updateTx(tx: Transaction): ClaimHtlcWithWitnessData
+  }
+  case class ClaimHtlcSuccessWithWitnessData(txInfo: ClaimHtlcSuccessTx, preimage: ByteVector32) extends ClaimHtlcWithWitnessData {
+    override def updateTx(tx: Transaction): ClaimHtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+  }
+  case class LegacyClaimHtlcSuccessWithWitnessData(txInfo: LegacyClaimHtlcSuccessTx, preimage: ByteVector32) extends ClaimHtlcWithWitnessData {
+    override def updateTx(tx: Transaction): LegacyClaimHtlcSuccessWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+  }
+  case class ClaimHtlcTimeoutWithWitnessData(txInfo: ClaimHtlcTimeoutTx) extends ClaimHtlcWithWitnessData {
+    override def updateTx(tx: Transaction): ClaimHtlcTimeoutWithWitnessData = this.copy(txInfo = this.txInfo.copy(tx = tx))
+  }
   // @formatter:on
 
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {

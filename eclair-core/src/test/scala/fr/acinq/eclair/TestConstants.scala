@@ -97,7 +97,6 @@ object TestConstants {
     "mempool.space"
   )
 
-
   object Alice {
     val seed: ByteVector32 = ByteVector32(ByteVector.fill(32)(1))
     val nodeKeyManager = new LocalNodeKeyManager(seed, Block.RegtestGenesisBlock.hash)
@@ -129,7 +128,7 @@ object TestConstants {
       dustLimit = 1100 sat,
       maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeTargets = FeeTargets(6, 2, 12, 18),
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
@@ -261,7 +260,7 @@ object TestConstants {
       dustLimit = 1000 sat,
       maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 2, 6),
+        feeTargets = FeeTargets(6, 2, 12, 18),
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,

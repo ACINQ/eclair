@@ -455,39 +455,39 @@ final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Com
 
 /**
  * @param initFeatures current connection features, or last features used if the channel is disconnected. Note that these
- *                 features are updated at each reconnection and may be different from the channel permanent features
- *                 (see [[ChannelFeatures]]).
+ *                     features are updated at each reconnection and may be different from the channel permanent features
+ *                     (see [[ChannelFeatures]]).
  */
-final case class LocalParams(nodeId: PublicKey,
-                             fundingKeyPath: DeterministicWallet.KeyPath,
-                             dustLimit: Satoshi,
-                             maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                             channelReserve: Satoshi,
-                             htlcMinimum: MilliSatoshi,
-                             toSelfDelay: CltvExpiryDelta,
-                             maxAcceptedHtlcs: Int,
-                             isFunder: Boolean,
-                             defaultFinalScriptPubKey: ByteVector,
-                             walletStaticPaymentBasepoint: Option[PublicKey],
-                             initFeatures: Features)
+case class LocalParams(nodeId: PublicKey,
+                       fundingKeyPath: DeterministicWallet.KeyPath,
+                       dustLimit: Satoshi,
+                       maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                       channelReserve: Satoshi,
+                       htlcMinimum: MilliSatoshi,
+                       toSelfDelay: CltvExpiryDelta,
+                       maxAcceptedHtlcs: Int,
+                       isFunder: Boolean,
+                       defaultFinalScriptPubKey: ByteVector,
+                       walletStaticPaymentBasepoint: Option[PublicKey],
+                       initFeatures: Features)
 
 /**
  * @param initFeatures see [[LocalParams.initFeatures]]
  */
-final case class RemoteParams(nodeId: PublicKey,
-                              dustLimit: Satoshi,
-                              maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
-                              channelReserve: Satoshi,
-                              htlcMinimum: MilliSatoshi,
-                              toSelfDelay: CltvExpiryDelta,
-                              maxAcceptedHtlcs: Int,
-                              fundingPubKey: PublicKey,
-                              revocationBasepoint: PublicKey,
-                              paymentBasepoint: PublicKey,
-                              delayedPaymentBasepoint: PublicKey,
-                              htlcBasepoint: PublicKey,
-                              initFeatures: Features,
-                              shutdownScript: Option[ByteVector])
+case class RemoteParams(nodeId: PublicKey,
+                        dustLimit: Satoshi,
+                        maxHtlcValueInFlightMsat: UInt64, // this is not MilliSatoshi because it can exceed the total amount of MilliSatoshi
+                        channelReserve: Satoshi,
+                        htlcMinimum: MilliSatoshi,
+                        toSelfDelay: CltvExpiryDelta,
+                        maxAcceptedHtlcs: Int,
+                        fundingPubKey: PublicKey,
+                        revocationBasepoint: PublicKey,
+                        paymentBasepoint: PublicKey,
+                        delayedPaymentBasepoint: PublicKey,
+                        htlcBasepoint: PublicKey,
+                        initFeatures: Features,
+                        shutdownScript: Option[ByteVector])
 
 object ChannelFlags {
   val AnnounceChannel = 0x01.toByte
