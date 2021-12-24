@@ -228,6 +228,11 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
       stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
+    case Event(lcu: ValidationSkippingLocalChannelUpdate, d: Data) =>
+      val d1 = Validation.addPrivateChannelToData(d, nodeParams.nodeId, lcu)
+      val pc = d1.privateChannels(lcu.shortChannelId)
+      stay() using Validation.addPrivateChannelToGraph(d1, getDesc(lcu.channelUpdate, pc), lcu.channelUpdate, pc.applyChannelUpdate(Left(lcu)))
+
     case Event(lcu: AbstractLocalChannelUpdate, d: Data) =>
       stay() using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
 

@@ -43,6 +43,19 @@ object Validation {
     Metrics.gossipResult(decision).increment()
   }
 
+  def addPrivateChannelToData(d: Data, localNodeId: PublicKey, lcu: AbstractLocalChannelUpdate)(implicit log: LoggingAdapter): Data = {
+    // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
+    // let's create a corresponding private channel and process the channel_update
+    log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
+    val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
+    d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
+  }
+
+  def addPrivateChannelToGraph(d: Data, desc: ChannelDesc, u: ChannelUpdate, pc: PrivateChannel): Data = {
+    val graph1 = d.graph.addEdge(desc, u, pc.capacity, pc.getBalanceSameSideAs(u))
+    d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc), graph = graph1)
+  }
+
   def handleChannelAnnouncement(d: Data, db: NetworkDb, watcher: typed.ActorRef[ZmqWatcher.Command], origin: RemoteGossip, c: ChannelAnnouncement)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={}", c.shortChannelId, c.nodeId1, c.nodeId2)
@@ -360,10 +373,7 @@ object Validation {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.channelFlags, u)
         sendDecision(origins, GossipDecision.Accepted(u))
         ctx.system.eventStream.publish(ChannelUpdatesReceived(u :: Nil))
-        // we also need to update the graph
-        val pc1 = pc.applyChannelUpdate(update)
-        val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
-        d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
+        addPrivateChannelToGraph(d, desc, u, pc.applyChannelUpdate(update))
       }
     }
     else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
@@ -425,12 +435,7 @@ object Validation {
             // channel isn't announced but we already know about it, we can process the channel_update
             handleChannelUpdate(d, db, routerConf, Left(lcu))
           case None =>
-            // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
-            // let's create a corresponding private channel and process the channel_update
-            log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
-            val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
-            val d1 = d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
-
+            val d1 = addPrivateChannelToData(d, localNodeId, lcu)
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
         }
     }
