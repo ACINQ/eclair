@@ -24,7 +24,7 @@ import akka.io.Tcp
 import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.ValidateResult
-import fr.acinq.eclair.channel.{LocalChannelDown, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{LocalChannelDown, AbstractLocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
 import fr.acinq.eclair.io.{Peer, PeerConnection}
@@ -114,7 +114,7 @@ object Logs {
         case _: LiftChannelExclusion => Some(LogCategory.PAYMENT)
         case _: SyncProgress => Some(LogCategory.ROUTING_SYNC)
         case GetRoutingState => Some(LogCategory.ROUTING_SYNC)
-        case _: LocalChannelUpdate => Some(LogCategory.ROUTING_SYNC)
+        case _: AbstractLocalChannelUpdate => Some(LogCategory.ROUTING_SYNC)
         case _: LocalChannelDown => Some(LogCategory.ROUTING_SYNC)
         case _: ValidateResult => Some(LogCategory.ROUTING_SYNC)
         case _: RouteRequest => Some(LogCategory.PAYMENT)

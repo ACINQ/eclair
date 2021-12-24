@@ -24,7 +24,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, ByteVector32, SatoshiLong, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
-import fr.acinq.eclair.channel.{CommitmentsSpec, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{CommitmentsSpec, NormalLocalChannelUpdate}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.Peer.PeerRoutingMessage
@@ -33,7 +33,7 @@ import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{TestKitBaseClass, randomKey, _}
+import fr.acinq.eclair._
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.ByteVector
@@ -150,7 +150,7 @@ abstract class BaseRouterSpec extends TestKitBaseClass with FixtureAnyFunSuiteLi
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_gh))
       peerConnection.send(router, PeerRoutingMessage(peerConnection.ref, remoteNodeId, update_hg))
       // then private channels
-      sender.send(router, LocalChannelUpdate(sender.ref, randomBytes32(), channelId_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
+      sender.send(router, NormalLocalChannelUpdate(sender.ref, randomBytes32(), channelId_ag_private, g, None, update_ag_private, CommitmentsSpec.makeCommitments(30000000 msat, 8000000 msat, a, g, announceChannel = false)))
       // watcher receives the get tx requests
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_ab)
       assert(watcher.expectMsgType[ValidateRequest].ann === chan_bc)

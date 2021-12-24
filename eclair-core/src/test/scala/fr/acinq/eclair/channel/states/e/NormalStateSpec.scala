@@ -879,7 +879,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     // we listen to channel_update events
     val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[LocalChannelUpdate])
+    system.eventStream.subscribe(listener.ref, classOf[AbstractLocalChannelUpdate])
 
     // actual test starts here
     // when signing the fulfill, bob will have its main output go above reserve in alice's commitment tx
@@ -888,7 +888,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // it should update its channel_update
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate.channelFlags.isEnabled)
     // and broadcast it
-    assert(listener.expectMsgType[LocalChannelUpdate].channelUpdate === bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
+    assert(listener.expectMsgType[AbstractLocalChannelUpdate].channelUpdate === bob.stateData.asInstanceOf[DATA_NORMAL].channelUpdate)
   }
 
   test("recv CMD_SIGN (after CMD_UPDATE_FEE)") { f =>
@@ -2301,7 +2301,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     sender.send(alice, CMD_UPDATE_RELAY_FEE(ActorRef.noSender, newFeeBaseMsat, newFeeProportionalMillionth, cltvExpiryDelta_opt = Some(newCltvExpiryDelta)))
     sender.expectMsgType[RES_SUCCESS[CMD_UPDATE_RELAY_FEE]]
 
-    val localUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val localUpdate = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
     assert(localUpdate.channelUpdate.feeBaseMsat == newFeeBaseMsat)
     assert(localUpdate.channelUpdate.feeProportionalMillionths == newFeeProportionalMillionth)
     assert(localUpdate.channelUpdate.cltvExpiryDelta == newCltvExpiryDelta)
@@ -3341,7 +3341,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     // public channel: we don't send the channel_update directly to the peer
     alice2bob.expectNoMessage(1 second)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == annSigs.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    assert(channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
     channelUpdateListener.expectNoMessage(1 second)
   }
 
@@ -3362,7 +3362,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val channelUpdate = alice2bob.expectMsgType[ChannelUpdate]
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId == channelUpdate.shortChannelId && alice.stateData.asInstanceOf[DATA_NORMAL].buried)
     // LocalChannelUpdate should not be published
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
+    assert(channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate].shortChannelId == alice.stateData.asInstanceOf[DATA_NORMAL].shortChannelId)
     channelUpdateListener.expectNoMessage(1 second)
   }
 
@@ -3381,7 +3381,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
       val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
       normal.shortChannelId == annSigsA.shortChannelId && normal.buried && normal.channelAnnouncement.contains(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId
     })
-    assert(channelUpdateListener.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt === Some(channelAnn))
+    assert(channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate].channelAnnouncement_opt === Some(channelAnn))
   }
 
   test("recv AnnouncementSignatures (re-send)", Tag(ChannelStateTestsTags.ChannelsPublic)) { f =>
@@ -3425,12 +3425,12 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
-    val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val update1 = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
 
     // actual test starts here
     Thread.sleep(1100)
     alice ! BroadcastChannelUpdate(PeriodicRefresh)
-    val update2 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val update2 = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
     assert(update1.channelUpdate.timestamp < update2.channelUpdate.timestamp)
   }
 
@@ -3440,7 +3440,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
-    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
 
     // actual test starts here
     Thread.sleep(1100)
@@ -3483,7 +3483,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val addSettled2 = relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult]]
     assert(addSettled2.htlc == htlc2)
     assert(addSettled2.result.isInstanceOf[HtlcResult.DisconnectedBeforeSigned])
-    assert(!channelUpdateListener.expectMsgType[LocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
+    assert(!channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate].channelUpdate.channelFlags.isEnabled)
     awaitCond(alice.stateName == OFFLINE)
   }
 
@@ -3493,7 +3493,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob ! WatchFundingDeeplyBuriedTriggered(400000, 42, null)
     bob2alice.expectMsgType[AnnouncementSignatures]
     bob2alice.forward(alice)
-    val update1 = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val update1 = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
     assert(update1.channelUpdate.channelFlags.isEnabled)
 
     // actual test starts here
@@ -3511,8 +3511,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     bob2alice.forward(alice)
     alice2bob.expectMsgType[AnnouncementSignatures]
     alice2bob.forward(bob)
-    val update1a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    val update1b = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val update1a = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
+    val update1b = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
     assert(update1a.channelUpdate.channelFlags.isEnabled)
     val (_, htlc1) = addHtlc(10000 msat, alice, bob, alice2bob, bob2alice, sender.ref)
     sender.expectMsgType[RES_SUCCESS[CMD_ADD_HTLC]]
@@ -3526,7 +3526,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     alice ! INPUT_DISCONNECTED
     assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc1.paymentHash)
     assert(relayerA.expectMsgType[RES_ADD_SETTLED[Origin, HtlcResult.DisconnectedBeforeSigned]].htlc.paymentHash === htlc2.paymentHash)
-    val update2a = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val update2a = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
     assert(update1a.channelUpdate.timestamp < update2a.channelUpdate.timestamp)
     assert(!update2a.channelUpdate.channelFlags.isEnabled)
     awaitCond(alice.stateName == OFFLINE)

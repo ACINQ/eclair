@@ -431,7 +431,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     bob2alice.forward(alice)
 
     // then alice reaches NORMAL state, and after a delay she broadcasts the channel_update
-    val channelUpdate = channelUpdateListener.expectMsgType[LocalChannelUpdate](20 seconds).channelUpdate
+    val channelUpdate = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate](20 seconds).channelUpdate
     assert(channelUpdate.feeBaseMsat === 4200.msat)
     assert(channelUpdate.feeProportionalMillionths === 123456)
     assert(channelUpdate.channelFlags.isEnabled)
@@ -455,7 +455,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     sender.expectMsgType[RES_ADD_FAILED[ChannelUnavailable]]
 
     // alice will broadcast a new disabled channel_update
-    val update = channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    val update = channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
     assert(!update.channelUpdate.channelFlags.isEnabled)
   }
 
@@ -771,7 +771,7 @@ class OfflineStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2bob.expectMsgType[ChannelUpdate]
     bob2alice.expectMsgType[ChannelUpdate]
     // and the channel is enabled
-    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
   }
 
   def disconnect(alice: TestFSMRef[ChannelState, ChannelData, Channel], bob: TestFSMRef[ChannelState, ChannelData, Channel]): Unit = {

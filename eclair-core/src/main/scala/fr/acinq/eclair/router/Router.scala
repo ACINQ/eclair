@@ -57,7 +57,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
   // we pass these to helpers classes so that they have the logging context
   implicit def implicitLog: DiagnosticLoggingAdapter = diagLog
 
-  context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
+  context.system.eventStream.subscribe(self, classOf[AbstractLocalChannelUpdate])
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
   context.system.eventStream.subscribe(self, classOf[AvailableBalanceChanged])
 
@@ -228,7 +228,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     case Event(PeerRoutingMessage(peerConnection, remoteNodeId, u: ChannelUpdate), d) =>
       stay() using Validation.handleChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, Right(RemoteChannelUpdate(u, Set(RemoteGossip(peerConnection, remoteNodeId)))))
 
-    case Event(lcu: LocalChannelUpdate, d: Data) =>
+    case Event(lcu: AbstractLocalChannelUpdate, d: Data) =>
       stay() using Validation.handleLocalChannelUpdate(d, nodeParams.db.network, nodeParams.routerConf, nodeParams.nodeId, watcher, lcu)
 
     case Event(lcd: LocalChannelDown, d: Data) =>
@@ -263,7 +263,7 @@ class Router(val nodeParams: NodeParams, watcher: typed.ActorRef[ZmqWatcher.Comm
     currentMessage match {
       case s: SendChannelQuery => Logs.mdc(category_opt, remoteNodeId_opt = Some(s.remoteNodeId))
       case prm: PeerRoutingMessage => Logs.mdc(category_opt, remoteNodeId_opt = Some(prm.remoteNodeId))
-      case lcu: LocalChannelUpdate => Logs.mdc(category_opt, remoteNodeId_opt = Some(lcu.remoteNodeId))
+      case lcu: AbstractLocalChannelUpdate => Logs.mdc(category_opt, remoteNodeId_opt = Some(lcu.remoteNodeId))
       case _ => Logs.mdc(category_opt)
     }
   }
@@ -315,7 +315,7 @@ object Router {
     def getBalanceSameSideAs(u: ChannelUpdate): Option[MilliSatoshi]
     def updateChannelUpdateSameSideAs(u: ChannelUpdate): ChannelDetails
     def updateBalances(commitments: AbstractCommitments): ChannelDetails
-    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): ChannelDetails
+    def applyChannelUpdate(update: Either[AbstractLocalChannelUpdate, RemoteChannelUpdate]): ChannelDetails
   }
   case class PublicChannel(ann: ChannelAnnouncement, fundingTxid: ByteVector32, capacity: Satoshi, update_1_opt: Option[ChannelUpdate], update_2_opt: Option[ChannelUpdate], meta_opt: Option[ChannelMeta]) extends ChannelDetails {
     update_1_opt.foreach(u => assert(u.channelFlags.isNode1))
@@ -330,7 +330,7 @@ object Router {
     } else {
       copy(meta_opt = Some(ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend)))
     }
-    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PublicChannel = update match {
+    def applyChannelUpdate(update: Either[AbstractLocalChannelUpdate, RemoteChannelUpdate]): PublicChannel = update match {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }
@@ -348,7 +348,7 @@ object Router {
     } else {
       copy(meta = ChannelMeta(commitments.availableBalanceForReceive, commitments.availableBalanceForSend))
     }
-    def applyChannelUpdate(update: Either[LocalChannelUpdate, RemoteChannelUpdate]): PrivateChannel = update match {
+    def applyChannelUpdate(update: Either[AbstractLocalChannelUpdate, RemoteChannelUpdate]): PrivateChannel = update match {
       case Left(lcu) => updateChannelUpdateSameSideAs(lcu.channelUpdate).updateBalances(lcu.commitments)
       case Right(rcu) => updateChannelUpdateSameSideAs(rcu.channelUpdate)
     }

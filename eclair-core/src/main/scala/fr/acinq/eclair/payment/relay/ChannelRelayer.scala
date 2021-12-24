@@ -44,7 +44,7 @@ object ChannelRelayer {
   sealed trait Command
   case class GetOutgoingChannels(replyTo: ActorRef, getOutgoingChannels: Relayer.GetOutgoingChannels) extends Command
   case class Relay(channelRelayPacket: IncomingPaymentPacket.ChannelRelayPacket) extends Command
-  private[payment] case class WrappedLocalChannelUpdate(localChannelUpdate: LocalChannelUpdate) extends Command
+  private[payment] case class WrappedLocalChannelUpdate(localChannelUpdate: AbstractLocalChannelUpdate) extends Command
   private[payment] case class WrappedLocalChannelDown(localChannelDown: LocalChannelDown) extends Command
   private[payment] case class WrappedAvailableBalanceChanged(availableBalanceChanged: AvailableBalanceChanged) extends Command
   private[payment] case class WrappedShortChannelIdAssigned(shortChannelIdAssigned: ShortChannelIdAssigned) extends Command
@@ -63,7 +63,7 @@ object ChannelRelayer {
             channelUpdates: ChannelUpdates = Map.empty,
             node2channels: NodeChannels = mutable.MultiDict.empty[PublicKey, ShortChannelId]): Behavior[Command] =
     Behaviors.setup { context =>
-      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelUpdate](WrappedLocalChannelUpdate))
+      context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[AbstractLocalChannelUpdate](WrappedLocalChannelUpdate))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[LocalChannelDown](WrappedLocalChannelDown))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[AvailableBalanceChanged](WrappedAvailableBalanceChanged))
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ShortChannelIdAssigned](WrappedShortChannelIdAssigned))
@@ -93,10 +93,10 @@ object ChannelRelayer {
             replyTo ! Relayer.OutgoingChannels(channels.toSeq)
             Behaviors.same
 
-          case WrappedLocalChannelUpdate(LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate, commitments)) =>
-            context.log.debug(s"updating local channel info for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate={} commitments={}", channelUpdate, commitments)
-            val channelUpdates1 = channelUpdates + (channelUpdate.shortChannelId -> Relayer.OutgoingChannel(remoteNodeId, channelUpdate, commitments))
-            val node2channels1 = node2channels.addOne(remoteNodeId, channelUpdate.shortChannelId)
+          case WrappedLocalChannelUpdate(lcu: AbstractLocalChannelUpdate) =>
+            context.log.debug(s"updating local channel info for channelId=${lcu.channelId} shortChannelId=${lcu.shortChannelId} remoteNodeId=${lcu.remoteNodeId} channelUpdate={} commitments={}", lcu.channelUpdate, lcu.commitments)
+            val channelUpdates1 = channelUpdates + (lcu.channelUpdate.shortChannelId -> Relayer.OutgoingChannel(lcu.remoteNodeId, lcu.channelUpdate, lcu.commitments))
+            val node2channels1 = node2channels.addOne(lcu.remoteNodeId, lcu.channelUpdate.shortChannelId)
             apply(nodeParams, register, channelUpdates1, node2channels1)
 
           case WrappedLocalChannelDown(LocalChannelDown(_, channelId, shortChannelId, remoteNodeId)) =>

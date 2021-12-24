@@ -116,7 +116,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     val relayerA = TestProbe()
     val relayerB = TestProbe()
     val channelUpdateListener = TestProbe()
-    system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelUpdate])
+    system.eventStream.subscribe(channelUpdateListener.ref, classOf[AbstractLocalChannelUpdate])
     system.eventStream.subscribe(channelUpdateListener.ref, classOf[LocalChannelDown])
     val router = TestProbe()
     val finalNodeParamsA = nodeParamsA
@@ -224,8 +224,8 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     awaitCond(bob.stateName == NORMAL)
     assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.availableBalanceForSend == (pushMsat - aliceParams.channelReserve).max(0 msat))
     // x2 because alice and bob share the same relayer
-    channelUpdateListener.expectMsgType[LocalChannelUpdate]
-    channelUpdateListener.expectMsgType[LocalChannelUpdate]
+    channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
+    channelUpdateListener.expectMsgType[AbstractLocalChannelUpdate]
   }
 
   def localOrigin(replyTo: ActorRef): Origin.LocalHot = Origin.LocalHot(replyTo, UUID.randomUUID())

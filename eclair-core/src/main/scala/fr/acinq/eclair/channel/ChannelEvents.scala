@@ -46,7 +46,20 @@ case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, tempora
 
 case class ShortChannelIdAssigned(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, previousShortChannelId: Option[ShortChannelId]) extends ChannelEvent
 
-case class LocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends ChannelEvent
+// This trait can be used by non-standard channels to inject themselves into Graph and thus make them usable for routing
+trait AbstractLocalChannelUpdate extends ChannelEvent {
+  val channel: ActorRef
+  val channelId: ByteVector32
+  val shortChannelId: ShortChannelId
+  val remoteNodeId: PublicKey
+  val channelAnnouncement_opt: Option[ChannelAnnouncement]
+  val channelUpdate: ChannelUpdate
+  val commitments: AbstractCommitments
+}
+
+case class NormalLocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends AbstractLocalChannelUpdate
+
+case class ValidationSkippingLocalChannelUpdate(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelAnnouncement_opt: Option[ChannelAnnouncement], channelUpdate: ChannelUpdate, commitments: AbstractCommitments) extends AbstractLocalChannelUpdate
 
 case class ChannelUpdateParametersChanged(channel: ActorRef, channelId: ByteVector32, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, channelUpdate: ChannelUpdate) extends ChannelEvent
 

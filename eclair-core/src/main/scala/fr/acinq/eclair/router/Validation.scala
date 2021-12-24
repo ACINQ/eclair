@@ -23,7 +23,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{UtxoStatus, ValidateRequest, ValidateResult, WatchExternalChannelSpent}
-import fr.acinq.eclair.channel.{AvailableBalanceChanged, LocalChannelDown, LocalChannelUpdate}
+import fr.acinq.eclair.channel.{AbstractLocalChannelUpdate, AvailableBalanceChanged, LocalChannelDown}
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Monitoring.Metrics
@@ -247,7 +247,7 @@ object Validation {
     }
   }
 
-  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[LocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, update: Either[AbstractLocalChannelUpdate, RemoteChannelUpdate], wasStashed: Boolean = false)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     val (u: ChannelUpdate, origins: Set[GossipOrigin]) = update match {
       case Left(lcu) => (lcu.channelUpdate, Set(LocalGossip))
@@ -315,7 +315,8 @@ object Validation {
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         d.copy(channels = d.channels + (u.shortChannelId -> pc1), privateChannels = d.privateChannels - u.shortChannelId, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)), graph = graph1)
       }
-    } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
+    }
+    else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
       if (d.stash.updates.contains(u)) {
         log.debug("ignoring {} (already stashed)", u)
@@ -325,7 +326,8 @@ object Validation {
         log.debug("stashing {}", u)
         d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
       }
-    } else if (d.privateChannels.contains(u.shortChannelId)) {
+    }
+    else if (d.privateChannels.contains(u.shortChannelId)) {
       val publicChannel = false
       val pc = d.privateChannels(u.shortChannelId)
       val desc = getDesc(u, pc)
@@ -363,7 +365,8 @@ object Validation {
         val graph1 = d.graph.addEdge(desc, u, pc1.capacity, pc1.getBalanceSameSideAs(u))
         d.copy(privateChannels = d.privateChannels + (u.shortChannelId -> pc1), graph = graph1)
       }
-    } else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
+    }
+    else if (db.isPruned(u.shortChannelId) && !StaleChannels.isStale(u)) {
       // the channel was recently pruned, but if we are here, it means that the update is not stale so this is the case
       // of a zombie channel coming back from the dead. they probably sent us a channel_announcement right before this update,
       // but we ignored it because the channel was in the 'pruned' list. Now that we know that the channel is alive again,
@@ -400,7 +403,7 @@ object Validation {
     }
   }
 
-  def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: LocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
+  def handleLocalChannelUpdate(d: Data, db: NetworkDb, routerConf: RouterConf, localNodeId: PublicKey, watcher: typed.ActorRef[ZmqWatcher.Command], lcu: AbstractLocalChannelUpdate)(implicit ctx: ActorContext, log: LoggingAdapter): Data = {
     implicit val sender: ActorRef = ctx.self // necessary to preserve origin when sending messages to other actors
     d.channels.get(lcu.shortChannelId) match {
       case Some(_) =>
@@ -427,6 +430,7 @@ object Validation {
             log.debug("adding unannounced local channel to remote={} shortChannelId={}", lcu.remoteNodeId, lcu.shortChannelId)
             val pc = PrivateChannel(localNodeId, lcu.remoteNodeId, None, None, ChannelMeta(0 msat, 0 msat)).updateBalances(lcu.commitments)
             val d1 = d.copy(privateChannels = d.privateChannels + (lcu.shortChannelId -> pc))
+
             handleChannelUpdate(d1, db, routerConf, Left(lcu))
         }
     }

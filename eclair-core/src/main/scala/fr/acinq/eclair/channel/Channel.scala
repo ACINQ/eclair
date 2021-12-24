@@ -1971,14 +1971,14 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           Logs.withMdc(diagLog)(Logs.mdc(category_opt = Some(Logs.LogCategory.CONNECTION))) {
             log.debug("re-emitting channel_update={} enabled={} ", normal.channelUpdate, normal.channelUpdate.channelFlags.isEnabled)
           }
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+          context.system.eventStream.publish(NormalLocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
           // don't do anything if neither the channel_update nor the channel_announcement didn't change
           ()
         case (WAIT_FOR_FUNDING_LOCKED | NORMAL | OFFLINE | SYNCING, NORMAL | OFFLINE, _, normal: DATA_NORMAL) =>
           // when we do WAIT_FOR_FUNDING_LOCKED->NORMAL or NORMAL->NORMAL or SYNCING->NORMAL or NORMAL->OFFLINE, we send out the new channel_update (most of the time it will just be to enable/disable the channel)
           log.info("emitting channel_update={} enabled={} ", normal.channelUpdate, normal.channelUpdate.channelFlags.isEnabled)
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
+          context.system.eventStream.publish(NormalLocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate, normal.commitments))
         case (_, _, _: DATA_NORMAL, _: DATA_NORMAL) =>
           // in any other case (e.g. OFFLINE->SYNCING) we do nothing
           ()
