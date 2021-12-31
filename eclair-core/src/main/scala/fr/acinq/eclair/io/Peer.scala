@@ -258,7 +258,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
             case OnionMessages.DropMessage(reason) =>
               log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
             case OnionMessages.SendMessage(nextNodeId, message) =>
-              switchboard ! RelayMessage(remoteNodeId, nextNodeId, message, nodeParams.onionMessageRelayPolicy)
+              switchboard ! RelayMessage(remoteNodeId, nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy)
             case received: OnionMessages.ReceiveMessage =>
               log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
               context.system.eventStream.publish(received)
@@ -268,7 +268,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
       case Event(RelayOnionMessage(msg, replyTo), d: ConnectedData) =>
         d.peerConnection ! msg
-        replyTo ! MessageRelay.Success
+        replyTo ! MessageRelay.Sent
         stay()
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>

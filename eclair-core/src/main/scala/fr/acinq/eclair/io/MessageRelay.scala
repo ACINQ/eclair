@@ -33,7 +33,7 @@ object MessageRelay {
   case class WrappedConnectionResult(result: PeerConnection.ConnectionResult) extends Command
 
   sealed trait Status
-  case object Success extends Status
+  case object Sent extends Status
   sealed trait Failure extends Status
   case class AgainstPolicy(policy: RelayPolicy) extends Failure {
     override def toString: String = s"Relay prevented by policy $policy"

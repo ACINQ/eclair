@@ -28,6 +28,7 @@ import fr.acinq.eclair.crypto.keymanager.{ChannelKeyManager, NodeKeyManager}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.MessageRelay.{NoRelay, RelayAll, RelayChannelsOnly, RelayPolicy}
 import fr.acinq.eclair.io.PeerConnection
+import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.{HeuristicsConstants, WeightRatios}
 import fr.acinq.eclair.router.PathFindingExperimentConf
@@ -98,7 +99,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
                       enableTrampolinePayment: Boolean,
                       balanceCheckInterval: FiniteDuration,
                       blockchainWatchdogSources: Seq[String],
-                      onionMessageRelayPolicy: RelayPolicy) {
+                      onionMessageConfig: OnionMessageConfig) {
   val privateKey: Crypto.PrivateKey = nodeKeyManager.nodeKey.privateKey
 
   val nodeId: PublicKey = nodeKeyManager.nodeId
@@ -476,7 +477,10 @@ object NodeParams extends Logging {
       enableTrampolinePayment = config.getBoolean("trampoline-payments-enable"),
       balanceCheckInterval = FiniteDuration(config.getDuration("balance-check-interval").getSeconds, TimeUnit.SECONDS),
       blockchainWatchdogSources = config.getStringList("blockchain-watchdog.sources").asScala.toSeq,
-      onionMessageRelayPolicy = onionMessageRelayPolicy
+      onionMessageConfig = OnionMessageConfig(
+        relayPolicy = onionMessageRelayPolicy,
+        timeout = FiniteDuration(config.getDuration("onion-messages.reply-timeout").getSeconds, TimeUnit.SECONDS),
+      )
     )
   }
 }

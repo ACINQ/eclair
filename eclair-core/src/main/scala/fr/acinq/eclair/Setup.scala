@@ -38,6 +38,7 @@ import fr.acinq.eclair.db.Databases.FileBackup
 import fr.acinq.eclair.db.FileBackupHandler.FileBackupParams
 import fr.acinq.eclair.db.{Databases, DbEventHandler, FileBackupHandler}
 import fr.acinq.eclair.io.{ClientSpawner, Peer, Server, Switchboard}
+import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.payment.receive.PaymentHandler
 import fr.acinq.eclair.payment.relay.Relayer
 import fr.acinq.eclair.payment.send.{Autoprobe, PaymentInitiator}
@@ -294,7 +295,9 @@ class Setup(val datadir: File,
       channelFactory = Peer.SimpleChannelFactory(nodeParams, watcher, relayer, bitcoinClient, txPublisherFactory)
       peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory)
 
-      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, peerFactory), "switchboard", SupervisorStrategy.Resume))
+      postman = system.spawn(Postman(), name = "postman")
+
+      switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, peerFactory, postman), "switchboard", SupervisorStrategy.Resume))
       clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router), "client-spawner", SupervisorStrategy.Restart))
       server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams.keyPair, nodeParams.peerConnectionConf, switchboard, router, serverBindingAddress, Some(tcpBound)), "server", SupervisorStrategy.Restart))
       paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams, PaymentInitiator.SimplePaymentFactory(nodeParams, router, register)), "payment-initiator", SupervisorStrategy.Restart))
@@ -315,6 +318,7 @@ class Setup(val datadir: File,
         server = server,
         channelsListener = channelsListener,
         balanceActor = balanceActor,
+        postman = postman,
         wallet = bitcoinClient)
 
       zmqBlockTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
@@ -383,6 +387,7 @@ case class Kit(nodeParams: NodeParams,
                server: ActorRef,
                channelsListener: typed.ActorRef[ChannelsListener.Command],
                balanceActor: typed.ActorRef[BalanceActor.Command],
+               postman: typed.ActorRef[Postman.Command],
                wallet: OnChainWallet)
 
 object Kit {

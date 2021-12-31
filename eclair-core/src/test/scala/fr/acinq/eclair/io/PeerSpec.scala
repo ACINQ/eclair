@@ -509,7 +509,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val (_, msg) = buildMessage(randomKey(), randomKey(), Nil, Left(Recipient(remoteNodeId, None)), Nil)
     val probe = TestProbe()
     peer ! RelayOnionMessage(msg, probe.ref.toTyped)
-    probe.expectMsg(MessageRelay.Success)
+    probe.expectMsg(MessageRelay.Sent)
   }
 
   test("reply to relay request disconnected") { f =>

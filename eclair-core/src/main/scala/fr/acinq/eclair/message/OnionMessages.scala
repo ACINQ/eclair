@@ -18,6 +18,7 @@ package fr.acinq.eclair.message
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.wire.protocol.MessageOnion.{BlindedFinalPayload, BlindedRelayPayload, FinalPayload, RelayPayload}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
@@ -25,6 +26,7 @@ import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success}
 
 object OnionMessages {
@@ -138,4 +140,6 @@ object OnionMessages {
       }
     }
   }
+
+  case class OnionMessageConfig(relayPolicy: RelayPolicy, timeout: FiniteDuration)
 }

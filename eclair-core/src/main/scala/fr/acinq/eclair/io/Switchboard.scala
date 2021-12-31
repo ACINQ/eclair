@@ -16,24 +16,27 @@
 
 package fr.acinq.eclair.io
 
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.{ClassicActorContextOps, ClassicActorRefOps}
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, typed}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.OnChainAddressGenerator
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.io.MessageRelay.RelayPolicy
+import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayPolicy}
 import fr.acinq.eclair.io.Peer.PeerInfoResponse
+import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.wire.protocol.OnionMessage
+import fr.acinq.eclair.wire.protocol.{MessageOnion, OnionMessage}
 
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, postman: typed.ActorRef[Postman.Command]) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -112,6 +115,32 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) 
     case RelayMessage(prevNodeId, nextNodeId, dataToRelay, relayPolicy) =>
       val relay = context.spawnAnonymous(MessageRelay())
       relay ! MessageRelay.RelayMessage(self, prevNodeId, nextNodeId, dataToRelay, relayPolicy, sender().toTyped)
+
+    case SendMessage(nextNodeId, dataToSend, Some(replyPathId), replyTo) =>
+      println("send message expecting reply")
+      val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[Any] {
+        case MessageRelay.Sent =>
+          Behaviors.same
+        case Some(payload: MessageOnion.FinalPayload) =>
+          replyTo ! Right(payload)
+          Behaviors.stopped
+        case x =>
+          replyTo ! Left(x)
+          Behaviors.stopped
+      })
+      postman ! Postman.SubscribeOnce(replyPathId, relayer, nodeParams.onionMessageConfig.timeout)
+      val relay = context.spawnAnonymous(MessageRelay())
+      relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, relayer)
+
+    case SendMessage(nextNodeId, dataToSend, None, replyTo) =>
+      println("send message not expecting reply")
+      val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[Any] {
+        case x =>
+          replyTo ! Left(x)
+          Behaviors.stopped
+      })
+      val relay = context.spawnAnonymous(MessageRelay())
+      relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, relayer)
   }
 
   /**
@@ -154,17 +183,24 @@ object Switchboard {
       context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self), name = peerActorName(remoteNodeId))
   }
 
-  def props(nodeParams: NodeParams, peerFactory: PeerFactory) = Props(new Switchboard(nodeParams, peerFactory))
+  def props(nodeParams: NodeParams, peerFactory: PeerFactory, postman: typed.ActorRef[Postman.Command]) = Props(new Switchboard(nodeParams, peerFactory, postman))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
   // @formatter:off
   case object GetPeers
+
   case class GetPeerInfo(replyTo: typed.ActorRef[PeerInfoResponse], remoteNodeId: PublicKey)
 
   case object GetRouterPeerConf extends RemoteTypes
+
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
-  // @formatter:on
 
   case class RelayMessage(prevNodeId: PublicKey, nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy)
+
+  case class SendMessage(nextNodeId: PublicKey,
+                         message: OnionMessage,
+                         replyPathId: Option[ByteVector32],
+                         replyTo: typed.ActorRef[Either[Any, MessageOnion.FinalPayload]])
+  // @formatter:on
 }
