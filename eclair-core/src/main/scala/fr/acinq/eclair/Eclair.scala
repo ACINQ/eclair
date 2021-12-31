@@ -32,6 +32,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.BlindedRoute
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
@@ -156,7 +157,7 @@ trait Eclair {
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 
-  def sendOnionMessage(route: Seq[PublicKey], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector, pathId: Option[ByteVector])(implicit timeout: Timeout): Future[SendOnionMessageResponse]
+  def sendOnionMessage(intermediateNodes: Seq[OnionMessages.IntermediateNode], destination: Either[OnionMessages.Recipient, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -509,7 +510,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendOnionMessage(route: Seq[PublicKey], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector, pathId: Option[ByteVector])(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
+  override def sendOnionMessage(intermediateNodes: Seq[OnionMessages.IntermediateNode],
+                                destination: Either[OnionMessages.Recipient, Sphinx.RouteBlinding.BlindedRoute],
+                                replyPath: Option[Seq[PublicKey]],
+                                userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
     codecs.list(TlvCodecs.genericTlv).decode(userCustomContent.bits) match {
       case Attempt.Successful(DecodeResult(userCustomTlvs, _)) =>
         val replyPathId = randomBytes32()
@@ -518,11 +522,10 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           OnionMessages.buildMessage(
             randomKey(),
             randomKey(),
-            route.dropRight(1).map(OnionMessages.IntermediateNode(_)),
-            Left(OnionMessages.Recipient(route.last, pathId)),
+            intermediateNodes,
+            destination,
             replyRoute.map(OnionMessagePayloadTlv.ReplyPath(_) :: Nil).getOrElse(Nil),
             userCustomTlvs)
-        println("sending to switchboard")
         appKit.switchboard.toTyped.ask(ref => SendMessage(nextNodeId, message, replyPath.map(_ => replyPathId), ref))(timeout, appKit.system.scheduler.toTyped).mapTo[Either[Any, MessageOnion.FinalPayload]].map {
           case Right(payload) => SendOnionMessageResponse(None, Some(ResponsePayload(payload.replyPath.map(_.blindedRoute), payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
           case Left(MessageRelay.Sent) => SendOnionMessageResponse(None, None)

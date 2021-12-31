@@ -57,8 +57,12 @@ object OnionMessages {
         val lastPayload = MessageOnionCodecs.blindedFinalPayloadCodec.encode(BlindedFinalPayload(TlvStream(tlvs))).require.bytes
         Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload)
       case Right(route) =>
-        val Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes) = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads)
-        Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes ++ route.blindedNodes)
+        if(intermediateNodes.isEmpty) {
+          route
+        } else {
+          val Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes) = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads)
+          Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes ++ route.blindedNodes)
+        }
     }
   }
 
@@ -90,7 +94,7 @@ object OnionMessages {
       payloadSize.toInt
     }
     val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None)
-    (route.introductionNodeId, OnionMessage(blindingSecret.publicKey, packet))
+    (route.introductionNodeId, OnionMessage(route.blindingKey, packet))
   }
 
   // @formatter:off

@@ -117,7 +117,6 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, 
       relay ! MessageRelay.RelayMessage(self, prevNodeId, nextNodeId, dataToRelay, relayPolicy, sender().toTyped)
 
     case SendMessage(nextNodeId, dataToSend, Some(replyPathId), replyTo) =>
-      println("send message expecting reply")
       val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[Any] {
         case MessageRelay.Sent =>
           Behaviors.same
@@ -133,7 +132,6 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, 
       relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, relayer)
 
     case SendMessage(nextNodeId, dataToSend, None, replyTo) =>
-      println("send message not expecting reply")
       val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[Any] {
         case x =>
           replyTo ! Left(x)
