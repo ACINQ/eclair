@@ -48,6 +48,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendPaymentToRouteResponse, SendSpontaneousPayment}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -67,7 +68,7 @@ case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVect
 
 case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
-case class ResponsePayload(replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
+case class ResponsePayload(replyPath: Option[String], unknownTlvs: Map[String, ByteVector])
 case class SendOnionMessageResponse(failureMessage: Option[String], response: Option[ResponsePayload])
 
 object SignedMessage {
@@ -527,7 +528,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
             replyRoute.map(OnionMessagePayloadTlv.ReplyPath(_) :: Nil).getOrElse(Nil),
             userCustomTlvs)
         appKit.switchboard.toTyped.ask(ref => SendMessage(nextNodeId, message, replyPath.map(_ => replyPathId), ref))(timeout, appKit.system.scheduler.toTyped).mapTo[Either[Any, MessageOnion.FinalPayload]].map {
-          case Right(payload) => SendOnionMessageResponse(None, Some(ResponsePayload(payload.replyPath.map(_.blindedRoute), payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
+          case Right(payload) => SendOnionMessageResponse(None, Some(ResponsePayload(payload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex), payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
           case Left(MessageRelay.Sent) => SendOnionMessageResponse(None, None)
           case Left(None) => SendOnionMessageResponse(Some("No response"), None)
           case Left(failure) => SendOnionMessageResponse(Some(failure.toString), None)
