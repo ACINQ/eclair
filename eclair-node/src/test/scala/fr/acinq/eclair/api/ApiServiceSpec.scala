@@ -1056,7 +1056,6 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
   test("'audit'") {
     val eclair = mock[Eclair]
     val mockService = new MockService(eclair)
-    val year9999 = TimestampSecond(253402300799L)
     val auditResponse = AuditResponse(Seq.empty, Seq.empty, Seq.empty)
     eclair.audit(any, any)(any[Timeout]) returns Future.successful(auditResponse)
 
@@ -1066,16 +1065,16 @@ class ApiServiceSpec extends AnyFunSuite with ScalatestRouteTest with IdiomaticM
       check {
         assert(handled)
         assert(status == OK)
-        eclair.audit(TimestampSecond.min, year9999)(any[Timeout]).wasCalled(once)
+        eclair.audit(TimestampSecond.min, TimestampSecond.max)(any[Timeout]).wasCalled(once)
       }
 
-    Post("/audit", FormData("from" -> TimestampSecond.min.toLong.toString, "to" -> year9999.toLong.toString)) ~>
+    Post("/audit", FormData("from" -> TimestampSecond.min.toLong.toString, "to" -> TimestampSecond.max.toLong.toString)) ~>
       addCredentials(BasicHttpCredentials("", mockApi().password)) ~>
       Route.seal(mockService.audit) ~>
       check {
         assert(handled)
         assert(status == OK)
-        eclair.audit(TimestampSecond.min, year9999)(any[Timeout]).wasCalled(twice)
+        eclair.audit(TimestampSecond.min, TimestampSecond.max)(any[Timeout]).wasCalled(twice)
       }
 
     Post("/audit", FormData("from" -> 123456.toString, "to" -> 654321.toString)) ~>
