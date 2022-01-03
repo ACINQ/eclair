@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel.Channel.{BITCOIN_FUNDING_PUBLISH_FAILED, BITCOIN_FUNDING_TIMEOUT}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx, SetChannelId}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishReplaceableTx, PublishTx, SetChannelId}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.relay.Relayer._
@@ -775,7 +775,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === closingState.claimMainOutputTx.get.tx)
     val claimHtlcSuccessTx = getClaimHtlcSuccessTxs(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get).head.tx
     Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(alice2blockchain.expectMsgType[PublishRawTx].tx === claimHtlcSuccessTx)
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === claimHtlcSuccessTx)
 
     // Alice resets watches on all relevant transactions.
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
@@ -816,7 +816,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
 
     // we should re-publish unconfirmed transactions
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishRawTx].tx === claimMain.tx))
-    assert(alice2blockchain.expectMsgType[PublishRawTx].tx === htlcTimeoutTx.tx)
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === htlcTimeoutTx.tx)
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
     assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === htlcTimeoutTx.input.outPoint.index)
   }
@@ -946,8 +946,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(alice2blockchain.expectMsgType[PublishRawTx].tx === closingState.claimMainOutputTx.get.tx)
     val claimHtlcSuccessTx = getClaimHtlcSuccessTxs(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get).head.tx
     Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    assert(alice2blockchain.expectMsgType[PublishRawTx].tx === claimHtlcSuccessTx)
-    assert(alice2blockchain.expectMsgType[PublishRawTx].tx === claimHtlcTimeoutTx)
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === claimHtlcSuccessTx)
+    assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === claimHtlcTimeoutTx)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === closingState.claimMainOutputTx.get.tx.txid)
@@ -983,7 +983,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice2blockchain.expectMsgType[WatchFundingSpent]
     // then we should re-publish unconfirmed transactions
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishRawTx].tx === claimMain.tx))
-    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(alice2blockchain.expectMsgType[PublishRawTx].tx === claimHtlcTimeout.tx))
+    claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx === claimHtlcTimeout.tx))
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
     claimHtlcTimeoutTxs.foreach(claimHtlcTimeout => assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === claimHtlcTimeout.input.outPoint.index))

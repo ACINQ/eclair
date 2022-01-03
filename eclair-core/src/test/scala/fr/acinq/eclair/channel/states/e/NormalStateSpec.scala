@@ -29,7 +29,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw, FeeratesPer
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
 import fr.acinq.eclair.channel.Channel._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.Peer
@@ -2953,17 +2953,18 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
-    // in response to that, alice publishes its claim txs
-    val claimTxs = for (_ <- 0 until 4) yield alice2blockchain.expectMsgType[PublishRawTx].tx
-    val claimMain = claimTxs(0)
-    // in addition to its main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val amountClaimed = (for (claimHtlcTx <- claimTxs) yield {
+    // in response to that, alice publishes her claim txs
+    val claimMain = alice2blockchain.expectMsgType[PublishRawTx].tx
+    // in addition to her main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
+    val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
       assert(claimHtlcTx.txIn.size == 1)
       assert(claimHtlcTx.txOut.size == 1)
       Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       claimHtlcTx.txOut.head.amount
     }).sum
     // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
+    val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
     assert(amountClaimed === 814880.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
@@ -3039,20 +3040,22 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(bobCommitTx.txOut.size == 5) // two main outputs and 3 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
-    // in response to that, alice publishes its claim txs
-    val claimTxs = for (i <- 0 until 3) yield alice2blockchain.expectMsgType[PublishRawTx].tx
-    // in addition to its main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val amountClaimed = (for (claimHtlcTx <- claimTxs) yield {
+    // in response to that, alice publishes her claim txs
+    val claimMain = alice2blockchain.expectMsgType[PublishRawTx].tx
+    // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
+    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
       assert(claimHtlcTx.txIn.size == 1)
       assert(claimHtlcTx.txOut.size == 1)
       Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       claimHtlcTx.txOut.head.amount
     }).sum
     // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
+    val amountClaimed = claimMain.txOut.head.amount + htlcAmountClaimed
     assert(amountClaimed === 822310.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimTxs(0).txid) // claim-main
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.txid) // claim-main
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 1
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 2
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 3

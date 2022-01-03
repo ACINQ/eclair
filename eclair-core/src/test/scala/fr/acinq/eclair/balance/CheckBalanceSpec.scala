@@ -7,7 +7,7 @@ import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, MainAndHtlcBalance,
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{apply => _, _}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose}
-import fr.acinq.eclair.channel.publish.TxPublisher.PublishRawTx
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.{CLOSING, CMD_SIGN, DATA_CLOSING, DATA_NORMAL}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
@@ -90,8 +90,9 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
-    // in response to that, alice publishes its claim txs
-    val claimTxs = for (_ <- 0 until 4) yield alice2blockchain.expectMsgType[PublishRawTx].tx
+    // in response to that, alice publishes her claim txs
+    alice2blockchain.expectMsgType[PublishRawTx] // claim-main
+    val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
 
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
     val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get
@@ -99,7 +100,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages) ===
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
-        htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi
       ))
     // assuming alice gets the preimage for the 2nd htlc
@@ -107,7 +108,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(commitments.remoteCommit, remoteCommitPublished), knownPreimages1) ===
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
-        htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi + htlcb2.amountMsat.truncateToSatoshi
       ))
   }
@@ -137,8 +138,9 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bobCommitTx.txOut.size == 5) // two main outputs and 3 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
-    // in response to that, alice publishes its claim txs
-    val claimTxs = for (_ <- 0 until 3) yield alice2blockchain.expectMsgType[PublishRawTx].tx
+    // in response to that, alice publishes her claim txs
+    alice2blockchain.expectMsgType[PublishRawTx] // claim-main
+    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
 
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
     val remoteCommitPublished = alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get
@@ -147,7 +149,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages) ===
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
-        htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi
       ))
     // assuming alice gets the preimage for the 2nd htlc
@@ -155,7 +157,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(CheckBalance.computeRemoteCloseBalance(commitments, CurrentRemoteClose(waitingForRevocation.nextRemoteCommit, remoteCommitPublished), knownPreimages1) ===
       PossiblyPublishedMainAndHtlcBalance(
         toLocal = Map(remoteCommitPublished.claimMainOutputTx.get.tx.txid -> remoteCommitPublished.claimMainOutputTx.get.tx.txOut.head.amount),
-        htlcs = claimTxs.drop(1).map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
+        htlcs = claimHtlcTxs.map(claimTx => claimTx.txid -> claimTx.txOut.head.amount.toBtc).toMap,
         htlcsUnpublished = htlca3.amountMsat.truncateToSatoshi + htlcb2.amountMsat.truncateToSatoshi
       ))
   }

@@ -23,7 +23,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher._
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, CurrentFeerates}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishReplaceableTx, PublishTx}
 import fr.acinq.eclair.channel.states.{ChannelStateTestsBase, ChannelStateTestsTags}
 import fr.acinq.eclair.payment.OutgoingPaymentPacket.Upstream
 import fr.acinq.eclair.payment._
@@ -678,20 +678,22 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(bobCommitTx.txOut.size == 4) // two main outputs and 2 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
-    // in response to that, alice publishes its claim txs
-    val claimTxs = for (_ <- 0 until 3) yield alice2blockchain.expectMsgType[PublishRawTx].tx
-    // in addition to its main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val amountClaimed = (for (claimHtlcTx <- claimTxs) yield {
+    // in response to that, alice publishes her claim txs
+    val claimMain = alice2blockchain.expectMsgType[PublishRawTx].tx
+    // in addition to her main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
+    val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
+    val htlcAmountClaimed = (for (claimHtlcTx <- claimHtlcTxs) yield {
       assert(claimHtlcTx.txIn.size == 1)
       assert(claimHtlcTx.txOut.size == 1)
       Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       claimHtlcTx.txOut.head.amount
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
+    val amountClaimed = htlcAmountClaimed + claimMain.txOut.head.amount
     assert(amountClaimed === 774040.sat)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
-    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimTxs(0).txid)
+    assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.txid)
     alice2blockchain.expectMsgType[WatchOutputSpent]
     alice2blockchain.expectMsgType[WatchOutputSpent]
     alice2blockchain.expectNoMessage(1 second)
@@ -725,14 +727,17 @@ class ShutdownStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wit
     assert(bobCommitTx.txOut.size == 3) // two main outputs and 1 pending htlc
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
-    // in response to that, alice publishes its claim txs
-    val claimTxs = for (_ <- 0 until 2) yield alice2blockchain.expectMsgType[PublishRawTx].tx
-    // in addition to its main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-    val amountClaimed = (for (claimHtlcTx <- claimTxs) yield {
-      assert(claimHtlcTx.txIn.size == 1)
-      assert(claimHtlcTx.txOut.size == 1)
-      Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      claimHtlcTx.txOut.head.amount
+    // in response to that, alice publishes her claim txs
+    val claimTxs = Seq(
+      alice2blockchain.expectMsgType[PublishRawTx].tx,
+      // there is only one htlc to claim in the commitment bob published
+      alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx
+    )
+    val amountClaimed = (for (claimTx <- claimTxs) yield {
+      assert(claimTx.txIn.size == 1)
+      assert(claimTx.txOut.size == 1)
+      Transaction.correctlySpends(claimTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      claimTx.txOut.head.amount
     }).sum
     // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
     assert(amountClaimed === 481210.sat)
