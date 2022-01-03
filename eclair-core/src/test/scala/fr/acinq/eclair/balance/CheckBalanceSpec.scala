@@ -7,7 +7,7 @@ import fr.acinq.eclair.balance.CheckBalance.{ClosingBalance, MainAndHtlcBalance,
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{apply => _, _}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Helpers.Closing.{CurrentRemoteClose, LocalClose}
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, PublishReplaceableTx}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, PublishReplaceableTx}
 import fr.acinq.eclair.channel.states.ChannelStateTestsBase
 import fr.acinq.eclair.channel.{CLOSING, CMD_SIGN, DATA_CLOSING, DATA_NORMAL}
 import fr.acinq.eclair.db.jdbc.JdbcUtils.ExtendedResultSet._
@@ -91,7 +91,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
     alice ! WatchFundingSpentTriggered(bobCommitTx)
     // in response to that, alice publishes her claim txs
-    alice2blockchain.expectMsgType[PublishRawTx] // claim-main
+    alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
     val claimHtlcTxs = (1 to 3).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
 
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
@@ -139,7 +139,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     alice ! WatchFundingSpentTriggered(bobCommitTx)
 
     // in response to that, alice publishes her claim txs
-    alice2blockchain.expectMsgType[PublishRawTx] // claim-main
+    alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
     val claimHtlcTxs = (1 to 2).map(_ => alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.tx)
 
     val commitments = alice.stateData.asInstanceOf[DATA_CLOSING].commitments
@@ -179,7 +179,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // alice publishes her commit tx
     val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
     alice ! Error(ByteVector32.Zeroes, "oops")
-    assert(alice2blockchain.expectMsgType[PublishRawTx].tx.txid === aliceCommitTx.txid)
+    assert(alice2blockchain.expectMsgType[PublishFinalTx].tx.txid === aliceCommitTx.txid)
     assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
     awaitCond(alice.stateName == CLOSING)
     assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
@@ -193,10 +193,10 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
         htlcsUnpublished = htlca1.amountMsat.truncateToSatoshi + htlca3.amountMsat.truncateToSatoshi + htlcb1.amountMsat.truncateToSatoshi
       ))
 
-    alice2blockchain.expectMsgType[PublishRawTx] // claim-main
-    val htlcTx1 = alice2blockchain.expectMsgType[PublishRawTx].tx
-    val htlcTx2 = alice2blockchain.expectMsgType[PublishRawTx].tx
-    val htlcTx3 = alice2blockchain.expectMsgType[PublishRawTx].tx
+    alice2blockchain.expectMsgType[PublishFinalTx] // claim-main
+    val htlcTx1 = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    val htlcTx2 = alice2blockchain.expectMsgType[PublishFinalTx].tx
+    val htlcTx3 = alice2blockchain.expectMsgType[PublishFinalTx].tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // commit tx
     alice2blockchain.expectMsgType[WatchTxConfirmed] // main-delayed
     alice2blockchain.expectMsgType[WatchOutputSpent] // htlc 1
@@ -209,7 +209,7 @@ class CheckBalanceSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
       alice ! WatchOutputSpentTriggered(htlcTimeoutTx)
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === htlcTimeoutTx.txid)
       alice ! WatchTxConfirmedTriggered(2701, 3, htlcTimeoutTx)
-      val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishRawTx].tx
+      val claimHtlcDelayedTx = alice2blockchain.expectMsgType[PublishFinalTx].tx
       assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimHtlcDelayedTx.txid)
       claimHtlcDelayedTx
     }

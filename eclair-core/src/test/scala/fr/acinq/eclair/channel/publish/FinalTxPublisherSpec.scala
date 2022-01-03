@@ -26,9 +26,9 @@ import fr.acinq.eclair.blockchain.WatcherSpec.createSpendP2WPKH
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.publish.RawTxPublisher.{Publish, Stop}
+import fr.acinq.eclair.channel.publish.FinalTxPublisher.{Publish, Stop}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.ConflictingTxConfirmed
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishRawTx, TxConfirmed, TxPublishLogContext, TxRejected}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, TxConfirmed, TxPublishLogContext, TxRejected}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -37,7 +37,7 @@ import java.util.UUID
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration.DurationInt
 
-class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with BitcoindService with BeforeAndAfterAll {
+class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with BitcoindService with BeforeAndAfterAll {
 
   override def beforeAll(): Unit = {
     startBitcoind()
@@ -48,13 +48,13 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     stopBitcoind()
   }
 
-  case class Fixture(bitcoinClient: BitcoinCoreClient, publisher: ActorRef[RawTxPublisher.Command], watcher: TestProbe, probe: TestProbe)
+  case class Fixture(bitcoinClient: BitcoinCoreClient, publisher: ActorRef[FinalTxPublisher.Command], watcher: TestProbe, probe: TestProbe)
 
   def createFixture(): Fixture = {
     val probe = TestProbe()
     val watcher = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
-    val publisher = system.spawnAnonymous(RawTxPublisher(TestConstants.Alice.nodeParams, bitcoinClient, watcher.ref, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
+    val publisher = system.spawnAnonymous(FinalTxPublisher(TestConstants.Alice.nodeParams, bitcoinClient, watcher.ref, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
     Fixture(bitcoinClient, publisher, watcher, probe)
   }
 
@@ -79,7 +79,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val (priv, address) = createExternalAddress()
     val parentTx = sendToAddress(address, 125_000 sat, probe)
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, sequence = 5, lockTime = 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-time-locks", 0 sat, None)
+    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, "tx-time-locks", 0 sat, None)
     publisher ! Publish(probe.ref, cmd)
 
     val w = watcher.expectMsgType[WatchParentTxConfirmed]
@@ -109,7 +109,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val ancestorTx = sendToAddress(address, 125_000 sat, probe)
     val parentTx = createSpendP2WPKH(ancestorTx, priv, priv.publicKey, 2_500 sat, 0, 0)
     val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_000 sat, 0, 0)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "tx-with-parent", 10 sat, Some(parentTx.txid))
+    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, "tx-with-parent", 10 sat, Some(parentTx.txid))
     publisher ! Publish(probe.ref, cmd)
 
     // Since the parent is not published yet, we can't publish the child tx either:
@@ -132,7 +132,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     val (priv, address) = createExternalAddress()
     val parentTx = sendToAddress(address, 125_000 sat, probe)
     val tx1 = createSpendP2WPKH(parentTx, priv, priv.publicKey, 2_500 sat, 0, 0)
-    val cmd = PublishRawTx(tx1, tx1.txIn.head.outPoint, "tx-time-locks", 10 sat, None)
+    val cmd = PublishFinalTx(tx1, tx1.txIn.head.outPoint, "tx-time-locks", 10 sat, None)
     publisher ! Publish(probe.ref, cmd)
     waitTxInMempool(bitcoinClient, tx1.txid, probe)
 
@@ -157,7 +157,7 @@ class RawTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bitc
     import f._
 
     val tx = sendToAddress(getNewAddress(probe), 125_000 sat, probe)
-    val cmd = PublishRawTx(tx, tx.txIn.head.outPoint, "raw-tx", 10 sat, None)
+    val cmd = PublishFinalTx(tx, tx.txIn.head.outPoint, "final-tx", 10 sat, None)
     publisher ! Publish(probe.ref, cmd)
 
     probe.watch(publisher.toClassic)

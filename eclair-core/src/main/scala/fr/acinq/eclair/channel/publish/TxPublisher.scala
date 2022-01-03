@@ -81,9 +81,9 @@ object TxPublisher {
    * NB: the parent tx should only be provided when it's being concurrently published, it's unnecessary when it is
    * confirmed or when the tx has a relative delay.
    */
-  case class PublishRawTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[ByteVector32]) extends PublishTx
-  object PublishRawTx {
-    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishRawTx = PublishRawTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
+  case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[ByteVector32]) extends PublishTx
+  object PublishFinalTx {
+    def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
   case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments) extends PublishTx {
@@ -132,15 +132,15 @@ object TxPublisher {
 
   trait ChildFactory {
     // @formatter:off
-    def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[RawTxPublisher.Command]
+    def spawnFinalTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[FinalTxPublisher.Command]
     def spawnReplaceableTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[ReplaceableTxPublisher.Command]
     // @formatter:on
   }
 
   case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command]) extends ChildFactory {
     // @formatter:off
-    override def spawnRawTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[RawTxPublisher.Command] = {
-      context.spawn(RawTxPublisher(nodeParams, bitcoinClient, watcher, loggingInfo), s"raw-tx-${loggingInfo.id}")
+    override def spawnFinalTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[FinalTxPublisher.Command] = {
+      context.spawn(FinalTxPublisher(nodeParams, bitcoinClient, watcher, loggingInfo), s"final-tx-${loggingInfo.id}")
     }
     override def spawnReplaceableTxPublisher(context: ActorContext[Command], loggingInfo: TxPublishLogContext): ActorRef[ReplaceableTxPublisher.Command] = {
       context.spawn(ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, loggingInfo), s"replaceable-tx-${loggingInfo.id}")
@@ -172,16 +172,16 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
     def id: UUID
     def cmd: PublishTx
   }
-  private case class RawAttempt(id: UUID, cmd: PublishRawTx, actor: ActorRef[RawTxPublisher.Command]) extends PublishAttempt
+  private case class FinalAttempt(id: UUID, cmd: PublishFinalTx, actor: ActorRef[FinalTxPublisher.Command]) extends PublishAttempt
   private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, feerate: FeeratePerKw, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
   // @formatter:on
 
   private def run(pending: Map[OutPoint, Seq[PublishAttempt]], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
     Behaviors.receiveMessage {
-      case cmd: PublishRawTx =>
+      case cmd: PublishFinalTx =>
         val attempts = pending.getOrElse(cmd.input, Seq.empty)
         val alreadyPublished = attempts.exists {
-          case a: RawAttempt => a.cmd.tx.txid == cmd.tx.txid
+          case a: FinalAttempt => a.cmd.tx.txid == cmd.tx.txid
           case _ => false
         }
         if (alreadyPublished) {
@@ -190,9 +190,9 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         } else {
           val publishId = UUID.randomUUID()
           log.info("publishing {} txid={} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index, publishId, attempts.length)
-          val actor = factory.spawnRawTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
-          actor ! RawTxPublisher.Publish(context.self, cmd)
-          run(pending + (cmd.input -> attempts.appended(RawAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
+          val actor = factory.spawnFinalTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
+          actor ! FinalTxPublisher.Publish(context.self, cmd)
+          run(pending + (cmd.input -> attempts.appended(FinalAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
         }
 
       case cmd: PublishReplaceableTx =>
@@ -268,7 +268,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
   private def stopAttempts(attempts: Seq[PublishAttempt]): Unit = attempts.foreach(stopAttempt)
 
   private def stopAttempt(attempt: PublishAttempt): Unit = attempt match {
-    case RawAttempt(_, _, actor) => actor ! RawTxPublisher.Stop
+    case FinalAttempt(_, _, actor) => actor ! FinalTxPublisher.Stop
     case ReplaceableAttempt(_, _, _, actor) => actor ! ReplaceableTxPublisher.Stop
   }
 

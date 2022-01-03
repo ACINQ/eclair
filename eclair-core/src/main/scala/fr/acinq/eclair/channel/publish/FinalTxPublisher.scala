@@ -33,14 +33,14 @@ import scala.util.{Failure, Random, Success}
  */
 
 /**
- * This actor publishes a raw transaction without modifying it.
+ * This actor publishes a fully signed transaction without modifying it.
  * It waits for confirmation or failure before reporting back to the requesting actor.
  */
-object RawTxPublisher {
+object FinalTxPublisher {
 
   // @formatter:off
   sealed trait Command
-  case class Publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishRawTx) extends Command
+  case class Publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishFinalTx) extends Command
   private case object TimeLocksOk extends Command
   private case object CheckParentTx extends Command
   private case object ParentTxOk extends Command
@@ -54,7 +54,7 @@ object RawTxPublisher {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
-          new RawTxPublisher(nodeParams, bitcoinClient, watcher, context, timers, loggingInfo).start()
+          new FinalTxPublisher(nodeParams, bitcoinClient, watcher, context, timers, loggingInfo).start()
         }
       }
     }
@@ -62,14 +62,14 @@ object RawTxPublisher {
 
 }
 
-private class RawTxPublisher(nodeParams: NodeParams,
-                             bitcoinClient: BitcoinCoreClient,
-                             watcher: ActorRef[ZmqWatcher.Command],
-                             context: ActorContext[RawTxPublisher.Command],
-                             timers: TimerScheduler[RawTxPublisher.Command],
-                             loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class FinalTxPublisher(nodeParams: NodeParams,
+                               bitcoinClient: BitcoinCoreClient,
+                               watcher: ActorRef[ZmqWatcher.Command],
+                               context: ActorContext[FinalTxPublisher.Command],
+                               timers: TimerScheduler[FinalTxPublisher.Command],
+                               loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
-  import RawTxPublisher._
+  import FinalTxPublisher._
 
   private val log = context.log
 
@@ -80,7 +80,7 @@ private class RawTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishRawTx): Behavior[Command] = {
+  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishFinalTx): Behavior[Command] = {
     val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
     timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.tx, cmd.desc)
     Behaviors.receiveMessagePartial {
@@ -91,7 +91,7 @@ private class RawTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def checkParentPublished(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishRawTx): Behavior[Command] = {
+  def checkParentPublished(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishFinalTx): Behavior[Command] = {
     cmd.parentTx_opt match {
       case Some(parentTxId) =>
         context.self ! CheckParentTx
@@ -117,7 +117,7 @@ private class RawTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishRawTx): Behavior[Command] = {
+  def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishFinalTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, cmd.desc, cmd.fee)
     Behaviors.receiveMessagePartial {
