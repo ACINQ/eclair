@@ -21,7 +21,7 @@ import java.time.Instant
 import scala.concurrent.duration.{DurationLong, FiniteDuration}
 
 case class TimestampSecond(private val underlying: Long) extends Ordered[TimestampSecond] {
-  require(underlying >= 0 && underlying <= Long.MaxValue / 1000, "invalid timestamp value")
+  require(underlying >= 0 && underlying <= 253402300799L, "invalid timestamp value")
   // @formatter:off
   def toLong: Long = underlying
   def toTimestampMilli: TimestampMilli = TimestampMilli(underlying * 1000)
@@ -38,12 +38,12 @@ case class TimestampSecond(private val underlying: Long) extends Ordered[Timesta
 
 object TimestampSecond {
   val min: TimestampSecond = TimestampSecond(0) // 1/1/1970
-  val max: TimestampSecond = TimestampSecond(Long.MaxValue / 1000) // 11/04/2262 (upper limit prevents overflow when converting to milli precision)
+  val max: TimestampSecond = TimestampSecond(253402300799L) // 31/12/9999 (prevents overflow when converting to milli precision or sql timestamps)
   def now(): TimestampSecond = TimestampSecond(System.currentTimeMillis() / 1000)
 }
 
 case class TimestampMilli(private val underlying: Long) extends Ordered[TimestampMilli] {
-  require(underlying >= 0 && underlying <= Long.MaxValue, "invalid timestamp value")
+  require(underlying >= 0 && underlying <= 253402300799L * 1000, "invalid timestamp value")
   // @formatter:off
   def toLong: Long = underlying
   def toSqlTimestamp: sql.Timestamp = sql.Timestamp.from(Instant.ofEpochMilli(underlying))
@@ -58,7 +58,7 @@ case class TimestampMilli(private val underlying: Long) extends Ordered[Timestam
 object TimestampMilli {
   // @formatter:off
   val min: TimestampMilli = TimestampMilli(0) // 1/1/1970
-  val max: TimestampMilli = TimestampMilli(Long.MaxValue) // 11/04/2262
+  val max: TimestampMilli = TimestampMilli(253402300799L * 1000) // 31/12/9999 (prevents overflow when converting to sql timestamps)
   def now(): TimestampMilli = TimestampMilli(System.currentTimeMillis())
   def fromSqlTimestamp(sqlTs: sql.Timestamp): TimestampMilli = TimestampMilli(sqlTs.getTime)
   // @formatter:on

@@ -22,13 +22,13 @@ import org.scalatest.funsuite.AnyFunSuite
 class TimestampSpec extends AnyFunSuite {
 
   test("timestamp boundaries") {
-    assert(TimestampSecond.max.toLong == Long.MaxValue / 1000)
+    assert(TimestampSecond.max.toLong == 253402300799L)
     assert(TimestampSecond.min.toLong == 0)
-    assert(TimestampMilli.max.toLong == Long.MaxValue)
+    assert(TimestampMilli.max.toLong == 253402300799L * 1000)
     assert(TimestampMilli.min.toLong == 0)
 
     intercept[IllegalArgumentException] {
-      TimestampSecond(Long.MaxValue / 1000 + 1)
+      TimestampSecond(253402300799L + 1)
     }
 
     intercept[IllegalArgumentException] {
