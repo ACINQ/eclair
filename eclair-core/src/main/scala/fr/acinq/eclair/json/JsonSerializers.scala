@@ -33,6 +33,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Router.{ChannelHop, Route}
 import fr.acinq.eclair.transactions.DirectedHtlc
 import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Feature, FeatureSupport, MilliSatoshi, ShortChannelId, TimestampMilli, TimestampSecond, UInt64, UnknownFeature}
 import org.json4s
@@ -406,8 +407,8 @@ object GlobalBalanceSerializer extends ConvertClassSerializer[GlobalBalance](b =
 private case class PeerInfoJson(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
 object PeerInfoSerializer extends ConvertClassSerializer[Peer.PeerInfo](peerInfo => PeerInfoJson(peerInfo.nodeId, peerInfo.state.toString, peerInfo.address, peerInfo.channels))
 
-private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[BlindedRoute], unknownTlvs: Map[String, ByteVector])
-object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(_.blindedRoute), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
+private[json] case class MessageReceivedJson(pathId: Option[ByteVector], replyPath: Option[String], unknownTlvs: Map[String, ByteVector])
+object OnionMessageReceivedSerializer extends ConvertClassSerializer[OnionMessages.ReceiveMessage](m => MessageReceivedJson(m.pathId, m.finalPayload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex), m.finalPayload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap))
 // @formatter:on
 
 case class CustomTypeHints(custom: Map[Class[_], String]) extends TypeHints {

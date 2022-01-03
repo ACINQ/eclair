@@ -81,7 +81,9 @@ object MessageOnionCodecs {
 
   private val replyHopCodec: Codec[BlindedNode] = (("nodeId" | publicKey) :: ("encryptedData" | variableSizeBytes(uint16, bytes))).as[BlindedNode]
 
-  private val replyPathCodec: Codec[ReplyPath] = variableSizeBytesLong(varintoverflow, ("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | list(replyHopCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute].as[ReplyPath]
+  val blindedRouteCodec: Codec[BlindedRoute] = (("firstNodeId" | publicKey) :: ("blinding" | publicKey) :: ("path" | list(replyHopCodec).xmap[Seq[BlindedNode]](_.toSeq, _.toList))).as[BlindedRoute]
+
+  private val replyPathCodec: Codec[ReplyPath] = variableSizeBytesLong(varintoverflow, blindedRouteCodec).as[ReplyPath]
 
   private val encryptedDataCodec: Codec[EncryptedData] = variableSizeBytesLong(varintoverflow, bytes).as[EncryptedData]
 

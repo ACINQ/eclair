@@ -21,6 +21,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.message.OnionMessages
 import scodec.bits.ByteVector
 
@@ -42,8 +43,16 @@ trait Message {
   }
 
   val sendOnionMessage: Route = postRequest("sendonionmessage") { implicit t =>
-    formFields("route".as[List[PublicKey]](pubkeyListUnmarshaller), "replyPath".as[List[PublicKey]](pubkeyListUnmarshaller).?, "content".as[ByteVector](binaryDataUnmarshaller), "pathId".as[ByteVector](binaryDataUnmarshaller)?) { (route, replyPath, userCustomContent, pathId) =>
-      complete(eclairApi.sendOnionMessage(route.dropRight(1).map(OnionMessages.IntermediateNode(_)), Left(OnionMessages.Recipient(route.last, pathId)), replyPath, userCustomContent))
+    formFields(
+      "destination".as[Either[OnionMessages.Recipient, Sphinx.RouteBlinding.BlindedRoute]](destinationUnmarshaller),
+      "intermediateNodes".as[List[PublicKey]](pubkeyListUnmarshaller) ?,
+      "replyPath".as[List[PublicKey]](pubkeyListUnmarshaller).?,
+      "content".as[ByteVector](binaryDataUnmarshaller)) { (destination, intermediateNodes, replyPath, userCustomContent) =>
+      complete(
+        eclairApi.sendOnionMessage(intermediateNodes.getOrElse(Nil).map(OnionMessages.IntermediateNode(_)),
+          destination,
+          replyPath,
+          userCustomContent))
     }
   }
 
