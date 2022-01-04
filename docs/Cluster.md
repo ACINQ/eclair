@@ -93,23 +93,37 @@ Generate a self-signed certificate (set a strong password):
 $ keytool -genkeypair -v \
           -keystore akka-cluster-tls.jks \
           -dname "O=ACME, C=FR" \
-          -keypass:env <password> \
-          -storepass:env <password> \
+          -keypass <password> \
+          -storepass <password> \
           -keyalg RSA \
           -keysize 4096 \
           -validity 9999
 ```
 
-Copy the resulting certificate to your `.eclair` directory:
+Copy the resulting certificate to the `.eclair` directory on your backend node and all your frontend nodes:
 ```shell
 $ cp akka-cluster-tls.jks ~/.eclair
 ```
-
-Add this to your `eclair.conf`:
+Add this to `eclair.conf` on all your frontend nodes:
 ```
-AKKA_TLS_PASSWORD=<password>
 akka.remote.artery.transport = "tls-tcp"
 ```
+
+Start all your frontend nodes with the following environment variables:
+* BACKEND_IP set the the IP address of your backend node
+* LOCAL_IP set to the IP address of this frontend node (this is typically a private IP address, reachable from your backend node)
+* NODE_PUB_KEY set the your node public key
+* AKKA_TLS_PASSWORD set to the password of your Akka certificate
+
+Add this to `eclair.conf` on your backend node:
+```
+akka.remote.artery.transport = "tls-tcp"
+akka.remote.artery.canonical.hostname="ip-of-this-backend-node"
+akka.cluster.seed-nodes=["akka://eclair-node@ip-of-this-backend-node:25520"]
+```
+
+Start your backend node with the following environment variables:
+* AKKA_TLS_PASSWORD set to the password of your Akka certificate
 
 ### AWS Deployment
 
