@@ -24,8 +24,8 @@ import akka.event.Logging.MDC
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Logs.LogCategory
-import fr.acinq.eclair.db.{NetworkDb, PeersDb}
 import fr.acinq.eclair.io.Monitoring.Metrics
+import fr.acinq.eclair.wire.protocol.{NodeAddress, OnionAddress}
 import fr.acinq.eclair.{FSMDiagnosticActorLogging, Logs, NodeParams, TimestampMilli}
 
 import java.net.InetSocketAddress
@@ -65,7 +65,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
   when(WAITING) {
     case Event(TickReconnect, d: WaitingData) =>
       // we query the db every time because it may have been updated in the meantime (e.g. with network announcements)
-      getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId) match {
+      getPeerAddressFromDb(nodeParams, remoteNodeId) match {
         case Some(address) =>
           connect(address, origin = self, isPersistent = true)
           goto(CONNECTING) using ConnectingData(address, d.nextReconnectionDelay)
@@ -136,7 +136,7 @@ class ReconnectionTask(nodeParams: NodeParams, remoteNodeId: PublicKey) extends 
       // if we are already connecting/connected, the peer will kill any duplicate connections
       hostAndPort_opt
         .map(hostAndPort2InetSocketAddress)
-        .orElse(getPeerAddressFromDb(nodeParams.db.peers, nodeParams.db.network, remoteNodeId)) match {
+        .orElse(getPeerAddressFromDb(nodeParams, remoteNodeId)) match {
         case Some(address) => connect(address, origin = replyTo, isPersistent)
         case None => replyTo ! PeerConnection.ConnectionResult.NoAddressFound
       }
@@ -189,10 +189,33 @@ object ReconnectionTask {
   case class WaitingData(nextReconnectionDelay: FiniteDuration) extends Data
   // @formatter:on
 
-  def getPeerAddressFromDb(peersDb: PeersDb, networkDb: NetworkDb, remoteNodeId: PublicKey): Option[InetSocketAddress] = {
-    peersDb.getPeer(remoteNodeId) // TODO should we start with the network db which may be more up to date? or rotate?
-      .orElse(networkDb.getNode(remoteNodeId).flatMap(_.addresses.headOption)) // TODO gets the first of the list, improve selection?
-      .map(_.socketAddress)
+  def selectNodeAddress(nodeParams: NodeParams, nodeAddresses: Seq[NodeAddress]): Option[NodeAddress] = {
+    // it doesn't make sense to mix tor and clearnet addresses, so we separate them and decide whether we use one or the other
+    val torAddresses = nodeAddresses.collect { case o: OnionAddress => o }
+    val clearnetAddresses = nodeAddresses diff torAddresses
+    val selectedAddresses = nodeParams.socksProxy_opt match {
+      case Some(params) if clearnetAddresses.nonEmpty && params.useForTor && (!params.useForIPv4 || !params.useForIPv6) =>
+        // Remote has clearnet (and possibly tor addresses), and we support tor, but we have configured it to only use
+        // tor when strictly necessary. In this case we will only connect over clearnet.
+        clearnetAddresses
+      case Some(params) if torAddresses.nonEmpty && params.useForTor =>
+        // In all other cases, if they have a tor address and we support tor, we use tor.
+        torAddresses
+      case _ =>
+        // Otherwise, if we don't support tor or they don't have a tor address, we use clearnet.
+        clearnetAddresses
+    }
+    // finally, we pick an address at random
+    if (selectedAddresses.nonEmpty) {
+      Some(selectedAddresses(Random.nextInt(selectedAddresses.size)))
+    } else {
+      None
+    }
+  }
+
+  def getPeerAddressFromDb(nodeParams: NodeParams, remoteNodeId: PublicKey): Option[InetSocketAddress] = {
+    val nodeAddresses = nodeParams.db.peers.getPeer(remoteNodeId).toSeq ++ nodeParams.db.network.getNode(remoteNodeId).toSeq.flatMap(_.addresses)
+    selectNodeAddress(nodeParams, nodeAddresses).map(_.socketAddress)
   }
 
   def hostAndPort2InetSocketAddress(hostAndPort: HostAndPort): InetSocketAddress = new InetSocketAddress(hostAndPort.getHost, hostAndPort.getPort)
