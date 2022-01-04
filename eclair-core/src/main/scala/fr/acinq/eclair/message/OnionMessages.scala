@@ -26,6 +26,7 @@ import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
+import scala.annotation.tailrec
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success}
 
@@ -115,6 +116,7 @@ object OnionMessages {
   case class CannotDecodeBlindedPayload(message: String) extends DropReason { override def toString = s"can't decode blinded payload: $message" }
   // @formatter:on
 
+  @tailrec
   def process(privateKey: PrivateKey, msg: OnionMessage): Action = {
     if (msg.onionRoutingPacket.payload.length > 32768) {
       DropMessage(MessageTooLarge(msg.onionRoutingPacket.payload.length))

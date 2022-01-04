@@ -121,9 +121,6 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, 
       val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[OnionMessageResponse] {
         case MessageRelay.Sent =>
           Behaviors.same
-        case payload: MessageOnion.FinalPayload =>
-          replyTo ! payload
-          Behaviors.stopped
         case x =>
           replyTo ! x
           Behaviors.stopped
@@ -133,13 +130,8 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, 
       relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, relayer)
 
     case SendMessage(nextNodeId, dataToSend, None, replyTo) =>
-      val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[OnionMessageResponse] {
-        case x =>
-          replyTo ! x
-          Behaviors.stopped
-      })
       val relay = context.spawnAnonymous(MessageRelay())
-      relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, relayer)
+      relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, replyTo)
   }
 
   /**
