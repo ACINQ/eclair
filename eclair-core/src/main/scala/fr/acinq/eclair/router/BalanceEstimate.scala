@@ -76,8 +76,17 @@ case class BalanceEstimate private(low: MilliSatoshi, lowTimestamp: TimestampSec
   def couldSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate =
     otherSide.couldNotSend(totalCapacity - amount, timestamp).otherSide
 
-  def didSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate =
-    copy(low = (low - amount) max MilliSatoshi(0), high = (high - amount) max MilliSatoshi(0))
+  def didSend(amount: MilliSatoshi, timestamp: TimestampSecond): BalanceEstimate = {
+    val newLow = (low - amount) max MilliSatoshi(0)
+    val newHigh = (high - amount) max MilliSatoshi(0)
+    val pLow = decay(newLow, 1, lowTimestamp)
+    val pHigh = decay(newHigh, 0, highTimestamp)
+    if (???) {
+      copy(low = newLow, high = (totalCapacity - amount) max MilliSatoshi(0), highTimestamp = timestamp)
+    } else {
+      copy(low = newLow, high = newHigh)
+    }
+  }
 
   def addChannel(capacity: Satoshi): BalanceEstimate = copy(high = high + toMilliSatoshi(capacity), totalCapacity = totalCapacity + capacity)
 
@@ -162,9 +171,12 @@ case class BalancesEstimates(balances: Map[(PublicKey, PublicKey), BalanceEstima
 }
 
 object BalancesEstimates {
-  def baseline(graph: DirectedGraph, defaultHalfLife: FiniteDuration): BalancesEstimates = BalancesEstimates((
-    for (edge <- graph.edgeSet() if edge.balance_opt.isEmpty)
-      yield (if (LexicographicalOrdering.isLessThan(edge.desc.a.value, edge.desc.b.value)) (edge.desc.a, edge.desc.b) else (edge.desc.b, edge.desc.a)) -> BalanceEstimate.baseline(edge.capacity, defaultHalfLife)
-    ).toMap,
+  def baseline(graph: DirectedGraph, defaultHalfLife: FiniteDuration): BalancesEstimates = BalancesEstimates(
+    graph.edgeSet().foldLeft[Map[(PublicKey, PublicKey), BalanceEstimate]](Map.empty) {
+      case (m, edge) => m.updatedWith(if (LexicographicalOrdering.isLessThan(edge.desc.a.value, edge.desc.b.value)) (edge.desc.a, edge.desc.b) else (edge.desc.b, edge.desc.a)) {
+        case None => Some(BalanceEstimate.baseline(edge.capacity, defaultHalfLife))
+        case Some(balance) => Some(balance.addChannel(edge.capacity))
+      }
+    },
     defaultHalfLife)
 }

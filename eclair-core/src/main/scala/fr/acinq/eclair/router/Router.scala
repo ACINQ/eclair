@@ -632,7 +632,12 @@ object Router {
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[PublicChannel]): Boolean = channels.exists(c => isRelatedTo(c.ann, nodeId))
 
+  /** We know that this route could relay because we have tried it but the payment was eventually cancelled */
   case class RouteCouldRelay(route: Route)
+
+  /** We have relayed using this route. */
   case class RouteDidRelay(route: Route)
+
+  /** We have tried to relay this amount from this channel and it failed. */
   case class ChannelCouldNotRelay(amount: MilliSatoshi, hop: ChannelHop)
 }
