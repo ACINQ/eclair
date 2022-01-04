@@ -373,7 +373,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     assert(closingState.localCommitPublished.isDefined)
     val localCommitPublished = closingState.localCommitPublished.get
 
-    val publishedLocalCommitTx = s2blockchain.expectMsgType[TxPublisher.PublishRawTx].tx
+    val publishedLocalCommitTx = s2blockchain.expectMsgType[TxPublisher.PublishFinalTx].tx
     assert(publishedLocalCommitTx.txid == commitTx.txid)
     val commitInput = closingState.commitments.commitInput
     Transaction.correctlySpends(publishedLocalCommitTx, Map(commitInput.outPoint -> commitInput.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -381,11 +381,11 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
       assert(s2blockchain.expectMsgType[TxPublisher.PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
     }
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishRawTx(tx, tx.fee, None)))
+    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => s2blockchain.expectMsg(TxPublisher.PublishFinalTx(tx, tx.fee, None)))
     closingState.commitments.commitmentFormat match {
       case Transactions.DefaultCommitmentFormat =>
         // all htlcs success/timeout should be published as-is, without claiming their outputs
-        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishRawTx(tx, tx.fee, Some(commitTx.txid)) }: _*)
+        s2blockchain.expectMsgAllOf(localCommitPublished.htlcTxs.values.toSeq.collect { case Some(tx) => TxPublisher.PublishFinalTx(tx, tx.fee, Some(commitTx.txid)) }: _*)
         assert(localCommitPublished.claimHtlcDelayedTxs.isEmpty)
       case _: Transactions.AnchorOutputsCommitmentFormat =>
         // all htlcs success/timeout should be published as replaceable txs, without claiming their outputs
@@ -423,7 +423,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
     // if s has a main output in the commit tx (when it has a non-dust balance), it should be claimed
     remoteCommitPublished.claimMainOutputTx.foreach(claimMain => {
       Transaction.correctlySpends(claimMain.tx, rCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      s2blockchain.expectMsg(TxPublisher.PublishRawTx(claimMain, claimMain.fee, None))
+      s2blockchain.expectMsg(TxPublisher.PublishFinalTx(claimMain, claimMain.fee, None))
     })
     // all htlcs success/timeout should be claimed
     val claimHtlcTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(tx: ClaimHtlcTx) => tx }.toSeq

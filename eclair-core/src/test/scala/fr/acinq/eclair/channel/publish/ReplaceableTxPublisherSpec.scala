@@ -129,7 +129,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     }
   }
 
-  def closeChannelWithoutHtlcs(f: Fixture): (PublishRawTx, PublishReplaceableTx) = {
+  def closeChannelWithoutHtlcs(f: Fixture): (PublishFinalTx, PublishReplaceableTx) = {
     import f._
 
     val commitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(alice.underlyingActor.nodeParams.channelKeyManager)
@@ -137,7 +137,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
     // Forward the commit tx to the publisher.
-    val publishCommitTx = alice2blockchain.expectMsg(PublishRawTx(commitTx, commitTx.fee, None))
+    val publishCommitTx = alice2blockchain.expectMsg(PublishFinalTx(commitTx, commitTx.fee, None))
     // Forward the anchor tx to the publisher.
     val publishAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishAnchor.txInfo.input.outPoint.txid === commitTx.tx.txid)
@@ -462,9 +462,9 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       // Force-close channel.
       probe.send(alice, CMD_FORCECLOSE(probe.ref))
       probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
-      alice2blockchain.expectMsgType[PublishRawTx]
+      alice2blockchain.expectMsgType[PublishFinalTx]
       assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
-      alice2blockchain.expectMsgType[PublishRawTx] // claim main output
+      alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
       val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
       assert(htlcSuccess.txInfo.isInstanceOf[HtlcSuccessTx])
       val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
@@ -512,13 +512,13 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsgType[CommandSuccess[CMD_FORCECLOSE]]
 
     // We make the commit tx confirm because htlc txs have a relative delay.
-    alice2blockchain.expectMsg(PublishRawTx(commitTx, commitTx.fee, None))
+    alice2blockchain.expectMsg(PublishFinalTx(commitTx, commitTx.fee, None))
     wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
     probe.expectMsg(commitTx.tx.txid)
     generateBlocks(1)
 
     assert(alice2blockchain.expectMsgType[PublishReplaceableTx].txInfo.isInstanceOf[ClaimLocalAnchorOutputTx])
-    alice2blockchain.expectMsgType[PublishRawTx] // claim main output
+    alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
     val htlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(htlcSuccess.txInfo.isInstanceOf[HtlcSuccessTx])
     val htlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
@@ -773,7 +773,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       val remoteCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.fullySignedLocalCommitTx(bob.underlyingActor.nodeParams.channelKeyManager)
       assert(remoteCommitTx.tx.txOut.size === 6)
       probe.send(alice, WatchFundingSpentTriggered(remoteCommitTx.tx))
-      alice2blockchain.expectMsgType[PublishRawTx] // claim main output
+      alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
       val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
       assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
       val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
@@ -827,7 +827,7 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
     probe.expectMsg(remoteCommitTx.tx.txid)
     generateBlocks(1)
 
-    alice2blockchain.expectMsgType[PublishRawTx] // claim main output
+    alice2blockchain.expectMsgType[PublishFinalTx] // claim main output
     val claimHtlcTimeout = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(claimHtlcTimeout.txInfo.isInstanceOf[ClaimHtlcTimeoutTx])
     val claimHtlcSuccess = alice2blockchain.expectMsgType[PublishReplaceableTx]
