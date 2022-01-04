@@ -36,9 +36,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.io.Switchboard.SendMessage
 import fr.acinq.eclair.io.{MessageRelay, NodeURI, Peer, PeerConnection, Switchboard}
-import fr.acinq.eclair.message.OnionMessages.OnionMessageResponse
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -526,13 +524,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
             destination match { case Left(key) => Left(OnionMessages.Recipient(key, None)) case Right(route) => Right(route) },
             replyRoute.map(OnionMessagePayloadTlv.ReplyPath(_) :: Nil).getOrElse(Nil),
             userCustomTlvs)
-        appKit.switchboard.toTyped.ask(ref => SendMessage(nextNodeId, message, replyPath.map(_ => replyPathId), ref))(timeout, appKit.system.scheduler.toTyped).mapTo[OnionMessageResponse].map {
-          case payload: MessageOnion.FinalPayload =>
+        appKit.postman.ask(ref => Postman.SendMessage(nextNodeId, message, replyPath.map(_ => replyPathId), ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
+          case Postman.Response(payload) =>
             val encodedReplyPath = payload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex)
             SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath.map(_.blindedRoute), payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
-          case MessageRelay.Sent => SendOnionMessageResponse(sent = true, None, None)
           case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
-          case failure: MessageRelay.Failure => SendOnionMessageResponse(sent = false, Some(failure.toString), None)
+          case Postman.SendingStatus(MessageRelay.Sent(_)) => SendOnionMessageResponse(sent = true, None, None)
+          case Postman.SendingStatus(failure: MessageRelay.Failure) => SendOnionMessageResponse(sent = false, Some(failure.toString), None)
         }
       case Attempt.Failure(cause) =>
         Future.successful(SendOnionMessageResponse(

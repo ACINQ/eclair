@@ -19,7 +19,6 @@ package fr.acinq.eclair.wire.protocol
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx.RouteBlinding.{BlindedNode, BlindedRoute}
-import fr.acinq.eclair.message.OnionMessages.OnionMessageResponse
 import fr.acinq.eclair.wire.protocol.OnionRoutingCodecs.{ForbiddenTlv, MissingRequiredTlv}
 import scodec.bits.ByteVector
 
@@ -60,7 +59,7 @@ object MessageOnion {
   }
 
   /** Per-hop payload for a final node. */
-  case class FinalPayload(records: TlvStream[OnionMessagePayloadTlv]) extends PerHopPayload with OnionMessageResponse {
+  case class FinalPayload(records: TlvStream[OnionMessagePayloadTlv]) extends PerHopPayload {
     val replyPath: Option[OnionMessagePayloadTlv.ReplyPath] = records.get[OnionMessagePayloadTlv.ReplyPath]
     val encryptedData: ByteVector = records.get[OnionMessagePayloadTlv.EncryptedData].get.data
   }

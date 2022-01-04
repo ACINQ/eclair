@@ -34,8 +34,6 @@ object OnionMessages {
 
   case class OnionMessageConfig(relayPolicy: RelayPolicy, timeout: FiniteDuration)
 
-  trait OnionMessageResponse
-
   case class IntermediateNode(nodeId: PublicKey, padding: Option[ByteVector] = None)
 
   case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None)

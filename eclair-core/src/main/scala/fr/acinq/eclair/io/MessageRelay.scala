@@ -20,29 +20,31 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.{ActorRef, typed}
+import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
-import fr.acinq.eclair.message.OnionMessages.OnionMessageResponse
 import fr.acinq.eclair.wire.protocol.OnionMessage
 
 object MessageRelay {
   // @formatter:off
   sealed trait Command
-  case class RelayMessage(switchboard: ActorRef, prevNodeId: PublicKey, nextNodeId: PublicKey, msg: OnionMessage, policy: RelayPolicy, replyTo: typed.ActorRef[Status]) extends Command
+  case class RelayMessage(messageId: ByteVector32, switchboard: ActorRef, prevNodeId: PublicKey, nextNodeId: PublicKey, msg: OnionMessage, policy: RelayPolicy, replyTo: typed.ActorRef[Status]) extends Command
   case class WrappedPeerInfo(peerInfo: PeerInfoResponse) extends Command
   case class WrappedConnectionResult(result: PeerConnection.ConnectionResult) extends Command
 
-  sealed trait Status extends OnionMessageResponse
-  case object Sent extends Status
+  sealed trait Status {
+    val messageId: ByteVector32
+  }
+  case class Sent(messageId: ByteVector32) extends Status
   sealed trait Failure extends Status
-  case class AgainstPolicy(policy: RelayPolicy) extends Failure {
+  case class AgainstPolicy(messageId: ByteVector32, policy: RelayPolicy) extends Failure {
     override def toString: String = s"Relay prevented by policy $policy"
   }
-  case class ConnectionFailure(failure: PeerConnection.ConnectionResult.Failure) extends Failure{
+  case class ConnectionFailure(messageId: ByteVector32, failure: PeerConnection.ConnectionResult.Failure) extends Failure{
     override def toString: String = s"Can't connect to peer: ${failure.toString}"
   }
-  case object Disconnected extends Failure{
+  case class Disconnected(messageId: ByteVector32) extends Failure{
     override def toString: String = "Peer is not connected"
   }
 
@@ -54,50 +56,50 @@ object MessageRelay {
 
   def apply(): Behavior[Command] = {
     Behaviors.receivePartial {
-      case (context, RelayMessage(switchboard, prevNodeId, nextNodeId, msg, policy, replyTo)) =>
+      case (context, RelayMessage(messageId, switchboard, prevNodeId, nextNodeId, msg, policy, replyTo)) =>
         policy match {
           case NoRelay =>
-            replyTo ! AgainstPolicy(policy)
+            replyTo ! AgainstPolicy(messageId, policy)
             Behaviors.stopped
           case RelayChannelsOnly =>
             switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), prevNodeId)
-            waitForPreviousPeer(switchboard, nextNodeId, msg, replyTo)
+            waitForPreviousPeer(messageId, switchboard, nextNodeId, msg, replyTo)
           case RelayAll =>
             switchboard ! Peer.Connect(nextNodeId, None, context.messageAdapter(WrappedConnectionResult).toClassic, isPersistent = false)
-            waitForConnection(msg, replyTo)
+            waitForConnection(messageId, msg, replyTo)
         }
     }
   }
 
-  def waitForPreviousPeer(switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
+  def waitForPreviousPeer(messageId: ByteVector32, switchboard: ActorRef, nextNodeId: PublicKey, msg: OnionMessage, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
     Behaviors.receivePartial {
       case (context, WrappedPeerInfo(PeerInfo(_, _, _, _, channels))) if channels > 0 =>
         switchboard ! GetPeerInfo(context.messageAdapter(WrappedPeerInfo), nextNodeId)
-        waitForNextPeer(msg, replyTo)
+        waitForNextPeer(messageId, msg, replyTo)
       case _ =>
-        replyTo ! AgainstPolicy(RelayChannelsOnly)
+        replyTo ! AgainstPolicy(messageId, RelayChannelsOnly)
         Behaviors.stopped
     }
   }
 
-  def waitForNextPeer(msg: OnionMessage, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
+  def waitForNextPeer(messageId: ByteVector32, msg: OnionMessage, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedPeerInfo(PeerInfo(peer, _, _, _, channels)) if channels > 0 =>
-        peer ! Peer.RelayOnionMessage(msg, replyTo)
+        peer ! Peer.RelayOnionMessage(messageId, msg, replyTo)
         Behaviors.stopped
       case _ =>
-        replyTo ! AgainstPolicy(RelayChannelsOnly)
+        replyTo ! AgainstPolicy(messageId, RelayChannelsOnly)
         Behaviors.stopped
     }
   }
 
-  def waitForConnection(msg: OnionMessage, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
+  def waitForConnection(messageId: ByteVector32, msg: OnionMessage, replyTo: typed.ActorRef[Status]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedConnectionResult(r: PeerConnection.ConnectionResult.HasConnection) =>
-        r.peer ! Peer.RelayOnionMessage(msg, replyTo)
+        r.peer ! Peer.RelayOnionMessage(messageId, msg, replyTo)
         Behaviors.stopped
       case WrappedConnectionResult(f: PeerConnection.ConnectionResult.Failure) =>
-        replyTo ! ConnectionFailure(f)
+        replyTo ! ConnectionFailure(messageId, f)
         Behaviors.stopped
     }
   }

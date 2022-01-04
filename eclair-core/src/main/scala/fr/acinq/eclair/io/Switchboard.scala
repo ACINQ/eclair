@@ -27,17 +27,15 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayPolicy}
 import fr.acinq.eclair.io.Peer.PeerInfoResponse
-import fr.acinq.eclair.message.OnionMessages.OnionMessageResponse
-import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
-import fr.acinq.eclair.wire.protocol.{MessageOnion, OnionMessage}
+import fr.acinq.eclair.wire.protocol.OnionMessage
 
 /**
  * Ties network connections to peers.
  * Created by PM on 14/02/2017.
  */
-class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, postman: typed.ActorRef[Postman.Command]) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -113,25 +111,9 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, 
 
     case GetRouterPeerConf => sender() ! RouterPeerConf(nodeParams.routerConf, nodeParams.peerConnectionConf)
 
-    case RelayMessage(prevNodeId, nextNodeId, dataToRelay, relayPolicy) =>
+    case RelayMessage(messageId, prevNodeId, nextNodeId, dataToRelay, relayPolicy, replyTo) =>
       val relay = context.spawnAnonymous(MessageRelay())
-      relay ! MessageRelay.RelayMessage(self, prevNodeId, nextNodeId, dataToRelay, relayPolicy, sender().toTyped)
-
-    case SendMessage(nextNodeId, dataToSend, Some(replyPathId), replyTo) =>
-      val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[OnionMessageResponse] {
-        case MessageRelay.Sent =>
-          Behaviors.same
-        case x =>
-          replyTo ! x
-          Behaviors.stopped
-      })
-      postman ! Postman.SubscribeOnce(replyPathId, relayer, nodeParams.onionMessageConfig.timeout)
-      val relay = context.spawnAnonymous(MessageRelay())
-      relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, relayer)
-
-    case SendMessage(nextNodeId, dataToSend, None, replyTo) =>
-      val relay = context.spawnAnonymous(MessageRelay())
-      relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, replyTo)
+      relay ! MessageRelay.RelayMessage(messageId, self, prevNodeId.getOrElse(nodeParams.nodeId), nextNodeId, dataToRelay, relayPolicy, replyTo)
   }
 
   /**
@@ -174,7 +156,7 @@ object Switchboard {
       context.actorOf(Peer.props(nodeParams, remoteNodeId, wallet, channelFactory, context.self), name = peerActorName(remoteNodeId))
   }
 
-  def props(nodeParams: NodeParams, peerFactory: PeerFactory, postman: typed.ActorRef[Postman.Command]) = Props(new Switchboard(nodeParams, peerFactory, postman))
+  def props(nodeParams: NodeParams, peerFactory: PeerFactory) = Props(new Switchboard(nodeParams, peerFactory))
 
   def peerActorName(remoteNodeId: PublicKey): String = s"peer-$remoteNodeId"
 
@@ -185,10 +167,6 @@ object Switchboard {
   case object GetRouterPeerConf extends RemoteTypes
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
 
-  case class RelayMessage(prevNodeId: PublicKey, nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy)
-  case class SendMessage(nextNodeId: PublicKey,
-                         message: OnionMessage,
-                         replyPathId: Option[ByteVector32],
-                         replyTo: typed.ActorRef[OnionMessageResponse])
+  case class RelayMessage(messageId: ByteVector32, prevNodeId: Option[PublicKey], nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy, replyTo: typed.ActorRef[MessageRelay.Status])
   // @formatter:on
 }

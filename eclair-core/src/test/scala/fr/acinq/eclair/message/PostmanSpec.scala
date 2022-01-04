@@ -21,12 +21,13 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.message.OnionMessages.{OnionMessageResponse, ReceiveMessage}
+import fr.acinq.eclair.io.Switchboard.RelayMessage
+import fr.acinq.eclair.message.OnionMessages.ReceiveMessage
 import fr.acinq.eclair.message.Postman._
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
-import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
+import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.{EncryptedData, ReplyPath}
 import fr.acinq.eclair.wire.protocol.{GenericTlv, TlvStream}
-import fr.acinq.eclair.{UInt64, randomKey}
+import fr.acinq.eclair.{UInt64, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -35,13 +36,14 @@ import scala.concurrent.duration._
 
 class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(postman: ActorRef[Command], messageRecipient: TestProbe[OnionMessageResponse])
+  case class FixtureParam(postman: ActorRef[Command], messageRecipient: TestProbe[OnionMessageResponse], switchboard: TestProbe[RelayMessage])
 
   override def withFixture(test: OneArgTest): Outcome = {
     val messageRecipient = TestProbe[OnionMessageResponse]("messageRecipient")
-    val postman = testKit.spawn(Postman())
+    val switchboard = TestProbe[RelayMessage]("switchboard")
+    val postman = testKit.spawn(Postman(switchboard.ref))
     try {
-      withFixture(test.toNoArgTest(FixtureParam(postman, messageRecipient)))
+      withFixture(test.toNoArgTest(FixtureParam(postman, messageRecipient, switchboard)))
     } finally {
       testKit.stop(postman)
     }
@@ -50,43 +52,33 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
   test("message forwarded only once") { f =>
     import f._
 
-    val pathId = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
-    val route = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(randomKey().publicKey, Some(pathId))))
-    val payload = FinalPayload(TlvStream(EncryptedData(route.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
+    val pathId = randomBytes32()
+    val ourNodeId = randomKey().publicKey
+    val recipient = randomKey().publicKey
+    val replyPath = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(ourNodeId, Some(pathId))))
+    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(),randomKey(),Nil,Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
+    val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
 
-    postman ! SubscribeOnce(pathId, messageRecipient.ref, 100 millis)
-
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
-    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
-
-    messageRecipient.expectMessage(payload)
-    messageRecipient.expectNoMessage()
-  }
-
-  test("unsubscribe") { f =>
-    import f._
-
-    val pathId = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
-    val route = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(randomKey().publicKey, Some(pathId))))
-    val payload = FinalPayload(TlvStream(EncryptedData(route.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
-
-    postman ! SubscribeOnce(pathId, messageRecipient.ref, 100 millis)
-    postman ! Unsubscribe(pathId)
+    postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 second)
 
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
+    testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
 
-    messageRecipient.expectMessage(NoReply)
+    messageRecipient.expectMessage(Response(payload))
     messageRecipient.expectNoMessage()
   }
 
   test("timeout") { f =>
     import f._
 
-    val pathId = ByteVector32(hex"0101010101010101010101010101010101010101010101010101010101010101")
-    val route = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(randomKey().publicKey, Some(pathId))))
-    val payload = FinalPayload(TlvStream(EncryptedData(route.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
+    val pathId = randomBytes32()
+    val ourNodeId = randomKey().publicKey
+    val recipient = randomKey().publicKey
+    val replyPath = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(ourNodeId, Some(pathId))))
+    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(),randomKey(),Nil,Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
+    val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
 
-    postman ! SubscribeOnce(pathId, messageRecipient.ref, 1 millis)
+    postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 millis)
 
     messageRecipient.expectMessage(NoReply)
 
