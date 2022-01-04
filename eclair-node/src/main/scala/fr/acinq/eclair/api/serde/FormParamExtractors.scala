@@ -25,7 +25,6 @@ import fr.acinq.eclair.api.serde.JsonSupport._
 import fr.acinq.eclair.blockchain.fee.FeeratePerByte
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.io.NodeURI
-import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampSecond}
@@ -71,12 +70,8 @@ object FormParamExtractors {
 
   implicit val timestampSecondUnmarshaller: Unmarshaller[String, TimestampSecond] = Unmarshaller.strict { str => TimestampSecond(str.toLong) }
 
-  val destinationUnmarshaller: Unmarshaller[String, Either[OnionMessages.Recipient, Sphinx.RouteBlinding.BlindedRoute]] = Unmarshaller.strict { str =>
-    if (str.length == 66) {
-      Left(OnionMessages.Recipient(PublicKey(ByteVector.fromValidHex(str)), None))
-    } else {
-      Right(blindedRouteCodec.decode(ByteVector.fromValidHex(str).bits).require.value)
-    }
+  val blindedRouteUnmarshaller: Unmarshaller[String, Sphinx.RouteBlinding.BlindedRoute] = Unmarshaller.strict { str =>
+    blindedRouteCodec.decode(ByteVector.fromValidHex(str).bits).require.value
   }
 
   private def listUnmarshaller[T](unmarshal: String => T): Unmarshaller[String, List[T]] = Unmarshaller.strict { str =>

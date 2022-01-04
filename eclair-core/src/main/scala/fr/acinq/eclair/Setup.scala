@@ -295,7 +295,7 @@ class Setup(val datadir: File,
       channelFactory = Peer.SimpleChannelFactory(nodeParams, watcher, relayer, bitcoinClient, txPublisherFactory)
       peerFactory = Switchboard.SimplePeerFactory(nodeParams, bitcoinClient, channelFactory)
 
-      postman = system.spawn(Postman(), name = "postman")
+      postman = system.spawn(Behaviors.supervise(Postman()).onFailure(typed.SupervisorStrategy.restart), name = "postman")
 
       switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, peerFactory, postman), "switchboard", SupervisorStrategy.Resume))
       clientSpawner = system.actorOf(SimpleSupervisor.props(ClientSpawner.props(nodeParams.keyPair, nodeParams.socksProxy_opt, nodeParams.peerConnectionConf, switchboard, router), "client-spawner", SupervisorStrategy.Restart))

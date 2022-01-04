@@ -27,6 +27,7 @@ import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.MessageRelay.{RelayAll, RelayPolicy}
 import fr.acinq.eclair.io.Peer.PeerInfoResponse
+import fr.acinq.eclair.message.OnionMessages.OnionMessageResponse
 import fr.acinq.eclair.message.Postman
 import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router.RouterConf
@@ -117,14 +118,14 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, 
       relay ! MessageRelay.RelayMessage(self, prevNodeId, nextNodeId, dataToRelay, relayPolicy, sender().toTyped)
 
     case SendMessage(nextNodeId, dataToSend, Some(replyPathId), replyTo) =>
-      val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[Any] {
+      val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[OnionMessageResponse] {
         case MessageRelay.Sent =>
           Behaviors.same
-        case Some(payload: MessageOnion.FinalPayload) =>
-          replyTo ! Right(payload)
+        case payload: MessageOnion.FinalPayload =>
+          replyTo ! payload
           Behaviors.stopped
         case x =>
-          replyTo ! Left(x)
+          replyTo ! x
           Behaviors.stopped
       })
       postman ! Postman.SubscribeOnce(replyPathId, relayer, nodeParams.onionMessageConfig.timeout)
@@ -132,9 +133,9 @@ class Switchboard(nodeParams: NodeParams, peerFactory: Switchboard.PeerFactory, 
       relay ! MessageRelay.RelayMessage(self, nodeParams.nodeId, nextNodeId, dataToSend, RelayAll, relayer)
 
     case SendMessage(nextNodeId, dataToSend, None, replyTo) =>
-      val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[Any] {
+      val relayer = context.spawnAnonymous(Behaviors.receiveMessagePartial[OnionMessageResponse] {
         case x =>
-          replyTo ! Left(x)
+          replyTo ! x
           Behaviors.stopped
       })
       val relay = context.spawnAnonymous(MessageRelay())
@@ -187,18 +188,15 @@ object Switchboard {
 
   // @formatter:off
   case object GetPeers
-
   case class GetPeerInfo(replyTo: typed.ActorRef[PeerInfoResponse], remoteNodeId: PublicKey)
 
   case object GetRouterPeerConf extends RemoteTypes
-
   case class RouterPeerConf(routerConf: RouterConf, peerConf: PeerConnection.Conf) extends RemoteTypes
 
   case class RelayMessage(prevNodeId: PublicKey, nextNodeId: PublicKey, message: OnionMessage, relayPolicy: RelayPolicy)
-
   case class SendMessage(nextNodeId: PublicKey,
                          message: OnionMessage,
                          replyPathId: Option[ByteVector32],
-                         replyTo: typed.ActorRef[Either[Any, MessageOnion.FinalPayload]])
+                         replyTo: typed.ActorRef[OnionMessageResponse])
   // @formatter:on
 }

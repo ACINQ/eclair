@@ -20,7 +20,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.PacketAndSecrets
-import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
+import fr.acinq.eclair.message.OnionMessages._
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.protocol.MessageOnion.{BlindedFinalPayload, BlindedRelayPayload, RelayPayload}
 import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.{blindedFinalPayloadCodec, blindedRelayPayloadCodec, relayPerHopPayloadCodec}
@@ -40,11 +40,11 @@ class OnionMessagesSpec extends AnyFunSuite {
     val sessionKey = randomKey()
     val blindingSecret = randomKey()
     val destination = randomKey()
-    val (nextNodeId, message) = OnionMessages.buildMessage(sessionKey, blindingSecret, Nil, Left(Recipient(destination.publicKey, None)), Nil)
+    val (nextNodeId, message) = buildMessage(sessionKey, blindingSecret, Nil, Left(Recipient(destination.publicKey, None)), Nil)
     assert(nextNodeId == destination.publicKey)
 
-    OnionMessages.process(destination, message) match {
-      case OnionMessages.ReceiveMessage(_, _) => ()
+    process(destination, message) match {
+      case ReceiveMessage(_, _) => ()
       case x => fail(x.toString)
     }
   }
@@ -108,25 +108,25 @@ class OnionMessagesSpec extends AnyFunSuite {
     /*
     *  Building the onion with functions from `OnionMessages`
     */
-    val replyPath = OnionMessages.buildRoute(blindingOverride, IntermediateNode(carol.publicKey, padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Left(Recipient(dave.publicKey, pathId = Some(hex"01234567"))))
+    val replyPath = buildRoute(blindingOverride, IntermediateNode(carol.publicKey, padding = Some(hex"0000000000000000000000000000000000000000000000000000000000000000000000")) :: Nil, Left(Recipient(dave.publicKey, pathId = Some(hex"01234567"))))
     assert(replyPath == routeFromCarol)
-    val (_, message) = OnionMessages.buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Right(replyPath), Nil)
+    val (_, message) = buildMessage(sessionKey, blindingSecret, IntermediateNode(alice.publicKey) :: IntermediateNode(bob.publicKey) :: Nil, Right(replyPath), Nil)
     assert(message == onionForAlice)
 
     /*
     *  Checking that the onion is relayed properly
     */
-    OnionMessages.process(alice, onionForAlice) match {
-      case OnionMessages.SendMessage(nextNodeId, onionForBob) =>
+    process(alice, onionForAlice) match {
+      case SendMessage(nextNodeId, onionForBob) =>
         assert(nextNodeId == bob.publicKey)
-        OnionMessages.process(bob, onionForBob) match {
-          case OnionMessages.SendMessage(nextNodeId, onionForCarol) =>
+        process(bob, onionForBob) match {
+          case SendMessage(nextNodeId, onionForCarol) =>
             assert(nextNodeId == carol.publicKey)
-            OnionMessages.process(carol, onionForCarol) match {
-              case OnionMessages.SendMessage(nextNodeId, onionForDave) =>
+            process(carol, onionForCarol) match {
+              case SendMessage(nextNodeId, onionForDave) =>
                 assert(nextNodeId == dave.publicKey)
-                OnionMessages.process(dave, onionForDave) match {
-                  case OnionMessages.ReceiveMessage(_, path_id) => assert(path_id contains hex"01234567")
+                process(dave, onionForDave) match {
+                  case ReceiveMessage(_, path_id) => assert(path_id contains hex"01234567")
                   case x => fail(x.toString)
                 }
               case x => fail(x.toString)
@@ -216,5 +216,23 @@ class OnionMessagesSpec extends AnyFunSuite {
     assert(relayNext.nextNodeId == nextNodeId)
     assert(relayNext.nextBlindingOverride.isEmpty)
     assert(Sphinx.RouteBlinding.decryptPayload(nodePrivateKey, blindingKey, enctlv).get._1 == encmsg)
+  }
+
+  test("build message with existing route") {
+    val sessionKey = randomKey()
+    val blindingSecret = randomKey()
+    val blindingOverride = randomKey()
+    val destination = randomKey()
+    val replyPath = buildRoute(blindingOverride, IntermediateNode(destination.publicKey) :: Nil, Left(Recipient(destination.publicKey, pathId = Some(hex"01234567"))))
+    assert(replyPath.blindingKey === blindingOverride.publicKey)
+    assert(replyPath.introductionNodeId === destination.publicKey)
+    val (nextNodeId, message) = buildMessage(sessionKey, blindingSecret, Nil, Right(replyPath), Nil)
+    assert(nextNodeId === destination.publicKey)
+    assert(message.blindingKey === blindingOverride.publicKey) // blindingSecret was not used as the replyPath was used as is
+
+    process(destination, message) match {
+      case ReceiveMessage(_, Some(pathId)) if pathId == hex"01234567" => ()
+      case _ => fail()
+    }
   }
 }

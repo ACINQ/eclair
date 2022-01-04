@@ -16,13 +16,12 @@
 
 package fr.acinq.eclair.api.handlers
 
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{MalformedFormFieldRejection, Route}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.api.directives.EclairDirectives
 import fr.acinq.eclair.api.serde.FormParamExtractors._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.message.OnionMessages
 import scodec.bits.ByteVector
 
 trait Message {
@@ -44,15 +43,27 @@ trait Message {
 
   val sendOnionMessage: Route = postRequest("sendonionmessage") { implicit t =>
     formFields(
-      "destination".as[Either[OnionMessages.Recipient, Sphinx.RouteBlinding.BlindedRoute]](destinationUnmarshaller),
-      "intermediateNodes".as[List[PublicKey]](pubkeyListUnmarshaller) ?,
+      "recipientNode".as[PublicKey](publicKeyUnmarshaller).?,
+      "recipientBlindedRoute".as[Sphinx.RouteBlinding.BlindedRoute](blindedRouteUnmarshaller).?,
+      "intermediateNodes".as[List[PublicKey]](pubkeyListUnmarshaller).?,
       "replyPath".as[List[PublicKey]](pubkeyListUnmarshaller).?,
-      "content".as[ByteVector](binaryDataUnmarshaller)) { (destination, intermediateNodes, replyPath, userCustomContent) =>
-      complete(
-        eclairApi.sendOnionMessage(intermediateNodes.getOrElse(Nil).map(OnionMessages.IntermediateNode(_)),
-          destination,
-          replyPath,
-          userCustomContent))
+      "content".as[ByteVector](binaryDataUnmarshaller)) {
+      case (Some(recipientNode), None, intermediateNodes, replyPath, userCustomContent) =>
+        complete(
+          eclairApi.sendOnionMessage(intermediateNodes.getOrElse(Nil),
+            Left(recipientNode),
+            replyPath,
+            userCustomContent))
+      case (None, Some(recipientBlindedRoute), intermediateNodes, replyPath, userCustomContent) =>
+        complete(
+          eclairApi.sendOnionMessage(intermediateNodes.getOrElse(Nil),
+            Right(recipientBlindedRoute),
+            replyPath,
+            userCustomContent))
+      case (None, None, _, _, _) =>
+        reject(MalformedFormFieldRejection("recipientNode", "You must provide recipientNode or recipientBlindedRoute"))
+      case (Some(_), Some(_), _, _, _) =>
+        reject(MalformedFormFieldRejection("recipientNode", "Only one of recipientNode and recipientBlindedRoute must be provided"))
     }
   }
 

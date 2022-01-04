@@ -31,6 +31,10 @@ import scala.util.{Failure, Success}
 
 object OnionMessages {
 
+  case class OnionMessageConfig(relayPolicy: RelayPolicy, timeout: FiniteDuration)
+
+  trait OnionMessageResponse
+
   case class IntermediateNode(nodeId: PublicKey, padding: Option[ByteVector] = None)
 
   case class Recipient(nodeId: PublicKey, pathId: Option[ByteVector], padding: Option[ByteVector] = None)
@@ -125,7 +129,11 @@ object OnionMessages {
                 MessageOnionCodecs.blindedRelayPayloadCodec.decode(decrypted.bits) match {
                   case Attempt.Successful(DecodeResult(relayNext, _)) =>
                     val toRelay = OnionMessage(relayNext.nextBlindingOverride.getOrElse(nextBlindingKey), nextPacket)
-                    SendMessage(relayNext.nextNodeId, toRelay)
+                    if (relayNext.nextNodeId == privateKey.publicKey) { // we may add ourselves to the route several times to hide the real length of the route
+                      process(privateKey, toRelay)
+                    } else {
+                      SendMessage(relayNext.nextNodeId, toRelay)
+                    }
                   case Attempt.Failure(err) => DropMessage(CannotDecodeBlindedPayload(err.message))
                 }
               case Failure(err) => DropMessage(CannotDecryptBlindedPayload(err.getMessage))
@@ -144,6 +152,4 @@ object OnionMessages {
       }
     }
   }
-
-  case class OnionMessageConfig(relayPolicy: RelayPolicy, timeout: FiniteDuration)
 }

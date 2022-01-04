@@ -21,8 +21,9 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.TypedActorRefOps
 import akka.actor.{ActorRef, typed}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse, PeerNotFound}
+import fr.acinq.eclair.io.Peer.{PeerInfo, PeerInfoResponse}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
+import fr.acinq.eclair.message.OnionMessages.OnionMessageResponse
 import fr.acinq.eclair.wire.protocol.OnionMessage
 
 object MessageRelay {
@@ -32,7 +33,7 @@ object MessageRelay {
   case class WrappedPeerInfo(peerInfo: PeerInfoResponse) extends Command
   case class WrappedConnectionResult(result: PeerConnection.ConnectionResult) extends Command
 
-  sealed trait Status
+  sealed trait Status extends OnionMessageResponse
   case object Sent extends Status
   sealed trait Failure extends Status
   case class AgainstPolicy(policy: RelayPolicy) extends Failure {

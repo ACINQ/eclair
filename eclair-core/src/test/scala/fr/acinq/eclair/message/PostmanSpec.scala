@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 ACINQ SAS
+ * Copyright 2022 ACINQ SAS
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.ByteVector32
-import fr.acinq.eclair.message.OnionMessages.ReceiveMessage
+import fr.acinq.eclair.message.OnionMessages.{OnionMessageResponse, ReceiveMessage}
 import fr.acinq.eclair.message.Postman._
 import fr.acinq.eclair.wire.protocol.MessageOnion.FinalPayload
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
@@ -35,10 +35,10 @@ import scala.concurrent.duration._
 
 class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("application")) with FixtureAnyFunSuiteLike {
 
-  case class FixtureParam(postman: ActorRef[Command], messageRecipient: TestProbe[Option[FinalPayload]])
+  case class FixtureParam(postman: ActorRef[Command], messageRecipient: TestProbe[OnionMessageResponse])
 
   override def withFixture(test: OneArgTest): Outcome = {
-    val messageRecipient = TestProbe[Option[FinalPayload]]("messageRecipient")
+    val messageRecipient = TestProbe[OnionMessageResponse]("messageRecipient")
     val postman = testKit.spawn(Postman())
     try {
       withFixture(test.toNoArgTest(FixtureParam(postman, messageRecipient)))
@@ -59,7 +59,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
 
-    messageRecipient.expectMessage(Some(payload))
+    messageRecipient.expectMessage(payload)
     messageRecipient.expectNoMessage()
   }
 
@@ -75,7 +75,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
 
-    messageRecipient.expectMessage(None)
+    messageRecipient.expectMessage(NoReply)
     messageRecipient.expectNoMessage()
   }
 
@@ -88,7 +88,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
 
     postman ! SubscribeOnce(pathId, messageRecipient.ref, 1 millis)
 
-    messageRecipient.expectMessage(None)
+    messageRecipient.expectMessage(NoReply)
 
     testKit.system.eventStream ! EventStream.Publish(ReceiveMessage(payload, Some(pathId)))
 
