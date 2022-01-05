@@ -18,6 +18,7 @@ package fr.acinq.eclair.message
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.io.MessageRelay.RelayPolicy
 import fr.acinq.eclair.wire.protocol.MessageOnion.{BlindedFinalPayload, BlindedRelayPayload, FinalPayload, RelayPayload}
 import fr.acinq.eclair.wire.protocol.OnionMessagePayloadTlv.EncryptedData
 import fr.acinq.eclair.wire.protocol.RouteBlindingEncryptedDataTlv._
@@ -25,9 +26,13 @@ import fr.acinq.eclair.wire.protocol._
 import scodec.bits.ByteVector
 import scodec.{Attempt, DecodeResult}
 
+import scala.annotation.tailrec
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Failure, Success}
 
 object OnionMessages {
+
+  case class OnionMessageConfig(relayPolicy: RelayPolicy, timeout: FiniteDuration)
 
   case class IntermediateNode(nodeId: PublicKey, padding: Option[ByteVector] = None)
 
@@ -55,8 +60,12 @@ object OnionMessages {
         val lastPayload = MessageOnionCodecs.blindedFinalPayloadCodec.encode(BlindedFinalPayload(TlvStream(tlvs))).require.bytes
         Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload)
       case Right(route) =>
-        val Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes) = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads)
-        Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes ++ route.blindedNodes)
+        if(intermediateNodes.isEmpty) {
+          route
+        } else {
+          val Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes) = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads)
+          Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes ++ route.blindedNodes)
+        }
     }
   }
 
@@ -88,7 +97,7 @@ object OnionMessages {
       payloadSize.toInt
     }
     val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None)
-    (route.introductionNodeId, OnionMessage(blindingSecret.publicKey, packet))
+    (route.introductionNodeId, OnionMessage(route.blindingKey, packet))
   }
 
   // @formatter:off
@@ -105,6 +114,7 @@ object OnionMessages {
   case class CannotDecodeBlindedPayload(message: String) extends DropReason { override def toString = s"can't decode blinded payload: $message" }
   // @formatter:on
 
+  @tailrec
   def process(privateKey: PrivateKey, msg: OnionMessage): Action = {
     if (msg.onionRoutingPacket.payload.length > 32768) {
       DropMessage(MessageTooLarge(msg.onionRoutingPacket.payload.length))
@@ -119,7 +129,11 @@ object OnionMessages {
                 MessageOnionCodecs.blindedRelayPayloadCodec.decode(decrypted.bits) match {
                   case Attempt.Successful(DecodeResult(relayNext, _)) =>
                     val toRelay = OnionMessage(relayNext.nextBlindingOverride.getOrElse(nextBlindingKey), nextPacket)
-                    SendMessage(relayNext.nextNodeId, toRelay)
+                    if (relayNext.nextNodeId == privateKey.publicKey) { // we may add ourselves to the route several times to hide the real length of the route
+                      process(privateKey, toRelay)
+                    } else {
+                      SendMessage(relayNext.nextNodeId, toRelay)
+                    }
                   case Attempt.Failure(err) => DropMessage(CannotDecodeBlindedPayload(err.message))
                 }
               case Failure(err) => DropMessage(CannotDecryptBlindedPayload(err.getMessage))

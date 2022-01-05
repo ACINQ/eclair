@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.AskPattern.Askable
-import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
+import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicSchedulerOps}
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -32,13 +32,12 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.WalletTx
 import fr.acinq.eclair.blockchain.fee.{FeeratePerByte, FeeratePerKw}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
-import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.io.{MessageRelay, NodeURI, Peer, PeerConnection, Switchboard}
-import fr.acinq.eclair.message.OnionMessages
+import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.relay.Relayer.{GetOutgoingChannels, OutgoingChannels, RelayFees, UsableBalance}
@@ -46,6 +45,7 @@ import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator.{SendPaymentToNode, SendPaymentToRoute, SendPaymentToRouteResponse, SendSpontaneousPayment}
 import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.router.Router._
+import fr.acinq.eclair.wire.protocol.MessageOnionCodecs.blindedRouteCodec
 import fr.acinq.eclair.wire.protocol._
 import grizzled.slf4j.Logging
 import scodec.bits.ByteVector
@@ -65,7 +65,8 @@ case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVect
 
 case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
 
-case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String])
+case class SendOnionMessageResponsePayload(encodedReplyPath: Option[String], replyPath: Option[Sphinx.RouteBlinding.BlindedRoute], unknownTlvs: Map[String, ByteVector])
+case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
 
 object SignedMessage {
   def signedBytes(message: ByteVector): ByteVector32 =
@@ -154,7 +155,7 @@ trait Eclair {
 
   def verifyMessage(message: ByteVector, recoverableSignature: ByteVector): VerifiedMessage
 
-  def sendOnionMessage(route: Seq[PublicKey], userCustomContent: ByteVector, pathId: Option[ByteVector])(implicit timeout: Timeout): Future[SendOnionMessageResponse]
+  def sendOnionMessage(intermediateNodes: Seq[PublicKey], destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute], replyPath: Option[Seq[PublicKey]], userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse]
 }
 
 class EclairImpl(appKit: Kit) extends Eclair with Logging {
@@ -507,24 +508,35 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
     }
   }
 
-  override def sendOnionMessage(route: Seq[PublicKey], userCustomContent: ByteVector, pathId: Option[ByteVector])(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
-    val sessionKey = randomKey()
-    val blindingSecret = randomKey()
+  override def sendOnionMessage(intermediateNodes: Seq[PublicKey],
+                                destination: Either[PublicKey, Sphinx.RouteBlinding.BlindedRoute],
+                                replyPath: Option[Seq[PublicKey]],
+                                userCustomContent: ByteVector)(implicit timeout: Timeout): Future[SendOnionMessageResponse] = {
     codecs.list(TlvCodecs.genericTlv).decode(userCustomContent.bits) match {
       case Attempt.Successful(DecodeResult(userCustomTlvs, _)) =>
+        val replyPathId = randomBytes32()
+        val replyRoute = replyPath.map(hops => OnionMessages.buildRoute(randomKey(), hops.map(OnionMessages.IntermediateNode(_)), Left(OnionMessages.Recipient(appKit.nodeParams.nodeId, Some(replyPathId)))))
         val (nextNodeId, message) =
           OnionMessages.buildMessage(
-            sessionKey,
-            blindingSecret,
-            route.dropRight(1).map(OnionMessages.IntermediateNode(_)),
-            Left(OnionMessages.Recipient(route.last, pathId)),
-            Nil,
+            randomKey(),
+            randomKey(),
+            intermediateNodes.map(OnionMessages.IntermediateNode(_)),
+            destination match { case Left(key) => Left(OnionMessages.Recipient(key, None)) case Right(route) => Right(route) },
+            replyRoute.map(OnionMessagePayloadTlv.ReplyPath(_) :: Nil).getOrElse(Nil),
             userCustomTlvs)
-        (appKit.switchboard ? RelayMessage(appKit.nodeParams.nodeId, nextNodeId, message, RelayAll)).mapTo[MessageRelay.Status].map {
-          case MessageRelay.Success => SendOnionMessageResponse(sent = true, None)
-          case f: MessageRelay.Failure => SendOnionMessageResponse(sent = false, Some(f.toString))
+        appKit.postman.ask(ref => Postman.SendMessage(nextNodeId, message, replyPath.map(_ => replyPathId), ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
+          case Postman.Response(payload) =>
+            val encodedReplyPath = payload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex)
+            SendOnionMessageResponse(sent = true, None, Some(SendOnionMessageResponsePayload(encodedReplyPath, payload.replyPath.map(_.blindedRoute), payload.records.unknown.map(tlv => tlv.tag.toString -> tlv.value).toMap)))
+          case Postman.NoReply => SendOnionMessageResponse(sent = true, Some("No response"), None)
+          case Postman.SendingStatus(MessageRelay.Sent(_)) => SendOnionMessageResponse(sent = true, None, None)
+          case Postman.SendingStatus(failure: MessageRelay.Failure) => SendOnionMessageResponse(sent = false, Some(failure.toString), None)
         }
-      case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}")))
+      case Attempt.Failure(cause) =>
+        Future.successful(SendOnionMessageResponse(
+          sent = false,
+          failureMessage = Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}"),
+          response = None))
     }
 
   }

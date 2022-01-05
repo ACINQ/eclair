@@ -28,7 +28,7 @@ import fr.acinq.eclair.io.Peer.{PeerInfo, PeerNotFound}
 import fr.acinq.eclair.io.Switchboard.GetPeerInfo
 import fr.acinq.eclair.message.OnionMessages
 import fr.acinq.eclair.message.OnionMessages.{IntermediateNode, Recipient}
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.{randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 
@@ -57,7 +57,8 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
-    relay ! RelayMessage(switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
+    val messageId = randomBytes32()
+    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
@@ -69,7 +70,8 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
-    relay ! RelayMessage(switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
+    val messageId = randomBytes32()
+    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
@@ -81,26 +83,28 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
-    relay ! RelayMessage(switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
+    val messageId = randomBytes32()
+    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
     connectToNextPeer.replyTo ! PeerConnection.ConnectionResult.NoAddressFound
-    probe.expectMessage(ConnectionFailure(PeerConnection.ConnectionResult.NoAddressFound))
+    probe.expectMessage(ConnectionFailure(messageId, PeerConnection.ConnectionResult.NoAddressFound))
   }
 
   test("no channel with previous node") { f =>
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
 
     val getPeerInfo = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo.remoteNodeId === previousNodeId)
     getPeerInfo.replyTo ! PeerInfo(peer.ref.toClassic, previousNodeId, Peer.CONNECTED, None, 0)
 
-    probe.expectMessage(AgainstPolicy(RelayChannelsOnly))
+    probe.expectMessage(AgainstPolicy(messageId, RelayChannelsOnly))
     peer.expectNoMessage(100 millis)
   }
 
@@ -108,8 +112,9 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
 
     val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo1.remoteNodeId === previousNodeId)
@@ -119,7 +124,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     assert(getPeerInfo2.remoteNodeId === bobId)
     getPeerInfo2.replyTo ! PeerNotFound(bobId)
 
-    probe.expectMessage(AgainstPolicy(RelayChannelsOnly))
+    probe.expectMessage(AgainstPolicy(messageId, RelayChannelsOnly))
     peer.expectNoMessage(100 millis)
   }
 
@@ -127,8 +132,9 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
 
     val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo1.remoteNodeId === previousNodeId)
@@ -145,10 +151,11 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     import f._
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
+    val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(switchboard.ref, previousNodeId, bobId, message, NoRelay, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, NoRelay, probe.ref)
 
     switchboard.expectNoMessage(100 millis)
-    probe.expectMessage(AgainstPolicy(NoRelay))
+    probe.expectMessage(AgainstPolicy(messageId, NoRelay))
   }
 }

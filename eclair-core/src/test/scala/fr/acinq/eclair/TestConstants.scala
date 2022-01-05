@@ -25,6 +25,7 @@ import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll
 import fr.acinq.eclair.io.{Peer, PeerConnection}
+import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
 import fr.acinq.eclair.router.Graph.WeightRatios
 import fr.acinq.eclair.router.PathFindingExperimentConf
@@ -202,7 +203,10 @@ object TestConstants {
       instanceId = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
       balanceCheckInterval = 1 hour,
       blockchainWatchdogSources = blockchainWatchdogSources,
-      onionMessageRelayPolicy = RelayAll
+      onionMessageConfig = OnionMessageConfig(
+        relayPolicy = RelayAll,
+        timeout = 1 minute
+      )
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
@@ -331,7 +335,10 @@ object TestConstants {
       instanceId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
       balanceCheckInterval = 1 hour,
       blockchainWatchdogSources = blockchainWatchdogSources,
-      onionMessageRelayPolicy = RelayAll
+      onionMessageConfig = OnionMessageConfig(
+        relayPolicy = RelayAll,
+        timeout = 1 minute
+      )
     )
 
     def channelParams: LocalParams = Peer.makeChannelParams(
