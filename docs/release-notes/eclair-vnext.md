@@ -71,9 +71,8 @@ Examples:
 #### Sending onion messages
 
 You can now send onion messages with `sendonionmessage`.
-It expects `--route` a list of `nodeId` to send the message through, the last one being the recipient, and `--content` the content of the message as an encoded TLV stream in hexadecimal.
-It also accepts `--pathId` as an encoded TLV stream in hexadecimal.
-Sending to a blinded route (as a reply to a previous message) is not supported.
+It expects `--recipientNode`, the node id of the recipient if it is known or `--recipientBlindedRoute` a hexadecimal encoded blinded route to send the message to, and `--content` the content of the message as an encoded TLV stream in hexadecimal.
+It also accepts `--intermediateNodes` a list of intermediate node ids to hide the origin of the message and `--replyPath` a possibly empty list of intermediate node ids for the reply path if we expect a response to the message.
 
 #### Balance
 

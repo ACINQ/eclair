@@ -63,7 +63,7 @@ object Postman {
           }
           Behaviors.same
         case WrappedMessage(_, _) =>
-          // ignoring message with invalid pathId
+          // ignoring message with invalid or missing pathId
           Behaviors.same
         case SendMessage(nextNodeId, message, None, ref, _) =>
           val messageId = randomBytes32()

@@ -84,7 +84,6 @@ class MessageIntegrationSpec extends IntegrationSpec {
     bob.sendOnionMessage(Nil, Right(recv.finalPayload.replyPath.get.blindedRoute), None, hex"1d01ab")
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
-    print(res)
     assert(res.failureMessage.isEmpty)
     assert(res.response.nonEmpty)
     assert(res.response.get.unknownTlvs("29") === hex"ab")
@@ -101,7 +100,6 @@ class MessageIntegrationSpec extends IntegrationSpec {
     assert(recv.finalPayload.replyPath.nonEmpty)
 
     val res = probe.expectMsgType[SendOnionMessageResponse]
-    println(res)
     assert(res.failureMessage contains "No response")
   }
 
