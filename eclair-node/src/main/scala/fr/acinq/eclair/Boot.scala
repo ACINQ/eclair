@@ -89,6 +89,6 @@ object Boot extends App with Logging {
     System.err.println(s"fatal error: $errorMsg")
     logger.error(s"fatal error: $errorMsg", t)
     NotificationsLogger.logFatalError("could not start eclair", t)
-    System.exit(1)
+    sys.exit(1)
   }
 }

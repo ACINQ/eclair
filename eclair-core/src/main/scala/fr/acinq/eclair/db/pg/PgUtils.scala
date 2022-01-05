@@ -85,7 +85,7 @@ object PgUtils extends JdbcUtils {
       def logAndStop: LockFailureHandler = { ex =>
         log(ex)
         logger.error("db locking error is a fatal error")
-        sys.exit(-2)
+        sys.exit(3)
       }
     }
 

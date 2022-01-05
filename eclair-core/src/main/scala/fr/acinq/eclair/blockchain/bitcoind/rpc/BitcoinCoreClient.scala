@@ -105,7 +105,7 @@ class BitcoinCoreClient(val rpcClient: BitcoinJsonRPCClient) extends OnChainWall
         .recover {
           case JsonRPCError(Error(_, message)) if message.contains("index") =>
             sys.error("Fatal error: bitcoind is indexing!!")
-            sys.exit(1) // bitcoind is indexing, that's a fatal error!!
+            sys.exit(2) // bitcoind is indexing, that's a fatal error!!
             false // won't be reached
           case _ => false
         }

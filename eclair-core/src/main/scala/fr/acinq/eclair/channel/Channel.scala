@@ -2352,7 +2352,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
                      |
                      |You should get in touch with Eclair developers and provide logs of your node for analysis.
                      |""".stripMargin, cause)
-                System.exit(1)
+                sys.exit(5)
                 stop(FSM.Shutdown)
             }
         }
@@ -2624,7 +2624,7 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
         case t: SQLException =>
           log.error(t, "fatal database error\n")
           NotificationsLogger.logFatalError("eclair is shutting down because of a fatal database error", t)
-          sys.exit(-2)
+          sys.exit(4)
         case t: Throwable => handleLocalError(t, event.stateData, None)
       }
   }

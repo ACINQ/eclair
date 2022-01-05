@@ -46,7 +46,7 @@ class ClusterListener(frontJoinedCluster: Promise[Done], backendAddressFound: Pr
   private def maybeShutdown(member: Member): Unit = {
     if (member.roles.contains(BackendRole)) {
       log.info(s"backend is down, stopping...")
-      System.exit(0)
+      sys.exit(0)
     }
   }
 
