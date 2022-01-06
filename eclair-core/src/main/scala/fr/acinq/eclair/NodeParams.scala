@@ -110,7 +110,7 @@ case class NodeParams(nodeKeyManager: NodeKeyManager,
   def currentBlockHeight: Long = blockCount.get
 
   /** Returns the features that should be used in our init message with the given peer. */
-  def featuresFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features).initFeatures()
+  def initFeaturesFor(nodeId: PublicKey): Features = overrideFeatures.getOrElse(nodeId, features).initFeatures()
 }
 
 object NodeParams extends Logging {

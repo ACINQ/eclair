@@ -156,7 +156,7 @@ object OnionPaymentPayloadTlv {
   case class OutgoingNodeId(nodeId: PublicKey) extends OnionPaymentPayloadTlv
 
   /**
-   * When payment metadata is included in a Bolt 9 invoice, we should send it as-is to the recipient.
+   * When payment metadata is included in a Bolt 11 invoice, we should send it as-is to the recipient.
    * This lets recipients generate invoices without having to store anything on their side until the invoice is paid.
    */
   case class PaymentMetadata(data: ByteVector) extends OnionPaymentPayloadTlv

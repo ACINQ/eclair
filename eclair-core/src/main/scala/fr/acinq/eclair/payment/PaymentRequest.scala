@@ -67,7 +67,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
   }.get
 
   /**
-   * @return the payment metadata
+   * @return metadata about the payment (see option_payment_metadata).
    */
   lazy val paymentMetadata: Option[ByteVector] = tags.collectFirst { case m: PaymentRequest.PaymentMetadata => m.data }
 
