@@ -28,9 +28,9 @@ import scala.util.{Failure, Success}
 
 object Boot extends App with Logging {
   try {
-    val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
+    val datadir = new File(sys.props.getOrElse("eclair.datadir", sys.props("user.home") + "/.eclair"))
     val config = ConfigFactory.parseString(
-      Option(System.getenv("AKKA_CONF")).getOrElse("").replace(";", "\n"),
+      sys.env.getOrElse("AKKA_CONF", "").replace(";", "\n"),
       ConfigParseOptions.defaults().setSyntax(ConfigSyntax.PROPERTIES))
       .withFallback(ConfigFactory.parseProperties(System.getProperties))
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
@@ -58,6 +58,6 @@ object Boot extends App with Logging {
     val errorMsg = if (t.getMessage != null) t.getMessage else t.getClass.getSimpleName
     System.err.println(s"fatal error: $errorMsg")
     logger.error(s"fatal error: $errorMsg", t)
-    System.exit(1)
+    sys.exit(1)
   }
 }

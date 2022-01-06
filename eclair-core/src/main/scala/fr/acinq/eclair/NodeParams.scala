@@ -124,11 +124,10 @@ object NodeParams extends Logging {
    * Order of precedence for the configuration parameters:
    * 1) Java environment variables (-D...)
    * 2) Configuration file eclair.conf
-   * 3) Optionally provided config
-   * 4) Default values in reference.conf
+   * 3) Default values in reference.conf
    */
   def loadConfiguration(datadir: File): Config =
-    ConfigFactory.parseProperties(System.getProperties)
+    ConfigFactory.systemProperties()
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load())
 
