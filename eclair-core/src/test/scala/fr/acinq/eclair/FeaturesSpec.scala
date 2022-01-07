@@ -224,10 +224,7 @@ class FeaturesSpec extends AnyFunSuite {
       Map[Feature, FeatureSupport](OptionDataLossProtect -> Optional, VariableLengthOnion -> Mandatory),
       Set(UnknownFeature(753), UnknownFeature(852))
     ))
-    assert(features.invoiceFeatures() === Features(
-      Map[Feature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional),
-      Set(UnknownFeature(753), UnknownFeature(852))
-    ))
+    assert(features.invoiceFeatures() === Map[Feature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentMetadata -> Optional))
   }
 
   test("features to bytes") {
