@@ -296,22 +296,36 @@ object PaymentOnion {
 
   /** Create a trampoline inner payload instructing the trampoline node to relay via a non-trampoline payment. */
   def createNodeRelayToNonTrampolinePayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, targetNodeId: PublicKey, invoice: PaymentRequest): NodeRelayPayload = {
-    val tlvs = Seq[OnionPaymentPayloadTlv](AmountToForward(amount), OutgoingCltv(expiry), OutgoingNodeId(targetNodeId), InvoiceFeatures(invoice.features.toByteVector), InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
-    val tlvs2 = invoice.paymentSecret.map(s => tlvs :+ PaymentData(s, totalAmount)).getOrElse(tlvs)
-    val tlvs3 = invoice.paymentMetadata.map(m => tlvs2 :+ PaymentMetadata(m)).getOrElse(tlvs2)
-    NodeRelayPayload(TlvStream(tlvs3))
+    val tlvs = Seq(
+      Some(AmountToForward(amount)),
+      Some(OutgoingCltv(expiry)),
+      invoice.paymentSecret.map(s => PaymentData(s, totalAmount)),
+      invoice.paymentMetadata.map(m => PaymentMetadata(m)),
+      Some(OutgoingNodeId(targetNodeId)),
+      Some(InvoiceFeatures(invoice.features.toByteVector)),
+      Some(InvoiceRoutingInfo(invoice.routingInfo.toList.map(_.toList)))
+    ).flatten
+    NodeRelayPayload(TlvStream(tlvs))
   }
 
   def createSinglePartPayload(amount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = {
-    val tlvs = Seq[OnionPaymentPayloadTlv](AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, amount))
-    val tlvs2 = paymentMetadata.map(m => tlvs :+ PaymentMetadata(m)).getOrElse(tlvs)
-    FinalTlvPayload(TlvStream(tlvs2, userCustomTlvs))
+    val tlvs = Seq(
+      Some(AmountToForward(amount)),
+      Some(OutgoingCltv(expiry)),
+      Some(PaymentData(paymentSecret, amount)),
+      paymentMetadata.map(m => PaymentMetadata(m))
+    ).flatten
+    FinalTlvPayload(TlvStream(tlvs, userCustomTlvs))
   }
 
   def createMultiPartPayload(amount: MilliSatoshi, totalAmount: MilliSatoshi, expiry: CltvExpiry, paymentSecret: ByteVector32, paymentMetadata: Option[ByteVector], additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil, userCustomTlvs: Seq[GenericTlv] = Nil): FinalPayload = {
-    val tlvs = Seq[OnionPaymentPayloadTlv](AmountToForward(amount), OutgoingCltv(expiry), PaymentData(paymentSecret, totalAmount))
-    val tlvs2 = paymentMetadata.map(m => tlvs :+ PaymentMetadata(m)).getOrElse(tlvs)
-    FinalTlvPayload(TlvStream(tlvs2 ++ additionalTlvs, userCustomTlvs))
+    val tlvs = Seq(
+      Some(AmountToForward(amount)),
+      Some(OutgoingCltv(expiry)),
+      Some(PaymentData(paymentSecret, totalAmount)),
+      paymentMetadata.map(m => PaymentMetadata(m))
+    ).flatten
+    FinalTlvPayload(TlvStream(tlvs ++ additionalTlvs, userCustomTlvs))
   }
 
   /** Create a trampoline outer payload. */

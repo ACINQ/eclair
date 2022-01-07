@@ -63,12 +63,9 @@ object TestConstants {
     }
   }
 
-  case object TestFeature extends Feature {
+  case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
     val mandatory = 50000
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
   val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {

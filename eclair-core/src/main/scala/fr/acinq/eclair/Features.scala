@@ -34,16 +34,11 @@ object FeatureSupport {
 
 trait Feature {
 
+  this: FeatureScope =>
+
   def rfcName: String
   def mandatory: Int
   def optional: Int = mandatory + 1
-
-  /** If true, feature should be sent in init messages. */
-  def init: Boolean
-  /** If true, feature should be sent in node announcements. */
-  def nodeAnnouncement: Boolean
-  /** If true, feature should be set in invoices. */
-  def invoice: Boolean
 
   def supportBit(support: FeatureSupport): Int = support match {
     case Mandatory => mandatory
@@ -53,6 +48,15 @@ trait Feature {
   override def toString = rfcName
 
 }
+
+/** Feature scope as defined in Bolt 9. */
+sealed trait FeatureScope
+/** Feature that should be advertised in init messages. */
+trait InitFeature extends FeatureScope
+/** Feature that should be advertised in node announcements. */
+trait NodeFeature extends FeatureScope
+/** Feature that should be advertised in invoices. */
+trait InvoiceFeature extends FeatureScope
 // @formatter:on
 
 case class UnknownFeature(bitIndex: Int)
@@ -78,11 +82,12 @@ case class Features(activated: Map[Feature, FeatureSupport], unknown: Set[Unknow
     unknownFeaturesOk && knownFeaturesOk
   }
 
-  def initFeatures(): Features = Features(activated.filter { case (f, _) => f.init }, unknown)
+  def initFeatures(): Features = Features(activated.collect { case (f: InitFeature, s) => (f: Feature, s) }, unknown)
 
-  def nodeAnnouncementFeatures(): Features = Features(activated.filter { case (f, _) => f.nodeAnnouncement }, unknown)
+  def nodeAnnouncementFeatures(): Features = Features(activated.collect { case (f: NodeFeature, s) => (f: Feature, s) }, unknown)
 
-  def invoiceFeatures(): Features = Features(activated.filter { case (f, _) => f.invoice }, unknown)
+  // NB: we don't include unknown features in invoices, which means plugins cannot inject invoice features.
+  def invoiceFeatures(): Map[Feature with InvoiceFeature, FeatureSupport] = activated.collect { case (f: InvoiceFeature, s) => (f, s) }
 
   def toByteVector: ByteVector = {
     val activatedFeatureBytes = toByteVectorFromIndex(activated.map { case (feature, support) => feature.supportBit(support) }.toSet)
@@ -150,72 +155,48 @@ object Features {
     }
   }
 
-  case object OptionDataLossProtect extends Feature {
+  case object OptionDataLossProtect extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_data_loss_protect"
     val mandatory = 0
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object InitialRoutingSync extends Feature {
+  case object InitialRoutingSync extends Feature with InitFeature {
     val rfcName = "initial_routing_sync"
     // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
     val mandatory = 2
-    val init = true
-    val nodeAnnouncement = false
-    val invoice = false
   }
 
-  case object OptionUpfrontShutdownScript extends Feature {
+  case object OptionUpfrontShutdownScript extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_upfront_shutdown_script"
     val mandatory = 4
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object ChannelRangeQueries extends Feature {
+  case object ChannelRangeQueries extends Feature with InitFeature with NodeFeature {
     val rfcName = "gossip_queries"
     val mandatory = 6
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object VariableLengthOnion extends Feature {
+  case object VariableLengthOnion extends Feature with InitFeature with NodeFeature with InvoiceFeature {
     val rfcName = "var_onion_optin"
     val mandatory = 8
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = true
   }
 
-  case object ChannelRangeQueriesExtended extends Feature {
+  case object ChannelRangeQueriesExtended extends Feature with InitFeature with NodeFeature {
     val rfcName = "gossip_queries_ex"
     val mandatory = 10
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object StaticRemoteKey extends Feature {
+  case object StaticRemoteKey extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_static_remotekey"
     val mandatory = 12
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object PaymentSecret extends Feature {
+  case object PaymentSecret extends Feature with InitFeature with NodeFeature with InvoiceFeature {
     val rfcName = "payment_secret"
     val mandatory = 14
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = true
   }
 
-  case object BasicMultiPartPayment extends Feature {
+  case object BasicMultiPartPayment extends Feature with InitFeature with NodeFeature with InvoiceFeature {
     val rfcName = "basic_mpp"
     val mandatory = 16
     val init = true
@@ -223,79 +204,52 @@ object Features {
     val invoice = true
   }
 
-  case object Wumbo extends Feature {
+  case object Wumbo extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_support_large_channel"
     val mandatory = 18
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object AnchorOutputs extends Feature {
+  case object AnchorOutputs extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_anchor_outputs"
     val mandatory = 20
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object AnchorOutputsZeroFeeHtlcTx extends Feature {
+  case object AnchorOutputsZeroFeeHtlcTx extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_anchors_zero_fee_htlc_tx"
     val mandatory = 22
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object ShutdownAnySegwit extends Feature {
+  case object ShutdownAnySegwit extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_shutdown_anysegwit"
     val mandatory = 26
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object OnionMessages extends Feature {
+  case object OnionMessages extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_onion_messages"
     val mandatory = 38
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object ChannelType extends Feature {
+  case object ChannelType extends Feature with InitFeature with NodeFeature {
     val rfcName = "option_channel_type"
     val mandatory = 44
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
-  case object PaymentMetadata extends Feature {
+  case object PaymentMetadata extends Feature with InvoiceFeature {
     val rfcName = "option_payment_metadata"
     val mandatory = 48
-    val init = false
-    val nodeAnnouncement = false
-    val invoice = true
   }
 
   // TODO: @t-bast: update feature bits once spec-ed (currently reserved here: https://github.com/lightningnetwork/lightning-rfc/issues/605)
   // We're not advertising these bits yet in our announcements, clients have to assume support.
   // This is why we haven't added them yet to `areSupported`.
-  case object TrampolinePayment extends Feature {
+  case object TrampolinePayment extends Feature with InitFeature with NodeFeature with InvoiceFeature {
     val rfcName = "trampoline_payment"
     val mandatory = 50
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = true
   }
 
-  case object KeySend extends Feature {
+  case object KeySend extends Feature with NodeFeature {
     val rfcName = "keysend"
     val mandatory = 54
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = false
   }
 
   val knownFeatures: Set[Feature] = Set(

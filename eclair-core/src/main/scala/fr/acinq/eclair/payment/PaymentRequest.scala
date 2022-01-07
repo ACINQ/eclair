@@ -19,7 +19,7 @@ package fr.acinq.eclair.payment
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Base58, Base58Check, Bech32, Block, ByteVector32, ByteVector64, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest._
-import fr.acinq.eclair.{CltvExpiryDelta, FeatureSupport, Features, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshi, MilliSatoshiLong, NodeParams, ShortChannelId, TimestampSecond, randomBytes32}
 import scodec.bits.{BitVector, ByteOrdering, ByteVector}
 import scodec.codecs.{list, ubyte}
 import scodec.{Codec, Err}
@@ -130,6 +130,11 @@ object PaymentRequest {
     Block.LivenetGenesisBlock.hash -> "lnbc"
   )
 
+  val defaultFeatures: Map[Feature with InvoiceFeature, FeatureSupport] = Map(
+    Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+    Features.PaymentSecret -> FeatureSupport.Mandatory,
+  )
+
   def apply(chainHash: ByteVector32,
             amount: Option[MilliSatoshi],
             paymentHash: ByteVector32,
@@ -142,7 +147,7 @@ object PaymentRequest {
             timestamp: TimestampSecond = TimestampSecond.now(),
             paymentSecret: ByteVector32 = randomBytes32(),
             paymentMetadata: Option[ByteVector] = None,
-            features: PaymentRequestFeatures = PaymentRequestFeatures(Features.VariableLengthOnion.mandatory, Features.PaymentSecret.mandatory)): PaymentRequest = {
+            features: PaymentRequestFeatures = PaymentRequestFeatures(defaultFeatures)): PaymentRequest = {
     require(features.requirePaymentSecret, "invoices must require a payment secret")
     val prefix = prefixes(chainHash)
     val tags = {
@@ -365,8 +370,8 @@ object PaymentRequest {
   }
 
   object PaymentRequestFeatures {
-    def apply(features: Int*): PaymentRequestFeatures = PaymentRequestFeatures(long2bits(features.foldLeft(0L) {
-      case (current, feature) => current + (1L << feature)
+    def apply(features: Map[Feature with InvoiceFeature, FeatureSupport]): PaymentRequestFeatures = PaymentRequestFeatures(long2bits(features.foldLeft(0L) {
+      case (current, (feature, support)) => current + (1L << feature.supportBit(support))
     }))
   }
 
