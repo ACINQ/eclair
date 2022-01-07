@@ -58,7 +58,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[ByteVector], co
 
   val wireLog = new BusLogging(context.system.eventStream, "", classOf[Diagnostics], context.system.asInstanceOf[ExtendedActorSystem].logFilter) with DiagnosticLoggingAdapter
 
-  def diag(message: T, direction: String) = {
+  def diag(message: T, direction: String): Unit = {
     require(direction == "IN" || direction == "OUT")
     val channelId_opt = Logs.channelId(message)
     wireLog.mdc(Logs.mdc(LogCategory(message), remoteNodeId_opt, channelId_opt))

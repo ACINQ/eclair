@@ -35,6 +35,12 @@ object InitTlv {
   /** The chains the node is interested in. */
   case class Networks(chainHashes: List[ByteVector32]) extends InitTlv
 
+  /**
+   * When receiving an incoming connection, we can send back the public address our peer is connecting from.
+   * This lets our peer discover if its public IP has changed from within its local network.
+   */
+  case class RemoteAddress(address: NodeAddress) extends InitTlv
+
 }
 
 object InitTlvCodecs {
@@ -42,9 +48,11 @@ object InitTlvCodecs {
   import InitTlv._
 
   private val networks: Codec[Networks] = variableSizeBytesLong(varintoverflow, list(bytes32)).as[Networks]
+  private val remoteAddress: Codec[RemoteAddress] = variableSizeBytesLong(varintoverflow, nodeaddress).as[RemoteAddress]
 
   val initTlvCodec = tlvStream(discriminated[InitTlv].by(varint)
     .typecase(UInt64(1), networks)
+    .typecase(UInt64(3), remoteAddress)
   )
 
 }
