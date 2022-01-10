@@ -76,7 +76,8 @@ object Announcements {
       case address@(_: Tor2) => (3, address)
       case address@(_: Tor3) => (4, address)
     }.sortBy(_._1).map(_._2)
-    val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, features, sortedAddresses, TlvStream.empty)
+    val nodeAnnouncementFeatures = features.nodeAnnouncementFeatures()
+    val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, nodeAnnouncementFeatures, sortedAddresses, TlvStream.empty)
     val sig = Crypto.sign(witness, nodeSecret)
     NodeAnnouncement(
       signature = sig,
@@ -84,7 +85,7 @@ object Announcements {
       nodeId = nodeSecret.publicKey,
       rgbColor = color,
       alias = alias,
-      features = features,
+      features = nodeAnnouncementFeatures,
       addresses = sortedAddresses
     )
   }

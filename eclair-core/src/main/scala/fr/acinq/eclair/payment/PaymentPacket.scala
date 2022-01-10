@@ -117,7 +117,7 @@ object IncomingPaymentPacket {
     } else {
       // We merge contents from the outer and inner payloads.
       // We must use the inner payload's total amount and payment secret because the payment may be split between multiple trampoline payments (#reckless).
-      Right(FinalPacket(add, PaymentOnion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret)))
+      Right(FinalPacket(add, PaymentOnion.createMultiPartPayload(outerPayload.amount, innerPayload.totalAmount, outerPayload.expiry, innerPayload.paymentSecret, innerPayload.paymentMetadata)))
     }
   }
 
@@ -213,9 +213,12 @@ object OutgoingPaymentPacket {
    *         - the trampoline onion to include in final payload of a normal onion
    */
   def buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: Seq[NodeHop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
-    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PaymentOnion.PerHopPayload](finalPayload))) {
+    // NB: the final payload will never reach the recipient, since the next-to-last node in the trampoline route will convert that to a non-trampoline payment.
+    // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
+    val dummyFinalPayload = PaymentOnion.createSinglePartPayload(finalPayload.amount, finalPayload.expiry, finalPayload.paymentSecret, None)
+    val (firstAmount, firstExpiry, payloads) = hops.drop(1).reverse.foldLeft((finalPayload.amount, finalPayload.expiry, Seq[PaymentOnion.PerHopPayload](dummyFinalPayload))) {
       case ((amount, expiry, payloads), hop) =>
-        // The next-to-last trampoline hop must include invoice data to indicate the conversion to a legacy payment.
+        // The next-to-last node in the trampoline route must receive invoice data to indicate the conversion to a non-trampoline payment.
         val payload = if (payloads.length == 1) {
           PaymentOnion.createNodeRelayToNonTrampolinePayload(finalPayload.amount, finalPayload.totalAmount, finalPayload.expiry, hop.nextNodeId, invoice)
         } else {

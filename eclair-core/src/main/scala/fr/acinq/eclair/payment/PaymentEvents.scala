@@ -25,6 +25,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.router.Router.{ChannelDesc, ChannelHop, Hop, Ignore}
 import fr.acinq.eclair.wire.protocol.{ChannelDisabled, ChannelUpdate, Node, TemporaryChannelFailure}
 import fr.acinq.eclair.{MilliSatoshi, ShortChannelId, TimestampMilli}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.concurrent.duration.FiniteDuration
@@ -113,6 +114,8 @@ object PaymentReceived {
   case class PartialPayment(amount: MilliSatoshi, fromChannelId: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now())
 
 }
+
+case class PaymentMetadataReceived(paymentHash: ByteVector32, paymentMetadata: ByteVector)
 
 case class PaymentSettlingOnChain(id: UUID, amount: MilliSatoshi, paymentHash: ByteVector32, timestamp: TimestampMilli = TimestampMilli.now()) extends PaymentEvent
 

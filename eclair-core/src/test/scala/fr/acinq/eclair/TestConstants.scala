@@ -64,7 +64,7 @@ object TestConstants {
     }
   }
 
-  case object TestFeature extends Feature {
+  case object TestFeature extends Feature with InitFeature with NodeFeature {
     val rfcName = "test_feature"
     val mandatory = 50000
   }
@@ -106,7 +106,8 @@ object TestConstants {
           ChannelRangeQueriesExtended -> Optional,
           VariableLengthOnion -> Mandatory,
           PaymentSecret -> Mandatory,
-          BasicMultiPartPayment -> Optional
+          BasicMultiPartPayment -> Optional,
+          PaymentMetadata -> Optional,
         ),
         Set(UnknownFeature(TestFeature.optional))
       ),
@@ -240,7 +241,8 @@ object TestConstants {
         ChannelRangeQueriesExtended -> Optional,
         VariableLengthOnion -> Mandatory,
         PaymentSecret -> Mandatory,
-        BasicMultiPartPayment -> Optional
+        BasicMultiPartPayment -> Optional,
+        PaymentMetadata -> Optional,
       ),
       pluginParams = Nil,
       overrideFeatures = Map.empty,

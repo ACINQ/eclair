@@ -27,6 +27,7 @@ object Monitoring {
     val PaymentAmount = Kamon.histogram("payment.amount", "Payment amount (satoshi)")
     val PaymentFees = Kamon.histogram("payment.fees", "Payment fees (satoshi)")
     val PaymentParts = Kamon.histogram("payment.parts", "Number of HTLCs per payment (MPP)")
+    val PaymentHtlcReceived = Kamon.counter("payment.received", "Number of valid htlcs received")
     val PaymentFailed = Kamon.counter("payment.failed", "Number of failed payment")
     val PaymentError = Kamon.counter("payment.error", "Non-fatal errors encountered during payment attempts")
     val PaymentAttempt = Kamon.histogram("payment.attempt", "Number of attempts before a payment succeeds")
@@ -71,6 +72,7 @@ object Monitoring {
     val PaymentId = "paymentId"
     val ParentId = "parentPaymentId"
     val PaymentHash = "paymentHash"
+    val PaymentMetadataIncluded = "paymentMetadataIncluded"
 
     val Amount = "amount"
     val TotalAmount = "totalAmount"

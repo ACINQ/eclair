@@ -32,6 +32,7 @@ import fr.acinq.eclair.payment.send.PaymentLifecycle.SendPaymentToRoute
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, FSMDiagnosticActorLogging, Logs, MilliSatoshi, MilliSatoshiLong, NodeParams, TimestampMilli}
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import java.util.concurrent.TimeUnit
@@ -301,16 +302,17 @@ object MultiPartPaymentLifecycle {
    * Send a payment to a given node. The payment may be split into multiple child payments, for which a path-finding
    * algorithm will run to find suitable payment routes.
    *
-   * @param paymentSecret  payment secret to protect against probing (usually from a Bolt 11 invoice).
-   * @param targetNodeId   target node (may be the final recipient when using source-routing, or the first trampoline
-   *                       node when using trampoline).
-   * @param totalAmount    total amount to send to the target node.
-   * @param targetExpiry   expiry at the target node (CLTV for the target node's received HTLCs).
-   * @param maxAttempts    maximum number of retries.
-   * @param assistedRoutes routing hints (usually from a Bolt 11 invoice).
-   * @param routeParams    parameters to fine-tune the routing algorithm.
-   * @param additionalTlvs when provided, additional tlvs that will be added to the onion sent to the target node.
-   * @param userCustomTlvs when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
+   * @param paymentSecret   payment secret to protect against probing (usually from a Bolt 11 invoice).
+   * @param targetNodeId    target node (may be the final recipient when using source-routing, or the first trampoline
+   *                        node when using trampoline).
+   * @param totalAmount     total amount to send to the target node.
+   * @param targetExpiry    expiry at the target node (CLTV for the target node's received HTLCs).
+   * @param maxAttempts     maximum number of retries.
+   * @param paymentMetadata payment metadata (usually from the Bolt 11 invoice).
+   * @param assistedRoutes  routing hints (usually from a Bolt 11 invoice).
+   * @param routeParams     parameters to fine-tune the routing algorithm.
+   * @param additionalTlvs  when provided, additional tlvs that will be added to the onion sent to the target node.
+   * @param userCustomTlvs  when provided, additional user-defined custom tlvs that will be added to the onion sent to the target node.
    */
   case class SendMultiPartPayment(replyTo: ActorRef,
                                   paymentSecret: ByteVector32,
@@ -318,6 +320,7 @@ object MultiPartPaymentLifecycle {
                                   totalAmount: MilliSatoshi,
                                   targetExpiry: CltvExpiry,
                                   maxAttempts: Int,
+                                  paymentMetadata: Option[ByteVector],
                                   assistedRoutes: Seq[Seq[ExtraHop]] = Nil,
                                   routeParams: RouteParams,
                                   additionalTlvs: Seq[OnionPaymentPayloadTlv] = Nil,
@@ -400,7 +403,7 @@ object MultiPartPaymentLifecycle {
       Some(cfg.paymentContext))
 
   private def createChildPayment(replyTo: ActorRef, route: Route, request: SendMultiPartPayment): SendPaymentToRoute = {
-    val finalPayload = PaymentOnion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.additionalTlvs, request.userCustomTlvs)
+    val finalPayload = PaymentOnion.createMultiPartPayload(route.amount, request.totalAmount, request.targetExpiry, request.paymentSecret, request.paymentMetadata, request.additionalTlvs, request.userCustomTlvs)
     SendPaymentToRoute(replyTo, Right(route), finalPayload)
   }
 

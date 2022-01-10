@@ -53,8 +53,26 @@ class AnnouncementsSpec extends AnyFunSuite {
   }
 
   test("create valid signed node announcement") {
-    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, Alice.nodeParams.features)
-    assert(ann.features.hasFeature(Features.VariableLengthOnion, Some(FeatureSupport.Mandatory)))
+    val features = Features(
+      Features.OptionDataLossProtect -> FeatureSupport.Optional,
+      Features.InitialRoutingSync -> FeatureSupport.Optional,
+      Features.ChannelRangeQueries -> FeatureSupport.Optional,
+      Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
+      Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+      Features.PaymentSecret -> FeatureSupport.Mandatory,
+      Features.BasicMultiPartPayment -> FeatureSupport.Optional,
+      Features.PaymentMetadata -> FeatureSupport.Optional,
+    )
+    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.publicAddresses, features)
+    // Features should be filtered to only include node_announcement related features.
+    assert(ann.features === Features(
+      Features.OptionDataLossProtect -> FeatureSupport.Optional,
+      Features.ChannelRangeQueries -> FeatureSupport.Optional,
+      Features.ChannelRangeQueriesExtended -> FeatureSupport.Optional,
+      Features.VariableLengthOnion -> FeatureSupport.Mandatory,
+      Features.PaymentSecret -> FeatureSupport.Mandatory,
+      Features.BasicMultiPartPayment -> FeatureSupport.Optional,
+    ))
     assert(checkSig(ann))
     assert(checkSig(ann.copy(timestamp = 153 unixsec)) === false)
   }

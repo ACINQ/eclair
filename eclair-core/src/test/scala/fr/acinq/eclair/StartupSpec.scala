@@ -181,8 +181,45 @@ class StartupSpec extends AnyFunSuite {
     )
 
     val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
-    val perNodeFeatures = nodeParams.featuresFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
+    val perNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
     assert(perNodeFeatures === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Mandatory, ChannelType -> Optional))
+  }
+
+  test("filter out non-init features in node override") {
+    val perNodeConf = ConfigFactory.parseString(
+      """
+        |  override-features = [ // optional per-node features
+        |      {
+        |        nodeid = "02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        |          features {
+        |            var_onion_optin = mandatory
+        |            payment_secret = mandatory
+        |            option_channel_type = optional
+        |            option_payment_metadata = disabled
+        |          }
+        |      },
+        |      {
+        |        nodeid = "02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        |          features {
+        |            var_onion_optin = mandatory
+        |            payment_secret = mandatory
+        |            option_channel_type = optional
+        |            option_payment_metadata = mandatory
+        |          }
+        |      }
+        |  ]
+      """.stripMargin
+    )
+
+    val nodeParams = makeNodeParamsWithDefaults(perNodeConf.withFallback(defaultConf))
+    val perNodeFeaturesA = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")))
+    val perNodeFeaturesB = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")))
+    val defaultNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")))
+    // Some features should never be sent in init messages.
+    assert(nodeParams.features.hasFeature(PaymentMetadata))
+    assert(!perNodeFeaturesA.hasFeature(PaymentMetadata))
+    assert(!perNodeFeaturesB.hasFeature(PaymentMetadata))
+    assert(!defaultNodeFeatures.hasFeature(PaymentMetadata))
   }
 
   test("override feerate mismatch tolerance") {
