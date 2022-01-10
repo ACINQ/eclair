@@ -199,9 +199,6 @@ object Features {
   case object BasicMultiPartPayment extends Feature with InitFeature with NodeFeature with InvoiceFeature {
     val rfcName = "basic_mpp"
     val mandatory = 16
-    val init = true
-    val nodeAnnouncement = true
-    val invoice = true
   }
 
   case object Wumbo extends Feature with InitFeature with NodeFeature {

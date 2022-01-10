@@ -150,7 +150,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     //            /    \ /    \
     // a -> b -> c      d      e
 
-    val (amount_ac, expiry_ac, trampolineOnion) = buildTrampolinePacket(paymentHash, trampolineHops, PaymentOnion.createMultiPartPayload(finalAmount, finalAmount * 3, finalExpiry, paymentSecret, None))
+    val (amount_ac, expiry_ac, trampolineOnion) = buildTrampolinePacket(paymentHash, trampolineHops, PaymentOnion.createMultiPartPayload(finalAmount, finalAmount * 3, finalExpiry, paymentSecret, Some(hex"010203")))
     assert(amount_ac === amount_bc)
     assert(expiry_ac === expiry_bc)
 
@@ -175,6 +175,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_c.invoiceRoutingInfo === None)
     assert(inner_c.invoiceFeatures === None)
     assert(inner_c.paymentSecret === None)
+    assert(inner_c.paymentMetadata === None)
 
     // c forwards the trampoline payment to d.
     val (amount_d, expiry_d, onion_d) = buildPaymentPacket(paymentHash, ChannelHop(c, d, channelUpdate_cd) :: Nil, PaymentOnion.createTrampolinePayload(amount_cd, amount_cd, expiry_cd, randomBytes32(), packet_d))
@@ -192,6 +193,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_d.invoiceRoutingInfo === None)
     assert(inner_d.invoiceFeatures === None)
     assert(inner_d.paymentSecret === None)
+    assert(inner_d.paymentMetadata === None)
 
     // d forwards the trampoline payment to e.
     val (amount_e, expiry_e, onion_e) = buildPaymentPacket(paymentHash, ChannelHop(d, e, channelUpdate_de) :: Nil, PaymentOnion.createTrampolinePayload(amount_de, amount_de, expiry_de, randomBytes32(), packet_e))
@@ -200,7 +202,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     val add_e = UpdateAddHtlc(randomBytes32(), 4, amount_e, paymentHash, expiry_e, onion_e.packet)
     val Right(FinalPacket(add_e2, payload_e)) = decrypt(add_e, priv_e.privateKey)
     assert(add_e2 === add_e)
-    assert(payload_e === FinalTlvPayload(TlvStream(AmountToForward(finalAmount), OutgoingCltv(finalExpiry), PaymentData(paymentSecret, finalAmount * 3))))
+    assert(payload_e === FinalTlvPayload(TlvStream(AmountToForward(finalAmount), OutgoingCltv(finalExpiry), PaymentData(paymentSecret, finalAmount * 3), OnionPaymentPayloadTlv.PaymentMetadata(hex"010203"))))
   }
 
   test("build a trampoline payment with non-trampoline recipient") {
@@ -211,7 +213,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
 
     val routingHints = List(List(PaymentRequest.ExtraHop(randomKey().publicKey, ShortChannelId(42), 10 msat, 100, CltvExpiryDelta(144))))
     val invoiceFeatures = PaymentRequestFeatures(Map[Feature with InvoiceFeature, FeatureSupport](VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional))
-    val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, Left("#reckless"), CltvExpiryDelta(18), None, None, routingHints, features = invoiceFeatures)
+    val invoice = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(finalAmount), paymentHash, priv_a.privateKey, Left("#reckless"), CltvExpiryDelta(18), None, None, routingHints, features = invoiceFeatures, paymentMetadata = Some(hex"010203"))
     val (amount_ac, expiry_ac, trampolineOnion) = buildTrampolineToLegacyPacket(invoice, trampolineHops, PaymentOnion.createSinglePartPayload(finalAmount, finalExpiry, invoice.paymentSecret.get, None))
     assert(amount_ac === amount_bc)
     assert(expiry_ac === expiry_bc)
@@ -251,6 +253,7 @@ class PaymentPacketSpec extends AnyFunSuite with BeforeAndAfterAll {
     assert(inner_d.outgoingNodeId === e)
     assert(inner_d.totalAmount === finalAmount)
     assert(inner_d.paymentSecret === invoice.paymentSecret)
+    assert(inner_d.paymentMetadata === Some(hex"010203"))
     assert(inner_d.invoiceFeatures === Some(hex"024100")) // var_onion_optin, payment_secret, basic_mpp
     assert(inner_d.invoiceRoutingInfo === Some(routingHints))
   }
