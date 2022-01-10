@@ -24,6 +24,15 @@ Eclair now supports the feature `option_onion_messages`. If this feature is enab
 It can also send onion messages with the `sendonionmessage` API.
 Messages sent to Eclair can be read with the websocket API.
 
+### Support for `option_payment_metadata`
+
+Eclair now supports the `option_payment_metadata` feature (see https://github.com/lightning/bolts/pull/912).
+This feature will let recipients generate "light" invoices that don't need to be stored locally until they're paid.
+This is particularly useful for payment hubs that generate a lot of invoices (e.g. to be displayed on a website) but expect only a fraction of them to actually be paid.
+
+Eclair includes a small `payment_metadata` field in all invoices it generates.
+This lets node operators verify that payers actually support that feature.
+
 ### API changes
 
 #### Timestamps
