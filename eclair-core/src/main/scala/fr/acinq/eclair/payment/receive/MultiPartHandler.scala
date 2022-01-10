@@ -22,12 +22,12 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.scaladsl.adapter.ClassicActorContextOps
 import akka.actor.{ActorContext, ActorRef, PoisonPill, Status}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
-import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto}
+import fr.acinq.bitcoin.{ByteVector32, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, RES_SUCCESS}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.payment.Monitoring.{Metrics, Tags}
 import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
-import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentReceived, PaymentRequest}
+import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentMetadataReceived, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, randomBytes32}
 import scodec.bits.HexStringSyntax
@@ -77,6 +77,7 @@ class MultiPartHandler(nodeParams: NodeParams, register: ActorRef, db: IncomingP
               // Once all incoming payments correctly set that field, we can make it mandatory.
               log.info("received payment for amount={} totalAmount={} paymentMetadata={}", p.add.amountMsat, p.payload.totalAmount, p.payload.paymentMetadata.map(_.toHex).getOrElse("none"))
               Metrics.PaymentHtlcReceived.withTag(Tags.PaymentMetadataIncluded, p.payload.paymentMetadata.nonEmpty).increment()
+              p.payload.paymentMetadata.foreach(metadata => ctx.system.eventStream.publish(PaymentMetadataReceived(p.add.paymentHash, metadata)))
               pendingPayments.get(p.add.paymentHash) match {
                 case Some((_, handler)) =>
                   handler ! MultiPartPaymentFSM.HtlcPart(p.payload.totalAmount, p.add)

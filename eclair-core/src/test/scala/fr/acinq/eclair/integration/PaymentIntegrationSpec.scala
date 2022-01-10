@@ -154,11 +154,15 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   }
 
   test("send an HTLC A->D") {
-    val sender = TestProbe()
-    val amountMsat = 4200000.msat
+    val (sender, eventListener) = (TestProbe(), TestProbe())
+    nodes("D").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
+
     // first we retrieve a payment hash from D
+    val amountMsat = 4200000.msat
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), Left("1 coffee")))
     val pr = sender.expectMsgType[PaymentRequest]
+    assert(pr.paymentMetadata.nonEmpty)
+
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator, SendPaymentToNode(amountMsat, pr, fallbackFinalExpiryDelta = finalCltvExpiryDelta, routeParams = integrationTestRouteParams, maxAttempts = 1))
     val paymentId = sender.expectMsgType[UUID]
@@ -166,6 +170,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(Crypto.sha256(preimage) === pr.paymentHash)
     val ps = sender.expectMsgType[PaymentSent]
     assert(ps.id == paymentId)
+    eventListener.expectMsg(PaymentMetadataReceived(pr.paymentHash, pr.paymentMetadata.get))
   }
 
   test("send an HTLC A->D with an invalid expiry delta for B") {
@@ -503,12 +508,14 @@ class PaymentIntegrationSpec extends IntegrationSpec {
 
   test("send a trampoline payment D->B (via trampoline C)") {
     val start = TimestampMilli.now()
-    val sender = TestProbe()
+    val (sender, eventListener) = (TestProbe(), TestProbe())
+    nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
     val amount = 2500000000L.msat
     sender.send(nodes("B").paymentHandler, ReceivePayment(Some(amount), Left("trampoline-MPP is so #reckless")))
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.features.allowMultiPart)
     assert(pr.features.allowTrampoline)
+    assert(pr.paymentMetadata.nonEmpty)
 
     val payment = SendTrampolinePayment(amount, pr, nodes("C").nodeParams.nodeId, Seq((350000 msat, CltvExpiryDelta(288))), routeParams = integrationTestRouteParams)
     sender.send(nodes("D").paymentInitiator, payment)
@@ -523,6 +530,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond(nodes("B").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("B").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
+    eventListener.expectMsg(PaymentMetadataReceived(pr.paymentHash, pr.paymentMetadata.get))
 
     awaitCond({
       val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == pr.paymentHash)
@@ -548,7 +556,8 @@ class PaymentIntegrationSpec extends IntegrationSpec {
   test("send a trampoline payment F1->A (via trampoline C, non-trampoline recipient)") {
     // The A -> B channel is not announced.
     val start = TimestampMilli.now()
-    val sender = TestProbe()
+    val (sender, eventListener) = (TestProbe(), TestProbe())
+    nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[PaymentMetadataReceived])
     sender.send(nodes("B").relayer, Relayer.GetOutgoingChannels())
     val channelUpdate_ba = sender.expectMsgType[Relayer.OutgoingChannels].channels.filter(c => c.nextNodeId == nodes("A").nodeParams.nodeId).head.channelUpdate
     val routingHints = List(List(ExtraHop(nodes("B").nodeParams.nodeId, channelUpdate_ba.shortChannelId, channelUpdate_ba.feeBaseMsat, channelUpdate_ba.feeProportionalMillionths, channelUpdate_ba.cltvExpiryDelta)))
@@ -558,6 +567,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.features.allowMultiPart)
     assert(!pr.features.allowTrampoline)
+    assert(pr.paymentMetadata.nonEmpty)
 
     val payment = SendTrampolinePayment(amount, pr, nodes("C").nodeParams.nodeId, Seq((1000000 msat, CltvExpiryDelta(432))), routeParams = integrationTestRouteParams)
     sender.send(nodes("F").paymentInitiator, payment)
@@ -571,6 +581,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     awaitCond(nodes("A").nodeParams.db.payments.getIncomingPayment(pr.paymentHash).exists(_.status.isInstanceOf[IncomingPaymentStatus.Received]))
     val Some(IncomingPayment(_, _, _, _, IncomingPaymentStatus.Received(receivedAmount, _))) = nodes("A").nodeParams.db.payments.getIncomingPayment(pr.paymentHash)
     assert(receivedAmount === amount)
+    eventListener.expectMsg(PaymentMetadataReceived(pr.paymentHash, pr.paymentMetadata.get))
 
     awaitCond({
       val relayed = nodes("C").nodeParams.db.audit.listRelayed(start, TimestampMilli.now()).filter(_.paymentHash == pr.paymentHash)
