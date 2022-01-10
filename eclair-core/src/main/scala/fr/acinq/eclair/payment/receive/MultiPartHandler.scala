@@ -30,6 +30,7 @@ import fr.acinq.eclair.payment.PaymentRequest.{ExtraHop, PaymentRequestFeatures}
 import fr.acinq.eclair.payment.{IncomingPaymentPacket, PaymentReceived, PaymentRequest}
 import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{Feature, FeatureSupport, Features, InvoiceFeature, Logs, MilliSatoshi, NodeParams, randomBytes32}
+import scodec.bits.HexStringSyntax
 
 import scala.util.{Failure, Success, Try}
 
@@ -227,7 +228,7 @@ object MultiPartHandler {
               val paymentPreimage = paymentPreimage_opt.getOrElse(randomBytes32())
               val paymentHash = Crypto.sha256(paymentPreimage)
               val expirySeconds = expirySeconds_opt.getOrElse(nodeParams.paymentRequestExpiry.toSeconds)
-              val paymentMetadata = Some(ByteVector64.Zeroes.bytes)
+              val paymentMetadata = hex"2a"
               val invoiceFeatures = if (nodeParams.enableTrampolinePayment) {
                 nodeParams.features.invoiceFeatures() + (Features.TrampolinePayment -> FeatureSupport.Optional)
               } else {
@@ -243,7 +244,7 @@ object MultiPartHandler {
                 fallbackAddress_opt,
                 expirySeconds = Some(expirySeconds),
                 extraHops = extraHops,
-                paymentMetadata = paymentMetadata,
+                paymentMetadata = Some(paymentMetadata),
                 features = PaymentRequestFeatures(invoiceFeatures)
               )
               context.log.debug("generated payment request={} from amount={}", PaymentRequest.write(paymentRequest), amount_opt)
