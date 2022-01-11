@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
-import fr.acinq.eclair.{Logs, NodeParams}
+import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
 import java.util.UUID
 import scala.concurrent.duration.DurationLong
@@ -50,7 +50,7 @@ object TxPublisher {
   // +---------+   |             +--------------------+
   //               | PublishTx   |    TxPublisher     |
   //               +------------>| - stores txs and   |---+                      +-----------------+
-  //                             |   deadlines        |   | create child actor   |    TxPublish    |
+  //                             |   block targets    |   | create child actor   |    TxPublish    |
   //                             | - create child     |   | ask it to publish    | - preconditions |
   //                             |   actors that fund |   | at a given feerate   | - (funding)     |
   //                             |   and publish txs  |   +--------------------->| - (signing)     |
@@ -85,7 +85,7 @@ object TxPublisher {
     def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments, deadline: Long) extends PublishTx {
+  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments, confirmationTarget: BlockHeight) extends PublishTx {
     override def input: OutPoint = txInfo.input.outPoint
     override def desc: String = txInfo.desc
   }
@@ -196,12 +196,12 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
       case cmd: PublishReplaceableTx =>
         val attempts = pending.getOrElse(cmd.input, Seq.empty)
         val alreadyPublished = attempts.collectFirst {
-          // If there is already an attempt at spending this outpoint with a more aggressive deadline, there is no point in publishing again.
-          case a: ReplaceableAttempt if a.cmd.deadline <= cmd.deadline => a.cmd.deadline
+          // If there is already an attempt at spending this outpoint with a more aggressive confirmation target, there is no point in publishing again.
+          case a: ReplaceableAttempt if a.cmd.confirmationTarget <= cmd.confirmationTarget => a.cmd.confirmationTarget
         }
         alreadyPublished match {
-          case Some(currentDeadline) =>
-            log.info("not publishing replaceable {} spending {}:{} with deadline={}, publishing is already in progress with deadline={}", cmd.desc, cmd.input.txid, cmd.input.index, cmd.deadline, currentDeadline)
+          case Some(currentConfirmationTarget) =>
+            log.info("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, cmd.confirmationTarget, currentConfirmationTarget)
             Behaviors.same
           case None =>
             val publishId = UUID.randomUUID()
@@ -240,9 +240,9 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
                   // it doesn't make sense to retry, we will keep getting rejected.
                   run(pending2, retryNextBlock, channelInfo)
                 case _: PublishReplaceableTx =>
-                  // The mempool contains a transaction that pays more fees, but as we get closer to the deadline, we will
-                  // try to publish with higher fees, so if the conflicting transaction doesn't confirm, we should be able
-                  // to replace it before we reach the deadline.
+                  // The mempool contains a transaction that pays more fees, but as we get closer to the confirmation
+                  // target, we will try to publish with higher fees, so if the conflicting transaction doesn't confirm,
+                  // we should be able to replace it before we reach the confirmation target.
                   run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelInfo)
               }
             case TxRejectedReason.ConflictingTxConfirmed =>

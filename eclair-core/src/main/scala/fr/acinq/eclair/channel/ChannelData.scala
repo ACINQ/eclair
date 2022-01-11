@@ -290,6 +290,8 @@ sealed trait CommitPublished {
  *                                 None only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
  * @param claimHtlcDelayedTxs      3rd-stage txs (spending the output of HTLC txs).
  * @param claimAnchorTxs           txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
+ *                                 We currently only claim our local anchor, but it would be nice to claim both when it
+ *                                 is economical to do so to avoid polluting the utxo set.
  */
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[ClaimLocalDelayedOutputTx], htlcTxs: Map[OutPoint, Option[HtlcTx]], claimHtlcDelayedTxs: List[HtlcDelayedTx], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
   /**
@@ -322,6 +324,8 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
  * @param claimHtlcTxs      txs claiming HTLCs. There will be one entry for each pending HTLC. The value will be None
  *                          only for incoming HTLCs for which we don't have the preimage (we can't claim them yet).
  * @param claimAnchorTxs    txs spending anchor outputs to bump the feerate of the commitment tx (if applicable).
+ *                          We currently only claim our local anchor, but it would be nice to claim both when it is
+ *                          economical to do so to avoid polluting the utxo set.
  */
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[ClaimRemoteCommitMainOutputTx], claimHtlcTxs: Map[OutPoint, Option[ClaimHtlcTx]], claimAnchorTxs: List[ClaimAnchorOutputTx], irrevocablySpent: Map[OutPoint, Transaction]) extends CommitPublished {
   /**

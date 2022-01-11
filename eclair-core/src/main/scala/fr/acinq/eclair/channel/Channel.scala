@@ -2473,14 +2473,15 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
               case _: Transactions.HtlcSuccessTx => commitments.localCommit.spec.findIncomingHtlcById(tx.htlcId).map(_.add)
               case _: Transactions.HtlcTimeoutTx => commitments.localCommit.spec.findOutgoingHtlcById(tx.htlcId).map(_.add)
             }
-            val deadline = htlc_opt.map(_.cltvExpiry.toLong).getOrElse(nodeParams.currentBlockHeight + nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-            PublishReplaceableTx(tx, commitments, deadline)
+            (tx, htlc_opt)
+        }.collect {
+          case (tx, Some(htlc)) => PublishReplaceableTx(tx, commitments, BlockHeight(htlc.cltvExpiry.toLong))
         }
         val claimLocalAnchor = claimAnchorTxs.collect {
           case tx: Transactions.ClaimLocalAnchorOutputTx =>
             // NB: if we don't have pending HTLCs, we don't have funds at risk, so we can use a longer deadline.
-            val deadline = redeemableHtlcTxs.map(_.deadline).minOption.getOrElse(nodeParams.currentBlockHeight + nodeParams.onChainFeeConf.feeTargets.claimMainBlockTarget)
-            PublishReplaceableTx(tx, commitments, deadline)
+            val confirmationTarget = redeemableHtlcTxs.map(_.confirmationTarget.toLong).minOption.getOrElse(nodeParams.currentBlockHeight + nodeParams.onChainFeeConf.feeTargets.claimMainBlockTarget)
+            PublishReplaceableTx(tx, commitments, BlockHeight(confirmationTarget))
         }
         List(PublishFinalTx(commitTx, commitInput, "commit-tx", Closing.commitTxFee(commitments.commitInput, commitTx, isFunder), None)) ++ claimLocalAnchor ++ claimMainDelayedOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)) ++ redeemableHtlcTxs ++ claimHtlcDelayedTxs.map(tx => PublishFinalTx(tx, tx.fee, None))
     }
@@ -2558,8 +2559,9 @@ class Channel(val nodeParams: NodeParams, val wallet: OnChainChannelFunder, remo
           case _: Transactions.ClaimHtlcSuccessTx => commitments.remoteNextCommitInfo.left.toOption.flatMap(_.nextRemoteCommit.spec.findOutgoingHtlcById(tx.htlcId)).orElse(commitments.remoteCommit.spec.findOutgoingHtlcById(tx.htlcId)).map(_.add)
           case _: Transactions.ClaimHtlcTimeoutTx => commitments.remoteNextCommitInfo.left.toOption.flatMap(_.nextRemoteCommit.spec.findIncomingHtlcById(tx.htlcId)).orElse(commitments.remoteCommit.spec.findIncomingHtlcById(tx.htlcId)).map(_.add)
         }
-        val deadline = htlc_opt.map(_.cltvExpiry.toLong).getOrElse(nodeParams.currentBlockHeight + nodeParams.onChainFeeConf.feeTargets.commitmentBlockTarget)
-        PublishReplaceableTx(tx, commitments, deadline)
+        (tx, htlc_opt)
+    }.collect {
+      case (tx, Some(htlc)) => PublishReplaceableTx(tx, commitments, BlockHeight(htlc.cltvExpiry.toLong))
     }
     val publishQueue = claimMainOutputTx.map(tx => PublishFinalTx(tx, tx.fee, None)).toSeq ++ redeemableHtlcTxs
     publishIfNeeded(publishQueue, irrevocablySpent)

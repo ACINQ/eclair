@@ -20,7 +20,6 @@ import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{OutPoint, Transaction}
-import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
@@ -28,6 +27,7 @@ import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, ReplaceableTxWithWitnessData}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.{BlockHeight, NodeParams}
 
 import scala.concurrent.duration.{DurationInt, DurationLong}
 import scala.concurrent.{ExecutionContext, Future}
@@ -39,7 +39,7 @@ import scala.util.{Random, Success}
 
 /**
  * This actor sets the fees, signs and publishes a transaction that can be RBF-ed.
- * It regularly RBFs the transaction as we get closer to its deadline.
+ * It regularly RBFs the transaction as we get closer to its confirmation target.
  * It waits for confirmation or failure before reporting back to the requesting actor.
  */
 object ReplaceableTxPublisher {
@@ -75,14 +75,14 @@ object ReplaceableTxPublisher {
     }
   }
 
-  def getFeerate(feeEstimator: FeeEstimator, deadline: Long, currentBlockHeight: Long): FeeratePerKw = {
-    val remainingBlocks = deadline - currentBlockHeight
+  def getFeerate(feeEstimator: FeeEstimator, confirmationTarget: BlockHeight, currentBlockHeight: BlockHeight): FeeratePerKw = {
+    val remainingBlocks = (confirmationTarget - currentBlockHeight).toLong
     val blockTarget = remainingBlocks match {
       // If our target is still very far in the future, no need to rush
       case t if t >= 144 => 144
       case t if t >= 72 => 72
       case t if t >= 36 => 36
-      // However, if we get closer to the deadline, we start being more aggressive
+      // However, if we get closer to the target, we start being more aggressive
       case t if t >= 18 => 12
       case t if t >= 12 => 6
       case t if t >= 2 => 2
@@ -138,7 +138,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   }
 
   def fund(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
-    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.deadline, nodeParams.currentBlockHeight)
+    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.confirmationTarget, BlockHeight(nodeParams.currentBlockHeight))
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
     Behaviors.receiveMessagePartial {
@@ -164,7 +164,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   }
 
   // Wait for our transaction to be confirmed or rejected from the mempool.
-  // If we get close to the deadline and our transaction is stuck in the mempool, we will initiate an RBF attempt.
+  // If we get close to the confirmation target and our transaction is stuck in the mempool, we will initiate an RBF attempt.
   def wait(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, txMonitor: ActorRef[MempoolTxMonitor.Command], tx: FundedTx): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(MempoolTxMonitor.TxConfirmed(confirmedTx)) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, confirmedTx))
@@ -177,16 +177,16 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
         timers.startSingleTimer(CheckFeeKey, CheckFee(currentBlockCount), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
         Behaviors.same
       case CheckFee(currentBlockCount) =>
-        val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.deadline, currentBlockCount)
-        val targetFeerate_opt = if (cmd.deadline <= currentBlockCount + 6) {
-          log.debug("{} deadline is close (in {} blocks): bumping fees", cmd.desc, cmd.deadline - currentBlockCount)
-          // We make sure we increase the fees by at least 20% as we get close to the deadline.
+        val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.confirmationTarget, BlockHeight(currentBlockCount))
+        val targetFeerate_opt = if (cmd.confirmationTarget.toLong <= currentBlockCount + 6) {
+          log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, cmd.confirmationTarget.toLong - currentBlockCount)
+          // We make sure we increase the fees by at least 20% as we get close to the confirmation target.
           Some(currentFeerate.max(tx.feerate * 1.2))
         } else if (tx.feerate * 1.2 <= currentFeerate) {
-          log.debug("{} deadline is in {} blocks: bumping fees", cmd.desc, cmd.deadline - currentBlockCount)
+          log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, cmd.confirmationTarget.toLong - currentBlockCount)
           Some(currentFeerate)
         } else {
-          log.debug("{} deadline is in {} blocks: no need to bump fees", cmd.desc, cmd.deadline - currentBlockCount)
+          log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, cmd.confirmationTarget.toLong - currentBlockCount)
           None
         }
         targetFeerate_opt.foreach(targetFeerate => {

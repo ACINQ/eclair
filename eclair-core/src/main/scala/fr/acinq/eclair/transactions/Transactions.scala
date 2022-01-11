@@ -112,6 +112,16 @@ object Transactions {
   sealed trait ReplaceableTransactionWithInputInfo extends TransactionWithInputInfo
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo { override def desc: String = "commit-tx" }
+  // It's important to note that htlc transactions with the default commitment format are not actually replaceable: only
+  // anchor outputs htlc transactions are replaceable. We should have used different types for these different kinds of
+  // htlc transactions, but we introduced that before implementing the replacement strategy.
+  // Unfortunately, if we wanted to change that, we would have to update the codecs and implement a migration of channel
+  // data, which isn't trivial, so we chose to temporarily live with that inconsistency (and have the transaction
+  // replacement logic abort when non-anchor outputs htlc transactions are provided).
+  // Ideally, we'd like to implement a dynamic commitment format upgrade mechanism and depreciate the pre-anchor outputs
+  // format soon, which will get rid of this inconsistency.
+  // The next time we introduce a new type of commitment, we should avoid repeating that mistake and define separate
+  // types right from the start.
   sealed trait HtlcTx extends ReplaceableTransactionWithInputInfo {
     def htlcId: Long
     override def sighash(txOwner: TxOwner, commitmentFormat: CommitmentFormat): Int = commitmentFormat match {
