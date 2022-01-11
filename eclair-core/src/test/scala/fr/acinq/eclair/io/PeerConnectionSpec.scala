@@ -18,8 +18,8 @@ package fr.acinq.eclair.io
 
 import akka.actor.PoisonPill
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{Block, ByteVector32}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{BasicMultiPartPayment, ChannelRangeQueries, PaymentSecret, VariableLengthOnion}
 import fr.acinq.eclair.TestConstants._
@@ -417,7 +417,7 @@ class PeerConnectionSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike wi
     assert(peerConnection.stateName === PeerConnection.CONNECTED)
     probe.send(peerConnection, FundingLocked(ByteVector32(hex"0000000000000000000000000000000000000000000000000000000000000000"), randomKey().publicKey))
     peerConnection.stateData match {
-      case d : PeerConnection.ConnectedData => assert(d.isPersistent)
+      case d: PeerConnection.ConnectedData => assert(d.isPersistent)
       case _ => fail()
     }
   }

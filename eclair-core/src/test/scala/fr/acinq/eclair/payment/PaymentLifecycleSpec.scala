@@ -43,6 +43,7 @@ import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.protocol._
+import scodec.bits.ByteVector
 
 import java.util.UUID
 import scala.concurrent.duration._
@@ -256,6 +257,24 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(metrics.amount == defaultAmountMsat)
     assert(metrics.fees == 100.msat)
     metricsListener.expectNoMessage()
+  }
+
+  test("payment failed (cannot build onion)") { routerFixture =>
+    val payFixture = createPaymentLifecycle()
+    import payFixture._
+    import cfg._
+
+    val paymentMetadataTooBig = ByteVector.fromValidHex("01" * 1300)
+    val request = SendPaymentToNode(sender.ref, d, PaymentOnion.createSinglePartPayload(defaultAmountMsat, defaultExpiry, defaultInvoice.paymentSecret.get, Some(paymentMetadataTooBig)), 5, routeParams = defaultRouteParams)
+    sender.send(paymentFSM, request)
+    val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
+    val routeRequest = routerForwarder.expectMsgType[RouteRequest]
+    routerForwarder.forward(routerFixture.router, routeRequest)
+
+    val pf = sender.expectMsgType[PaymentFailed]
+    assert(pf.failures.length === 1)
+    assert(pf.failures.head.isInstanceOf[LocalFailure])
+    awaitCond(nodeParams.db.payments.getOutgoingPayment(id).exists(_.status.isInstanceOf[OutgoingPaymentStatus.Failed]))
   }
 
   test("payment failed (unparsable failure)") { routerFixture =>

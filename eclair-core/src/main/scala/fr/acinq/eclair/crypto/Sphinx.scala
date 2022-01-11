@@ -242,7 +242,7 @@ object Sphinx extends Logging {
    * @return An onion packet with all shared secrets. The onion packet can be sent to the first node in the list, and
    *         the shared secrets (one per node) can be used to parse returned failure messages if needed.
    */
-  def create(sessionKey: PrivateKey, packetPayloadLength: Int, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: Option[ByteVector32]): PacketAndSecrets = {
+  def create(sessionKey: PrivateKey, packetPayloadLength: Int, publicKeys: Seq[PublicKey], payloads: Seq[ByteVector], associatedData: Option[ByteVector32]): Try[PacketAndSecrets] = Try {
     require(payloads.map(_.length + MacLength).sum <= packetPayloadLength, s"packet per-hop payloads cannot exceed $packetPayloadLength bytes")
     val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", packetPayloadLength, sharedsecrets.dropRight(1), payloads.dropRight(1))

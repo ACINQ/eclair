@@ -97,7 +97,7 @@ class OnionMessagesSpec extends AnyFunSuite {
 
     val sessionKey = PrivateKey(hex"090909090909090909090909090909090909090909090909090909090909090901")
 
-    val PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, 1300, publicKeys, payloads, None)
+    val PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, 1300, publicKeys, payloads, None).get
     assert(packet.hmac == ByteVector32(hex"d84e7135092450c8cc98bb969aa6d9127dd07da53a3c46b2e9339d111f5f301d"))
     assert(packet.publicKey == PublicKey(hex"0256b328b30c8bf5839e24058747879408bdb36241dc9c2e7c619faa12b2920967").value)
     assert(packet.payload ==

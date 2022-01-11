@@ -20,7 +20,6 @@ import akka.actor.testkit.typed.scaladsl.{ScalaTestWithActorTestKit, TestProbe}
 import akka.actor.typed.ActorRef
 import akka.actor.typed.eventstream.EventStream
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.ByteVector32
 import fr.acinq.eclair.io.MessageRelay.{Disconnected, Sent}
 import fr.acinq.eclair.io.Switchboard.RelayMessage
 import fr.acinq.eclair.message.OnionMessages.ReceiveMessage
@@ -57,7 +56,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val ourNodeId = randomKey().publicKey
     val recipient = randomKey().publicKey
     val replyPath = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(ourNodeId, Some(pathId))))
-    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(),randomKey(),Nil,Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
+    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
     val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
 
     postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 second)
@@ -80,8 +79,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val ourNodeId = randomKey().publicKey
     val recipient = randomKey().publicKey
     val replyPath = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(ourNodeId, Some(pathId))))
-    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(),randomKey(),Nil,Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
-    val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
+    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
 
     postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 second)
 
@@ -100,7 +98,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     val ourNodeId = randomKey().publicKey
     val recipient = randomKey().publicKey
     val replyPath = OnionMessages.buildRoute(randomKey(), Nil, Left(OnionMessages.Recipient(ourNodeId, Some(pathId))))
-    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(),randomKey(),Nil,Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
+    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, Left(OnionMessages.Recipient(recipient, None)), ReplyPath(replyPath) :: Nil)
     val payload = FinalPayload(TlvStream(EncryptedData(replyPath.encryptedPayloads.last) :: Nil, GenericTlv(UInt64(42), hex"abcd") :: Nil))
 
     postman ! SendMessage(recipient, messageExpectingReply, Some(pathId), messageRecipient.ref, 1 millis)
@@ -121,7 +119,7 @@ class PostmanSpec extends ScalaTestWithActorTestKit(ConfigFactory.load("applicat
     import f._
 
     val recipient = randomKey().publicKey
-    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(),randomKey(),Nil,Left(OnionMessages.Recipient(recipient, None)), Nil)
+    val (_, messageExpectingReply) = OnionMessages.buildMessage(randomKey(), randomKey(), Nil, Left(OnionMessages.Recipient(recipient, None)), Nil)
 
     postman ! SendMessage(recipient, messageExpectingReply, None, messageRecipient.ref, 1 second)
 
