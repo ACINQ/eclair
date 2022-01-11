@@ -278,6 +278,20 @@ class PaymentInitiatorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike 
     payFsm.expectNoMessage(50 millis)
   }
 
+  test("reject trampoline payment with onion too big") { f =>
+    import f._
+    val paymentMetadata = ByteVector.fromValidHex("01" * 400)
+    val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Much payment very metadata"), CltvExpiryDelta(9), features = PaymentRequestFeatures(featuresWithTrampoline), paymentMetadata = Some(paymentMetadata))
+    val trampolineFees = 21000 msat
+    val req = SendTrampolinePayment(finalAmount, pr, b, Seq((trampolineFees, CltvExpiryDelta(12))), CltvExpiryDelta(18), routeParams = nodeParams.routerConf.pathFindingExperimentConf.getRandomConf().getDefaultRouteParams)
+    sender.send(initiator, req)
+    val id = sender.expectMsgType[UUID]
+    val fail = sender.expectMsgType[PaymentFailed]
+    assert(fail.id === id)
+    assert(fail.failures.length === 1)
+    assert(fail.failures.head.asInstanceOf[LocalFailure].t.getMessage === "requirement failed: packet per-hop payloads cannot exceed 400 bytes")
+  }
+
   test("retry trampoline payment") { f =>
     import f._
     val pr = PaymentRequest(Block.LivenetGenesisBlock.hash, Some(finalAmount), paymentHash, priv_c.privateKey, Left("Some phoenix invoice"), CltvExpiryDelta(18), features = PaymentRequestFeatures(featuresWithTrampoline))

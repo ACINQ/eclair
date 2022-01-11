@@ -246,7 +246,7 @@ trait ChannelStateTestsHelperMethods extends TestKitBase {
   def makeCmdAdd(amount: MilliSatoshi, cltvExpiryDelta: CltvExpiryDelta, destination: PublicKey, paymentPreimage: ByteVector32, currentBlockHeight: Long, upstream: Upstream, replyTo: ActorRef = TestProbe().ref): (ByteVector32, CMD_ADD_HTLC) = {
     val paymentHash: ByteVector32 = Crypto.sha256(paymentPreimage)
     val expiry = cltvExpiryDelta.toCltvExpiry(currentBlockHeight)
-    val cmd = OutgoingPaymentPacket.buildCommand(replyTo, upstream, paymentHash, ChannelHop(null, destination, null) :: Nil, PaymentOnion.createSinglePartPayload(amount, expiry, randomBytes32(), None))._1.copy(commit = false)
+    val cmd = OutgoingPaymentPacket.buildCommand(replyTo, upstream, paymentHash, ChannelHop(null, destination, null) :: Nil, PaymentOnion.createSinglePartPayload(amount, expiry, randomBytes32(), None)).get._1.copy(commit = false)
     (paymentPreimage, cmd)
   }
 

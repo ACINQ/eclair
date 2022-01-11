@@ -18,7 +18,7 @@ package fr.acinq.eclair
 
 import akka.actor.ActorRef
 import akka.actor.typed.scaladsl.AskPattern.Askable
-import akka.actor.typed.scaladsl.adapter.{ClassicActorRefOps, ClassicSchedulerOps}
+import akka.actor.typed.scaladsl.adapter.ClassicSchedulerOps
 import akka.pattern._
 import akka.util.Timeout
 import com.softwaremill.quicklens.ModifyPimp
@@ -36,7 +36,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.db.AuditDb.{NetworkFee, Stats}
 import fr.acinq.eclair.db.{IncomingPayment, OutgoingPayment}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-import fr.acinq.eclair.io.{MessageRelay, NodeURI, Peer, PeerConnection, Switchboard}
+import fr.acinq.eclair.io._
 import fr.acinq.eclair.message.{OnionMessages, Postman}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
@@ -61,12 +61,15 @@ case class GetInfoResponse(version: String, nodeId: PublicKey, alias: String, co
 
 case class AuditResponse(sent: Seq[PaymentSent], received: Seq[PaymentReceived], relayed: Seq[PaymentRelayed])
 
+// @formatter:off
 case class SignedMessage(nodeId: PublicKey, message: String, signature: ByteVector)
-
 case class VerifiedMessage(valid: Boolean, publicKey: PublicKey)
+// @formatter:on
 
+// @formatter:off
 case class SendOnionMessageResponsePayload(encodedReplyPath: Option[String], replyPath: Option[Sphinx.RouteBlinding.BlindedRoute], unknownTlvs: Map[String, ByteVector])
 case class SendOnionMessageResponse(sent: Boolean, failureMessage: Option[String], response: Option[SendOnionMessageResponsePayload])
+// @formatter:on
 
 object SignedMessage {
   def signedBytes(message: ByteVector): ByteVector32 =
@@ -516,14 +519,13 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
       case Attempt.Successful(DecodeResult(userCustomTlvs, _)) =>
         val replyPathId = randomBytes32()
         val replyRoute = replyPath.map(hops => OnionMessages.buildRoute(randomKey(), hops.map(OnionMessages.IntermediateNode(_)), Left(OnionMessages.Recipient(appKit.nodeParams.nodeId, Some(replyPathId)))))
-        val (nextNodeId, message) =
-          OnionMessages.buildMessage(
-            randomKey(),
-            randomKey(),
-            intermediateNodes.map(OnionMessages.IntermediateNode(_)),
-            destination match { case Left(key) => Left(OnionMessages.Recipient(key, None)) case Right(route) => Right(route) },
-            replyRoute.map(OnionMessagePayloadTlv.ReplyPath(_) :: Nil).getOrElse(Nil),
-            userCustomTlvs)
+        val (nextNodeId, message) = OnionMessages.buildMessage(
+          randomKey(),
+          randomKey(),
+          intermediateNodes.map(OnionMessages.IntermediateNode(_)),
+          destination match { case Left(key) => Left(OnionMessages.Recipient(key, None)) case Right(route) => Right(route) },
+          replyRoute.map(OnionMessagePayloadTlv.ReplyPath(_) :: Nil).getOrElse(Nil),
+          userCustomTlvs)
         appKit.postman.ask(ref => Postman.SendMessage(nextNodeId, message, replyPath.map(_ => replyPathId), ref, appKit.nodeParams.onionMessageConfig.timeout))(timeout, appKit.system.scheduler.toTyped).mapTo[Postman.OnionMessageResponse].map {
           case Postman.Response(payload) =>
             val encodedReplyPath = payload.replyPath.map(route => blindedRouteCodec.encode(route.blindedRoute).require.bytes.toHex)
@@ -532,11 +534,7 @@ class EclairImpl(appKit: Kit) extends Eclair with Logging {
           case Postman.SendingStatus(MessageRelay.Sent(_)) => SendOnionMessageResponse(sent = true, None, None)
           case Postman.SendingStatus(failure: MessageRelay.Failure) => SendOnionMessageResponse(sent = false, Some(failure.toString), None)
         }
-      case Attempt.Failure(cause) =>
-        Future.successful(SendOnionMessageResponse(
-          sent = false,
-          failureMessage = Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}"),
-          response = None))
+      case Attempt.Failure(cause) => Future.successful(SendOnionMessageResponse(sent = false, failureMessage = Some(s"the `content` field is invalid, it must contain encoded tlvs: ${cause.message}"), response = None))
     }
 
   }

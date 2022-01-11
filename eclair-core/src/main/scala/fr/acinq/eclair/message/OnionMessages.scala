@@ -60,7 +60,7 @@ object OnionMessages {
         val lastPayload = MessageOnionCodecs.blindedFinalPayloadCodec.encode(BlindedFinalPayload(TlvStream(tlvs))).require.bytes
         Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId) :+ nodeId, intermediatePayloads :+ lastPayload)
       case Right(route) =>
-        if(intermediateNodes.isEmpty) {
+        if (intermediateNodes.isEmpty) {
           route
         } else {
           val Sphinx.RouteBlinding.BlindedRoute(introductionNodeId, blindingKey, blindedNodes) = Sphinx.RouteBlinding.create(blindingSecret, intermediateNodes.map(_.nodeId), intermediatePayloads)
@@ -96,7 +96,8 @@ object OnionMessages {
     } else {
       payloadSize.toInt
     }
-    val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None)
+    // Since we are setting the packet size based on the payload, the onion creation should never fail (hence the `.get`).
+    val Sphinx.PacketAndSecrets(packet, _) = Sphinx.create(sessionKey, packetSize, route.blindedNodes.map(_.blindedPublicKey), payloads, None).get
     (route.introductionNodeId, OnionMessage(route.blindingKey, packet))
   }
 

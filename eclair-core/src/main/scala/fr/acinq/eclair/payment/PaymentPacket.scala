@@ -29,6 +29,7 @@ import scodec.bits.ByteVector
 import scodec.{Attempt, Codec, DecodeResult}
 
 import java.util.UUID
+import scala.util.Try
 
 /**
  * Created by t-bast on 08/10/2019.
@@ -139,7 +140,7 @@ object OutgoingPaymentPacket {
   /**
    * Build an encrypted onion packet from onion payloads and node public keys.
    */
-  private def buildOnion(packetPayloadLength: Int, nodes: Seq[PublicKey], payloads: Seq[PaymentOnion.PerHopPayload], associatedData: ByteVector32): Sphinx.PacketAndSecrets = {
+  private def buildOnion(packetPayloadLength: Int, nodes: Seq[PublicKey], payloads: Seq[PaymentOnion.PerHopPayload], associatedData: ByteVector32): Try[Sphinx.PacketAndSecrets] = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey()
     val payloadsBin: Seq[ByteVector] = payloads
@@ -186,18 +187,17 @@ object OutgoingPaymentPacket {
    *         - firstExpiry is the cltv expiry for the first htlc in the route
    *         - the onion to include in the HTLC
    */
-  private def buildPacket(packetPayloadLength: Int, paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
+  private def buildPacket(packetPayloadLength: Int, paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
     val (firstAmount, firstExpiry, payloads) = buildPayloads(hops.drop(1), finalPayload)
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
-    val onion = buildOnion(packetPayloadLength, nodes, payloads, paymentHash)
-    (firstAmount, firstExpiry, onion)
+    buildOnion(packetPayloadLength, nodes, payloads, paymentHash).map(onion => (firstAmount, firstExpiry, onion))
   }
 
-  def buildPaymentPacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) =
+  def buildPaymentPacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
     buildPacket(PaymentOnionCodecs.paymentOnionPayloadLength, paymentHash, hops, finalPayload)
 
-  def buildTrampolinePacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) =
+  def buildTrampolinePacket(paymentHash: ByteVector32, hops: Seq[Hop], finalPayload: PaymentOnion.FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] =
     buildPacket(PaymentOnionCodecs.trampolineOnionPayloadLength, paymentHash, hops, finalPayload)
 
   /**
@@ -212,7 +212,7 @@ object OutgoingPaymentPacket {
    *         - firstExpiry is the cltv expiry for the first trampoline node in the route
    *         - the trampoline onion to include in final payload of a normal onion
    */
-  def buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: Seq[NodeHop], finalPayload: PaymentOnion.FinalPayload): (MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets) = {
+  def buildTrampolineToLegacyPacket(invoice: PaymentRequest, hops: Seq[NodeHop], finalPayload: PaymentOnion.FinalPayload): Try[(MilliSatoshi, CltvExpiry, Sphinx.PacketAndSecrets)] = {
     // NB: the final payload will never reach the recipient, since the next-to-last node in the trampoline route will convert that to a non-trampoline payment.
     // We use the smallest final payload possible, otherwise we may overflow the trampoline onion size.
     val dummyFinalPayload = PaymentOnion.createSinglePartPayload(finalPayload.amount, finalPayload.expiry, finalPayload.paymentSecret, None)
@@ -227,8 +227,7 @@ object OutgoingPaymentPacket {
         (amount + hop.fee(amount), expiry + hop.cltvExpiryDelta, payload +: payloads)
     }
     val nodes = hops.map(_.nextNodeId)
-    val onion = buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, nodes, payloads, invoice.paymentHash)
-    (firstAmount, firstExpiry, onion)
+    buildOnion(PaymentOnionCodecs.trampolineOnionPayloadLength, nodes, payloads, invoice.paymentHash).map(onion => (firstAmount, firstExpiry, onion))
   }
 
   // @formatter:off
@@ -247,9 +246,11 @@ object OutgoingPaymentPacket {
    *
    * @return the command and the onion shared secrets (used to decrypt the error in case of payment failure)
    */
-  def buildCommand(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: PaymentOnion.FinalPayload): (CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)]) = {
-    val (firstAmount, firstExpiry, onion) = buildPaymentPacket(paymentHash, hops, finalPayload)
-    CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, Origin.Hot(replyTo, upstream), commit = true) -> onion.sharedSecrets
+  def buildCommand(replyTo: ActorRef, upstream: Upstream, paymentHash: ByteVector32, hops: Seq[ChannelHop], finalPayload: PaymentOnion.FinalPayload): Try[(CMD_ADD_HTLC, Seq[(ByteVector32, PublicKey)])] = {
+    buildPaymentPacket(paymentHash, hops, finalPayload).map {
+      case (firstAmount, firstExpiry, onion) =>
+        CMD_ADD_HTLC(replyTo, firstAmount, paymentHash, firstExpiry, onion.packet, Origin.Hot(replyTo, upstream), commit = true) -> onion.sharedSecrets
+    }
   }
 
   def buildHtlcFailure(nodeSecret: PrivateKey, reason: Either[ByteVector, FailureMessage], add: UpdateAddHtlc): Either[CannotExtractSharedSecret, ByteVector] = {

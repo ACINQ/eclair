@@ -33,6 +33,7 @@ import fr.acinq.eclair.wire.protocol._
 import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, MilliSatoshi, MilliSatoshiLong, NodeParams, randomBytes32}
 
 import java.util.UUID
+import scala.util.{Failure, Success, Try}
 
 /**
  * Created by PM on 29/08/2016.
@@ -85,25 +86,38 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, TrampolineLegacyAmountLessInvoice) :: Nil)
         case (trampolineFees, trampolineExpiryDelta) :: remainingAttempts =>
           log.info(s"sending trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
-          sendTrampolinePayment(paymentId, r, trampolineFees, trampolineExpiryDelta)
-          context become main(pending + (paymentId -> PendingPayment(sender(), remainingAttempts, r)))
+          sendTrampolinePayment(paymentId, r, trampolineFees, trampolineExpiryDelta) match {
+            case Success(_) =>
+              context become main(pending + (paymentId -> PendingPayment(sender(), remainingAttempts, r)))
+            case Failure(t) =>
+              log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
+              sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, t) :: Nil)
+          }
       }
 
     case pf: PaymentFailed => pending.get(pf.id).foreach(pp => {
+      val trampolineRoute = Seq(
+        NodeHop(nodeParams.nodeId, pp.r.trampolineNodeId, nodeParams.expiryDelta, 0 msat),
+        NodeHop(pp.r.trampolineNodeId, pp.r.recipientNodeId, pp.r.trampolineAttempts.last._2, pp.r.trampolineAttempts.last._1)
+      )
       val decryptedFailures = pf.failures.collect { case RemoteFailure(_, _, Sphinx.DecryptedFailurePacket(_, f)) => f }
       val shouldRetry = decryptedFailures.contains(TrampolineFeeInsufficient) || decryptedFailures.contains(TrampolineExpiryTooSoon)
       if (shouldRetry) {
         pp.remainingAttempts match {
           case (trampolineFees, trampolineExpiryDelta) :: remaining =>
             log.info(s"retrying trampoline payment with trampoline fees=$trampolineFees and expiry delta=$trampolineExpiryDelta")
-            sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta)
-            context become main(pending + (pf.id -> pp.copy(remainingAttempts = remaining)))
+            sendTrampolinePayment(pf.id, pp.r, trampolineFees, trampolineExpiryDelta) match {
+              case Success(_) =>
+                context become main(pending + (pf.id -> pp.copy(remainingAttempts = remaining)))
+              case Failure(t) =>
+                log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
+                val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, trampolineRoute, t)))
+                pp.sender ! localFailure
+                context.system.eventStream.publish(localFailure)
+                context become main(pending - pf.id)
+            }
           case Nil =>
             log.info("trampoline node couldn't find a route after all retries")
-            val trampolineRoute = Seq(
-              NodeHop(nodeParams.nodeId, pp.r.trampolineNodeId, nodeParams.expiryDelta, 0 msat),
-              NodeHop(pp.r.trampolineNodeId, pp.r.recipientNodeId, pp.r.trampolineAttempts.last._2, pp.r.trampolineAttempts.last._1)
-            )
             val localFailure = pf.copy(failures = Seq(LocalFailure(pp.r.recipientAmount, trampolineRoute, RouteNotFound)))
             pp.sender ! localFailure
             context.system.eventStream.publish(localFailure)
@@ -135,12 +149,17 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
           sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, PaymentSecretMissing) :: Nil)
         case trampoline :: recipient :: Nil =>
           log.info(s"sending trampoline payment to $recipient with trampoline=$trampoline, trampoline fees=${r.trampolineFees}, expiry delta=${r.trampolineExpiryDelta}")
-          // We generate a random secret for the payment to the first trampoline node.
-          val trampolineSecret = r.trampolineSecret.getOrElse(randomBytes32())
-          sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
-          val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
-          val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, trampoline, r.trampolineFees, r.trampolineExpiryDelta)
-          payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, r.paymentRequest.paymentMetadata, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
+          buildTrampolinePayment(r, trampoline, r.trampolineFees, r.trampolineExpiryDelta) match {
+            case Success((trampolineAmount, trampolineExpiry, trampolineOnion)) =>
+              // We generate a random secret for the payment to the first trampoline node.
+              val trampolineSecret = r.trampolineSecret.getOrElse(randomBytes32())
+              sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, Some(trampolineSecret))
+              val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
+              payFsm ! PaymentLifecycle.SendPaymentToRoute(sender(), Left(r.route), PaymentOnion.createMultiPartPayload(r.amount, trampolineAmount, trampolineExpiry, trampolineSecret, r.paymentRequest.paymentMetadata, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion))), r.paymentRequest.routingInfo)
+            case Failure(t) =>
+              log.warning("cannot send outgoing trampoline payment: {}", t.getMessage)
+              sender() ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, t) :: Nil)
+          }
         case Nil =>
           sender() ! SendPaymentToRouteResponse(paymentId, parentPaymentId, None)
           val payFsm = outgoingPaymentFactory.spawnOutgoingPayment(context, paymentCfg)
@@ -150,7 +169,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       }
   }
 
-  private def buildTrampolinePayment(r: SendRequestedPayment, trampolineNodeId: PublicKey, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): (MilliSatoshi, CltvExpiry, OnionRoutingPacket) = {
+  private def buildTrampolinePayment(r: SendRequestedPayment, trampolineNodeId: PublicKey, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): Try[(MilliSatoshi, CltvExpiry, OnionRoutingPacket)] = {
     val trampolineRoute = Seq(
       NodeHop(nodeParams.nodeId, trampolineNodeId, nodeParams.expiryDelta, 0 msat),
       NodeHop(trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees) // for now we only use a single trampoline hop
@@ -161,21 +180,25 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       PaymentOnion.createSinglePartPayload(r.recipientAmount, r.finalExpiry(nodeParams.currentBlockHeight), r.paymentRequest.paymentSecret.get, r.paymentRequest.paymentMetadata)
     }
     // We assume that the trampoline node supports multi-part payments (it should).
-    val (trampolineAmount, trampolineExpiry, trampolineOnion) = if (r.paymentRequest.features.allowTrampoline) {
+    val trampolinePacket_opt = if (r.paymentRequest.features.allowTrampoline) {
       OutgoingPaymentPacket.buildTrampolinePacket(r.paymentHash, trampolineRoute, finalPayload)
     } else {
       OutgoingPaymentPacket.buildTrampolineToLegacyPacket(r.paymentRequest, trampolineRoute, finalPayload)
     }
-    (trampolineAmount, trampolineExpiry, trampolineOnion.packet)
+    trampolinePacket_opt.map {
+      case (trampolineAmount, trampolineExpiry, trampolineOnion) => (trampolineAmount, trampolineExpiry, trampolineOnion.packet)
+    }
   }
 
-  private def sendTrampolinePayment(paymentId: UUID, r: SendTrampolinePayment, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): Unit = {
+  private def sendTrampolinePayment(paymentId: UUID, r: SendTrampolinePayment, trampolineFees: MilliSatoshi, trampolineExpiryDelta: CltvExpiryDelta): Try[Unit] = {
     val paymentCfg = SendPaymentConfig(paymentId, paymentId, None, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), Some(r.paymentRequest), storeInDb = true, publishEvent = false, recordPathFindingMetrics = true, Seq(NodeHop(r.trampolineNodeId, r.recipientNodeId, trampolineExpiryDelta, trampolineFees)))
     // We generate a random secret for this payment to avoid leaking the invoice secret to the first trampoline node.
     val trampolineSecret = randomBytes32()
-    val (trampolineAmount, trampolineExpiry, trampolineOnion) = buildTrampolinePayment(r, r.trampolineNodeId, trampolineFees, trampolineExpiryDelta)
-    val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
-    fsm ! SendMultiPartPayment(self, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, nodeParams.maxPaymentAttempts, r.paymentRequest.paymentMetadata, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
+    buildTrampolinePayment(r, r.trampolineNodeId, trampolineFees, trampolineExpiryDelta).map {
+      case (trampolineAmount, trampolineExpiry, trampolineOnion) =>
+        val fsm = outgoingPaymentFactory.spawnOutgoingMultiPartPayment(context, paymentCfg)
+        fsm ! SendMultiPartPayment(self, trampolineSecret, r.trampolineNodeId, trampolineAmount, trampolineExpiry, nodeParams.maxPaymentAttempts, r.paymentRequest.paymentMetadata, r.paymentRequest.routingInfo, r.routeParams, Seq(OnionPaymentPayloadTlv.TrampolineOnion(trampolineOnion)))
+    }
   }
 
 }
