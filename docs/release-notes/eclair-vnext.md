@@ -90,6 +90,13 @@ The detailed balance json format has been slightly updated for channels in state
 Amounts corresponding to incoming htlcs for which we knew the preimage were previously included in `toLocal`, they are
 now grouped with outgoing htlcs amounts and the field has been renamed from `htlcOut` to `htlcs`.
 
+#### `getsentinfo`
+
+The `getsentinfo` API has been updated to avoid returning an empty array while a multi-part payment is starting (#2126).
+While a payment is still pending, `getsentinfo` will now return an additional "virtual" entry that summarizes the whole payment.
+This entry uses the same value for `id` and `parentId`, which makes it easy to detect it.
+Once the payment is complete, this entry will be removed (unless it's the only entry, which can happen when there are no routes available to send the payment).
+
 #### Miscellaneous
 
 This release contains many other API updates:
