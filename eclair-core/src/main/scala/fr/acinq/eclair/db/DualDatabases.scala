@@ -361,6 +361,11 @@ case class DualPaymentsDb(sqlite: SqlitePaymentsDb, postgres: PgPaymentsDb) exte
     sqlite.updateOutgoingPayment(paymentResult)
   }
 
+  override def completeOutgoingPayment(parentId: UUID): Unit = {
+    runAsync(postgres.completeOutgoingPayment(parentId))
+    sqlite.completeOutgoingPayment(parentId)
+  }
+
   override def getOutgoingPayment(id: UUID): Option[OutgoingPayment] = {
     runAsync(postgres.getOutgoingPayment(id))
     sqlite.getOutgoingPayment(id)

@@ -514,6 +514,43 @@ class PaymentsDbSpec extends AnyFunSuite {
     }
   }
 
+  test("complete outgoing payments") {
+    forAllDbs { dbs =>
+      val db = dbs.payments
+
+      // The payment state machine inserts a dummy row for the whole payment, to ensure that there is something in the DB
+      // to indicate that a payment is being attempted.
+      val parentIdWithChildren = UUID.randomUUID()
+      val dummyPaymentWithChildren = OutgoingPayment(parentIdWithChildren, parentIdWithChildren, None, paymentHash1, PaymentType.Standard, 1200 msat, 1200 msat, dave, 100 unixms, None, OutgoingPaymentStatus.Pending)
+      val s1 = OutgoingPayment(UUID.randomUUID(), parentIdWithChildren, None, paymentHash1, PaymentType.Standard, 123 msat, 600 msat, dave, 100 unixms, None, OutgoingPaymentStatus.Pending)
+      val s2 = OutgoingPayment(UUID.randomUUID(), parentIdWithChildren, Some("1"), paymentHash1, PaymentType.SwapOut, 456 msat, 600 msat, dave, 200 unixms, None, OutgoingPaymentStatus.Pending)
+      val parentIdNoChildren = UUID.randomUUID()
+      val dummyPaymentNoChildren = OutgoingPayment(parentIdNoChildren, parentIdNoChildren, None, paymentHash2, PaymentType.Standard, 5000 msat, 5000 msat, carol, 100 unixms, None, OutgoingPaymentStatus.Pending)
+
+      db.addOutgoingPayment(dummyPaymentWithChildren)
+      db.addOutgoingPayment(s1)
+      db.addOutgoingPayment(s2)
+      db.addOutgoingPayment(dummyPaymentNoChildren)
+
+      assert(db.listOutgoingPayments(parentIdWithChildren).toSet === Set(dummyPaymentWithChildren, s1, s2))
+      assert(db.listOutgoingPayments(paymentHash1).toSet === Set(dummyPaymentWithChildren, s1, s2))
+      assert(db.listOutgoingPayments(parentIdNoChildren).toSet === Set(dummyPaymentNoChildren))
+      assert(db.listOutgoingPayments(paymentHash2).toSet === Set(dummyPaymentNoChildren))
+
+      // When child rows are available, we delete the dummy row.
+      db.completeOutgoingPayment(parentIdWithChildren)
+      db.completeOutgoingPayment(parentIdWithChildren) // calls are idempotent
+      assert(db.listOutgoingPayments(parentIdWithChildren).toSet === Set(s1, s2))
+      assert(db.listOutgoingPayments(paymentHash1).toSet === Set(s1, s2))
+
+      // When no child rows are available, we keep the dummy row.
+      db.completeOutgoingPayment(parentIdNoChildren)
+      db.completeOutgoingPayment(parentIdNoChildren) // calls are idempotent
+      assert(db.listOutgoingPayments(parentIdNoChildren).toSet === Set(dummyPaymentNoChildren))
+      assert(db.listOutgoingPayments(paymentHash2).toSet === Set(dummyPaymentNoChildren))
+    }
+  }
+
   test("high level payments overview") {
     val db = new SqlitePaymentsDb(TestDatabases.sqliteInMemory())
 

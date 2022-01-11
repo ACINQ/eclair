@@ -160,6 +160,15 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
+  override def completeOutgoingPayment(parentId: UUID): Unit = withMetrics("payments/complete-outgoing-payment", DbBackends.Sqlite) {
+    using(sqlite.prepareStatement("DELETE FROM sent_payments WHERE id = ? AND EXISTS(SELECT 1 FROM sent_payments WHERE parent_id = ? AND id != ? LIMIT 1)")) { statement =>
+      statement.setString(1, parentId.toString)
+      statement.setString(2, parentId.toString)
+      statement.setString(3, parentId.toString)
+      statement.executeUpdate()
+    }
+  }
+
   private def parseOutgoingPayment(rs: ResultSet): OutgoingPayment = {
     val status = buildOutgoingPaymentStatus(
       rs.getByteVector32Nullable("payment_preimage"),

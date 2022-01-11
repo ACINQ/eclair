@@ -63,6 +63,12 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       val routeParams = r.routeParams.copy(randomize = false) // we don't randomize the first attempt, regardless of configuration choices
       val maxFee = routeParams.getMaxFee(r.totalAmount)
       log.debug("sending {} with maximum fee {}", r.totalAmount, maxFee)
+      if (cfg.storeInDb) {
+        // We must have an entry in the DB as soon as possible, otherwise users won't know that eclair is currently
+        // attempting the payment.
+        val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.paymentRequest, OutgoingPaymentStatus.Pending)
+        nodeParams.db.payments.addOutgoingPayment(dummyPayment)
+      }
       val d = PaymentProgress(r, r.maxAttempts, Map.empty, Ignore.empty, Nil)
       router ! createRouteRequest(nodeParams, r.totalAmount, maxFee, routeParams, d, cfg)
       goto(WAIT_FOR_ROUTES) using d
@@ -102,13 +108,6 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
       } else {
         val failure = LocalFailure(toSend, Nil, t)
         Metrics.PaymentError.withTag(Tags.Failure, Tags.FailureType(failure)).increment()
-        if (cfg.storeInDb && d.pending.isEmpty && d.failures.isEmpty) {
-          // In cases where we fail early (router error during the first attempt), the DB won't have an entry for that
-          // payment, which may be confusing for users.
-          val dummyPayment = OutgoingPayment(id, cfg.parentId, cfg.externalId, paymentHash, PaymentType.Standard, cfg.recipientAmount, cfg.recipientAmount, cfg.recipientNodeId, TimestampMilli.now(), cfg.paymentRequest, OutgoingPaymentStatus.Pending)
-          nodeParams.db.payments.addOutgoingPayment(dummyPayment)
-          nodeParams.db.payments.updateOutgoingPayment(PaymentFailed(id, paymentHash, failure :: Nil))
-        }
         gotoAbortedOrStop(PaymentAborted(d.request, d.failures :+ failure, d.pending.keySet))
       }
 
@@ -231,9 +230,21 @@ class MultiPartPaymentLifecycle(nodeParams: NodeParams, cfg: SendPaymentConfig, 
     event match {
       case Left(paymentFailed) =>
         log.warning("multi-part payment failed")
+        if (cfg.storeInDb) {
+          // In some cases we may fail without sending any outgoing child payment (e.g. if we can't find a route).
+          // When that happens, we still want to have a global entry in the DB for that payment, otherwise it would be
+          // very confusing for users who wouldn't have any data about the failed payment.
+          nodeParams.db.payments.updateOutgoingPayment(paymentFailed)
+          nodeParams.db.payments.completeOutgoingPayment(paymentFailed.id)
+        }
         reply(request.replyTo, paymentFailed)
       case Right(paymentSent) =>
         log.info("multi-part payment succeeded")
+        if (cfg.storeInDb) {
+          // If the payment succeeds, that means we have entries for child payments in the DB, so we never need to
+          // insert a global entry.
+          nodeParams.db.payments.completeOutgoingPayment(paymentSent.id)
+        }
         reply(request.replyTo, paymentSent)
     }
     val status = event match {

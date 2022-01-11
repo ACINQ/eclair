@@ -152,7 +152,8 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
               nodeParams.db.payments.updateOutgoingPayment(PaymentSent(p.parentId, fulfilledHtlc.paymentHash, paymentPreimage, p.recipientAmount, p.recipientNodeId, PaymentSent.PartialPayment(id, fulfilledHtlc.amountMsat, feesPaid, fulfilledHtlc.channelId, None) :: Nil))
               // If all downstream HTLCs are now resolved, we can emit the payment event.
               val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
-              if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending)) {
+              if (!payments.exists(p => p.status == OutgoingPaymentStatus.Pending && p.id != p.parentId)) {
+                nodeParams.db.payments.completeOutgoingPayment(p.parentId)
                 val succeeded = payments.collect {
                   case OutgoingPayment(id, _, _, _, _, amount, _, _, _, _, OutgoingPaymentStatus.Succeeded(_, feesPaid, _, completedAt)) =>
                     PaymentSent.PartialPayment(id, amount, feesPaid, ByteVector32.Zeroes, None, completedAt)
@@ -226,8 +227,10 @@ class PostRestartHtlcCleaner(nodeParams: NodeParams, register: ActorRef, initial
             origin match {
               case Origin.LocalCold(id) => nodeParams.db.payments.getOutgoingPayment(id).foreach(p => {
                 val payments = nodeParams.db.payments.listOutgoingPayments(p.parentId)
-                if (payments.forall(_.status.isInstanceOf[OutgoingPaymentStatus.Failed])) {
+                // NB: we need to ignore the dummy global entry, which should still be marked as pending.
+                if (payments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed] || p.id == p.parentId)) {
                   log.warning(s"payment failed for paymentHash=${failedHtlc.paymentHash}")
+                  nodeParams.db.payments.completeOutgoingPayment(p.parentId)
                   context.system.eventStream.publish(PaymentFailed(p.parentId, failedHtlc.paymentHash, Nil))
                 }
               })

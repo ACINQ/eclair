@@ -229,20 +229,29 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     eventListener.expectNoMessage(100 millis)
     // This is a multi-part payment, the second part is still pending.
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status === OutgoingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.listOutgoingPayments(testCase.parentId).exists(p => p.id === p.parentId))
 
     sender.send(relayer, testCase.fails(2))
     val e1 = eventListener.expectMsgType[PaymentFailed]
     assert(e1.id === testCase.parentId)
     assert(e1.paymentHash === paymentHash2)
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(1)).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    val childResult1 = nodeParams.db.payments.getOutgoingPayment(testCase.childIds(1)).get
+    assert(childResult1.status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    assert(childResult1.id !== childResult1.parentId)
+    val childResult2 = nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get
+    assert(childResult2.status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    assert(childResult2.id !== childResult2.parentId)
+    assert(nodeParams.db.payments.listOutgoingPayments(testCase.parentId).toSet === Set(childResult1, childResult2))
+    // The single-part payment is still pending.
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status === OutgoingPaymentStatus.Pending)
 
     sender.send(relayer, testCase.fails.head)
     val e2 = eventListener.expectMsgType[PaymentFailed]
     assert(e2.id === testCase.childIds.head)
     assert(e2.paymentHash === paymentHash1)
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    val childResult3 = nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get
+    assert(childResult3.status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    assert(nodeParams.db.payments.listOutgoingPayments(paymentHash1).toSet === Set(childResult3))
 
     register.expectNoMessage(100 millis)
   }
@@ -258,6 +267,7 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     eventListener.expectNoMessage(100 millis)
     // This is a multi-part payment, the second part is still pending.
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status === OutgoingPaymentStatus.Pending)
+    assert(nodeParams.db.payments.listOutgoingPayments(testCase.parentId).exists(p => p.id === p.parentId))
 
     sender.send(relayer, testCase.fulfills(2))
     val e1 = eventListener.expectMsgType[PaymentSent]
@@ -267,8 +277,14 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     assert(e1.parts.length === 2)
     assert(e1.amountWithFees === 2834.msat)
     assert(e1.recipientAmount === 2500.msat)
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(1)).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    val childResult1 = nodeParams.db.payments.getOutgoingPayment(testCase.childIds(1)).get
+    assert(childResult1.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    assert(childResult1.id !== childResult1.parentId)
+    val childResult2 = nodeParams.db.payments.getOutgoingPayment(testCase.childIds(2)).get
+    assert(childResult2.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    assert(childResult2.id !== childResult2.parentId)
+    assert(nodeParams.db.payments.listOutgoingPayments(testCase.parentId).toSet === Set(childResult1, childResult2))
+    // The single-part payment is still pending.
     assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status === OutgoingPaymentStatus.Pending)
 
     sender.send(relayer, testCase.fulfills.head)
@@ -278,7 +294,9 @@ class PostRestartHtlcCleanerSpec extends TestKitBaseClass with FixtureAnyFunSuit
     assert(e2.paymentHash === paymentHash1)
     assert(e2.parts.length === 1)
     assert(e2.recipientAmount === 561.msat)
-    assert(nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    val childResult3 = nodeParams.db.payments.getOutgoingPayment(testCase.childIds.head).get
+    assert(childResult3.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    assert(nodeParams.db.payments.listOutgoingPayments(paymentHash1).toSet === Set(childResult3))
 
     register.expectNoMessage(100 millis)
   }
@@ -714,7 +732,10 @@ object PostRestartHtlcCleanerSpec {
     val origin3 = Origin.LocalCold(id3)
 
     // Prepare channels and payment state before restart.
+    // The first payment is a single-part payment.
+    // The second payment is a multi-part payment, which contains a dummy entry in the DB that will be cleaned up when the payment completes.
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id1, id1, None, paymentHash1, PaymentType.Standard, add1.amountMsat, add1.amountMsat, c, 0 unixms, None, OutgoingPaymentStatus.Pending))
+    nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(parentId, parentId, None, paymentHash2, PaymentType.Standard, add2.amountMsat + add3.amountMsat, 2500 msat, c, 0 unixms, None, OutgoingPaymentStatus.Pending))
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id2, parentId, None, paymentHash2, PaymentType.Standard, add2.amountMsat, 2500 msat, c, 0 unixms, None, OutgoingPaymentStatus.Pending))
     nodeParams.db.payments.addOutgoingPayment(OutgoingPayment(id3, parentId, None, paymentHash2, PaymentType.Standard, add3.amountMsat, 2500 msat, c, 0 unixms, None, OutgoingPaymentStatus.Pending))
     nodeParams.db.channels.addOrUpdateChannel(ChannelCodecsSpec.makeChannelDataNormal(

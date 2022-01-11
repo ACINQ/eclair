@@ -432,6 +432,9 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     val payment = SendMultiPartPayment(sender.ref, randomBytes32(), e, finalAmount, expiry, 5, None, routeParams = routeParams)
     sender.send(payFsm, payment)
     router.expectMsgType[RouteRequest]
+    val Some(pending) = nodeParams.db.payments.getOutgoingPayment(cfg.id)
+    assert(pending.id === pending.parentId) // this is a "dummy" row since there are no child payments
+    assert(pending.status === OutgoingPaymentStatus.Pending)
     router.send(payFsm, Status.Failure(RouteNotFound))
 
     val result = sender.expectMsgType[PaymentFailed]
@@ -439,14 +442,16 @@ class MultiPartPaymentLifecycleSpec extends TestKitBaseClass with FixtureAnyFunS
     assert(result.paymentHash === paymentHash)
     assert(result.failures === Seq(LocalFailure(finalAmount, Nil, RouteNotFound)))
 
-    val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(cfg.id)
-    assert(outgoing.status.isInstanceOf[OutgoingPaymentStatus.Failed])
-    assert(outgoing.status.asInstanceOf[OutgoingPaymentStatus.Failed].failures === Seq(FailureSummary(FailureType.LOCAL, RouteNotFound.getMessage, Nil, None)))
-
     sender.expectTerminated(payFsm)
     sender.expectNoMessage(100 millis)
     router.expectNoMessage(100 millis)
     childPayFsm.expectNoMessage(100 millis)
+
+    val Some(outgoing) = nodeParams.db.payments.getOutgoingPayment(cfg.id)
+    assert(outgoing.id === outgoing.parentId) // this is a "dummy" row since there are no child payments
+    assert(outgoing.status.isInstanceOf[OutgoingPaymentStatus.Failed])
+    assert(outgoing.status.asInstanceOf[OutgoingPaymentStatus.Failed].failures === Seq(FailureSummary(FailureType.LOCAL, RouteNotFound.getMessage, Nil, None)))
+    assert(nodeParams.db.payments.listOutgoingPayments(cfg.id).toSet === Set(outgoing))
 
     val metrics = metricsListener.expectMsgType[PathFindingExperimentMetrics]
     assert(metrics.status == "FAILURE")

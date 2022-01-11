@@ -73,6 +73,9 @@ trait OutgoingPaymentsDb {
   /** Update the status of the payment in case of failure. */
   def updateOutgoingPayment(paymentResult: PaymentFailed): Unit
 
+  /** Complete an outgoing multi-part payment by removing any dummy global entry when child payments exist. */
+  def completeOutgoingPayment(parentId: UUID): Unit
+
   /** Get an outgoing payment attempt. */
   def getOutgoingPayment(id: UUID): Option[OutgoingPayment]
 

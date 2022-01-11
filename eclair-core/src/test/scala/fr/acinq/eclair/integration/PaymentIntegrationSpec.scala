@@ -362,12 +362,15 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     assert(paymentSent.parts.forall(p => p.id != paymentSent.id), paymentSent)
     assert(paymentSent.parts.forall(p => p.route.isDefined), paymentSent)
 
-    val paymentParts = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId).filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
-    assert(paymentParts.length == paymentSent.parts.length, paymentParts)
-    assert(paymentParts.map(_.amount).sum === amount, paymentParts)
-    assert(paymentParts.forall(p => p.parentId == paymentId), paymentParts)
-    assert(paymentParts.forall(p => p.parentId != p.id), paymentParts)
-    assert(paymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat), paymentParts)
+    val paymentParts = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId)
+    assert(paymentParts.forall(p => p.status != OutgoingPaymentStatus.Pending))
+    assert(paymentParts.forall(p => p.id != p.parentId))
+    val successfulPaymentParts = paymentParts.filter(_.status.isInstanceOf[OutgoingPaymentStatus.Succeeded])
+    assert(successfulPaymentParts.length == paymentSent.parts.length, successfulPaymentParts)
+    assert(successfulPaymentParts.map(_.amount).sum === amount, successfulPaymentParts)
+    assert(successfulPaymentParts.forall(p => p.parentId == paymentId), successfulPaymentParts)
+    assert(successfulPaymentParts.forall(p => p.parentId != p.id), successfulPaymentParts)
+    assert(successfulPaymentParts.forall(p => p.status.asInstanceOf[OutgoingPaymentStatus.Succeeded].feesPaid > 0.msat), successfulPaymentParts)
 
     awaitCond(nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now()).nonEmpty)
     val sent = nodes("B").nodeParams.db.audit.listSent(start, TimestampMilli.now())
@@ -628,6 +631,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val outgoingPayments = nodes("B").nodeParams.db.payments.listOutgoingPayments(paymentId)
     assert(outgoingPayments.nonEmpty, outgoingPayments)
     assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
+    assert(outgoingPayments.forall(p => p.id != p.parentId))
   }
 
   test("send a trampoline payment A->D (temporary remote failure at trampoline)") {
@@ -649,6 +653,7 @@ class PaymentIntegrationSpec extends IntegrationSpec {
     val outgoingPayments = nodes("A").nodeParams.db.payments.listOutgoingPayments(paymentId)
     assert(outgoingPayments.nonEmpty, outgoingPayments)
     assert(outgoingPayments.forall(p => p.status.isInstanceOf[OutgoingPaymentStatus.Failed]), outgoingPayments)
+    assert(outgoingPayments.forall(p => p.id != p.parentId))
   }
 
   test("generate and validate lots of channels") {
