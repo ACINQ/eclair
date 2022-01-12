@@ -1018,8 +1018,8 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     // then we manually replace alice's state with an older one
     alice.setState(OFFLINE, oldStateData)
     // then we reconnect them
-    val aliceInit = Init(TestConstants.Alice.nodeParams.features)
-    val bobInit = Init(TestConstants.Bob.nodeParams.features)
+    val aliceInit = Init(TestConstants.Alice.nodeParams.features.initFeatures())
+    val bobInit = Init(TestConstants.Bob.nodeParams.features.initFeatures())
     alice ! INPUT_RECONNECTED(alice2bob.ref, aliceInit, bobInit)
     bob ! INPUT_RECONNECTED(bob2alice.ref, bobInit, aliceInit)
     // peers exchange channel_reestablish messages

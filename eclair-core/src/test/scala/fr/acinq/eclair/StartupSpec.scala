@@ -217,9 +217,9 @@ class StartupSpec extends AnyFunSuite {
     val defaultNodeFeatures = nodeParams.initFeaturesFor(PublicKey(ByteVector.fromValidHex("02cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")))
     // Some features should never be sent in init messages.
     assert(nodeParams.features.hasFeature(PaymentMetadata))
-    assert(!perNodeFeaturesA.hasFeature(PaymentMetadata))
-    assert(!perNodeFeaturesB.hasFeature(PaymentMetadata))
-    assert(!defaultNodeFeatures.hasFeature(PaymentMetadata))
+    assert(!perNodeFeaturesA.unscoped().hasFeature(PaymentMetadata))
+    assert(!perNodeFeaturesB.unscoped().hasFeature(PaymentMetadata))
+    assert(!defaultNodeFeatures.unscoped().hasFeature(PaymentMetadata))
   }
 
   test("override feerate mismatch tolerance") {

@@ -28,7 +28,7 @@ import fr.acinq.eclair.remote.EclairInternalsSerializer.RemoteTypes
 import fr.acinq.eclair.router.Router._
 import fr.acinq.eclair.wire.protocol
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{FSMDiagnosticActorLogging, Features, Logs, TimestampMilli, TimestampSecond}
+import fr.acinq.eclair.{FSMDiagnosticActorLogging, FeatureScope, Features, InitFeature, Logs, TimestampMilli, TimestampSecond}
 import scodec.Attempt
 import scodec.bits.ByteVector
 
@@ -556,7 +556,7 @@ object PeerConnection {
     def outgoing: Boolean = remoteNodeId_opt.isDefined // if this is an outgoing connection, we know the node id in advance
   }
   case class Authenticated(peerConnection: ActorRef, remoteNodeId: PublicKey) extends RemoteTypes
-  case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features, doSync: Boolean) extends RemoteTypes
+  case class InitializeConnection(peer: ActorRef, chainHash: ByteVector32, features: Features[InitFeature], doSync: Boolean) extends RemoteTypes
   case class ConnectionReady(peerConnection: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, localInit: protocol.Init, remoteInit: protocol.Init) extends RemoteTypes
 
   sealed trait ConnectionResult extends RemoteTypes

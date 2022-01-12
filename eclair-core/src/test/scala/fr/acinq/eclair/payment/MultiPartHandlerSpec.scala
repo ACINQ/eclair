@@ -32,7 +32,7 @@ import fr.acinq.eclair.payment.receive.MultiPartPaymentFSM.HtlcPart
 import fr.acinq.eclair.payment.receive.{MultiPartPaymentFSM, PaymentHandler}
 import fr.acinq.eclair.wire.protocol.PaymentOnion.FinalTlvPayload
 import fr.acinq.eclair.wire.protocol._
-import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32, randomKey}
+import fr.acinq.eclair.{CltvExpiry, CltvExpiryDelta, FeatureScope, Features, MilliSatoshiLong, NodeParams, ShortChannelId, TestConstants, TestKitBaseClass, TimestampMilliLong, randomBytes32, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
 import scodec.bits.HexStringSyntax
@@ -46,18 +46,18 @@ import scala.concurrent.duration._
 
 class MultiPartHandlerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
 
-  val featuresWithoutMpp = Features(
+  val featuresWithoutMpp = Features[FeatureScope](
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
   )
 
-  val featuresWithMpp = Features(
+  val featuresWithMpp = Features[FeatureScope](
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     BasicMultiPartPayment -> Optional
   )
 
-  val featuresWithKeySend = Features(
+  val featuresWithKeySend = Features[FeatureScope](
     VariableLengthOnion -> Mandatory,
     PaymentSecret -> Mandatory,
     KeySend -> Optional

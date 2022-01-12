@@ -55,6 +55,11 @@ object TestConstants {
     val mandatory = 50000
   }
 
+  case object LowTestFeature extends Feature with InitFeature with NodeFeature {
+    val rfcName = "low_test_feature"
+    val mandatory = 600
+  }
+
   val pluginParams: CustomFeaturePlugin = new CustomFeaturePlugin {
     // @formatter:off
     override def messageTags: Set[Int] = Set(60003)
@@ -84,8 +89,8 @@ object TestConstants {
       color = Color(1, 2, 3),
       publicAddresses = NodeAddress.fromParts("localhost", 9731).get :: Nil,
       torAddress_opt = None,
-      features = Features(
-        Map[Feature, FeatureSupport](
+      features = Features[FeatureScope](
+        Map[Feature with FeatureScope, FeatureSupport](
           DataLossProtect -> Optional,
           ChannelRangeQueries -> Optional,
           ChannelRangeQueriesExtended -> Optional,
@@ -94,7 +99,7 @@ object TestConstants {
           BasicMultiPartPayment -> Optional,
           PaymentMetadata -> Optional,
         ),
-        Set(UnknownFeature(TestFeature.optional))
+        Set(UnknownFeature(TestFeature.optional), UnknownFeature(LowTestFeature.optional))
       ),
       pluginParams = List(pluginParams),
       overrideFeatures = Map.empty,
@@ -199,7 +204,7 @@ object TestConstants {
 
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
-      nodeParams.features,
+      nodeParams.features.initFeatures(),
       Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
       isFunder = true,
@@ -334,7 +339,7 @@ object TestConstants {
 
     def channelParams: LocalParams = Peer.makeChannelParams(
       nodeParams,
-      nodeParams.features,
+      nodeParams.features.initFeatures(),
       Script.write(Script.pay2wpkh(randomKey().publicKey)),
       None,
       isFunder = false,

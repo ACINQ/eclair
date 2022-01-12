@@ -20,8 +20,9 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{Block, BtcDouble, ByteVector32, Crypto, MilliBtcDouble, SatoshiLong}
 import fr.acinq.eclair.FeatureSupport.{Mandatory, Optional}
 import fr.acinq.eclair.Features.{PaymentMetadata, PaymentSecret, _}
+import fr.acinq.eclair.TestConstants.LowTestFeature
 import fr.acinq.eclair.payment.Bolt11Invoice._
-import fr.acinq.eclair.{CltvExpiryDelta, Features, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion}
+import fr.acinq.eclair.{CltvExpiryDelta, Feature, FeatureSupport, Features, InvoiceFeature, MilliSatoshiLong, ShortChannelId, TestConstants, TimestampSecond, TimestampSecondLong, ToMilliSatoshiConversion, UnknownFeature}
 import org.scalatest.funsuite.AnyFunSuite
 import scodec.DecodeResult
 import scodec.bits._
@@ -269,7 +270,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
       assert(!pr.features.hasFeature(BasicMultiPartPayment))
       assert(pr.features.hasFeature(PaymentSecret, Some(Mandatory)))
       assert(!pr.features.hasFeature(TrampolinePayment))
-      assert(TestConstants.Alice.nodeParams.features.areSupported(pr.features))
+      assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(pr.features))
       assert(pr.sign(priv).toString === ref.toLowerCase)
     }
   }
@@ -289,7 +290,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(!pr.features.hasFeature(BasicMultiPartPayment))
     assert(pr.features.hasFeature(PaymentSecret, Some(Mandatory)))
     assert(!pr.features.hasFeature(TrampolinePayment))
-    assert(!TestConstants.Alice.nodeParams.features.areSupported(pr.features))
+    assert(!TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(pr.features))
     assert(pr.sign(priv).toString === ref)
   }
 
@@ -300,7 +301,7 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     assert(pr.amount_opt === Some(967878534 msat))
     assert(pr.paymentHash.bytes === hex"462264ede7e14047e9b249da94fefc47f41f7d02ee9b091815a5506bc8abf75f")
     assert(pr.features === Features(VariableLengthOnion -> Mandatory, PaymentSecret -> Mandatory))
-    assert(TestConstants.Alice.nodeParams.features.areSupported(pr.features))
+    assert(TestConstants.Alice.nodeParams.features.invoiceFeatures().areSupported(pr.features))
     assert(pr.timestamp === TimestampSecond(1572468703L))
     assert(pr.nodeId === PublicKey(hex"03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad"))
     assert(pr.description === Left("Blockstream Store: 88.85 USD for Blockstream Ledger Nano S x 1, \"Back In My Day\" Sticker x 2, \"I Got Lightning Working\" Sticker x 2 and 1 more items"))
@@ -445,8 +446,8 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     )
 
     for ((features, res) <- featureBits) {
-      val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features)
-      assert(Result(pr.features.hasFeature(BasicMultiPartPayment), pr.features.hasFeature(PaymentSecret, Some(Mandatory)), nodeParams.features.areSupported(pr.features)) === res)
+      val pr = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = features.invoiceFeatures())
+      assert(Result(pr.features.hasFeature(BasicMultiPartPayment), pr.features.hasFeature(PaymentSecret, Some(Mandatory)), nodeParams.features.invoiceFeatures().areSupported(pr.features)) === res)
       assert(Bolt11Invoice.fromString(pr.toString) === pr)
     }
   }
@@ -574,5 +575,13 @@ class Bolt11InvoiceSpec extends AnyFunSuite {
     for (req <- requests) {
       assert(Bolt11Invoice.fromString(req).toString == req)
     }
+  }
+
+  test("large unknown feature"){
+    val invoice = Bolt11Invoice(Block.LivenetGenesisBlock.hash, Some(123 msat), ByteVector32.One, priv, Left("Some invoice"), CltvExpiryDelta(18), features = TestConstants.Alice.nodeParams.features.invoiceFeatures())
+    assert(invoice.features === Features[InvoiceFeature](
+      Map[Feature with InvoiceFeature, FeatureSupport](PaymentSecret -> Mandatory, BasicMultiPartPayment -> Optional, PaymentMetadata -> Optional, VariableLengthOnion -> Mandatory),
+      Set(UnknownFeature(LowTestFeature.optional))
+    ))
   }
 }

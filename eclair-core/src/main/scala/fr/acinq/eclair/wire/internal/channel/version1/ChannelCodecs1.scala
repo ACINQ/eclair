@@ -18,7 +18,6 @@ package fr.acinq.eclair.wire.internal.channel.version1
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.BlockHeight
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -28,6 +27,7 @@ import fr.acinq.eclair.wire.internal.channel.version0.ChannelTypes0.{HtlcTxAndSi
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol._
+import fr.acinq.eclair.{BlockHeight, Features, InitFeature}
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -59,7 +59,7 @@ private[channel] object ChannelCodecs1 {
         ("isFunder" | bool8) ::
         ("defaultFinalScriptPubKey" | lengthDelimited(bytes)) ::
         ("walletStaticPaymentBasepoint" | optional(provide(channelVersion.paysDirectlyToWallet), publicKey)) ::
-        ("features" | combinedFeaturesCodec)).as[LocalParams]
+        ("features" | combinedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped()))).as[LocalParams]
 
     val remoteParamsCodec: Codec[RemoteParams] = (
       ("nodeId" | publicKey) ::
@@ -74,7 +74,7 @@ private[channel] object ChannelCodecs1 {
         ("paymentBasepoint" | publicKey) ::
         ("delayedPaymentBasepoint" | publicKey) ::
         ("htlcBasepoint" | publicKey) ::
-        ("features" | combinedFeaturesCodec) ::
+        ("features" | combinedFeaturesCodec.xmap[Features[InitFeature]](_.initFeatures(), _.unscoped())) ::
         ("shutdownScript" | provide[Option[ByteVector]](None))).as[RemoteParams]
 
     def setCodec[T](codec: Codec[T]): Codec[Set[T]] = listOfN(uint16, codec).xmap(_.toSet, _.toList)

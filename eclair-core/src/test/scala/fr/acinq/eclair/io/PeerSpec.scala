@@ -78,7 +78,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
       .modify(_.autoReconnect).setToIf(test.tags.contains("auto_reconnect"))(true)
 
     if (test.tags.contains("with_node_announcement")) {
-      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
+      val bobAnnouncement = NodeAnnouncement(randomBytes64(), Features.empty.nodeAnnouncementFeatures(), 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", fakeIPAddress :: Nil)
       aliceParams.db.network.addNode(bobAnnouncement)
     }
 
@@ -86,10 +86,10 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     withFixture(test.toNoArgTest(FixtureParam(aliceParams, remoteNodeId, peer, peerConnection, channel, switchboard)))
   }
 
-  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features)): Unit = {
+  def connect(remoteNodeId: PublicKey, peer: TestFSMRef[Peer.State, Peer.Data, Peer], peerConnection: TestProbe, switchboard: TestProbe, channels: Set[HasCommitments] = Set.empty, remoteInit: protocol.Init = protocol.Init(Bob.nodeParams.features.initFeatures())): Unit = {
     // let's simulate a connection
     switchboard.send(peer, Peer.Init(channels))
-    val localInit = protocol.Init(peer.underlyingActor.nodeParams.features)
+    val localInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     switchboard.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, localInit, remoteInit))
     val probe = TestProbe()
     probe.send(peer, Peer.GetPeerInfo(Some(probe.ref.toTyped)))
@@ -147,7 +147,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     val mockAddress = NodeAddress.fromParts(serverAddress.getHostName, serverAddress.getPort).get
 
     // we put the server address in the node db
-    val ann = NodeAnnouncement(randomBytes64(), Features.empty, 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
+    val ann = NodeAnnouncement(randomBytes64(), Features.empty.nodeAnnouncementFeatures(), 1 unixsec, Bob.nodeParams.nodeId, Color(100.toByte, 200.toByte, 300.toByte), "node-alias", mockAddress :: Nil)
     nodeParams.db.network.addNode(ann)
 
     val probe = TestProbe()
@@ -257,7 +257,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     monitor.expectMsg(FSM.Transition(reconnectionTask, ReconnectionTask.WAITING, ReconnectionTask.CONNECTING))
 
     // we simulate a success
-    val dummyInit = protocol.Init(peer.underlyingActor.nodeParams.features)
+    val dummyInit = protocol.Init(peer.underlyingActor.nodeParams.features.initFeatures())
     probe.send(peer, PeerConnection.ConnectionReady(peerConnection.ref, remoteNodeId, fakeIPAddress.socketAddress, outgoing = true, dummyInit, dummyInit))
 
     // we make sure that the reconnection task has done a full circle
@@ -353,7 +353,7 @@ class PeerSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with Paralle
     }
     // They want to use a channel type we don't support yet.
     {
-      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features(Map[Feature, FeatureSupport](StaticRemoteKey -> Mandatory), Set(UnknownFeature(22)))))))
+      val open = createOpenChannelMessage(TlvStream[OpenChannelTlv](ChannelTlv.ChannelTypeTlv(UnsupportedChannelType(Features[InitFeature](Map[Feature with InitFeature, FeatureSupport](StaticRemoteKey -> Mandatory), Set(UnknownFeature(22)))))))
       peerConnection.send(peer, open)
       peerConnection.expectMsg(Error(open.temporaryChannelId, "invalid channel_type=0x401000, expected channel_type=standard"))
     }

@@ -55,7 +55,7 @@ class PaymentInitiator(nodeParams: NodeParams, outgoingPaymentFactory: PaymentIn
       val paymentCfg = SendPaymentConfig(paymentId, paymentId, r.externalId, r.paymentHash, r.recipientAmount, r.recipientNodeId, Upstream.Local(paymentId), Some(r.paymentRequest), storeInDb = true, publishEvent = true, recordPathFindingMetrics = true, Nil)
       val finalExpiry = r.finalExpiry(nodeParams.currentBlockHeight)
       r.paymentRequest.paymentSecret match {
-        case _ if !nodeParams.features.areSupported(r.paymentRequest.features) =>
+        case _ if !nodeParams.features.invoiceFeatures().areSupported(r.paymentRequest.features) =>
           replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, UnsupportedFeatures(r.paymentRequest.features)) :: Nil)
         case None =>
           replyTo ! PaymentFailed(paymentId, r.paymentHash, LocalFailure(r.recipientAmount, Nil, PaymentSecretMissing) :: Nil)
