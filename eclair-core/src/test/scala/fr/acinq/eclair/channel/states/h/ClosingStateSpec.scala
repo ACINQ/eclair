@@ -777,7 +777,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val publishHtlcSuccessTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishHtlcSuccessTx.txInfo.tx === claimHtlcSuccessTx)
-    assert(publishHtlcSuccessTx.confirmationTarget.toLong === htlc1.cltvExpiry.toLong)
+    assert(publishHtlcSuccessTx.txInfo.confirmBefore.toLong === htlc1.cltvExpiry.toLong)
 
     // Alice resets watches on all relevant transactions.
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
@@ -820,7 +820,7 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[PublishFinalTx].tx === claimMain.tx))
     val publishHtlcTimeoutTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishHtlcTimeoutTx.txInfo.tx === htlcTimeoutTx.tx)
-    assert(publishHtlcTimeoutTx.confirmationTarget.toLong === htlca.cltvExpiry.toLong)
+    assert(publishHtlcTimeoutTx.txInfo.confirmBefore.toLong === htlca.cltvExpiry.toLong)
     closingState.claimMainOutputTx.foreach(claimMain => assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid))
     assert(alice2blockchain.expectMsgType[WatchOutputSpent].outputIndex === htlcTimeoutTx.input.outPoint.index)
   }
@@ -952,10 +952,10 @@ class ClosingStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with
     Transaction.correctlySpends(claimHtlcSuccessTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     val publishHtlcSuccessTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishHtlcSuccessTx.txInfo.tx === claimHtlcSuccessTx)
-    assert(publishHtlcSuccessTx.confirmationTarget.toLong === htlc1.cltvExpiry.toLong)
+    assert(publishHtlcSuccessTx.txInfo.confirmBefore.toLong === htlc1.cltvExpiry.toLong)
     val publishHtlcTimeoutTx = alice2blockchain.expectMsgType[PublishReplaceableTx]
     assert(publishHtlcTimeoutTx.txInfo.tx === claimHtlcTimeoutTx)
-    assert(publishHtlcTimeoutTx.confirmationTarget.toLong === htlc2.cltvExpiry.toLong)
+    assert(publishHtlcTimeoutTx.txInfo.confirmBefore.toLong === htlc2.cltvExpiry.toLong)
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === closingState.claimMainOutputTx.get.tx.txid)

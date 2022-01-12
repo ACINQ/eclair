@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
-import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
+import fr.acinq.eclair.{Logs, NodeParams}
 
 import java.util.UUID
 import scala.concurrent.duration.DurationLong
@@ -85,7 +85,7 @@ object TxPublisher {
     def apply(txInfo: TransactionWithInputInfo, fee: Satoshi, parentTx_opt: Option[ByteVector32]): PublishFinalTx = PublishFinalTx(txInfo.tx, txInfo.input.outPoint, txInfo.desc, fee, parentTx_opt)
   }
   /** Publish an unsigned transaction that can be RBF-ed. */
-  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments, confirmationTarget: BlockHeight) extends PublishTx {
+  case class PublishReplaceableTx(txInfo: ReplaceableTransactionWithInputInfo, commitments: Commitments) extends PublishTx {
     override def input: OutPoint = txInfo.input.outPoint
     override def desc: String = txInfo.desc
   }
@@ -197,11 +197,11 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         val attempts = pending.getOrElse(cmd.input, Seq.empty)
         val alreadyPublished = attempts.collectFirst {
           // If there is already an attempt at spending this outpoint with a more aggressive confirmation target, there is no point in publishing again.
-          case a: ReplaceableAttempt if a.cmd.confirmationTarget <= cmd.confirmationTarget => a.cmd.confirmationTarget
+          case a: ReplaceableAttempt if a.cmd.txInfo.confirmBefore <= cmd.txInfo.confirmBefore => a.cmd.txInfo.confirmBefore
         }
         alreadyPublished match {
           case Some(currentConfirmationTarget) =>
-            log.info("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, cmd.confirmationTarget, currentConfirmationTarget)
+            log.info("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, cmd.txInfo.confirmBefore, currentConfirmationTarget)
             Behaviors.same
           case None =>
             val publishId = UUID.randomUUID()

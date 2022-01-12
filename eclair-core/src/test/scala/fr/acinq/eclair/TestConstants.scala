@@ -128,7 +128,7 @@ object TestConstants {
       dustLimit = 1100 sat,
       maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 12, 18),
+        feeTargets = FeeTargets(6, 2, 36, 12, 18),
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,
@@ -260,7 +260,7 @@ object TestConstants {
       dustLimit = 1000 sat,
       maxRemoteDustLimit = 1500 sat,
       onChainFeeConf = OnChainFeeConf(
-        feeTargets = FeeTargets(6, 2, 12, 18),
+        feeTargets = FeeTargets(6, 2, 36, 12, 18),
         feeEstimator = new TestFeeEstimator,
         closeOnOfflineMismatch = true,
         updateFeeMinDiffRatio = 0.1,

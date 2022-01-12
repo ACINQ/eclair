@@ -17,7 +17,7 @@
 package fr.acinq.eclair.wire.internal.channel.version3
 
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
-import fr.acinq.bitcoin.{ByteVector32, OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions._
@@ -25,7 +25,7 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, DirectedHtlc, IncomingHtlc,
 import fr.acinq.eclair.wire.protocol.CommonCodecs._
 import fr.acinq.eclair.wire.protocol.LightningMessageCodecs._
 import fr.acinq.eclair.wire.protocol.UpdateMessage
-import fr.acinq.eclair.{FeatureSupport, Features}
+import fr.acinq.eclair.{BlockHeight, FeatureSupport, Features}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec}
@@ -125,56 +125,75 @@ private[channel] object ChannelCodecs3 {
         ("scriptPubKey" | lengthDelimited(bytes))).as[OutputInfo]
 
     val commitTxCodec: Codec[CommitTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx]
-    val htlcSuccessTxCodec: Codec[HtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow)).as[HtlcSuccessTx]
-    val htlcTimeoutTxCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[HtlcTimeoutTx]
+    val htlcSuccessTxCodec: Codec[HtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | blockHeight)).as[HtlcSuccessTx]
+    val htlcTimeoutTxCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | blockHeight)).as[HtlcTimeoutTx]
+    private val htlcSuccessTxNoConfirmCodec: Codec[HtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | provide(BlockHeight(0)))).as[HtlcSuccessTx]
+    private val htlcTimeoutTxNoConfirmCodec: Codec[HtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | provide(BlockHeight(0)))).as[HtlcTimeoutTx]
     val htlcDelayedTxCodec: Codec[HtlcDelayedTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcDelayedTx]
-    private val legacyClaimHtlcSuccessTxCodec: Codec[LegacyClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[LegacyClaimHtlcSuccessTx]
-    val claimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow)).as[ClaimHtlcSuccessTx]
-    val claimHtlcTimeoutTxCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow)).as[ClaimHtlcTimeoutTx]
+    private val legacyClaimHtlcSuccessTxCodec: Codec[LegacyClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | provide(BlockHeight(0)))).as[LegacyClaimHtlcSuccessTx]
+    val claimHtlcSuccessTxCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | blockHeight)).as[ClaimHtlcSuccessTx]
+    val claimHtlcTimeoutTxCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | blockHeight)).as[ClaimHtlcTimeoutTx]
+    private val claimHtlcSuccessTxNoConfirmCodec: Codec[ClaimHtlcSuccessTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | provide(BlockHeight(0)))).as[ClaimHtlcSuccessTx]
+    private val claimHtlcTimeoutTxNoConfirmCodec: Codec[ClaimHtlcTimeoutTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("htlcId" | uint64overflow) :: ("confirmBefore" | provide(BlockHeight(0)))).as[ClaimHtlcTimeoutTx]
     val claimLocalDelayedOutputTxCodec: Codec[ClaimLocalDelayedOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalDelayedOutputTx]
     val claimP2WPKHOutputTxCodec: Codec[ClaimP2WPKHOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimP2WPKHOutputTx]
     val claimRemoteDelayedOutputTxCodec: Codec[ClaimRemoteDelayedOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimRemoteDelayedOutputTx]
     val mainPenaltyTxCodec: Codec[MainPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[MainPenaltyTx]
     val htlcPenaltyTxCodec: Codec[HtlcPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[HtlcPenaltyTx]
     val claimHtlcDelayedOutputPenaltyTxCodec: Codec[ClaimHtlcDelayedOutputPenaltyTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimHtlcDelayedOutputPenaltyTx]
-    val claimLocalAnchorOutputTxCodec: Codec[ClaimLocalAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimLocalAnchorOutputTx]
+    val claimLocalAnchorOutputTxCodec: Codec[ClaimLocalAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmBefore" | blockHeight)).as[ClaimLocalAnchorOutputTx]
+    private val claimLocalAnchorOutputTxNoConfirmCodec: Codec[ClaimLocalAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("confirmBefore" | provide(BlockHeight(0)))).as[ClaimLocalAnchorOutputTx]
     val claimRemoteAnchorOutputTxCodec: Codec[ClaimRemoteAnchorOutputTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[ClaimRemoteAnchorOutputTx]
     val closingTxCodec: Codec[ClosingTx] = (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("outputIndex" | optional(bool8, outputInfoCodec))).as[ClosingTx]
 
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
+      // Important: order matters!
+      .typecase(0x20, claimLocalAnchorOutputTxCodec)
+      .typecase(0x21, htlcSuccessTxCodec)
+      .typecase(0x22, htlcTimeoutTxCodec)
+      .typecase(0x23, claimHtlcSuccessTxCodec)
+      .typecase(0x24, claimHtlcTimeoutTxCodec)
       .typecase(0x01, commitTxCodec)
-      .typecase(0x02, htlcSuccessTxCodec)
-      .typecase(0x03, htlcTimeoutTxCodec)
+      .typecase(0x02, htlcSuccessTxNoConfirmCodec)
+      .typecase(0x03, htlcTimeoutTxNoConfirmCodec)
       .typecase(0x04, legacyClaimHtlcSuccessTxCodec)
-      .typecase(0x05, claimHtlcTimeoutTxCodec)
+      .typecase(0x05, claimHtlcTimeoutTxNoConfirmCodec)
       .typecase(0x06, claimP2WPKHOutputTxCodec)
       .typecase(0x07, claimLocalDelayedOutputTxCodec)
       .typecase(0x08, mainPenaltyTxCodec)
       .typecase(0x09, htlcPenaltyTxCodec)
       .typecase(0x10, closingTxCodec)
-      .typecase(0x11, claimLocalAnchorOutputTxCodec)
+      .typecase(0x11, claimLocalAnchorOutputTxNoConfirmCodec)
       .typecase(0x12, claimRemoteAnchorOutputTxCodec)
       .typecase(0x13, claimRemoteDelayedOutputTxCodec)
       .typecase(0x14, claimHtlcDelayedOutputPenaltyTxCodec)
       .typecase(0x15, htlcDelayedTxCodec)
-      .typecase(0x16, claimHtlcSuccessTxCodec)
+      .typecase(0x16, claimHtlcSuccessTxNoConfirmCodec)
 
     val claimRemoteCommitMainOutputTxCodec: Codec[ClaimRemoteCommitMainOutputTx] = discriminated[ClaimRemoteCommitMainOutputTx].by(uint8)
       .typecase(0x01, claimP2WPKHOutputTxCodec)
       .typecase(0x02, claimRemoteDelayedOutputTxCodec)
 
     val claimAnchorOutputTxCodec: Codec[ClaimAnchorOutputTx] = discriminated[ClaimAnchorOutputTx].by(uint8)
-      .typecase(0x01, claimLocalAnchorOutputTxCodec)
+      // Important: order matters!
+      .typecase(0x11, claimLocalAnchorOutputTxCodec)
+      .typecase(0x01, claimLocalAnchorOutputTxNoConfirmCodec)
       .typecase(0x02, claimRemoteAnchorOutputTxCodec)
 
     val htlcTxCodec: Codec[HtlcTx] = discriminated[HtlcTx].by(uint8)
-      .typecase(0x01, htlcSuccessTxCodec)
-      .typecase(0x02, htlcTimeoutTxCodec)
+      // Important: order matters!
+      .typecase(0x11, htlcSuccessTxCodec)
+      .typecase(0x12, htlcTimeoutTxCodec)
+      .typecase(0x01, htlcSuccessTxNoConfirmCodec)
+      .typecase(0x02, htlcTimeoutTxNoConfirmCodec)
 
     val claimHtlcTxCodec: Codec[ClaimHtlcTx] = discriminated[ClaimHtlcTx].by(uint8)
+      // Important: order matters!
+      .typecase(0x22, claimHtlcTimeoutTxCodec)
+      .typecase(0x23, claimHtlcSuccessTxCodec)
       .typecase(0x01, legacyClaimHtlcSuccessTxCodec)
-      .typecase(0x02, claimHtlcTimeoutTxCodec)
-      .typecase(0x03, claimHtlcSuccessTxCodec)
+      .typecase(0x02, claimHtlcTimeoutTxNoConfirmCodec)
+      .typecase(0x03, claimHtlcSuccessTxNoConfirmCodec)
 
     val htlcTxsAndRemoteSigsCodec: Codec[HtlcTxAndRemoteSig] = (
       ("txinfo" | htlcTxCodec) ::

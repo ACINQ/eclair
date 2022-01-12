@@ -201,7 +201,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams, bitcoinClient: B
     htlcTx match {
       case tx: HtlcSuccessTx =>
         commitments.localCommit.htlcTxsAndRemoteSigs.collectFirst {
-          case HtlcTxAndRemoteSig(HtlcSuccessTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
+          case HtlcTxAndRemoteSig(HtlcSuccessTx(input, _, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
         } match {
           case Some(remoteSig) =>
             commitments.localChanges.all.collectFirst {
@@ -218,7 +218,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams, bitcoinClient: B
         }
       case tx: HtlcTimeoutTx =>
         commitments.localCommit.htlcTxsAndRemoteSigs.collectFirst {
-          case HtlcTxAndRemoteSig(HtlcTimeoutTx(input, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
+          case HtlcTxAndRemoteSig(HtlcTimeoutTx(input, _, _, _), remoteSig) if input.outPoint == tx.input.outPoint => remoteSig
         } match {
           case Some(remoteSig) => Some(HtlcTimeoutWithWitnessData(tx, remoteSig))
           case None =>

@@ -2741,7 +2741,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //    condition between his HTLC-success and Alice's HTLC-timeout
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
@@ -2774,7 +2774,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //    condition between his HTLC-success and Alice's HTLC-timeout
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = false)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
@@ -2807,7 +2807,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     //    condition between his HTLC-success and Alice's HTLC-timeout
     val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
     val initialCommitTx = initialState.commitments.localCommit.commitTxAndRemoteSig.commitTx.tx
-    val HtlcSuccessTx(_, htlcSuccessTx, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
+    val HtlcSuccessTx(_, htlcSuccessTx, _, _, _) = initialState.commitments.localCommit.htlcTxsAndRemoteSigs.head.htlcTx
 
     bob ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
     bob2alice.expectMsgType[UpdateFulfillHtlc]
@@ -2968,8 +2968,8 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(amountClaimed === 814880.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcSuccessTx, _, confirmationTarget) => (tx.htlcId, confirmationTarget.toLong) }.toMap === Map(htlcb1.id -> htlcb1.cltvExpiry.toLong))
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _, confirmationTarget) => (tx.htlcId, confirmationTarget.toLong) }.toMap === Map(htlca1.id -> htlca1.cltvExpiry.toLong, htlca2.id -> htlca2.cltvExpiry.toLong))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcSuccessTx, _) => (tx.htlcId, tx.confirmBefore.toLong) }.toMap === Map(htlcb1.id -> htlcb1.cltvExpiry.toLong))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _) => (tx.htlcId, tx.confirmBefore.toLong) }.toMap === Map(htlca1.id -> htlca1.cltvExpiry.toLong, htlca2.id -> htlca2.cltvExpiry.toLong))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.txid)
@@ -3059,7 +3059,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     assert(amountClaimed === 822310.sat)
 
     // alice sets the confirmation targets to the HTLC expiry
-    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _, confirmationTarget) => (tx.htlcId, confirmationTarget.toLong) }.toMap === Map(htlca1.id -> htlca1.cltvExpiry.toLong, htlca2.id -> htlca2.cltvExpiry.toLong))
+    assert(claimHtlcTxs.collect { case PublishReplaceableTx(tx: ClaimHtlcTimeoutTx, _) => (tx.htlcId, tx.confirmBefore.toLong) }.toMap === Map(htlca1.id -> htlca1.cltvExpiry.toLong, htlca2.id -> htlca2.cltvExpiry.toLong))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === bobCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.txid) // claim-main
@@ -3319,14 +3319,14 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     awaitCond(alice.stateName == CLOSING)
 
     val localAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
-    assert(localAnchor.confirmationTarget.toLong === htlca1.cltvExpiry.toLong) // the target is set to match the first htlc that expires
+    assert(localAnchor.txInfo.confirmBefore.toLong === htlca1.cltvExpiry.toLong) // the target is set to match the first htlc that expires
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
     // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
     val htlcConfirmationTargets = Seq(
       alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 1
       alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 2
       alice2blockchain.expectMsgType[PublishReplaceableTx], // htlc 3
-    ).map(p => p.txInfo.asInstanceOf[HtlcTx].htlcId -> p.confirmationTarget.toLong).toMap
+    ).map(p => p.txInfo.asInstanceOf[HtlcTx].htlcId -> p.txInfo.confirmBefore.toLong).toMap
     assert(htlcConfirmationTargets === Map(htlcb1.id -> htlcb1.cltvExpiry.toLong, htlca1.id -> htlca1.cltvExpiry.toLong, htlca2.id -> htlca2.cltvExpiry.toLong))
 
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === aliceCommitTx.txid)
@@ -3357,7 +3357,7 @@ class NormalStateSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike with 
     val blockTargets = alice.underlyingActor.nodeParams.onChainFeeConf.feeTargets
     val localAnchor = alice2blockchain.expectMsgType[PublishReplaceableTx]
     // When there are no pending HTLCs, there is no rush to get the commit tx confirmed
-    assert(localAnchor.confirmationTarget.toLong === currentBlockHeight + blockTargets.claimMainBlockTarget)
+    assert(localAnchor.txInfo.confirmBefore.toLong === currentBlockHeight + blockTargets.commitmentWithoutHtlcsBlockTarget)
     val claimMain = alice2blockchain.expectMsgType[PublishFinalTx]
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === aliceCommitTx.txid)
     assert(alice2blockchain.expectMsgType[WatchTxConfirmed].txId === claimMain.tx.txid)

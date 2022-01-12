@@ -633,7 +633,7 @@ object Helpers {
      * @param commitments our commitment data, which include payment preimages
      * @return a list of transactions (one per output of the commit tx that we can claim)
      */
-    def claimCurrentLocalCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): LocalCommitPublished = {
+    def claimCurrentLocalCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, tx: Transaction, currentBlockHeight: BlockHeight, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): LocalCommitPublished = {
       import commitments._
       require(localCommit.commitTxAndRemoteSig.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
       val channelKeyPath = keyManager.keyPath(localParams, channelConfig)
@@ -655,7 +655,7 @@ object Helpers {
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }.map(r => Crypto.sha256(r) -> r).toMap
 
       val htlcTxs: Map[OutPoint, Option[HtlcTx]] = localCommit.htlcTxsAndRemoteSigs.collect {
-        case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _), remoteSig) =>
+        case HtlcTxAndRemoteSig(txInfo@HtlcSuccessTx(_, _, paymentHash, _, _), remoteSig) =>
           if (preimages.contains(paymentHash)) {
             // incoming htlc for which we have the preimage: we can spend it immediately
             txInfo.input.outPoint -> withTxGenerationLog("htlc-success") {
@@ -675,9 +675,11 @@ object Helpers {
           }
       }.toMap
 
+      // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
+      val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
         withTxGenerationLog("local-anchor") {
-          Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey)
+          Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubKey, confirmCommitBefore)
         },
         withTxGenerationLog("remote-anchor") {
           Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
@@ -729,7 +731,7 @@ object Helpers {
      * @param tx           the remote commitment transaction that has just been published
      * @return a list of transactions (one per output of the commit tx that we can claim)
      */
-    def claimRemoteCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+    def claimRemoteCommitTxOutputs(keyManager: ChannelKeyManager, commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction, currentBlockHeight: BlockHeight, feeEstimator: FeeEstimator, feeTargets: FeeTargets)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
       val (remoteCommitTx, _) = Commitments.makeRemoteTxs(keyManager, commitments.channelConfig, commitments.channelFeatures, remoteCommit.index, commitments.localParams, commitments.remoteParams, commitments.commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
@@ -780,9 +782,11 @@ object Helpers {
           })
       }.toSeq.flatten.toMap
 
+      // If we don't have pending HTLCs, we don't have funds at risk, so we can aim for a slower confirmation.
+      val confirmCommitBefore = htlcTxs.values.flatten.map(htlcTx => htlcTx.confirmBefore).minOption.getOrElse(currentBlockHeight + feeTargets.commitmentWithoutHtlcsBlockTarget)
       val claimAnchorTxs: List[ClaimAnchorOutputTx] = List(
         withTxGenerationLog("local-anchor") {
-          Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey)
+          Transactions.makeClaimLocalAnchorOutputTx(tx, localFundingPubkey, confirmCommitBefore)
         },
         withTxGenerationLog("remote-anchor") {
           Transactions.makeClaimRemoteAnchorOutputTx(tx, commitments.remoteParams.fundingPubKey)
@@ -1101,19 +1105,19 @@ object Helpers {
         localCommit.spec.htlcs.collect(outgoing) -- untrimmedHtlcs
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
-        val isMissingHtlcIndex = localCommitPublished.htlcTxs.values.collect { case Some(HtlcTimeoutTx(_, _, htlcId)) => htlcId }.toSet == Set(0)
+        val isMissingHtlcIndex = localCommitPublished.htlcTxs.values.collect { case Some(HtlcTimeoutTx(_, _, htlcId, _)) => htlcId }.toSet == Set(0)
         if (isMissingHtlcIndex && commitmentFormat == DefaultCommitmentFormat) {
           tx.txIn
             .map(_.witness)
             .collect(Scripts.extractPaymentHashFromHtlcTimeout)
             .flatMap { paymentHash160 =>
               log.info(s"htlc-timeout tx for paymentHash160=${paymentHash160.toHex} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
-              val timeoutTxs = localCommitPublished.htlcTxs.values.collect { case Some(HtlcTimeoutTx(_, tx, _)) => tx }.toSeq
+              val timeoutTxs = localCommitPublished.htlcTxs.values.collect { case Some(HtlcTimeoutTx(_, tx, _, _)) => tx }.toSeq
               findTimedOutHtlc(tx, paymentHash160, untrimmedHtlcs, timeoutTxs, Scripts.extractPaymentHashFromHtlcTimeout)
             }.toSet
         } else {
           tx.txIn.flatMap(txIn => localCommitPublished.htlcTxs.get(txIn.outPoint) match {
-            case Some(Some(HtlcTimeoutTx(_, _, htlcId))) if isHtlcTimeout(tx, localCommitPublished) =>
+            case Some(Some(HtlcTimeoutTx(_, _, htlcId, _))) if isHtlcTimeout(tx, localCommitPublished) =>
               untrimmedHtlcs.find(_.id == htlcId) match {
                 case Some(htlc) =>
                   log.info(s"htlc-timeout tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
@@ -1143,19 +1147,19 @@ object Helpers {
         remoteCommit.spec.htlcs.collect(incoming) -- untrimmedHtlcs
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
-        val isMissingHtlcIndex = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(ClaimHtlcTimeoutTx(_, _, htlcId)) => htlcId }.toSet == Set(0)
+        val isMissingHtlcIndex = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(ClaimHtlcTimeoutTx(_, _, htlcId, _)) => htlcId }.toSet == Set(0)
         if (isMissingHtlcIndex && commitmentFormat == DefaultCommitmentFormat) {
           tx.txIn
             .map(_.witness)
             .collect(Scripts.extractPaymentHashFromClaimHtlcTimeout)
             .flatMap { paymentHash160 =>
               log.info(s"claim-htlc-timeout tx for paymentHash160=${paymentHash160.toHex} expiry=${tx.lockTime} has been confirmed (tx=$tx)")
-              val timeoutTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(ClaimHtlcTimeoutTx(_, tx, _)) => tx }.toSeq
+              val timeoutTxs = remoteCommitPublished.claimHtlcTxs.values.collect { case Some(ClaimHtlcTimeoutTx(_, tx, _, _)) => tx }.toSeq
               findTimedOutHtlc(tx, paymentHash160, untrimmedHtlcs, timeoutTxs, Scripts.extractPaymentHashFromClaimHtlcTimeout)
             }.toSet
         } else {
           tx.txIn.flatMap(txIn => remoteCommitPublished.claimHtlcTxs.get(txIn.outPoint) match {
-            case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId))) if isClaimHtlcTimeout(tx, remoteCommitPublished) =>
+            case Some(Some(ClaimHtlcTimeoutTx(_, _, htlcId, _))) if isClaimHtlcTimeout(tx, remoteCommitPublished) =>
               untrimmedHtlcs.find(_.id == htlcId) match {
                 case Some(htlc) =>
                   log.info(s"claim-htlc-timeout tx for htlc #$htlcId paymentHash=${htlc.paymentHash} expiry=${tx.lockTime} has been confirmed (tx=$tx)")

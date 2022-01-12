@@ -33,6 +33,5 @@ case class BlockHeight(private val underlying: Long) extends Ordered[BlockHeight
 
   def toLong: Long = underlying
   def toInt: Int = underlying.toInt
-  override def toString = underlying.toString
   // @formatter:on
 }

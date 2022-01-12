@@ -75,8 +75,8 @@ object ReplaceableTxPublisher {
     }
   }
 
-  def getFeerate(feeEstimator: FeeEstimator, confirmationTarget: BlockHeight, currentBlockHeight: BlockHeight): FeeratePerKw = {
-    val remainingBlocks = (confirmationTarget - currentBlockHeight).toLong
+  def getFeerate(feeEstimator: FeeEstimator, confirmBefore: BlockHeight, currentBlockHeight: BlockHeight): FeeratePerKw = {
+    val remainingBlocks = (confirmBefore - currentBlockHeight).toLong
     val blockTarget = remainingBlocks match {
       // If our target is still very far in the future, no need to rush
       case t if t >= 144 => 144
@@ -138,7 +138,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   }
 
   def fund(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
-    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.confirmationTarget, BlockHeight(nodeParams.currentBlockHeight))
+    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.txInfo.confirmBefore, BlockHeight(nodeParams.currentBlockHeight))
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
     Behaviors.receiveMessagePartial {
@@ -177,16 +177,16 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
         timers.startSingleTimer(CheckFeeKey, CheckFee(currentBlockCount), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
         Behaviors.same
       case CheckFee(currentBlockCount) =>
-        val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.confirmationTarget, BlockHeight(currentBlockCount))
-        val targetFeerate_opt = if (cmd.confirmationTarget.toLong <= currentBlockCount + 6) {
-          log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, cmd.confirmationTarget.toLong - currentBlockCount)
+        val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.txInfo.confirmBefore, BlockHeight(currentBlockCount))
+        val targetFeerate_opt = if (cmd.txInfo.confirmBefore.toLong <= currentBlockCount + 6) {
+          log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
           // We make sure we increase the fees by at least 20% as we get close to the confirmation target.
           Some(currentFeerate.max(tx.feerate * 1.2))
         } else if (tx.feerate * 1.2 <= currentFeerate) {
-          log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, cmd.confirmationTarget.toLong - currentBlockCount)
+          log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
           Some(currentFeerate)
         } else {
-          log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, cmd.confirmationTarget.toLong - currentBlockCount)
+          log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
           None
         }
         targetFeerate_opt.foreach(targetFeerate => {
