@@ -21,7 +21,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{ByteVector32, ByteVector64, Crypto, Transaction}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.channel.{Commitments, HtlcTxAndRemoteSig}
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions._
@@ -96,9 +96,9 @@ object ReplaceableTxPrePublisher {
   }
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
-      Behaviors.withMdc(loggingInfo.mdc()) {
+      Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
           case CheckPreconditions(replyTo, cmd) =>
             val prePublisher = new ReplaceableTxPrePublisher(nodeParams, replyTo, cmd, bitcoinClient, context)

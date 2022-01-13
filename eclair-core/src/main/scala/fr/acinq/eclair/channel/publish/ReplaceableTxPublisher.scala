@@ -24,7 +24,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw}
 import fr.acinq.eclair.channel.publish.ReplaceableTxFunder.FundedTx
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher.{ClaimLocalAnchorWithWitnessData, ReplaceableTxWithWitnessData}
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.{BlockHeight, NodeParams}
 
 import scala.concurrent.duration.{DurationInt, DurationLong}
@@ -60,12 +60,12 @@ object ReplaceableTxPublisher {
   // Timer key to ensure we don't have multiple concurrent timers running.
   private case object BumpFeeKey
 
-  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
-        Behaviors.withMdc(loggingInfo.mdc()) {
+        Behaviors.withMdc(txPublishContext.mdc()) {
           Behaviors.receiveMessagePartial {
-            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, loggingInfo).checkPreconditions()
+            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, txPublishContext).checkPreconditions()
             case Stop => Behaviors.stopped
           }
         }
@@ -98,7 +98,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
                                      watcher: ActorRef[ZmqWatcher.Command],
                                      context: ActorContext[ReplaceableTxPublisher.Command],
                                      timers: TimerScheduler[ReplaceableTxPublisher.Command],
-                                     loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+                                     txPublishContext: TxPublishContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import ReplaceableTxPublisher._
 
@@ -107,13 +107,13 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   private var confirmBefore: BlockHeight = cmd.txInfo.confirmBefore
 
   def checkPreconditions(): Behavior[Command] = {
-    val prePublisher = context.spawn(ReplaceableTxPrePublisher(nodeParams, bitcoinClient, loggingInfo), "pre-publisher")
+    val prePublisher = context.spawn(ReplaceableTxPrePublisher(nodeParams, bitcoinClient, txPublishContext), "pre-publisher")
     prePublisher ! ReplaceableTxPrePublisher.CheckPreconditions(context.messageAdapter[ReplaceableTxPrePublisher.PreconditionsResult](WrappedPreconditionsResult), cmd)
     Behaviors.receiveMessagePartial {
       case WrappedPreconditionsResult(result) =>
         result match {
           case ReplaceableTxPrePublisher.PreconditionsOk(txWithWitnessData) => checkTimeLocks(txWithWitnessData)
-          case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), None)
+          case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), None)
         }
       case UpdateConfirmationTarget(target) =>
         confirmBefore = target
@@ -127,7 +127,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       // There are no time locks on anchor transactions, we can claim them right away.
       case _: ClaimLocalAnchorWithWitnessData => fund(txWithWitnessData)
       case _ =>
-        val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
+        val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, txPublishContext), "time-locks-monitor")
         timeLocksChecker ! TxTimeLocksMonitor.CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
         Behaviors.receiveMessagePartial {
           case TimeLocksOk => fund(txWithWitnessData)
@@ -141,17 +141,17 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
 
   def fund(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
     val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, nodeParams.currentBlockHeight)
-    val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder")
+    val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, txPublishContext), "tx-funder")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
         result match {
           case ReplaceableTxFunder.TransactionReady(tx) =>
             log.debug("publishing {} with confirmation target in {} blocks", cmd.desc, confirmBefore - nodeParams.currentBlockHeight)
-            val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), s"mempool-tx-monitor-${tx.signedTx.txid}")
+            val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${tx.signedTx.txid}")
             txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
             wait(tx)
-          case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), None)
+          case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), None)
         }
       case UpdateConfirmationTarget(target) =>
         confirmBefore = target
@@ -189,7 +189,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
             Behaviors.same
           case MempoolTxMonitor.TxRecentlyConfirmed(_, _) => Behaviors.same // just wait for the tx to be deeply buried
           case MempoolTxMonitor.TxDeeplyBuried(confirmedTx) => sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx), None)
-          case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), Some(Seq(tx.signedTx)))
+          case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(txPublishContext.id, cmd, reason), Some(Seq(tx.signedTx)))
         }
       case BumpFee(targetFeerate) => fundReplacement(targetFeerate, tx)
       case UpdateConfirmationTarget(target) =>
@@ -202,7 +202,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   // Fund a replacement transaction because our previous attempt seems to be stuck in the mempool.
   def fundReplacement(targetFeerate: FeeratePerKw, previousTx: FundedTx): Behavior[Command] = {
     log.info("bumping {} fees: previous feerate={}, next feerate={}", cmd.desc, previousTx.feerate, targetFeerate)
-    val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder-rbf")
+    val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, txPublishContext), "tx-funder-rbf")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Left(previousTx), targetFeerate)
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
@@ -232,7 +232,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   // Only one of them can be in the mempool, so we wait for the other to be rejected. Once that's done, we're back to a
   // situation where we have one transaction in the mempool and wait for it to confirm.
   def publishReplacement(previousTx: FundedTx, bumpedTx: FundedTx): Behavior[Command] = {
-    val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), s"mempool-tx-monitor-${bumpedTx.signedTx.txid}")
+    val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, txPublishContext), s"mempool-tx-monitor-${bumpedTx.signedTx.txid}")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, cmd.input, cmd.desc, bumpedTx.fee)
     Behaviors.receiveMessagePartial {
       case WrappedTxResult(txResult) =>

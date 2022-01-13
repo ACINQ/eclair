@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.FundTransaction
 import fr.acinq.eclair.blockchain.fee.FeeratePerKw
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.channel.publish.ReplaceableTxPrePublisher._
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.{NodeParams, NotificationsLogger}
 
@@ -68,9 +68,9 @@ object ReplaceableTxFunder {
   case class FundingFailed(reason: TxPublisher.TxRejectedReason) extends FundingResult
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
-      Behaviors.withMdc(loggingInfo.mdc()) {
+      Behaviors.withMdc(txPublishContext.mdc()) {
         Behaviors.receiveMessagePartial {
           case FundTransaction(replyTo, cmd, tx, targetFeerate) =>
             val txFunder = new ReplaceableTxFunder(nodeParams, replyTo, cmd, bitcoinClient, context)

@@ -22,7 +22,7 @@ import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{ByteVector32, OutPoint, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishLogContext, TxRejectedReason}
+import fr.acinq.eclair.channel.publish.TxPublisher.{TxPublishContext, TxRejectedReason}
 import fr.acinq.eclair.channel.{TransactionConfirmed, TransactionPublished}
 import fr.acinq.eclair.{BlockHeight, NodeParams}
 
@@ -68,12 +68,12 @@ object MempoolTxMonitor {
   case class TxRejected(txid: ByteVector32, reason: TxPublisher.TxRejectedReason) extends FinalTxResult
   // @formatter:on
 
-  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
+  def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, txPublishContext: TxPublishContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
-        Behaviors.withMdc(loggingInfo.mdc()) {
+        Behaviors.withMdc(txPublishContext.mdc()) {
           Behaviors.receiveMessagePartial {
-            case cmd: Publish => new MempoolTxMonitor(nodeParams, cmd, bitcoinClient, loggingInfo, context, timers).publish()
+            case cmd: Publish => new MempoolTxMonitor(nodeParams, cmd, bitcoinClient, txPublishContext, context, timers).publish()
           }
         }
       }
@@ -85,7 +85,7 @@ object MempoolTxMonitor {
 private class MempoolTxMonitor(nodeParams: NodeParams,
                                cmd: MempoolTxMonitor.Publish,
                                bitcoinClient: BitcoinCoreClient,
-                               loggingInfo: TxPublishLogContext,
+                               txPublishContext: TxPublishContext,
                                context: ActorContext[MempoolTxMonitor.Command],
                                timers: TimerScheduler[MempoolTxMonitor.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
@@ -101,7 +101,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case PublishOk =>
         log.debug("txid={} was successfully published, waiting for confirmation...", cmd.tx.txid)
-        context.system.eventStream ! EventStream.Publish(TransactionPublished(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
+        context.system.eventStream ! EventStream.Publish(TransactionPublished(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
         waitForConfirmation()
       case PublishFailed(reason) if reason.getMessage.contains("rejecting replacement") =>
         log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
@@ -155,7 +155,7 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
           Behaviors.same
         } else {
           log.info("txid={} has reached min depth", cmd.tx.txid)
-          context.system.eventStream ! EventStream.Publish(TransactionConfirmed(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, cmd.tx))
+          context.system.eventStream ! EventStream.Publish(TransactionConfirmed(txPublishContext.channelId_opt.getOrElse(ByteVector32.Zeroes), txPublishContext.remoteNodeId, cmd.tx))
           sendFinalResult(TxDeeplyBuried(cmd.tx), Some(messageAdapter))
         }
       case TxNotFound =>

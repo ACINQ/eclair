@@ -22,7 +22,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.CurrentBlockHeight
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
-import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
+import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishContext
 import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, TimeLocksOk}
 import fr.acinq.eclair.{BlockHeight, NodeParams, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
@@ -40,7 +40,7 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
       val nodeParams = TestConstants.Alice.nodeParams
       val probe = TestProbe()
       val watcher = TestProbe()
-      val monitor = system.spawnAnonymous(TxTimeLocksMonitor(nodeParams, watcher.ref, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
+      val monitor = system.spawnAnonymous(TxTimeLocksMonitor(nodeParams, watcher.ref, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
       withFixture(test.toNoArgTest(FixtureParam(nodeParams, monitor, watcher, probe)))
     }
   }

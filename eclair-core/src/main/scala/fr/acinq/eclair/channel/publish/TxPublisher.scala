@@ -124,28 +124,28 @@ object TxPublisher {
   // @formatter:on
 
   // @formatter:off
-  case class ChannelLogContext(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
+  case class ChannelContext(remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
     def mdc(): Map[String, String] = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = channelId_opt)
   }
-  case class TxPublishLogContext(id: UUID, remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
-    def mdc(): Map[String, String] = Logs.mdc(remoteNodeId_opt = Some(remoteNodeId), channelId_opt = channelId_opt, paymentId_opt = Some(id))
+  case class TxPublishContext(id: UUID, remoteNodeId: PublicKey, channelId_opt: Option[ByteVector32]) {
+    def mdc(): Map[String, String] = Logs.mdc(txPublishId_opt = Some(id), remoteNodeId_opt = Some(remoteNodeId), channelId_opt = channelId_opt)
   }
   // @formatter:on
 
   trait ChildFactory {
     // @formatter:off
-    def spawnFinalTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[FinalTxPublisher.Command]
-    def spawnReplaceableTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[ReplaceableTxPublisher.Command]
+    def spawnFinalTxPublisher(context: ActorContext[TxPublisher.Command], txPublishContext: TxPublishContext): ActorRef[FinalTxPublisher.Command]
+    def spawnReplaceableTxPublisher(context: ActorContext[TxPublisher.Command], txPublishContext: TxPublishContext): ActorRef[ReplaceableTxPublisher.Command]
     // @formatter:on
   }
 
   case class SimpleChildFactory(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command]) extends ChildFactory {
     // @formatter:off
-    override def spawnFinalTxPublisher(context: ActorContext[TxPublisher.Command], loggingInfo: TxPublishLogContext): ActorRef[FinalTxPublisher.Command] = {
-      context.spawn(FinalTxPublisher(nodeParams, bitcoinClient, watcher, loggingInfo), s"final-tx-${loggingInfo.id}")
+    override def spawnFinalTxPublisher(context: ActorContext[TxPublisher.Command], txPublishContext: TxPublishContext): ActorRef[FinalTxPublisher.Command] = {
+      context.spawn(FinalTxPublisher(nodeParams, bitcoinClient, watcher, txPublishContext), s"final-tx-${txPublishContext.id}")
     }
-    override def spawnReplaceableTxPublisher(context: ActorContext[Command], loggingInfo: TxPublishLogContext): ActorRef[ReplaceableTxPublisher.Command] = {
-      context.spawn(ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, loggingInfo), s"replaceable-tx-${loggingInfo.id}")
+    override def spawnReplaceableTxPublisher(context: ActorContext[Command], txPublishContext: TxPublishContext): ActorRef[ReplaceableTxPublisher.Command] = {
+      context.spawn(ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, txPublishContext), s"replaceable-tx-${txPublishContext.id}")
     }
     // @formatter:on
   }
@@ -190,7 +190,7 @@ object TxPublisher {
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(Logs.mdc(remoteNodeId_opt = Some(remoteNodeId))) {
           context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockHeight](cbc => WrappedCurrentBlockHeight(cbc.blockHeight)))
-          new TxPublisher(nodeParams, factory, context, timers).run(Map.empty, Seq.empty, ChannelLogContext(remoteNodeId, None))
+          new TxPublisher(nodeParams, factory, context, timers).run(Map.empty, Seq.empty, ChannelContext(remoteNodeId, None))
         }
       }
     }
@@ -203,7 +203,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
 
   private val log = context.log
 
-  private def run(pending: Map[OutPoint, PublishAttempts], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
+  private def run(pending: Map[OutPoint, PublishAttempts], retryNextBlock: Seq[PublishTx], channelContext: ChannelContext): Behavior[Command] = {
     Behaviors.receiveMessage {
       case cmd: PublishFinalTx =>
         val attempts = pending.getOrElse(cmd.input, PublishAttempts.empty)
@@ -214,9 +214,9 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         } else {
           val publishId = UUID.randomUUID()
           log.info("publishing {} txid={} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.tx.txid, cmd.input.txid, cmd.input.index, publishId, attempts.count)
-          val actor = factory.spawnFinalTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
+          val actor = factory.spawnFinalTxPublisher(context, TxPublishContext(publishId, channelContext.remoteNodeId, channelContext.channelId_opt))
           actor ! FinalTxPublisher.Publish(context.self, cmd)
-          run(pending + (cmd.input -> attempts.add(FinalAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
+          run(pending + (cmd.input -> attempts.add(FinalAttempt(publishId, cmd, actor))), retryNextBlock, channelContext)
         }
 
       case cmd: PublishReplaceableTx =>
@@ -235,21 +235,21 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               log.info("replaceable {} spending {}:{} has new confirmation target={} (previous={})", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
               currentAttempt.actor ! ReplaceableTxPublisher.UpdateConfirmationTarget(proposedConfirmationTarget)
               val attempts2 = attempts.copy(replaceableAttempt_opt = Some(currentAttempt.copy(confirmBefore = proposedConfirmationTarget)))
-              run(pending + (cmd.input -> attempts2), retryNextBlock, channelInfo)
+              run(pending + (cmd.input -> attempts2), retryNextBlock, channelContext)
             }
           case None =>
             val publishId = UUID.randomUUID()
             log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.count)
-            val actor = factory.spawnReplaceableTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
+            val actor = factory.spawnReplaceableTxPublisher(context, TxPublishContext(publishId, channelContext.remoteNodeId, channelContext.channelId_opt))
             actor ! ReplaceableTxPublisher.Publish(context.self, cmd)
             val attempts2 = attempts.copy(replaceableAttempt_opt = Some(ReplaceableAttempt(publishId, cmd, proposedConfirmationTarget, actor)))
-            run(pending + (cmd.input -> attempts2), retryNextBlock, channelInfo)
+            run(pending + (cmd.input -> attempts2), retryNextBlock, channelContext)
         }
 
       case result: PublishTxResult => result match {
         case TxConfirmed(cmd, _) =>
           pending.get(cmd.input).foreach(a => stopAttempts(a.attempts))
-          run(pending - cmd.input, retryNextBlock, channelInfo)
+          run(pending - cmd.input, retryNextBlock, channelContext)
         case TxRejected(id, cmd, reason) =>
           val (rejectedAttempts, remainingAttempts) = pending.getOrElse(cmd.input, PublishAttempts.empty).remove(id)
           stopAttempts(rejectedAttempts)
@@ -260,33 +260,33 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
               // been replaced. We should be able to retry right now with new wallet inputs (no need to wait for a new
               // block).
               timers.startSingleTimer(cmd, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
-              run(pending2, retryNextBlock, channelInfo)
+              run(pending2, retryNextBlock, channelContext)
             case TxRejectedReason.CouldNotFund =>
               // We don't have enough funds at the moment to afford our target feerate, but it may change once pending
               // transactions confirm, so we retry when a new block is found.
-              run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelInfo)
+              run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelContext)
             case TxRejectedReason.TxSkipped(retry) =>
               val retryNextBlock2 = if (retry) retryNextBlock ++ rejectedAttempts.map(_.cmd) else retryNextBlock
-              run(pending2, retryNextBlock2, channelInfo)
+              run(pending2, retryNextBlock2, channelContext)
             case TxRejectedReason.ConflictingTxUnconfirmed =>
               cmd match {
                 case _: PublishFinalTx =>
                   // Our transaction is not replaceable, and the mempool contains a transaction that pays more fees, so
                   // it doesn't make sense to retry, we will keep getting rejected.
-                  run(pending2, retryNextBlock, channelInfo)
+                  run(pending2, retryNextBlock, channelContext)
                 case _: PublishReplaceableTx =>
                   // The mempool contains a transaction that pays more fees, but as we get closer to the confirmation
                   // target, we will try to publish with higher fees, so if the conflicting transaction doesn't confirm,
                   // we should be able to replace it before we reach the confirmation target.
-                  run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelInfo)
+                  run(pending2, retryNextBlock ++ rejectedAttempts.map(_.cmd), channelContext)
               }
             case TxRejectedReason.ConflictingTxConfirmed =>
               // Our transaction was double-spent by a competing transaction that has been confirmed, so it doesn't make
               // sense to retry.
-              run(pending2, retryNextBlock, channelInfo)
+              run(pending2, retryNextBlock, channelContext)
             case TxRejectedReason.UnknownTxFailure =>
               // We don't automatically retry unknown failures, they should be investigated manually.
-              run(pending2, retryNextBlock, channelInfo)
+              run(pending2, retryNextBlock, channelContext)
           }
       }
 
@@ -295,10 +295,10 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
           log.info("{} transactions are still pending at block {}, retrying {} transactions that previously failed", pending.size, currentBlockHeight, retryNextBlock.length)
           retryNextBlock.foreach(cmd => timers.startSingleTimer(cmd, (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis))
         }
-        run(pending, Seq.empty, channelInfo)
+        run(pending, Seq.empty, channelContext)
 
       case SetChannelId(remoteNodeId, channelId) =>
-        val channelInfo2 = channelInfo.copy(remoteNodeId = remoteNodeId, channelId_opt = Some(channelId))
+        val channelInfo2 = channelContext.copy(remoteNodeId = remoteNodeId, channelId_opt = Some(channelId))
         Behaviors.withMdc(channelInfo2.mdc()) {
           run(pending, retryNextBlock, channelInfo2)
         }

@@ -28,7 +28,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, W
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.publish.FinalTxPublisher.{Publish, Stop}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason.ConflictingTxConfirmed
-import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, TxConfirmed, TxPublishLogContext, TxRejected}
+import fr.acinq.eclair.channel.publish.TxPublisher.{PublishFinalTx, TxConfirmed, TxPublishContext, TxRejected}
 import fr.acinq.eclair.{TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.funsuite.AnyFunSuiteLike
@@ -54,7 +54,7 @@ class FinalTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     val probe = TestProbe()
     val watcher = TestProbe()
     val bitcoinClient = new BitcoinCoreClient(bitcoinrpcclient)
-    val publisher = system.spawnAnonymous(FinalTxPublisher(TestConstants.Alice.nodeParams, bitcoinClient, watcher.ref, TxPublishLogContext(UUID.randomUUID(), randomKey().publicKey, None)))
+    val publisher = system.spawnAnonymous(FinalTxPublisher(TestConstants.Alice.nodeParams, bitcoinClient, watcher.ref, TxPublishContext(UUID.randomUUID(), randomKey().publicKey, None)))
     Fixture(bitcoinClient, publisher, watcher, probe)
   }
 
