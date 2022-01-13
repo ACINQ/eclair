@@ -1057,9 +1057,9 @@ object Helpers {
     }
 
     /**
-     * Before eclair v0.5.2, we didn't store the mapping between htlc txs and the htlc id.
-     * This function is only used for channels that were closing before upgrading to eclair v0.5.2 and can be removed
-     * once we're confident all eclair nodes on the network have been upgraded.
+     * Before eclair v0.6.0, we didn't store the mapping between htlc txs and the htlc id.
+     * This function is only used for channels that were closing before upgrading to eclair v0.6.0 (released in may 2021).
+     * TODO: remove once we're confident all eclair nodes on the network have been upgraded.
      *
      * We may have multiple HTLCs with the same payment hash because of MPP.
      * When a timeout transaction is confirmed, we need to find the best matching HTLC to fail upstream.

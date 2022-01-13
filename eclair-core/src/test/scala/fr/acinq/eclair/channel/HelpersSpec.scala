@@ -181,7 +181,7 @@ class HelpersSpec extends TestKitBaseClass with AnyFunSuiteLike with ChannelStat
     val localCommit = alice.stateData.asInstanceOf[DATA_CLOSING].commitments.localCommit
     val remoteCommit = bob.stateData.asInstanceOf[DATA_CLOSING].commitments.remoteCommit
 
-    // Channels without anchor outputs that were closing before eclair v0.5.2 will not have their htlcId set after the
+    // Channels without anchor outputs that were closing before eclair v0.6.0 will not have their htlcId set after the
     // update, but still need to be able to identify timed out htlcs.
     val localCommitPublished = if (withoutHtlcId) aliceCommitPublished.copy(htlcTxs = removeHtlcIds(aliceCommitPublished.htlcTxs)) else aliceCommitPublished
     val remoteCommitPublished = if (withoutHtlcId) bobCommitPublished.copy(claimHtlcTxs = removeClaimHtlcIds(bobCommitPublished.claimHtlcTxs)) else bobCommitPublished
