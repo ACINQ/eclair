@@ -130,8 +130,11 @@ private[channel] object ChannelCodecs0 {
         ("txOut" | txOutCodec) ::
         ("redeemScript" | varsizebinarydata)).as[InputInfo].decodeOnly
 
-    // NB: we can safely set htlcId = 0 for htlc txs. This information is only used to find upstream htlcs to fail when a
+    // We can safely set htlcId = 0 for htlc txs. This information is only used to find upstream htlcs to fail when a
     // downstream htlc times out, and `Helpers.Closing.timedOutHtlcs` explicitly handles the case where htlcId is missing.
+    // We can also safely set confirmBefore = 0: we will simply use a high feerate to make these transactions confirm
+    // as quickly as possible. It's very unlikely that nodes will run into this, so it's a good trade-off between code
+    // complexity and real world impact.
     val txWithInputInfoCodec: Codec[TransactionWithInputInfo] = discriminated[TransactionWithInputInfo].by(uint16)
       .typecase(0x01, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec)).as[CommitTx])
       .typecase(0x02, (("inputInfo" | inputInfoCodec) :: ("tx" | txCodec) :: ("paymentHash" | bytes32) :: ("htlcId" | provide(0L)) :: ("confirmBefore" | provide(BlockHeight(0)))).as[HtlcSuccessTx])

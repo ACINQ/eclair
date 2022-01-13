@@ -1082,11 +1082,12 @@ object Helpers {
         log.error(s"some htlcs don't have a corresponding timeout transaction: tx=$tx, htlcs=$matchingHtlcs, timeout-txs=$matchingTxs")
       }
       matchingHtlcs.zip(matchingTxs).collectFirst {
-        // HTLC transactions cannot change when anchor outputs is unused, so we directly check the txid
-        case (add, timeoutTx) if timeoutTx.txid == tx.txid => add
-        // Claim-HTLC transactions can be updated to pay more or less fees by changing the output amount, so we cannot
-        // rely on txid equality: we instead check that the input is the same and the output goes to the same address.
-        case (add, timeoutTx) if timeoutTx.txIn.head.outPoint == tx.txIn.head.outPoint && timeoutTx.txOut.head.publicKeyScript == tx.txOut.head.publicKeyScript => add
+        // HTLC transactions cannot change when anchor outputs is not used, so we could just check that the txids match.
+        // But claim-htlc transactions can be updated to pay more or less fees by changing the output amount, so we cannot
+        // rely on txid equality for them.
+        // We instead check that the mempool transaction spends exactly the same inputs and sends the funds to exactly
+        // the same addresses as our transaction.
+        case (add, timeoutTx) if timeoutTx.txIn.map(_.outPoint).toSet == tx.txIn.map(_.outPoint).toSet && timeoutTx.txOut.map(_.publicKeyScript).toSet == tx.txOut.map(_.publicKeyScript).toSet => add
       }
     }
 
