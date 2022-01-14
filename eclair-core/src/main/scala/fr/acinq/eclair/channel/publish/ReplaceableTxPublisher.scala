@@ -16,11 +16,9 @@
 
 package fr.acinq.eclair.channel.publish
 
-import akka.actor.typed.eventstream.EventStream
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
 import fr.acinq.bitcoin.{OutPoint, Transaction}
-import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.blockchain.fee.{FeeEstimator, FeeratePerKw}
@@ -31,7 +29,7 @@ import fr.acinq.eclair.{BlockHeight, NodeParams}
 
 import scala.concurrent.duration.{DurationInt, DurationLong}
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Random, Success}
+import scala.util.Random
 
 /**
  * Created by t-bast on 10/06/2021.
@@ -53,17 +51,14 @@ object ReplaceableTxPublisher {
   private case object TimeLocksOk extends Command
   private case class WrappedFundingResult(result: ReplaceableTxFunder.FundingResult) extends Command
   private case class WrappedTxResult(result: MempoolTxMonitor.TxResult) extends Command
-  private case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   private case class CheckFee(currentBlockCount: Long) extends Command
   private case class BumpFee(targetFeerate: FeeratePerKw) extends Command
-  private case object Stay extends Command
   private case object UnlockUtxos extends Command
   private case object UtxosUnlocked extends Command
-
-  // Keys to ensure we don't have multiple concurrent timers running.
-  private case object CheckFeeKey
-  private case object CurrentBlockCountKey
   // @formatter:on
+
+  // Timer key to ensure we don't have multiple concurrent timers running.
+  private case object CheckFeeKey
 
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
@@ -147,7 +142,10 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
         result match {
-          case success: ReplaceableTxFunder.TransactionReady => publish(success.fundedTx)
+          case ReplaceableTxFunder.TransactionReady(tx) =>
+            val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
+            txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
+            wait(txMonitor, tx)
           case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
         }
       case Stop =>
@@ -158,51 +156,38 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  def publish(tx: FundedTx): Behavior[Command] = {
-    val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
-    txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
-    // We register to new blocks: if the transaction doesn't confirm, we will replace it with one that pays more fees.
-    context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
-    wait(txMonitor, tx)
-  }
-
   // Wait for our transaction to be confirmed or rejected from the mempool.
   // If we get close to the confirmation target and our transaction is stuck in the mempool, we will initiate an RBF attempt.
   def wait(txMonitor: ActorRef[MempoolTxMonitor.Command], tx: FundedTx): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedTxResult(MempoolTxMonitor.TxConfirmed(confirmedTx)) => sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
-      case WrappedTxResult(MempoolTxMonitor.TxRejected(_, reason)) =>
-        replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
-        // We wait for our parent to stop us: when that happens we will unlock utxos.
-        Behaviors.same
-      case WrappedCurrentBlockCount(currentBlockCount) =>
-        // We avoid a herd effect whenever a new block is found.
-        timers.startSingleTimer(CheckFeeKey, CheckFee(currentBlockCount), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
-        Behaviors.same
+      case WrappedTxResult(txResult) =>
+        txResult match {
+          case MempoolTxMonitor.TxInMempool(_, currentBlockCount) =>
+            // We avoid a herd effect whenever we fee bump transactions.
+            timers.startSingleTimer(CheckFeeKey, CheckFee(currentBlockCount), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
+            Behaviors.same
+          case MempoolTxMonitor.TxRecentlyConfirmed(_, _) => Behaviors.same // just wait for the tx to be deeply buried
+          case MempoolTxMonitor.TxDeeplyBuried(confirmedTx) => sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
+          case MempoolTxMonitor.TxRejected(_, reason) =>
+            replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
+            // We wait for our parent to stop us: when that happens we will unlock utxos.
+            Behaviors.same
+        }
       case CheckFee(currentBlockCount) =>
+        // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
+        val bumpRatio = 1.2
         val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.txInfo.confirmBefore, BlockHeight(currentBlockCount))
-        val targetFeerate_opt = if (cmd.txInfo.confirmBefore.toLong <= currentBlockCount + 6) {
+        if (cmd.txInfo.confirmBefore.toLong <= currentBlockCount + 6) {
           log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
-          // We make sure we increase the fees by at least 20% as we get close to the confirmation target.
-          Some(currentFeerate.max(tx.feerate * 1.2))
-        } else if (tx.feerate * 1.2 <= currentFeerate) {
+          context.self ! BumpFee(currentFeerate.max(tx.feerate * bumpRatio))
+        } else if (tx.feerate * bumpRatio <= currentFeerate) {
           log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
-          Some(currentFeerate)
+          context.self ! BumpFee(currentFeerate)
         } else {
           log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
-          None
         }
-        targetFeerate_opt.foreach(targetFeerate => {
-          // We check whether our currently published transaction is confirmed: if it is, it doesn't make sense to bump
-          // the fee, we're just waiting for enough confirmations to report the result back.
-          context.pipeToSelf(bitcoinClient.getTxConfirmations(tx.signedTx.txid)) {
-            case Success(Some(confirmations)) if confirmations > 0 => Stay
-            case _ => BumpFee(targetFeerate)
-          }
-        })
         Behaviors.same
       case BumpFee(targetFeerate) => fundReplacement(targetFeerate, txMonitor, tx)
-      case Stay => Behaviors.same
       case Stop =>
         txMonitor ! MempoolTxMonitor.Stop
         unlockAndStop(cmd.input, Seq(tx.signedTx))
@@ -227,9 +212,6 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         // We don't need to handle it now that we're in the middle of funding, we can defer it to the next state.
         timers.startSingleTimer(txResult, 1 second)
         Behaviors.same
-      case cbc: WrappedCurrentBlockCount =>
-        timers.startSingleTimer(CurrentBlockCountKey, cbc, 1 second)
-        Behaviors.same
       case Stop =>
         // We can't stop right away, because the child actor may need to unlock utxos first.
         // We just wait for the funding process to finish before stopping.
@@ -245,22 +227,29 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), s"mempool-tx-monitor-rbf-${bumpedTx.signedTx.txid}")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, cmd.input, cmd.desc, bumpedTx.fee)
     Behaviors.receiveMessagePartial {
-      case WrappedTxResult(MempoolTxMonitor.TxConfirmed(confirmedTx)) =>
-        // Since our transactions conflict, we should always receive a failure from the evicted transaction before one
-        // of them confirms: this case should not happen, so we don't bother unlocking utxos.
-        log.warn("{} was confirmed while we're publishing an RBF attempt", cmd.desc)
-        sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
-      case WrappedTxResult(MempoolTxMonitor.TxRejected(txid, _)) =>
-        if (txid == bumpedTx.signedTx.txid) {
-          log.warn("{} transaction paying more fees (txid={}) failed to replace previous transaction", cmd.desc, txid)
-          cleanUpFailedTxAndWait(bumpedTx.signedTx, previousTxMonitor, previousTx)
-        } else {
-          log.info("previous {} replaced by new transaction paying more fees (txid={})", cmd.desc, bumpedTx.signedTx.txid)
-          cleanUpFailedTxAndWait(previousTx.signedTx, txMonitor, bumpedTx)
+      case WrappedTxResult(txResult) =>
+        txResult match {
+          case MempoolTxMonitor.TxDeeplyBuried(confirmedTx) =>
+            // Since our transactions conflict, we should always receive a failure from the evicted transaction before
+            // one of them confirms: this case should not happen, so we don't bother unlocking utxos.
+            log.warn("{} was confirmed while we're publishing an RBF attempt", cmd.desc)
+            sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
+          case MempoolTxMonitor.TxRejected(txid, _) =>
+            if (txid == bumpedTx.signedTx.txid) {
+              log.warn("{} transaction paying more fees (txid={}) failed to replace previous transaction", cmd.desc, txid)
+              cleanUpFailedTxAndWait(bumpedTx.signedTx, previousTxMonitor, previousTx)
+            } else {
+              log.info("previous {} replaced by new transaction paying more fees (txid={})", cmd.desc, bumpedTx.signedTx.txid)
+              cleanUpFailedTxAndWait(previousTx.signedTx, txMonitor, bumpedTx)
+            }
+          case _: MempoolTxMonitor.IntermediateTxResult =>
+            // If a new block is found before our replacement transaction reaches the MempoolTxMonitor, we may receive
+            // an intermediate result for the previous transaction. We want to handle this event once we're back in the
+            // waiting state, because we may want to fee-bump even more aggressively if we're getting too close to the
+            // confirmation target.
+            timers.startSingleTimer(WrappedTxResult(txResult), 1 second)
+            Behaviors.same
         }
-      case cbc: WrappedCurrentBlockCount =>
-        timers.startSingleTimer(CurrentBlockCountKey, cbc, 1 second)
-        Behaviors.same
       case Stop =>
         previousTxMonitor ! MempoolTxMonitor.Stop
         txMonitor ! MempoolTxMonitor.Stop
@@ -292,9 +281,6 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         // state for this transaction.
         timers.startSingleTimer(txResult, 1 second)
         Behaviors.same
-      case cbc: WrappedCurrentBlockCount =>
-        timers.startSingleTimer(CurrentBlockCountKey, cbc, 1 second)
-        Behaviors.same
       case Stop =>
         // We don't stop right away, because we're cleaning up the failed transaction.
         // This shouldn't take long so we'll handle this command once we're back in the waiting state.
@@ -323,9 +309,6 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case UtxosUnlocked =>
         log.debug("utxos unlocked")
         Behaviors.stopped
-      case WrappedCurrentBlockCount(_) =>
-        log.debug("ignoring new block while stopping")
-        Behaviors.same
       case Stop =>
         log.debug("waiting for utxos to be unlocked before stopping")
         Behaviors.same
@@ -336,9 +319,6 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   def sendResult(result: TxPublisher.PublishTxResult): Behavior[Command] = {
     replyTo ! result
     Behaviors.receiveMessagePartial {
-      case WrappedCurrentBlockCount(_) =>
-        log.debug("ignoring new block while stopping")
-        Behaviors.same
       case Stop => Behaviors.stopped
     }
   }

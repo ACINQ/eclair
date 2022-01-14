@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.WatcherSpec.{createSpendManyP2WPKH, createSpendP2WPKH}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoindService
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
-import fr.acinq.eclair.channel.publish.MempoolTxMonitor.{Publish, Stop, TxConfirmed, TxRejected}
+import fr.acinq.eclair.channel.publish.MempoolTxMonitor._
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.{TransactionConfirmed, TransactionPublished}
@@ -81,14 +81,20 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 50 sat)
     waitTxInMempool(bitcoinClient, tx.txid, probe)
 
+    // NB: we don't really generate a block, we're testing the case where the tx is still in the mempool.
+    system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
+    probe.expectMsg(TxInMempool(tx.txid, currentBlockHeight(probe)))
+    probe.expectNoMessage(100 millis)
+
     assert(TestConstants.Alice.nodeParams.minDepthBlocks > 1)
     generateBlocks(1)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
+    probe.expectMsg(TxRecentlyConfirmed(tx.txid, 1))
     probe.expectNoMessage(100 millis) // we wait for more than one confirmation to protect against reorgs
 
     generateBlocks(TestConstants.Alice.nodeParams.minDepthBlocks - 1)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
-    probe.expectMsg(TxConfirmed(tx))
+    probe.expectMsg(TxDeeplyBuried(tx))
   }
 
   test("transaction confirmed after replacing existing mempool transaction") {
@@ -105,7 +111,7 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
 
     generateBlocks(TestConstants.Alice.nodeParams.minDepthBlocks)
     system.eventStream.publish(CurrentBlockCount(currentBlockHeight(probe)))
-    probe.expectMsg(TxConfirmed(tx2))
+    probe.expectMsg(TxDeeplyBuried(tx2))
   }
 
   test("publish failed (conflicting mempool transaction)") {

@@ -119,8 +119,12 @@ private class FinalTxPublisher(nodeParams: NodeParams,
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), cmd.tx, cmd.input, cmd.desc, cmd.fee)
     Behaviors.receiveMessagePartial {
-      case WrappedTxResult(MempoolTxMonitor.TxConfirmed(tx)) => sendResult(TxPublisher.TxConfirmed(cmd, tx))
-      case WrappedTxResult(MempoolTxMonitor.TxRejected(_, reason)) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
+      case WrappedTxResult(txResult) =>
+        txResult match {
+          case _: MempoolTxMonitor.IntermediateTxResult => Behaviors.same
+          case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
+          case MempoolTxMonitor.TxDeeplyBuried(tx) => sendResult(TxPublisher.TxConfirmed(cmd, tx))
+        }
       case Stop =>
         txMonitor ! MempoolTxMonitor.Stop
         Behaviors.stopped
