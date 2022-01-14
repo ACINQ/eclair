@@ -69,7 +69,10 @@ object ReplaceableTxPublisher {
     Behaviors.setup { context =>
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
-          new ReplaceableTxPublisher(nodeParams, bitcoinClient, watcher, context, timers, loggingInfo).start()
+          Behaviors.receiveMessagePartial {
+            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, loggingInfo).checkPreconditions()
+            case Stop => Behaviors.stopped
+          }
         }
       }
     }
@@ -93,27 +96,27 @@ object ReplaceableTxPublisher {
 
 }
 
-private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], context: ActorContext[ReplaceableTxPublisher.Command], timers: TimerScheduler[ReplaceableTxPublisher.Command], loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class ReplaceableTxPublisher(nodeParams: NodeParams,
+                                     replyTo: ActorRef[TxPublisher.PublishTxResult],
+                                     cmd: TxPublisher.PublishReplaceableTx,
+                                     bitcoinClient: BitcoinCoreClient,
+                                     watcher: ActorRef[ZmqWatcher.Command],
+                                     context: ActorContext[ReplaceableTxPublisher.Command],
+                                     timers: TimerScheduler[ReplaceableTxPublisher.Command],
+                                     loggingInfo: TxPublishLogContext)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import ReplaceableTxPublisher._
 
   private val log = context.log
 
-  def start(): Behavior[Command] = {
-    Behaviors.receiveMessagePartial {
-      case Publish(replyTo, cmd) => checkPreconditions(replyTo, cmd)
-      case Stop => Behaviors.stopped
-    }
-  }
-
-  def checkPreconditions(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx): Behavior[Command] = {
+  def checkPreconditions(): Behavior[Command] = {
     val prePublisher = context.spawn(ReplaceableTxPrePublisher(nodeParams, bitcoinClient, loggingInfo), "pre-publisher")
     prePublisher ! ReplaceableTxPrePublisher.CheckPreconditions(context.messageAdapter[ReplaceableTxPrePublisher.PreconditionsResult](WrappedPreconditionsResult), cmd)
     Behaviors.receiveMessagePartial {
       case WrappedPreconditionsResult(result) =>
         result match {
-          case ReplaceableTxPrePublisher.PreconditionsOk(txWithWitnessData) => checkTimeLocks(replyTo, cmd, txWithWitnessData)
-          case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
+          case ReplaceableTxPrePublisher.PreconditionsOk(txWithWitnessData) => checkTimeLocks(txWithWitnessData)
+          case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
         }
       case Stop =>
         prePublisher ! ReplaceableTxPrePublisher.Stop
@@ -121,15 +124,15 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
     }
   }
 
-  def checkTimeLocks(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
+  def checkTimeLocks(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
     txWithWitnessData match {
       // There are no time locks on anchor transactions, we can claim them right away.
-      case _: ClaimLocalAnchorWithWitnessData => fund(replyTo, cmd, txWithWitnessData)
+      case _: ClaimLocalAnchorWithWitnessData => fund(txWithWitnessData)
       case _ =>
         val timeLocksChecker = context.spawn(TxTimeLocksMonitor(nodeParams, watcher, loggingInfo), "time-locks-monitor")
         timeLocksChecker ! TxTimeLocksMonitor.CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
         Behaviors.receiveMessagePartial {
-          case TimeLocksOk => fund(replyTo, cmd, txWithWitnessData)
+          case TimeLocksOk => fund(txWithWitnessData)
           case Stop =>
             timeLocksChecker ! TxTimeLocksMonitor.Stop
             Behaviors.stopped
@@ -137,15 +140,15 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
     }
   }
 
-  def fund(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
+  def fund(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
     val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.txInfo.confirmBefore, BlockHeight(nodeParams.currentBlockHeight))
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
         result match {
-          case success: ReplaceableTxFunder.TransactionReady => publish(replyTo, cmd, success.fundedTx)
-          case ReplaceableTxFunder.FundingFailed(reason) => sendResult(replyTo, TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
+          case success: ReplaceableTxFunder.TransactionReady => publish(success.fundedTx)
+          case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
         }
       case Stop =>
         // We can't stop right now, the child actor is currently funding the transaction and will send its result soon.
@@ -155,19 +158,19 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
     }
   }
 
-  def publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, tx: FundedTx): Behavior[Command] = {
+  def publish(tx: FundedTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), "mempool-tx-monitor")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
     // We register to new blocks: if the transaction doesn't confirm, we will replace it with one that pays more fees.
     context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount)))
-    wait(replyTo, cmd, txMonitor, tx)
+    wait(txMonitor, tx)
   }
 
   // Wait for our transaction to be confirmed or rejected from the mempool.
   // If we get close to the confirmation target and our transaction is stuck in the mempool, we will initiate an RBF attempt.
-  def wait(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, txMonitor: ActorRef[MempoolTxMonitor.Command], tx: FundedTx): Behavior[Command] = {
+  def wait(txMonitor: ActorRef[MempoolTxMonitor.Command], tx: FundedTx): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
-      case WrappedTxResult(MempoolTxMonitor.TxConfirmed(confirmedTx)) => sendResult(replyTo, TxPublisher.TxConfirmed(cmd, confirmedTx))
+      case WrappedTxResult(MempoolTxMonitor.TxConfirmed(confirmedTx)) => sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
       case WrappedTxResult(MempoolTxMonitor.TxRejected(_, reason)) =>
         replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
         // We wait for our parent to stop us: when that happens we will unlock utxos.
@@ -198,7 +201,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
           }
         })
         Behaviors.same
-      case BumpFee(targetFeerate) => fundReplacement(replyTo, cmd, targetFeerate, txMonitor, tx)
+      case BumpFee(targetFeerate) => fundReplacement(targetFeerate, txMonitor, tx)
       case Stay => Behaviors.same
       case Stop =>
         txMonitor ! MempoolTxMonitor.Stop
@@ -207,17 +210,17 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   }
 
   // Fund a replacement transaction because our previous attempt seems to be stuck in the mempool.
-  def fundReplacement(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, targetFeerate: FeeratePerKw, previousTxMonitor: ActorRef[MempoolTxMonitor.Command], previousTx: FundedTx): Behavior[Command] = {
+  def fundReplacement(targetFeerate: FeeratePerKw, previousTxMonitor: ActorRef[MempoolTxMonitor.Command], previousTx: FundedTx): Behavior[Command] = {
     log.info("bumping {} fees: previous feerate={}, next feerate={}", cmd.desc, previousTx.feerate, targetFeerate)
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder-rbf")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Left(previousTx), targetFeerate)
     Behaviors.receiveMessagePartial {
       case WrappedFundingResult(result) =>
         result match {
-          case success: ReplaceableTxFunder.TransactionReady => publishReplacement(replyTo, cmd, previousTx, previousTxMonitor, success.fundedTx)
+          case success: ReplaceableTxFunder.TransactionReady => publishReplacement(previousTx, previousTxMonitor, success.fundedTx)
           case ReplaceableTxFunder.FundingFailed(_) =>
             log.warn("could not fund {} replacement transaction (target feerate={})", cmd.desc, targetFeerate)
-            wait(replyTo, cmd, previousTxMonitor, previousTx)
+            wait(previousTxMonitor, previousTx)
         }
       case txResult: WrappedTxResult =>
         // This is the result of the previous publishing attempt.
@@ -238,7 +241,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   // Publish an RBF attempt. We then have two concurrent transactions: the previous one and the updated one.
   // Only one of them can be in the mempool, so we wait for the other to be rejected. Once that's done, we're back to a
   // situation where we have one transaction in the mempool and wait for it to confirm.
-  def publishReplacement(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, previousTx: FundedTx, previousTxMonitor: ActorRef[MempoolTxMonitor.Command], bumpedTx: FundedTx): Behavior[Command] = {
+  def publishReplacement(previousTx: FundedTx, previousTxMonitor: ActorRef[MempoolTxMonitor.Command], bumpedTx: FundedTx): Behavior[Command] = {
     val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), s"mempool-tx-monitor-rbf-${bumpedTx.signedTx.txid}")
     txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), bumpedTx.signedTx, cmd.input, cmd.desc, bumpedTx.fee)
     Behaviors.receiveMessagePartial {
@@ -246,14 +249,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
         // Since our transactions conflict, we should always receive a failure from the evicted transaction before one
         // of them confirms: this case should not happen, so we don't bother unlocking utxos.
         log.warn("{} was confirmed while we're publishing an RBF attempt", cmd.desc)
-        sendResult(replyTo, TxPublisher.TxConfirmed(cmd, confirmedTx))
+        sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
       case WrappedTxResult(MempoolTxMonitor.TxRejected(txid, _)) =>
         if (txid == bumpedTx.signedTx.txid) {
           log.warn("{} transaction paying more fees (txid={}) failed to replace previous transaction", cmd.desc, txid)
-          cleanUpFailedTxAndWait(replyTo, cmd, bumpedTx.signedTx, previousTxMonitor, previousTx)
+          cleanUpFailedTxAndWait(bumpedTx.signedTx, previousTxMonitor, previousTx)
         } else {
           log.info("previous {} replaced by new transaction paying more fees (txid={})", cmd.desc, bumpedTx.signedTx.txid)
-          cleanUpFailedTxAndWait(replyTo, cmd, previousTx.signedTx, txMonitor, bumpedTx)
+          cleanUpFailedTxAndWait(previousTx.signedTx, txMonitor, bumpedTx)
         }
       case cbc: WrappedCurrentBlockCount =>
         timers.startSingleTimer(CurrentBlockCountKey, cbc, 1 second)
@@ -268,7 +271,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   }
 
   // Clean up the failed transaction attempt. Once that's done, go back to the waiting state with the new transaction.
-  def cleanUpFailedTxAndWait(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx, failedTx: Transaction, txMonitor: ActorRef[MempoolTxMonitor.Command], mempoolTx: FundedTx): Behavior[Command] = {
+  def cleanUpFailedTxAndWait(failedTx: Transaction, txMonitor: ActorRef[MempoolTxMonitor.Command], mempoolTx: FundedTx): Behavior[Command] = {
     context.pipeToSelf(bitcoinClient.abandonTransaction(failedTx.txid))(_ => UnlockUtxos)
     Behaviors.receiveMessagePartial {
       case UnlockUtxos =>
@@ -283,7 +286,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
       case UtxosUnlocked =>
         // Now that we've cleaned up the failed transaction, we can go back to waiting for the current mempool transaction
         // or bump it if it doesn't confirm fast enough either.
-        wait(replyTo, cmd, txMonitor, mempoolTx)
+        wait(txMonitor, mempoolTx)
       case txResult: WrappedTxResult =>
         // This is the result of the current mempool tx: we will handle this command once we're back in the waiting
         // state for this transaction.
@@ -330,7 +333,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams, bitcoinClient: Bitc
   }
 
   /** Use this function to send the result upstream and stop without stopping child actors. */
-  def sendResult(replyTo: ActorRef[TxPublisher.PublishTxResult], result: TxPublisher.PublishTxResult): Behavior[Command] = {
+  def sendResult(result: TxPublisher.PublishTxResult): Behavior[Command] = {
     replyTo ! result
     Behaviors.receiveMessagePartial {
       case WrappedCurrentBlockCount(_) =>

@@ -71,7 +71,14 @@ object ReplaceableTxFunder {
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(loggingInfo.mdc()) {
-        new ReplaceableTxFunder(nodeParams, bitcoinClient, context).start()
+        Behaviors.receiveMessagePartial {
+          case FundTransaction(replyTo, cmd, tx, targetFeerate) =>
+            val txFunder = new ReplaceableTxFunder(nodeParams, replyTo, cmd, bitcoinClient, context)
+            tx match {
+              case Right(txWithWitnessData) => txFunder.fund(txWithWitnessData, targetFeerate)
+              case Left(previousTx) => txFunder.bump(previousTx, targetFeerate)
+            }
+        }
       }
     }
   }
@@ -223,23 +230,18 @@ object ReplaceableTxFunder {
 
 }
 
-private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, context: ActorContext[ReplaceableTxFunder.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class ReplaceableTxFunder(nodeParams: NodeParams,
+                                  replyTo: ActorRef[ReplaceableTxFunder.FundingResult],
+                                  cmd: TxPublisher.PublishReplaceableTx,
+                                  bitcoinClient: BitcoinCoreClient,
+                                  context: ActorContext[ReplaceableTxFunder.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import ReplaceableTxFunder._
   import nodeParams.{channelKeyManager => keyManager}
 
   private val log = context.log
 
-  def start(): Behavior[Command] = {
-    Behaviors.receiveMessagePartial {
-      case FundTransaction(replyTo, cmd, tx, targetFeerate) => tx match {
-        case Right(txWithWitnessData) => fund(replyTo, cmd, txWithWitnessData, targetFeerate)
-        case Left(previousTx) => bump(replyTo, cmd, previousTx, targetFeerate)
-      }
-    }
-  }
-
-  def fund(replyTo: ActorRef[FundingResult], cmd: TxPublisher.PublishReplaceableTx, txWithWitnessData: ReplaceableTxWithWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def fund(txWithWitnessData: ReplaceableTxWithWitnessData, targetFeerate: FeeratePerKw): Behavior[Command] = {
     txWithWitnessData match {
       case claimLocalAnchor: ClaimLocalAnchorWithWitnessData =>
         val commitFeerate = cmd.commitments.localCommit.spec.commitTxFeerate
@@ -250,15 +252,15 @@ private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: Bitcoin
           replyTo ! FundingFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
           Behaviors.stopped
         } else {
-          addWalletInputs(replyTo, cmd, claimLocalAnchor, targetFeerate)
+          addWalletInputs(claimLocalAnchor, targetFeerate)
         }
       case htlcTx: HtlcWithWitnessData =>
         val htlcFeerate = cmd.commitments.localCommit.spec.htlcTxFeerate(cmd.commitments.commitmentFormat)
         if (targetFeerate <= htlcFeerate) {
           log.info("publishing {} without adding inputs: txid={}", cmd.desc, htlcTx.txInfo.tx.txid)
-          sign(replyTo, cmd, txWithWitnessData, htlcFeerate, htlcTx.txInfo.amountIn)
+          sign(txWithWitnessData, htlcFeerate, htlcTx.txInfo.amountIn)
         } else {
-          addWalletInputs(replyTo, cmd, htlcTx, targetFeerate)
+          addWalletInputs(htlcTx, targetFeerate)
         }
       case claimHtlcTx: ClaimHtlcWithWitnessData =>
         adjustClaimHtlcTxOutput(claimHtlcTx, targetFeerate, cmd.commitments.localParams.dustLimit) match {
@@ -268,12 +270,12 @@ private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: Bitcoin
             replyTo ! FundingFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = true))
             Behaviors.stopped
           case Right(updatedClaimHtlcTx) =>
-            sign(replyTo, cmd, updatedClaimHtlcTx, targetFeerate, updatedClaimHtlcTx.txInfo.amountIn)
+            sign(updatedClaimHtlcTx, targetFeerate, updatedClaimHtlcTx.txInfo.amountIn)
         }
     }
   }
 
-  def bump(replyTo: ActorRef[FundingResult], cmd: TxPublisher.PublishReplaceableTx, previousTx: FundedTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def bump(previousTx: FundedTx, targetFeerate: FeeratePerKw): Behavior[Command] = {
     adjustPreviousTxOutput(previousTx, targetFeerate, cmd.commitments) match {
       case AdjustPreviousTxOutputResult.Skip(reason) =>
         log.warn("skipping {} fee bumping: {} (feerate={})", cmd.desc, reason, targetFeerate)
@@ -281,16 +283,16 @@ private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: Bitcoin
         Behaviors.stopped
       case AdjustPreviousTxOutputResult.TxOutputAdjusted(updatedTx) =>
         log.debug("bumping {} fees without adding new inputs: txid={}", cmd.desc, updatedTx.txInfo.tx.txid)
-        sign(replyTo, cmd, updatedTx, targetFeerate, previousTx.totalAmountIn)
+        sign(updatedTx, targetFeerate, previousTx.totalAmountIn)
       case AdjustPreviousTxOutputResult.AddWalletInputs(tx) =>
         log.debug("bumping {} fees requires adding new inputs (feerate={})", cmd.desc, targetFeerate)
         // We restore the original transaction (remove previous attempt's wallet inputs).
         val resetTx = tx.updateTx(cmd.txInfo.tx)
-        addWalletInputs(replyTo, cmd, resetTx, targetFeerate)
+        addWalletInputs(resetTx, targetFeerate)
     }
   }
 
-  def addWalletInputs(replyTo: ActorRef[FundingResult], cmd: TxPublisher.PublishReplaceableTx, txWithWitnessData: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw): Behavior[Command] = {
+  def addWalletInputs(txWithWitnessData: ReplaceableTxWithWalletInputs, targetFeerate: FeeratePerKw): Behavior[Command] = {
     context.pipeToSelf(addInputs(txWithWitnessData, targetFeerate, cmd.commitments)) {
       case Success((fundedTx, totalAmountIn)) => AddInputsOk(fundedTx, totalAmountIn)
       case Failure(reason) => AddInputsFailed(reason)
@@ -298,7 +300,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: Bitcoin
     Behaviors.receiveMessagePartial {
       case AddInputsOk(fundedTx, totalAmountIn) =>
         log.info("added {} wallet input(s) and {} wallet output(s) to {}", fundedTx.txInfo.tx.txIn.length - 1, fundedTx.txInfo.tx.txOut.length - 1, cmd.desc)
-        sign(replyTo, cmd, fundedTx, targetFeerate, totalAmountIn)
+        sign(fundedTx, targetFeerate, totalAmountIn)
       case AddInputsFailed(reason) =>
         if (reason.getMessage.contains("Insufficient funds")) {
           val nodeOperatorMessage =
@@ -315,13 +317,13 @@ private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: Bitcoin
     }
   }
 
-  def sign(replyTo: ActorRef[FundingResult], cmd: TxPublisher.PublishReplaceableTx, fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
+  def sign(fundedTx: ReplaceableTxWithWitnessData, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
     val channelKeyPath = keyManager.keyPath(cmd.commitments.localParams, cmd.commitments.channelConfig)
     fundedTx match {
       case ClaimLocalAnchorWithWitnessData(anchorTx) =>
         val localSig = keyManager.sign(anchorTx, keyManager.fundingPublicKey(cmd.commitments.localParams.fundingKeyPath), TxOwner.Local, cmd.commitments.commitmentFormat)
         val signedTx = ClaimLocalAnchorWithWitnessData(addSigs(anchorTx, localSig))
-        signWalletInputs(replyTo, cmd, signedTx, txFeerate, amountIn)
+        signWalletInputs(signedTx, txFeerate, amountIn)
       case htlcTx: HtlcWithWitnessData =>
         val localPerCommitmentPoint = keyManager.commitmentPoint(channelKeyPath, cmd.commitments.localCommit.index)
         val localHtlcBasepoint = keyManager.htlcPoint(channelKeyPath)
@@ -332,7 +334,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: Bitcoin
         }
         val hasWalletInputs = htlcTx.txInfo.tx.txIn.size > 1
         if (hasWalletInputs) {
-          signWalletInputs(replyTo, cmd, signedTx, txFeerate, amountIn)
+          signWalletInputs(signedTx, txFeerate, amountIn)
         } else {
           replyTo ! TransactionReady(FundedTx(signedTx, amountIn, txFeerate))
           Behaviors.stopped
@@ -349,7 +351,7 @@ private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: Bitcoin
     }
   }
 
-  def signWalletInputs(replyTo: ActorRef[FundingResult], cmd: TxPublisher.PublishReplaceableTx, locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
+  def signWalletInputs(locallySignedTx: ReplaceableTxWithWalletInputs, txFeerate: FeeratePerKw, amountIn: Satoshi): Behavior[Command] = {
     locallySignedTx match {
       case ClaimLocalAnchorWithWitnessData(anchorTx) =>
         val commitInfo = BitcoinCoreClient.PreviousTx(anchorTx.input, anchorTx.tx.txIn.head.witness)
@@ -377,11 +379,11 @@ private class ReplaceableTxFunder(nodeParams: NodeParams, bitcoinClient: Bitcoin
         log.error("cannot sign {}: {}", cmd.desc, reason)
         // We reply with the failure only once the utxos are unlocked, otherwise there is a risk that our parent stops
         // itself, which will automatically stop us before we had a chance to unlock them.
-        unlockAndStop(replyTo, locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
+        unlockAndStop(locallySignedTx.txInfo.input.outPoint, locallySignedTx.txInfo.tx, TxPublisher.TxRejectedReason.UnknownTxFailure)
     }
   }
 
-  def unlockAndStop(replyTo: ActorRef[FundingResult], input: OutPoint, tx: Transaction, failure: TxPublisher.TxRejectedReason): Behavior[Command] = {
+  def unlockAndStop(input: OutPoint, tx: Transaction, failure: TxPublisher.TxRejectedReason): Behavior[Command] = {
     val toUnlock = tx.txIn.filterNot(_.outPoint == input).map(_.outPoint)
     log.debug("unlocking utxos={}", toUnlock.mkString(", "))
     context.pipeToSelf(bitcoinClient.unlockOutpoints(toUnlock))(_ => UtxosUnlocked)

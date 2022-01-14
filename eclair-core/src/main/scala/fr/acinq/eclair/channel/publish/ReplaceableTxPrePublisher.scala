@@ -99,32 +99,33 @@ object ReplaceableTxPrePublisher {
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(loggingInfo.mdc()) {
-        new ReplaceableTxPrePublisher(nodeParams, bitcoinClient, context).start()
+        Behaviors.receiveMessagePartial {
+          case CheckPreconditions(replyTo, cmd) =>
+            val prePublisher = new ReplaceableTxPrePublisher(nodeParams, replyTo, cmd, bitcoinClient, context)
+            cmd.txInfo match {
+              case localAnchorTx: Transactions.ClaimLocalAnchorOutputTx => prePublisher.checkAnchorPreconditions(localAnchorTx)
+              case htlcTx: Transactions.HtlcTx => prePublisher.checkHtlcPreconditions(htlcTx)
+              case claimHtlcTx: Transactions.ClaimHtlcTx => prePublisher.checkClaimHtlcPreconditions(claimHtlcTx)
+            }
+          case Stop => Behaviors.stopped
+        }
       }
     }
   }
 
 }
 
-private class ReplaceableTxPrePublisher(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, context: ActorContext[ReplaceableTxPrePublisher.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
+                                        replyTo: ActorRef[ReplaceableTxPrePublisher.PreconditionsResult],
+                                        cmd: TxPublisher.PublishReplaceableTx,
+                                        bitcoinClient: BitcoinCoreClient,
+                                        context: ActorContext[ReplaceableTxPrePublisher.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import ReplaceableTxPrePublisher._
 
   private val log = context.log
 
-  def start(): Behavior[Command] = {
-    Behaviors.receiveMessagePartial {
-      case CheckPreconditions(replyTo, cmd) =>
-        cmd.txInfo match {
-          case localAnchorTx: Transactions.ClaimLocalAnchorOutputTx => checkAnchorPreconditions(replyTo, cmd, localAnchorTx)
-          case htlcTx: Transactions.HtlcTx => checkHtlcPreconditions(replyTo, cmd, htlcTx)
-          case claimHtlcTx: Transactions.ClaimHtlcTx => checkClaimHtlcPreconditions(replyTo, cmd, claimHtlcTx)
-        }
-      case Stop => Behaviors.stopped
-    }
-  }
-
-  def checkAnchorPreconditions(replyTo: ActorRef[PreconditionsResult], cmd: TxPublisher.PublishReplaceableTx, localAnchorTx: ClaimLocalAnchorOutputTx): Behavior[Command] = {
+  def checkAnchorPreconditions(localAnchorTx: ClaimLocalAnchorOutputTx): Behavior[Command] = {
     // We verify that:
     //  - our commit is not confirmed (if it is, no need to claim our anchor)
     //  - their commit is not confirmed (if it is, no need to claim our anchor either)
@@ -165,7 +166,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams, bitcoinClient: B
     }
   }
 
-  def checkHtlcPreconditions(replyTo: ActorRef[PreconditionsResult], cmd: TxPublisher.PublishReplaceableTx, htlcTx: HtlcTx): Behavior[Command] = {
+  def checkHtlcPreconditions(htlcTx: HtlcTx): Behavior[Command] = {
     // We verify that:
     //  - their commit is not confirmed: if it is, there is no need to publish our htlc transactions
     //  - if this is an htlc-success transaction, we have the preimage
@@ -228,7 +229,7 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams, bitcoinClient: B
     }
   }
 
-  def checkClaimHtlcPreconditions(replyTo: ActorRef[PreconditionsResult], cmd: TxPublisher.PublishReplaceableTx, claimHtlcTx: ClaimHtlcTx): Behavior[Command] = {
+  def checkClaimHtlcPreconditions(claimHtlcTx: ClaimHtlcTx): Behavior[Command] = {
     // We verify that:
     //  - our commit is not confirmed: if it is, there is no need to publish our claim-htlc transactions
     //  - if this is a claim-htlc-success transaction, we have the preimage

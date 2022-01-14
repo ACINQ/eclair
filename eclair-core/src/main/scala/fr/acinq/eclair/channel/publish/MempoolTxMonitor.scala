@@ -58,72 +58,68 @@ object MempoolTxMonitor {
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(loggingInfo.mdc()) {
-        new MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo, context).start()
+        Behaviors.receiveMessagePartial {
+          case cmd: Publish => new MempoolTxMonitor(nodeParams, cmd, bitcoinClient, loggingInfo, context).publish()
+          case Stop => Behaviors.stopped
+        }
       }
     }
   }
 
 }
 
-private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext, context: ActorContext[MempoolTxMonitor.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
+private class MempoolTxMonitor(nodeParams: NodeParams, cmd: MempoolTxMonitor.Publish, bitcoinClient: BitcoinCoreClient, loggingInfo: TxPublishLogContext, context: ActorContext[MempoolTxMonitor.Command])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) {
 
   import MempoolTxMonitor._
 
   private val log = context.log
 
-  def start(): Behavior[Command] = {
-    Behaviors.receiveMessagePartial {
-      case Publish(replyTo, tx, input, desc, fee) => publish(replyTo, tx, input, desc, fee)
-      case Stop => Behaviors.stopped
-    }
-  }
-
-  def publish(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint, desc: String, fee: Satoshi): Behavior[Command] = {
-    context.pipeToSelf(bitcoinClient.publishTransaction(tx)) {
+  def publish(): Behavior[Command] = {
+    context.pipeToSelf(bitcoinClient.publishTransaction(cmd.tx)) {
       case Success(_) => PublishOk
       case Failure(reason) => PublishFailed(reason)
     }
     Behaviors.receiveMessagePartial {
       case PublishOk =>
-        log.debug("txid={} was successfully published, waiting for confirmation...", tx.txid)
-        context.system.eventStream ! EventStream.Publish(TransactionPublished(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, tx, fee, desc))
-        waitForConfirmation(replyTo, tx, input)
+        log.debug("txid={} was successfully published, waiting for confirmation...", cmd.tx.txid)
+        context.system.eventStream ! EventStream.Publish(TransactionPublished(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, cmd.tx, cmd.fee, cmd.desc))
+        waitForConfirmation()
       case PublishFailed(reason) if reason.getMessage.contains("rejecting replacement") =>
         log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
-        sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
+        sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
       case PublishFailed(reason) if reason.getMessage.contains("bad-txns-inputs-missingorspent") =>
         // This can only happen if one of our inputs is already spent by a confirmed transaction or doesn't exist (e.g.
         // unconfirmed wallet input that has been replaced).
-        checkInputStatus(input)
+        checkInputStatus(cmd.input)
         Behaviors.same
       case PublishFailed(reason) =>
         log.error("could not publish transaction", reason)
-        sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.UnknownTxFailure))
+        sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.UnknownTxFailure))
       case status: InputStatus =>
         if (status.spentConfirmed) {
           log.info("could not publish tx: a conflicting transaction is already confirmed")
-          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxConfirmed))
+          sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.ConflictingTxConfirmed))
         } else if (status.spentUnconfirmed) {
           log.info("could not publish tx: a conflicting mempool transaction is already in the mempool")
-          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
+          sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
         } else {
           log.info("could not publish tx: one of our wallet inputs is not available")
-          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.WalletInputGone))
+          sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.WalletInputGone))
         }
       case CheckInputFailed(reason) =>
         log.error("could not check input status", reason)
-        sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true))) // we act as if the input is potentially still spendable
+        sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true))) // we act as if the input is potentially still spendable
       case Stop =>
         Behaviors.stopped
     }
   }
 
-  def waitForConfirmation(replyTo: ActorRef[TxResult], tx: Transaction, input: OutPoint): Behavior[Command] = {
+  def waitForConfirmation(): Behavior[Command] = {
     val messageAdapter = context.messageAdapter[CurrentBlockCount](cbc => WrappedCurrentBlockCount(cbc.blockCount))
     context.system.eventStream ! EventStream.Subscribe(messageAdapter)
     Behaviors.receiveMessagePartial {
       case WrappedCurrentBlockCount(_) =>
-        context.pipeToSelf(bitcoinClient.getTxConfirmations(tx.txid)) {
+        context.pipeToSelf(bitcoinClient.getTxConfirmations(cmd.tx.txid)) {
           case Success(Some(confirmations)) => TxConfirmations(confirmations)
           case Success(None) => TxNotFound
           case Failure(reason) => GetTxConfirmationsFailed(reason)
@@ -131,18 +127,18 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
         Behaviors.same
       case TxConfirmations(confirmations) =>
         if (confirmations == 1) {
-          log.info("txid={} has been confirmed, waiting to reach min depth", tx.txid)
+          log.info("txid={} has been confirmed, waiting to reach min depth", cmd.tx.txid)
         }
         if (nodeParams.minDepthBlocks <= confirmations) {
-          log.info("txid={} has reached min depth", tx.txid)
-          context.system.eventStream ! EventStream.Publish(TransactionConfirmed(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, tx))
-          sendResult(replyTo, TxConfirmed(tx), Some(messageAdapter))
+          log.info("txid={} has reached min depth", cmd.tx.txid)
+          context.system.eventStream ! EventStream.Publish(TransactionConfirmed(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, cmd.tx))
+          sendResult(cmd.replyTo, TxConfirmed(cmd.tx), Some(messageAdapter))
         } else {
           Behaviors.same
         }
       case TxNotFound =>
-        log.warn("txid={} has been evicted from the mempool", tx.txid)
-        checkInputStatus(input)
+        log.warn("txid={} has been evicted from the mempool", cmd.tx.txid)
+        checkInputStatus(cmd.input)
         Behaviors.same
       case GetTxConfirmationsFailed(reason) =>
         log.error("could not get tx confirmations", reason)
@@ -151,17 +147,17 @@ private class MempoolTxMonitor(nodeParams: NodeParams, bitcoinClient: BitcoinCor
       case status: InputStatus =>
         if (status.spentConfirmed) {
           log.info("tx was evicted from the mempool: a conflicting transaction has been confirmed")
-          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxConfirmed))
+          sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.ConflictingTxConfirmed))
         } else if (status.spentUnconfirmed) {
           log.info("tx was evicted from the mempool: a conflicting transaction replaced it")
-          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
+          sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.ConflictingTxUnconfirmed))
         } else {
           log.info("tx was evicted from the mempool: one of our wallet inputs disappeared")
-          sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.WalletInputGone))
+          sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.WalletInputGone))
         }
       case CheckInputFailed(reason) =>
         log.error("could not check input status", reason)
-        sendResult(replyTo, TxRejected(tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true)), Some(messageAdapter))
+        sendResult(cmd.replyTo, TxRejected(cmd.tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true)), Some(messageAdapter))
       case Stop =>
         context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
         Behaviors.stopped

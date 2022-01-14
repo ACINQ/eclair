@@ -50,27 +50,23 @@ object TxTimeLocksMonitor {
   def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
       Behaviors.withMdc(loggingInfo.mdc()) {
-        new TxTimeLocksMonitor(nodeParams, watcher, context).start()
+        Behaviors.receiveMessagePartial {
+          case cmd: CheckTx => new TxTimeLocksMonitor(nodeParams, cmd, watcher, context).checkAbsoluteTimeLock()
+          case Stop => Behaviors.stopped
+        }
       }
     }
   }
 
 }
 
-private class TxTimeLocksMonitor(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], context: ActorContext[TxTimeLocksMonitor.Command]) {
+private class TxTimeLocksMonitor(nodeParams: NodeParams, cmd: TxTimeLocksMonitor.CheckTx, watcher: ActorRef[ZmqWatcher.Command], context: ActorContext[TxTimeLocksMonitor.Command]) {
 
   import TxTimeLocksMonitor._
 
   private val log = context.log
 
-  def start(): Behavior[Command] = {
-    Behaviors.receiveMessagePartial {
-      case cmd: CheckTx => checkAbsoluteTimeLock(cmd)
-      case Stop => Behaviors.stopped
-    }
-  }
-
-  def checkAbsoluteTimeLock(cmd: CheckTx): Behavior[Command] = {
+  def checkAbsoluteTimeLock(): Behavior[Command] = {
     val blockCount = nodeParams.currentBlockHeight
     val cltvTimeout = Scripts.cltvTimeout(cmd.tx)
     if (blockCount < cltvTimeout) {
@@ -81,7 +77,7 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams, watcher: ActorRef[ZmqWa
         case WrappedCurrentBlockCount(currentBlockCount) =>
           if (cltvTimeout <= currentBlockCount) {
             context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
-            checkRelativeTimeLocks(cmd)
+            checkRelativeTimeLocks()
           } else {
             Behaviors.same
           }
@@ -90,11 +86,11 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams, watcher: ActorRef[ZmqWa
           Behaviors.stopped
       }
     } else {
-      checkRelativeTimeLocks(cmd)
+      checkRelativeTimeLocks()
     }
   }
 
-  def checkRelativeTimeLocks(cmd: CheckTx): Behavior[Command] = {
+  def checkRelativeTimeLocks(): Behavior[Command] = {
     val csvTimeouts = Scripts.csvTimeouts(cmd.tx)
     if (csvTimeouts.nonEmpty) {
       val watchConfirmedResponseMapper: ActorRef[WatchParentTxConfirmedTriggered] = context.messageAdapter(w => ParentTxConfirmed(w.tx.txid))
@@ -103,29 +99,29 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams, watcher: ActorRef[ZmqWa
           log.info("{} has a relative timeout of {} blocks, watching parentTxId={}", cmd.desc, csvTimeout, parentTxId)
           watcher ! WatchParentTxConfirmed(watchConfirmedResponseMapper, parentTxId, minDepth = csvTimeout)
       }
-      waitForParentsToConfirm(cmd, csvTimeouts.keySet)
+      waitForParentsToConfirm(csvTimeouts.keySet)
     } else {
-      notifySender(cmd)
+      notifySender()
     }
   }
 
-  def waitForParentsToConfirm(cmd: CheckTx, parentTxIds: Set[ByteVector32]): Behavior[Command] = {
+  def waitForParentsToConfirm(parentTxIds: Set[ByteVector32]): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case ParentTxConfirmed(parentTxId) =>
         log.info("parent tx of {} has been confirmed (parent txid={})", cmd.desc, parentTxId)
         val remainingParentTxIds = parentTxIds - parentTxId
         if (remainingParentTxIds.isEmpty) {
           log.info("all parent txs of {} have been confirmed", cmd.desc)
-          notifySender(cmd)
+          notifySender()
         } else {
           log.debug("some parent txs of {} are still unconfirmed (parent txids={})", cmd.desc, remainingParentTxIds.mkString(","))
-          waitForParentsToConfirm(cmd, remainingParentTxIds)
+          waitForParentsToConfirm(remainingParentTxIds)
         }
       case Stop => Behaviors.stopped
     }
   }
 
-  def notifySender(cmd: CheckTx): Behavior[Command] = {
+  def notifySender(): Behavior[Command] = {
     log.debug("time locks satisfied for {}", cmd.desc)
     cmd.replyTo ! TimeLocksOk()
     Behaviors.stopped
