@@ -67,8 +67,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     nodes("B").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     alice.sendOnionMessage(Nil, Left(nodes("B").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
-
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
+    eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
 
   test("expect reply") {
@@ -112,8 +111,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     eve.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
-
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
+    eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
 
   test("send to connected node with no-relay") {
@@ -125,8 +123,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     nodes("A").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     fabrice.sendOnionMessage(Nil, Left(nodes("A").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
-
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
+    eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
   }
 
   test("send with hop") {
@@ -256,8 +253,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
     alice.sendOnionMessage(Nil, Left(nodes("C").nodeParams.nodeId), None, ByteVector.empty).pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
-
-    val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
+    eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
 
     // We disconnect A from C for future tests.
     alice.disconnect(nodes("C").nodeParams.nodeId)
