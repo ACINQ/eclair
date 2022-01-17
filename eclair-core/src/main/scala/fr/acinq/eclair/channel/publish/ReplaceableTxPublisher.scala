@@ -51,14 +51,13 @@ object ReplaceableTxPublisher {
   private case object TimeLocksOk extends Command
   private case class WrappedFundingResult(result: ReplaceableTxFunder.FundingResult) extends Command
   private case class WrappedTxResult(result: MempoolTxMonitor.TxResult) extends Command
-  private case class CheckFee(currentBlockCount: Long) extends Command
   private case class BumpFee(targetFeerate: FeeratePerKw) extends Command
   private case object UnlockUtxos extends Command
   private case object UtxosUnlocked extends Command
   // @formatter:on
 
   // Timer key to ensure we don't have multiple concurrent timers running.
-  private case object CheckFeeKey
+  private case object BumpFeeKey
 
   def apply(nodeParams: NodeParams, bitcoinClient: BitcoinCoreClient, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
     Behaviors.setup { context =>
@@ -159,8 +158,21 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case WrappedTxResult(txResult) =>
         txResult match {
           case MempoolTxMonitor.TxInMempool(_, currentBlockCount) =>
+            // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
+            val bumpRatio = 1.2
+            val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.txInfo.confirmBefore, BlockHeight(currentBlockCount))
+            val targetFeerate_opt = if (cmd.txInfo.confirmBefore.toLong <= currentBlockCount + 6) {
+              log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
+              Some(currentFeerate.max(tx.feerate * bumpRatio))
+            } else if (tx.feerate * bumpRatio <= currentFeerate) {
+              log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
+              Some(currentFeerate)
+            } else {
+              log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
+              None
+            }
             // We avoid a herd effect whenever we fee bump transactions.
-            timers.startSingleTimer(CheckFeeKey, CheckFee(currentBlockCount), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis)
+            targetFeerate_opt.foreach(targetFeerate => timers.startSingleTimer(BumpFeeKey, BumpFee(targetFeerate), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis))
             Behaviors.same
           case MempoolTxMonitor.TxRecentlyConfirmed(_, _) => Behaviors.same // just wait for the tx to be deeply buried
           case MempoolTxMonitor.TxDeeplyBuried(confirmedTx) => sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
@@ -168,20 +180,6 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
             replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
             unlockAndStop(cmd.input, Seq(tx.signedTx))
         }
-      case CheckFee(currentBlockCount) =>
-        // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
-        val bumpRatio = 1.2
-        val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.txInfo.confirmBefore, BlockHeight(currentBlockCount))
-        if (cmd.txInfo.confirmBefore.toLong <= currentBlockCount + 6) {
-          log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
-          context.self ! BumpFee(currentFeerate.max(tx.feerate * bumpRatio))
-        } else if (tx.feerate * bumpRatio <= currentFeerate) {
-          log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
-          context.self ! BumpFee(currentFeerate)
-        } else {
-          log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
-        }
-        Behaviors.same
       case BumpFee(targetFeerate) => fundReplacement(targetFeerate, tx)
       case Stop => unlockAndStop(cmd.input, Seq(tx.signedTx))
     }
