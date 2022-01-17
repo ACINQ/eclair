@@ -19,13 +19,13 @@ package fr.acinq.eclair.integration
 import akka.testkit.TestProbe
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.SatoshiLong
-import fr.acinq.eclair.{MilliSatoshiLong, TimestampMilli}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.payment.receive.MultiPartHandler.ReceivePayment
 import fr.acinq.eclair.payment.send.MultiPartPaymentLifecycle.PreimageReceived
 import fr.acinq.eclair.payment.send.PaymentInitiator
 import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.{MilliSatoshiLong, TimestampMilli}
 import org.scalatest.Ignore
 
 import java.util.UUID
@@ -48,8 +48,8 @@ class PerformanceIntegrationSpec extends IntegrationSpec {
       "eclair.file-backup.enabled" -> false,
     ).asJava)
 
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 29730).asJava).withFallback(commonPerfTestConfig).withFallback(commonFeatures).withFallback(commonConfig)) // A's channels are private
-    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.server.port" -> 29731).asJava).withFallback(commonPerfTestConfig).withFallback(commonFeatures).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 29730).asJava).withFallback(commonPerfTestConfig).withFallback(commonConfig)) // A's channels are private
+    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.server.port" -> 29731).asJava).withFallback(commonPerfTestConfig).withFallback(commonConfig))
   }
 
   test("connect nodes") {

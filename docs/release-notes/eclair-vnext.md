@@ -4,6 +4,31 @@
 
 ## Major changes
 
+### Anchor outputs activated by default
+
+Experimental support for anchor outputs channels was first introduced in [eclair v0.4.2](https://github.com/ACINQ/eclair/releases/tag/v0.4.2).
+Going from an experimental feature to production-ready required a lot more work than we expected!
+What seems to be a simple change in transaction structure had a lot of impact in many unexpected places, and fundamentally changes the mechanisms to ensure funds safety.
+
+When using anchor outputs, you will need to keep utxos available in your `bitcoind` wallet to fee-bump HTLC transactions when channels are force-closed.
+Eclair will warn you via the `notifications.log` file when your `bitcoind` wallet balance is too low to protect your funds against malicious channel peers.
+
+We recommend activating debug logs for the transaction publication mechanisms.
+This will make it much easier to follow the trail of RBF-ed transactions, and shouldn't be too noisy unless you constantly have a lot of channels force-closing.
+To activate these logs, simply add the following line to your `logback.xml`:
+
+```xml
+<logger name="fr.acinq.eclair.channel.publish" level="DEBUG"/>
+```
+
+You don't even need to restart eclair, it will automatically pick up the logging configuration update after a short while.
+
+If you don't want to use anchor outputs, you can disable the feature in your `eclair.conf`:
+
+```conf
+eclair.features.option_anchors_zero_fee_htlc_tx = disabled
+```
+
 ### Alternate strategy to avoid mass force-close of channels in certain cases
 
 The default strategy, when an unhandled exception or internal error happens, is to locally force-close the channel. Not only is there a delay before the channel balance gets refunded, but if the exception was due to some misconfiguration or bug in eclair that affects all channels, we risk force-closing all channels.

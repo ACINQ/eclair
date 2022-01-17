@@ -42,12 +42,12 @@ class MessageIntegrationSpec extends IntegrationSpec {
   implicit val timeout: Timeout = FiniteDuration(30, SECONDS)
 
   test("start eclair nodes") {
-    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 30700, "eclair.api.port" -> 30780, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all", "eclair.onion-messages.reply-timeout" -> "1 minute").asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.server.port" -> 30701, "eclair.api.port" -> 30781, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all", "eclair.onion-messages.reply-timeout" -> "1 second").asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.server.port" -> 30702, "eclair.api.port" -> 30782, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.server.port" -> 30703, "eclair.api.port" -> 30783).asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.server.port" -> 30704, "eclair.api.port" -> 30784, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "channels-only").asJava).withFallback(commonFeatures).withFallback(commonConfig))
-    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.server.port" -> 30705, "eclair.api.port" -> 30785, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "no-relay").asJava).withFallback(commonFeatures).withFallback(commonConfig))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 30700, "eclair.api.port" -> 30780, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all", "eclair.onion-messages.reply-timeout" -> "1 minute").asJava).withFallback(commonConfig))
+    instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.server.port" -> 30701, "eclair.api.port" -> 30781, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all", "eclair.onion-messages.reply-timeout" -> "1 second").asJava).withFallback(commonConfig))
+    instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.server.port" -> 30702, "eclair.api.port" -> 30782, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "relay-all").asJava).withFallback(commonConfig))
+    instantiateEclairNode("D", ConfigFactory.parseMap(Map("eclair.node-alias" -> "D", "eclair.server.port" -> 30703, "eclair.api.port" -> 30783).asJava).withFallback(commonConfig))
+    instantiateEclairNode("E", ConfigFactory.parseMap(Map("eclair.node-alias" -> "E", "eclair.server.port" -> 30704, "eclair.api.port" -> 30784, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "channels-only").asJava).withFallback(commonConfig))
+    instantiateEclairNode("F", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F", "eclair.server.port" -> 30705, "eclair.api.port" -> 30785, s"eclair.features.${Features.OnionMessages.rfcName}" -> "optional", "eclair.onion-messages.relay-policy" -> "no-relay").asJava).withFallback(commonConfig))
   }
 
   test("try to reach unknown node") {
@@ -226,7 +226,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("E").nodeParams.nodeId :: Nil, Left( nodes("C").nodeParams.nodeId), None, hex"710301020375020102").pipeTo(probe.ref)
+    alice.sendOnionMessage(nodes("E").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, hex"710301020375020102").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
@@ -302,7 +302,7 @@ class MessageIntegrationSpec extends IntegrationSpec {
     val probe = TestProbe()
     val eventListener = TestProbe()
     nodes("C").system.eventStream.subscribe(eventListener.ref, classOf[OnionMessages.ReceiveMessage])
-    alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left( nodes("C").nodeParams.nodeId), None, hex"7300").pipeTo(probe.ref)
+    alice.sendOnionMessage(nodes("B").nodeParams.nodeId :: Nil, Left(nodes("C").nodeParams.nodeId), None, hex"7300").pipeTo(probe.ref)
     assert(probe.expectMsgType[SendOnionMessageResponse].sent)
 
     val r = eventListener.expectMsgType[OnionMessages.ReceiveMessage](max = 60 seconds)
