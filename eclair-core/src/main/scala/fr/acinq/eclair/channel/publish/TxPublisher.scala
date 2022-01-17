@@ -79,6 +79,9 @@ object TxPublisher {
    * Publish a fully signed transaction without modifying it.
    * NB: the parent tx should only be provided when it's being concurrently published, it's unnecessary when it is
    * confirmed or when the tx has a relative delay.
+   *
+   * @param fee the fee that we're actually paying: it must be set to the mining fee, unless our peer is paying it (in
+   *            which case it must be set to zero here).
    */
   case class PublishFinalTx(tx: Transaction, input: OutPoint, desc: String, fee: Satoshi, parentTx_opt: Option[ByteVector32]) extends PublishTx
   object PublishFinalTx {
