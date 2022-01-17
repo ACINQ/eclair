@@ -30,7 +30,7 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient.MempoolTx
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinCoreClient, BitcoinJsonRPCClient}
 import fr.acinq.eclair.blockchain.fee.{FeeratePerKw, FeeratesPerKw}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop}
+import fr.acinq.eclair.channel.publish.ReplaceableTxPublisher.{Publish, Stop, UpdateConfirmationTarget}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxRejectedReason._
 import fr.acinq.eclair.channel.publish.TxPublisher._
 import fr.acinq.eclair.channel.states.{ChannelStateTestsHelperMethods, ChannelStateTestsTags}
@@ -537,6 +537,42 @@ class ReplaceableTxPublisherSpec extends TestKitBaseClass with AnyFunSuiteLike w
       probe.expectMsgType[NotifyNodeOperator]
       val mempoolTxs2 = getMempool()
       assert(mempoolTxs1.map(_.txid).toSet + walletTx.txid === mempoolTxs2.map(_.txid).toSet)
+    })
+  }
+
+  test("commit tx not confirming, updating confirmation target") {
+    withFixture(Seq(500 millibtc), ChannelTypes.AnchorOutputsZeroFeeHtlcTx, f => {
+      import f._
+
+      val (commitTx, anchorTx) = closeChannelWithoutHtlcs(f, aliceBlockHeight() + 30)
+      wallet.publishTransaction(commitTx.tx).pipeTo(probe.ref)
+      probe.expectMsg(commitTx.tx.txid)
+
+      val feerateLow = FeeratePerKw(3000 sat)
+      val feerateHigh = FeeratePerKw(5000 sat)
+      setFeerate(feerateLow)
+      setFeerate(feerateHigh, blockTarget = 6)
+      // With the initial confirmation target, this will use the low feerate.
+      publisher ! Publish(probe.ref, anchorTx)
+      val mempoolTxs1 = getMempoolTxs(2)
+      assert(mempoolTxs1.map(_.txid).contains(commitTx.tx.txid))
+      val mempoolAnchorTx1 = mempoolTxs1.filter(_.txid != commitTx.tx.txid).head
+      val targetFee1 = Transactions.weight2fee(feerateLow, mempoolTxs1.map(_.weight).sum.toInt)
+      val actualFee1 = mempoolTxs1.map(_.fees).sum
+      assert(targetFee1 * 0.9 <= actualFee1 && actualFee1 <= targetFee1 * 1.1, s"actualFee=$actualFee1 targetFee=$targetFee1")
+
+      // The confirmation target has changed (probably because we learnt a payment preimage).
+      // We should now use the high feerate, which corresponds to that new target.
+      publisher ! UpdateConfirmationTarget(aliceBlockHeight() + 15)
+      system.eventStream.publish(CurrentBlockCount(aliceBlockHeight().toLong))
+      awaitCond(!isInMempool(mempoolAnchorTx1.txid), interval = 200 millis, max = 30 seconds)
+      val mempoolTxs2 = getMempoolTxs(2)
+      val mempoolAnchorTx2 = mempoolTxs2.filter(_.txid != commitTx.tx.txid).head
+      assert(mempoolAnchorTx1.fees < mempoolAnchorTx2.fees)
+
+      val targetFee2 = Transactions.weight2fee(feerateHigh, mempoolTxs2.map(_.weight).sum.toInt)
+      val actualFee2 = mempoolTxs2.map(_.fees).sum
+      assert(targetFee2 * 0.9 <= actualFee2 && actualFee2 <= targetFee2 * 1.1, s"actualFee=$actualFee2 targetFee=$targetFee2")
     })
   }
 

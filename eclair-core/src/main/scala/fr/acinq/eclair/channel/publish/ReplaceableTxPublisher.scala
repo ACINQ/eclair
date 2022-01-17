@@ -45,6 +45,7 @@ object ReplaceableTxPublisher {
   // @formatter:off
   sealed trait Command
   case class Publish(replyTo: ActorRef[TxPublisher.PublishTxResult], cmd: TxPublisher.PublishReplaceableTx) extends Command
+  case class UpdateConfirmationTarget(confirmBefore: BlockHeight) extends Command
   case object Stop extends Command
 
   private case class WrappedPreconditionsResult(result: ReplaceableTxPrePublisher.PreconditionsResult) extends Command
@@ -64,7 +65,7 @@ object ReplaceableTxPublisher {
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
           Behaviors.receiveMessagePartial {
-            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, loggingInfo).checkPreconditions()
+            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, cmd.txInfo.confirmBefore, bitcoinClient, watcher, context, timers, loggingInfo).checkPreconditions()
             case Stop => Behaviors.stopped
           }
         }
@@ -93,6 +94,7 @@ object ReplaceableTxPublisher {
 private class ReplaceableTxPublisher(nodeParams: NodeParams,
                                      replyTo: ActorRef[TxPublisher.PublishTxResult],
                                      cmd: TxPublisher.PublishReplaceableTx,
+                                     var confirmBefore: BlockHeight,
                                      bitcoinClient: BitcoinCoreClient,
                                      watcher: ActorRef[ZmqWatcher.Command],
                                      context: ActorContext[ReplaceableTxPublisher.Command],
@@ -112,6 +114,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
           case ReplaceableTxPrePublisher.PreconditionsOk(txWithWitnessData) => checkTimeLocks(txWithWitnessData)
           case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), None)
         }
+      case UpdateConfirmationTarget(target) =>
+        confirmBefore = target
+        Behaviors.same
       case Stop => Behaviors.stopped
     }
   }
@@ -125,13 +130,16 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         timeLocksChecker ! TxTimeLocksMonitor.CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.txInfo.tx, cmd.desc)
         Behaviors.receiveMessagePartial {
           case TimeLocksOk => fund(txWithWitnessData)
+          case UpdateConfirmationTarget(target) =>
+            confirmBefore = target
+            Behaviors.same
           case Stop => Behaviors.stopped
         }
     }
   }
 
   def fund(txWithWitnessData: ReplaceableTxWithWitnessData): Behavior[Command] = {
-    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.txInfo.confirmBefore, BlockHeight(nodeParams.currentBlockHeight))
+    val targetFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, BlockHeight(nodeParams.currentBlockHeight))
     val txFunder = context.spawn(ReplaceableTxFunder(nodeParams, bitcoinClient, loggingInfo), "tx-funder")
     txFunder ! ReplaceableTxFunder.FundTransaction(context.messageAdapter[ReplaceableTxFunder.FundingResult](WrappedFundingResult), cmd, Right(txWithWitnessData), targetFeerate)
     Behaviors.receiveMessagePartial {
@@ -143,6 +151,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
             wait(tx)
           case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), None)
         }
+      case UpdateConfirmationTarget(target) =>
+        confirmBefore = target
+        Behaviors.same
       case Stop =>
         // We can't stop right now, the child actor is currently funding the transaction and will send its result soon.
         // We just wait for the funding process to finish before stopping (in the next state).
@@ -160,15 +171,15 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
           case MempoolTxMonitor.TxInMempool(_, currentBlockCount) =>
             // We make sure we increase the fees by at least 20% as we get closer to the confirmation target.
             val bumpRatio = 1.2
-            val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, cmd.txInfo.confirmBefore, BlockHeight(currentBlockCount))
-            val targetFeerate_opt = if (cmd.txInfo.confirmBefore.toLong <= currentBlockCount + 6) {
-              log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
+            val currentFeerate = getFeerate(nodeParams.onChainFeeConf.feeEstimator, confirmBefore, BlockHeight(currentBlockCount))
+            val targetFeerate_opt = if (confirmBefore.toLong <= currentBlockCount + 6) {
+              log.debug("{} confirmation target is close (in {} blocks): bumping fees", cmd.desc, confirmBefore.toLong - currentBlockCount)
               Some(currentFeerate.max(tx.feerate * bumpRatio))
             } else if (tx.feerate * bumpRatio <= currentFeerate) {
-              log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
+              log.debug("{} confirmation target is in {} blocks: bumping fees", cmd.desc, confirmBefore.toLong - currentBlockCount)
               Some(currentFeerate)
             } else {
-              log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, cmd.txInfo.confirmBefore.toLong - currentBlockCount)
+              log.debug("{} confirmation target is in {} blocks: no need to bump fees", cmd.desc, confirmBefore.toLong - currentBlockCount)
               None
             }
             // We avoid a herd effect whenever we fee bump transactions.
@@ -179,6 +190,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
           case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), Some(Seq(tx.signedTx)))
         }
       case BumpFee(targetFeerate) => fundReplacement(targetFeerate, tx)
+      case UpdateConfirmationTarget(target) =>
+        confirmBefore = target
+        Behaviors.same
       case Stop => unlockAndStop(cmd.input, Seq(tx.signedTx))
     }
   }
@@ -200,6 +214,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         // This is the result of the previous publishing attempt.
         // We don't need to handle it now that we're in the middle of funding, we can defer it to the next state.
         timers.startSingleTimer(txResult, 1 second)
+        Behaviors.same
+      case UpdateConfirmationTarget(target) =>
+        confirmBefore = target
         Behaviors.same
       case Stop =>
         // We can't stop right away, because the child actor may need to unlock utxos first.
@@ -239,6 +256,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
             timers.startSingleTimer(WrappedTxResult(txResult), 1 second)
             Behaviors.same
         }
+      case UpdateConfirmationTarget(target) =>
+        confirmBefore = target
+        Behaviors.same
       case Stop =>
         // We don't know yet which transaction won, so we try abandoning both and unlocking their utxos.
         // One of the calls will fail (for the transaction that is in the mempool), but we will simply ignore that failure.
@@ -267,6 +287,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         // This is the result of the current mempool tx: we will handle this command once we're back in the waiting
         // state for this transaction.
         timers.startSingleTimer(txResult, 1 second)
+        Behaviors.same
+      case UpdateConfirmationTarget(target) =>
+        confirmBefore = target
         Behaviors.same
       case Stop =>
         // We don't stop right away, because we're cleaning up the failed transaction.
@@ -306,6 +329,9 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
         Behaviors.stopped
       case _: WrappedTxResult =>
         log.debug("ignoring transaction result while stopping")
+        Behaviors.same
+      case _: UpdateConfirmationTarget =>
+        log.debug("ignoring confirmation target update while stopping")
         Behaviors.same
       case Stop =>
         log.debug("waiting for utxos to be unlocked before stopping")

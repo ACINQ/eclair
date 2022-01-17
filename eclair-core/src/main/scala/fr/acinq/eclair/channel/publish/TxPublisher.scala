@@ -26,7 +26,7 @@ import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinCoreClient
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.transactions.Transactions.{ReplaceableTransactionWithInputInfo, TransactionWithInputInfo}
-import fr.acinq.eclair.{Logs, NodeParams}
+import fr.acinq.eclair.{BlockHeight, Logs, NodeParams}
 
 import java.util.UUID
 import scala.concurrent.duration.DurationLong
@@ -171,7 +171,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
     def cmd: PublishTx
   }
   private case class FinalAttempt(id: UUID, cmd: PublishFinalTx, actor: ActorRef[FinalTxPublisher.Command]) extends PublishAttempt
-  private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
+  private case class ReplaceableAttempt(id: UUID, cmd: PublishReplaceableTx, confirmBefore: BlockHeight, actor: ActorRef[ReplaceableTxPublisher.Command]) extends PublishAttempt
   // @formatter:on
 
   private def run(pending: Map[OutPoint, Seq[PublishAttempt]], retryNextBlock: Seq[PublishTx], channelInfo: ChannelLogContext): Behavior[Command] = {
@@ -194,21 +194,28 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
         }
 
       case cmd: PublishReplaceableTx =>
+        val proposedConfirmationTarget = cmd.txInfo.confirmBefore
         val attempts = pending.getOrElse(cmd.input, Seq.empty)
-        val alreadyPublished = attempts.collectFirst {
-          // If there is already an attempt at spending this outpoint with a more aggressive confirmation target, there is no point in publishing again.
-          case a: ReplaceableAttempt if a.cmd.txInfo.confirmBefore <= cmd.txInfo.confirmBefore => a.cmd.txInfo.confirmBefore
-        }
-        alreadyPublished match {
-          case Some(currentConfirmationTarget) =>
-            log.info("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, cmd.txInfo.confirmBefore, currentConfirmationTarget)
-            Behaviors.same
+        attempts.collectFirst {
+          case a: ReplaceableAttempt => a
+        } match {
+          case Some(currentAttempt) =>
+            val currentConfirmationTarget = currentAttempt.confirmBefore
+            if (currentConfirmationTarget <= proposedConfirmationTarget) {
+              log.info("not publishing replaceable {} spending {}:{} with confirmation target={}, publishing is already in progress with confirmation target={}", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
+              Behaviors.same
+            } else {
+              log.info("replaceable {} spending {}:{} has new confirmation target={} (previous={})", cmd.desc, cmd.input.txid, cmd.input.index, proposedConfirmationTarget, currentConfirmationTarget)
+              currentAttempt.actor ! ReplaceableTxPublisher.UpdateConfirmationTarget(proposedConfirmationTarget)
+              val attempts2 = attempts.filterNot(_.isInstanceOf[ReplaceableAttempt]).appended(currentAttempt.copy(confirmBefore = proposedConfirmationTarget))
+              run(pending + (cmd.input -> attempts2), retryNextBlock, channelInfo)
+            }
           case None =>
             val publishId = UUID.randomUUID()
             log.info("publishing replaceable {} spending {}:{} with id={} ({} other attempts)", cmd.desc, cmd.input.txid, cmd.input.index, publishId, attempts.length)
             val actor = factory.spawnReplaceableTxPublisher(context, TxPublishLogContext(publishId, channelInfo.remoteNodeId, channelInfo.channelId_opt))
             actor ! ReplaceableTxPublisher.Publish(context.self, cmd)
-            run(pending + (cmd.input -> attempts.appended(ReplaceableAttempt(publishId, cmd, actor))), retryNextBlock, channelInfo)
+            run(pending + (cmd.input -> attempts.appended(ReplaceableAttempt(publishId, cmd, proposedConfirmationTarget, actor))), retryNextBlock, channelInfo)
         }
 
       case result: PublishTxResult => result match {
@@ -274,7 +281,7 @@ private class TxPublisher(nodeParams: NodeParams, factory: TxPublisher.ChildFact
 
   private def stopAttempt(attempt: PublishAttempt): Unit = attempt match {
     case FinalAttempt(_, _, actor) => actor ! FinalTxPublisher.Stop
-    case ReplaceableAttempt(_, _, actor) => actor ! ReplaceableTxPublisher.Stop
+    case ReplaceableAttempt(_, _, _, actor) => actor ! ReplaceableTxPublisher.Stop
   }
 
 }

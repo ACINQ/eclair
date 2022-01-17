@@ -118,23 +118,29 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
     val anchorTx = ClaimLocalAnchorOutputTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), confirmBefore)
     val cmd = PublishReplaceableTx(anchorTx, null)
     txPublisher ! cmd
-    val child1 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
-    val p1 = child1.expectMsgType[ReplaceableTxPublisher.Publish]
-    assert(p1.cmd === cmd)
+    val child = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
+    assert(child.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
 
     // We ignore duplicates that don't use a more aggressive confirmation target:
     txPublisher ! PublishReplaceableTx(anchorTx, null)
+    child.expectNoMessage(100 millis)
     factory.expectNoMessage(100 millis)
     val cmdHigherTarget = cmd.copy(txInfo = anchorTx.copy(confirmBefore = confirmBefore + 1))
     txPublisher ! cmdHigherTarget
+    child.expectNoMessage(100 millis)
     factory.expectNoMessage(100 millis)
 
-    // But we retry publishing if the confirmation target is more aggressive than previous attempts:
+    // But we update the confirmation target when it is more aggressive than previous attempts:
     val cmdLowerTarget = cmd.copy(txInfo = anchorTx.copy(confirmBefore = confirmBefore - 6))
     txPublisher ! cmdLowerTarget
-    val child2 = factory.expectMsgType[ReplaceableTxPublisherSpawned].actor
-    val p2 = child2.expectMsgType[ReplaceableTxPublisher.Publish]
-    assert(p2.cmd === cmdLowerTarget)
+    child.expectMsg(ReplaceableTxPublisher.UpdateConfirmationTarget(confirmBefore - 6))
+    factory.expectNoMessage(100 millis)
+
+    // And we update our internal threshold accordingly:
+    val cmdInBetween = cmd.copy(txInfo = anchorTx.copy(confirmBefore = confirmBefore - 3))
+    txPublisher ! cmdInBetween
+    child.expectNoMessage(100 millis)
+    factory.expectNoMessage(100 millis)
   }
 
   test("stop publishing attempts when transaction confirms") { f =>
@@ -192,29 +198,22 @@ class TxPublisherSpec extends TestKitBaseClass with FixtureAnyFunSuiteLike {
   test("publishing attempt fails (not enough funds)") { f =>
     import f._
 
-    val target1 = BlockHeight(nodeParams.currentBlockHeight + 12)
+    val target = BlockHeight(nodeParams.currentBlockHeight + 12)
     val input = OutPoint(randomBytes32(), 7)
     val paymentHash = randomBytes32()
-    val cmd1 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, target1), null)
-    txPublisher ! cmd1
+    val cmd = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, target), null)
+    txPublisher ! cmd
     val attempt1 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
     attempt1.actor.expectMsgType[ReplaceableTxPublisher.Publish]
 
-    val target2 = BlockHeight(nodeParams.currentBlockHeight + 6)
-    val cmd2 = PublishReplaceableTx(HtlcSuccessTx(InputInfo(input, TxOut(25_000 sat, Nil), Nil), Transaction(2, TxIn(input, Nil, 0) :: Nil, Nil, 0), paymentHash, 3, target2), null)
-    txPublisher ! cmd2
-    val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
-    attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish]
-
-    txPublisher ! TxRejected(attempt2.id, cmd2, CouldNotFund)
-    attempt2.actor.expectMsg(ReplaceableTxPublisher.Stop)
-    attempt1.actor.expectNoMessage(100 millis) // this error doesn't impact other publishing attempts
+    txPublisher ! TxRejected(attempt1.id, cmd, CouldNotFund)
+    attempt1.actor.expectMsg(ReplaceableTxPublisher.Stop)
 
     // We automatically retry the failed attempt once a new block is found (we may have more funds now):
     factory.expectNoMessage(100 millis)
     system.eventStream.publish(CurrentBlockCount(8200))
-    val attempt3 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
-    assert(attempt3.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd2)
+    val attempt2 = factory.expectMsgType[ReplaceableTxPublisherSpawned]
+    assert(attempt2.actor.expectMsgType[ReplaceableTxPublisher.Publish].cmd === cmd)
   }
 
   test("publishing attempt fails (transaction skipped)") { f =>
