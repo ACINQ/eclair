@@ -17,13 +17,13 @@
 package fr.acinq.eclair.channel.publish
 
 import akka.actor.typed.ActorRef
-import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, TypedActorRefOps, actorRefAdapter}
+import akka.actor.typed.scaladsl.adapter.{ClassicActorSystemOps, actorRefAdapter}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{OutPoint, SatoshiLong, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher.{WatchParentTxConfirmed, WatchParentTxConfirmedTriggered}
 import fr.acinq.eclair.channel.publish.TxPublisher.TxPublishLogContext
-import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, Stop, TimeLocksOk}
+import fr.acinq.eclair.channel.publish.TxTimeLocksMonitor.{CheckTx, TimeLocksOk}
 import fr.acinq.eclair.{NodeParams, TestConstants, TestKitBaseClass, randomKey}
 import org.scalatest.Outcome
 import org.scalatest.funsuite.FixtureAnyFunSuiteLike
@@ -129,18 +129,6 @@ class TxTimeLocksMonitorSpec extends TestKitBaseClass with FixtureAnyFunSuiteLik
 
     w2.replyTo ! WatchParentTxConfirmedTriggered(1105, 0, parentTx2)
     probe.expectMsg(TimeLocksOk())
-  }
-
-  test("stop actor before time locks") { f =>
-    import f._
-
-    val tx = Transaction(2, Nil, TxOut(100_000 sat, Script.pay2wpkh(randomKey().publicKey)) :: Nil, nodeParams.currentBlockHeight + 3)
-    monitor ! CheckTx(probe.ref, tx, "absolute-delay")
-    probe.watch(monitor.toClassic)
-    probe.expectNoMessage(100 millis)
-
-    monitor ! Stop
-    probe.expectTerminated(monitor.toClassic, max = 5 seconds)
   }
 
 }

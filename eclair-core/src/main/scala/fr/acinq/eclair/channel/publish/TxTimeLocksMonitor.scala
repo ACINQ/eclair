@@ -48,7 +48,6 @@ object TxTimeLocksMonitor {
   private case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   private case object CheckRelativeTimeLock extends Command
   private case class ParentTxConfirmed(parentTxId: ByteVector32) extends Command
-  case object Stop extends Command
   // @formatter:on
 
   def apply(nodeParams: NodeParams, watcher: ActorRef[ZmqWatcher.Command], loggingInfo: TxPublishLogContext): Behavior[Command] = {
@@ -57,7 +56,6 @@ object TxTimeLocksMonitor {
         Behaviors.withMdc(loggingInfo.mdc()) {
           Behaviors.receiveMessagePartial {
             case cmd: CheckTx => new TxTimeLocksMonitor(nodeParams, cmd, watcher, context, timers).checkAbsoluteTimeLock()
-            case Stop => Behaviors.stopped
           }
         }
       }
@@ -93,9 +91,6 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams,
             Behaviors.same
           }
         case CheckRelativeTimeLock => checkRelativeTimeLocks()
-        case Stop =>
-          context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
-          Behaviors.stopped
       }
     } else {
       checkRelativeTimeLocks()
@@ -129,7 +124,6 @@ private class TxTimeLocksMonitor(nodeParams: NodeParams,
           log.debug("some parent txs of {} are still unconfirmed (parent txids={})", cmd.desc, remainingParentTxIds.mkString(","))
           waitForParentsToConfirm(remainingParentTxIds)
         }
-      case Stop => Behaviors.stopped
     }
   }
 

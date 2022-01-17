@@ -48,7 +48,6 @@ object MempoolTxMonitor {
   private case class GetTxConfirmationsFailed(reason: Throwable) extends Command
   private case class WrappedCurrentBlockCount(currentBlockCount: Long) extends Command
   private case class CheckTxConfirmations(currentBlockCount: Long) extends Command
-  case object Stop extends Command
   // @formatter:on
 
   // Timer key to ensure we don't have multiple concurrent timers running.
@@ -75,7 +74,6 @@ object MempoolTxMonitor {
         Behaviors.withMdc(loggingInfo.mdc()) {
           Behaviors.receiveMessagePartial {
             case cmd: Publish => new MempoolTxMonitor(nodeParams, cmd, bitcoinClient, loggingInfo, context, timers).publish()
-            case Stop => Behaviors.stopped
           }
         }
       }
@@ -130,8 +128,6 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
       case CheckInputFailed(reason) =>
         log.error("could not check input status", reason)
         sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true))) // we act as if the input is potentially still spendable
-      case Stop =>
-        Behaviors.stopped
     }
   }
 
@@ -150,20 +146,17 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
         }
         Behaviors.same
       case TxConfirmations(confirmations, currentBlockCount) =>
-        if (confirmations == 1) {
-          log.info("txid={} has been confirmed, waiting to reach min depth", cmd.tx.txid)
-        }
-        if (nodeParams.minDepthBlocks <= confirmations) {
+        if (confirmations == 0) {
+          cmd.replyTo ! TxInMempool(cmd.tx.txid, currentBlockCount)
+          Behaviors.same
+        } else if (confirmations < nodeParams.minDepthBlocks) {
+          log.info("txid={} has {} confirmations, waiting to reach min depth", cmd.tx.txid, confirmations)
+          cmd.replyTo ! TxRecentlyConfirmed(cmd.tx.txid, confirmations)
+          Behaviors.same
+        } else {
           log.info("txid={} has reached min depth", cmd.tx.txid)
           context.system.eventStream ! EventStream.Publish(TransactionConfirmed(loggingInfo.channelId_opt.getOrElse(ByteVector32.Zeroes), loggingInfo.remoteNodeId, cmd.tx))
           sendFinalResult(TxDeeplyBuried(cmd.tx), Some(messageAdapter))
-        } else {
-          if (confirmations == 0) {
-            cmd.replyTo ! TxInMempool(cmd.tx.txid, currentBlockCount)
-          } else {
-            cmd.replyTo ! TxRecentlyConfirmed(cmd.tx.txid, confirmations)
-          }
-          Behaviors.same
         }
       case TxNotFound =>
         log.warn("txid={} has been evicted from the mempool", cmd.tx.txid)
@@ -187,9 +180,6 @@ private class MempoolTxMonitor(nodeParams: NodeParams,
       case CheckInputFailed(reason) =>
         log.error("could not check input status", reason)
         sendFinalResult(TxRejected(cmd.tx.txid, TxRejectedReason.TxSkipped(retryNextBlock = true)), Some(messageAdapter))
-      case Stop =>
-        context.system.eventStream ! EventStream.Unsubscribe(messageAdapter)
-        Behaviors.stopped
     }
   }
 

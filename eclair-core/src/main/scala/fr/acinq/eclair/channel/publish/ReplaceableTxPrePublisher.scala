@@ -44,7 +44,6 @@ object ReplaceableTxPrePublisher {
   // @formatter:off
   sealed trait Command
   case class CheckPreconditions(replyTo: ActorRef[PreconditionsResult], cmd: TxPublisher.PublishReplaceableTx) extends Command
-  case object Stop extends Command
 
   private case object ParentTxOk extends Command
   private case object CommitTxAlreadyConfirmed extends RuntimeException with Command
@@ -107,7 +106,6 @@ object ReplaceableTxPrePublisher {
               case htlcTx: Transactions.HtlcTx => prePublisher.checkHtlcPreconditions(htlcTx)
               case claimHtlcTx: Transactions.ClaimHtlcTx => prePublisher.checkClaimHtlcPreconditions(claimHtlcTx)
             }
-          case Stop => Behaviors.stopped
         }
       }
     }
@@ -162,7 +160,6 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
         // If our checks fail, we don't want it to prevent us from trying to publish our commit tx.
         replyTo ! PreconditionsOk(ClaimLocalAnchorWithWitnessData(localAnchorTx))
         Behaviors.stopped
-      case Stop => Behaviors.stopped
     }
   }
 
@@ -194,7 +191,6 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         }
         Behaviors.stopped
-      case Stop => Behaviors.stopped
     }
   }
 
@@ -257,7 +253,6 @@ private class ReplaceableTxPrePublisher(nodeParams: NodeParams,
           case None => replyTo ! PreconditionsFailed(TxPublisher.TxRejectedReason.TxSkipped(retryNextBlock = false))
         }
         Behaviors.stopped
-      case Stop => Behaviors.stopped
     }
   }
 

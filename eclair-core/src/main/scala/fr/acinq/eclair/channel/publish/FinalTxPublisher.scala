@@ -83,9 +83,7 @@ private class FinalTxPublisher(nodeParams: NodeParams,
     timeLocksChecker ! CheckTx(context.messageAdapter[TxTimeLocksMonitor.TimeLocksOk](_ => TimeLocksOk), cmd.tx, cmd.desc)
     Behaviors.receiveMessagePartial {
       case TimeLocksOk => checkParentPublished()
-      case Stop =>
-        timeLocksChecker ! TxTimeLocksMonitor.Stop
-        Behaviors.stopped
+      case Stop => Behaviors.stopped
     }
   }
 
@@ -125,9 +123,7 @@ private class FinalTxPublisher(nodeParams: NodeParams,
           case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
           case MempoolTxMonitor.TxDeeplyBuried(tx) => sendResult(TxPublisher.TxConfirmed(cmd, tx))
         }
-      case Stop =>
-        txMonitor ! MempoolTxMonitor.Stop
-        Behaviors.stopped
+      case Stop => Behaviors.stopped
     }
   }
 

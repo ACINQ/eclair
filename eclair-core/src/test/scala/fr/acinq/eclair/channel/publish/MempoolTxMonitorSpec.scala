@@ -262,19 +262,4 @@ class MempoolTxMonitorSpec extends TestKitBaseClass with AnyFunSuiteLike with Bi
     eventListener.expectMsg(TransactionConfirmed(txPublished.channelId, txPublished.remoteNodeId, tx))
   }
 
-  test("stop actor before transaction confirms") {
-    val f = createFixture()
-    import f._
-
-    val tx = createSpendP2WPKH(parentTx, priv, priv.publicKey, 1_000 sat, 0, 0)
-    monitor ! Publish(probe.ref, tx, tx.txIn.head.outPoint, "test-tx", 10 sat)
-    waitTxInMempool(bitcoinClient, tx.txid, probe)
-
-    probe.watch(monitor.toClassic)
-    probe.expectNoMessage(100 millis)
-
-    monitor ! Stop
-    probe.expectTerminated(monitor.toClassic, max = 5 seconds)
-  }
-
 }
