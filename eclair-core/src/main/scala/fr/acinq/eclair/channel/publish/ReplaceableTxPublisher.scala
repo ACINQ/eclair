@@ -110,7 +110,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
       case WrappedPreconditionsResult(result) =>
         result match {
           case ReplaceableTxPrePublisher.PreconditionsOk(txWithWitnessData) => checkTimeLocks(txWithWitnessData)
-          case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
+          case ReplaceableTxPrePublisher.PreconditionsFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), None)
         }
       case Stop => Behaviors.stopped
     }
@@ -141,7 +141,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
             val txMonitor = context.spawn(MempoolTxMonitor(nodeParams, bitcoinClient, loggingInfo), s"mempool-tx-monitor-${tx.signedTx.txid}")
             txMonitor ! MempoolTxMonitor.Publish(context.messageAdapter[MempoolTxMonitor.TxResult](WrappedTxResult), tx.signedTx, cmd.input, cmd.desc, tx.fee)
             wait(tx)
-          case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason))
+          case ReplaceableTxFunder.FundingFailed(reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), None)
         }
       case Stop =>
         // We can't stop right now, the child actor is currently funding the transaction and will send its result soon.
@@ -175,10 +175,8 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
             targetFeerate_opt.foreach(targetFeerate => timers.startSingleTimer(BumpFeeKey, BumpFee(targetFeerate), (1 + Random.nextLong(nodeParams.maxTxPublishRetryDelay.toMillis)).millis))
             Behaviors.same
           case MempoolTxMonitor.TxRecentlyConfirmed(_, _) => Behaviors.same // just wait for the tx to be deeply buried
-          case MempoolTxMonitor.TxDeeplyBuried(confirmedTx) => sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
-          case MempoolTxMonitor.TxRejected(_, reason) =>
-            replyTo ! TxPublisher.TxRejected(loggingInfo.id, cmd, reason)
-            unlockAndStop(cmd.input, Seq(tx.signedTx))
+          case MempoolTxMonitor.TxDeeplyBuried(confirmedTx) => sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx), None)
+          case MempoolTxMonitor.TxRejected(_, reason) => sendResult(TxPublisher.TxRejected(loggingInfo.id, cmd, reason), Some(Seq(tx.signedTx)))
         }
       case BumpFee(targetFeerate) => fundReplacement(targetFeerate, tx)
       case Stop => unlockAndStop(cmd.input, Seq(tx.signedTx))
@@ -224,7 +222,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
             // Since our transactions conflict, we should always receive a failure from the evicted transaction before
             // one of them confirms: this case should not happen, so we don't bother unlocking utxos.
             log.warn("{} was confirmed while we're publishing an RBF attempt", cmd.desc)
-            sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx))
+            sendResult(TxPublisher.TxConfirmed(cmd, confirmedTx), None)
           case MempoolTxMonitor.TxRejected(txid, _) =>
             if (txid == bumpedTx.signedTx.txid) {
               log.warn("{} transaction paying more fees (txid={}) failed to replace previous transaction", cmd.desc, txid)
@@ -278,6 +276,14 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
+  def sendResult(result: TxPublisher.PublishTxResult, toUnlock_opt: Option[Seq[Transaction]]): Behavior[Command] = {
+    replyTo ! result
+    toUnlock_opt match {
+      case Some(txs) => unlockAndStop(cmd.input, txs)
+      case None => stop()
+    }
+  }
+
   def unlockAndStop(input: OutPoint, txs: Seq[Transaction]): Behavior[Command] = {
     // The bitcoind wallet will keep transactions around even when they can't be published (e.g. one of their inputs has
     // disappeared but bitcoind thinks it may reappear later), hoping that it will be able to automatically republish
@@ -307,9 +313,7 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
     }
   }
 
-  /** Use this function to send the result upstream and stop. */
-  def sendResult(result: TxPublisher.PublishTxResult): Behavior[Command] = {
-    replyTo ! result
+  def stop(): Behavior[Command] = {
     Behaviors.receiveMessagePartial {
       case Stop => Behaviors.stopped
     }
