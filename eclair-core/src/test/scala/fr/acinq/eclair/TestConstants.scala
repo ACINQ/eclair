@@ -24,6 +24,7 @@ import fr.acinq.eclair.channel.Channel.UnhandledExceptionStrategy
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.keymanager.{LocalChannelKeyManager, LocalNodeKeyManager}
 import fr.acinq.eclair.io.MessageRelay.RelayAll
+import fr.acinq.eclair.io.PeerConnection.OnionMessagesRateLimit
 import fr.acinq.eclair.io.{Peer, PeerConnection}
 import fr.acinq.eclair.message.OnionMessages.OnionMessageConfig
 import fr.acinq.eclair.payment.relay.Relayer.{RelayFees, RelayParams}
@@ -168,7 +169,7 @@ object TestConstants {
         pingDisconnect = true,
         maxRebroadcastDelay = 5 seconds,
         killIdleDelay = 1 seconds,
-        maxOnionMessagesPerSecond = 10
+        onionMessagesRateLimit = OnionMessagesRateLimit(10, 1 second)
       ),
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
@@ -301,7 +302,7 @@ object TestConstants {
         pingDisconnect = true,
         maxRebroadcastDelay = 5 seconds,
         killIdleDelay = 10 seconds,
-        maxOnionMessagesPerSecond = 10
+        onionMessagesRateLimit = OnionMessagesRateLimit(10, 1 second)
       ),
       routerConf = RouterConf(
         channelExcludeDuration = 60 seconds,
