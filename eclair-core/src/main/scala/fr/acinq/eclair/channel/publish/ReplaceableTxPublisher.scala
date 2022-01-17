@@ -65,7 +65,7 @@ object ReplaceableTxPublisher {
       Behaviors.withTimers { timers =>
         Behaviors.withMdc(loggingInfo.mdc()) {
           Behaviors.receiveMessagePartial {
-            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, cmd.txInfo.confirmBefore, bitcoinClient, watcher, context, timers, loggingInfo).checkPreconditions()
+            case Publish(replyTo, cmd) => new ReplaceableTxPublisher(nodeParams, replyTo, cmd, bitcoinClient, watcher, context, timers, loggingInfo).checkPreconditions()
             case Stop => Behaviors.stopped
           }
         }
@@ -94,7 +94,6 @@ object ReplaceableTxPublisher {
 private class ReplaceableTxPublisher(nodeParams: NodeParams,
                                      replyTo: ActorRef[TxPublisher.PublishTxResult],
                                      cmd: TxPublisher.PublishReplaceableTx,
-                                     var confirmBefore: BlockHeight,
                                      bitcoinClient: BitcoinCoreClient,
                                      watcher: ActorRef[ZmqWatcher.Command],
                                      context: ActorContext[ReplaceableTxPublisher.Command],
@@ -104,6 +103,8 @@ private class ReplaceableTxPublisher(nodeParams: NodeParams,
   import ReplaceableTxPublisher._
 
   private val log = context.log
+
+  private var confirmBefore: BlockHeight = cmd.txInfo.confirmBefore
 
   def checkPreconditions(): Behavior[Command] = {
     val prePublisher = context.spawn(ReplaceableTxPrePublisher(nodeParams, bitcoinClient, loggingInfo), "pre-publisher")
