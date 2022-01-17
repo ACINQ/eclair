@@ -32,6 +32,7 @@ import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
 
 object Postman {
+  // @formatter:off
   sealed trait Command
   case class SendMessage(nextNodeId: PublicKey,
                          message: OnionMessage,
@@ -44,10 +45,13 @@ object Postman {
   case object NoReply extends OnionMessageResponse
   case class Response(payload: FinalPayload) extends OnionMessageResponse
   case class SendingStatus(status: MessageRelay.Status) extends OnionMessageResponse with Command
+  // @formatter:on
 
   def apply(switchboard: ActorRef[Switchboard.RelayMessage]): Behavior[Command] = {
     Behaviors.setup(context => {
       context.system.eventStream ! EventStream.Subscribe(context.messageAdapter[ReceiveMessage](r => WrappedMessage(r.finalPayload, r.pathId)))
+
+      val relayMessageStatusAdapter = context.messageAdapter[MessageRelay.Status](SendingStatus)
 
       val subscribed = new mutable.HashMap[ByteVector32, ActorRef[OnionMessageResponse]]()
       val sendStatusTo = new mutable.HashMap[ByteVector32, ActorRef[OnionMessageResponse]]()
@@ -68,14 +72,14 @@ object Postman {
         case SendMessage(nextNodeId, message, None, ref, _) =>
           val messageId = randomBytes32()
           sendStatusTo += (messageId -> ref)
-          switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, context.messageAdapter[MessageRelay.Status](SendingStatus))
+          switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
           Behaviors.same
         case SendMessage(nextNodeId, message, Some(pathId), ref, timeout) =>
           val messageId = randomBytes32()
           sendFailureTo += (messageId -> ref)
           subscribed += (pathId -> ref)
           context.scheduleOnce(timeout, context.self, Unsubscribe(pathId))
-          switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, context.messageAdapter[MessageRelay.Status](SendingStatus))
+          switchboard ! Switchboard.RelayMessage(messageId, None, nextNodeId, message, MessageRelay.RelayAll, Some(relayMessageStatusAdapter))
           Behaviors.same
         case Unsubscribe(pathId) =>
           subscribed.get(pathId).foreach(_ ! NoReply)

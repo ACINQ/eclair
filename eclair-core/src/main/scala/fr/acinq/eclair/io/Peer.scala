@@ -258,7 +258,7 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
             case OnionMessages.DropMessage(reason) =>
               log.debug(s"dropping message from ${remoteNodeId.value.toHex}: ${reason.toString}")
             case OnionMessages.SendMessage(nextNodeId, message) =>
-              switchboard ! RelayMessage(randomBytes32(), Some(remoteNodeId), nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy, ActorRef.noSender.toTyped)
+              switchboard ! RelayMessage(randomBytes32(), Some(remoteNodeId), nextNodeId, message, nodeParams.onionMessageConfig.relayPolicy, None)
             case received: OnionMessages.ReceiveMessage =>
               log.info(s"received message from ${remoteNodeId.value.toHex}: $received")
               context.system.eventStream.publish(received)
@@ -266,9 +266,9 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
         }
         stay()
 
-      case Event(RelayOnionMessage(messageId, msg, replyTo), d: ConnectedData) =>
+      case Event(RelayOnionMessage(messageId, msg, replyTo_opt), d: ConnectedData) =>
         d.peerConnection ! msg
-        replyTo ! MessageRelay.Sent(messageId)
+        replyTo_opt.foreach(_ ! MessageRelay.Sent(messageId))
         stay()
 
       case Event(unknownMsg: UnknownMessage, d: ConnectedData) if nodeParams.pluginMessageTags.contains(unknownMsg.tag) =>
@@ -300,8 +300,8 @@ class Peer(val nodeParams: NodeParams, remoteNodeId: PublicKey, wallet: OnChainA
 
     case Event(_: Peer.OutgoingMessage, _) => stay() // we got disconnected or reconnected and this message was for the previous connection
 
-    case Event(RelayOnionMessage(messageId, _, replyTo), _) =>
-      replyTo ! MessageRelay.Disconnected(messageId)
+    case Event(RelayOnionMessage(messageId, _, replyTo_opt), _) =>
+      replyTo_opt.foreach(_ ! MessageRelay.Disconnected(messageId))
       stay()
   }
 
@@ -498,7 +498,7 @@ object Peer {
    */
   case class ConnectionDown(peerConnection: ActorRef) extends RemoteTypes
 
-  case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo: typed.ActorRef[Status])
+  case class RelayOnionMessage(messageId: ByteVector32, msg: OnionMessage, replyTo_opt: Option[typed.ActorRef[Status]])
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, initFeatures: Features, defaultFinalScriptPubkey: ByteVector, walletStaticPaymentBasepoint: Option[PublicKey], isFunder: Boolean, fundingAmount: Satoshi): LocalParams = {

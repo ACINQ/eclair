@@ -58,7 +58,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
     val messageId = randomBytes32()
-    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, None)
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
@@ -71,7 +71,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
     val messageId = randomBytes32()
-    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, None)
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
@@ -84,7 +84,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
 
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
     val messageId = randomBytes32()
-    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, randomKey().publicKey, bobId, message, RelayAll, Some(probe.ref))
 
     val connectToNextPeer = switchboard.expectMsgType[Peer.Connect]
     assert(connectToNextPeer.nodeId === bobId)
@@ -98,7 +98,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
     val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, Some(probe.ref))
 
     val getPeerInfo = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo.remoteNodeId === previousNodeId)
@@ -114,7 +114,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
     val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, Some(probe.ref))
 
     val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo1.remoteNodeId === previousNodeId)
@@ -134,7 +134,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
     val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, RelayChannelsOnly, None)
 
     val getPeerInfo1 = switchboard.expectMsgType[GetPeerInfo]
     assert(getPeerInfo1.remoteNodeId === previousNodeId)
@@ -153,7 +153,7 @@ class MessageRelaySpec extends ScalaTestWithActorTestKit(ConfigFactory.load("app
     val (_, message) = OnionMessages.buildMessage(randomKey(), randomKey(), Seq(IntermediateNode(aliceId)), Left(Recipient(bobId, None)), Nil)
     val messageId = randomBytes32()
     val previousNodeId = randomKey().publicKey
-    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, NoRelay, probe.ref)
+    relay ! RelayMessage(messageId, switchboard.ref, previousNodeId, bobId, message, NoRelay, Some(probe.ref))
 
     switchboard.expectNoMessage(100 millis)
     probe.expectMessage(AgainstPolicy(messageId, NoRelay))
